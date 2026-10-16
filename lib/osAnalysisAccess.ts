@@ -23,8 +23,8 @@ export function canViewOsAnalysisPendencies(user: OsAnalysisUser | null | undefi
   return canRequestOsAnalysis(user);
 }
 
-/** Prefill sugerido no seletor (Bárbara / Giovanna / Ana Fernandes) — a Diretoria escolhe livremente. */
-export const OS_ANALYSIS_DEFAULT_RECIPIENT_HINTS = ['barbara', 'giovanna', 'ana fernandes'] as const;
+/** Prefill sugerido no seletor (Bárbara / Giovanna) — a Diretoria escolhe livremente. */
+export const OS_ANALYSIS_DEFAULT_RECIPIENT_HINTS = ['barbara', 'giovanna'] as const;
 
 export function buildOsAuditDeepLink(missionId: string): string {
   const base = (typeof window !== 'undefined'

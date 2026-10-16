@@ -291,7 +291,6 @@ export function controleDiarioOpensAudit(name?: string | null): boolean {
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
   if (n.includes('giovanna')) return true;
-  if (n.replace(/[.\s]+/g, ' ').trim() === 'ana fernandes') return true;
   if (n.includes('beatriz') && (n.includes('rocha') || n.includes('machado'))) return true;
   if (n.includes('thiago') && n.includes('moreira')) return true;
   return false;

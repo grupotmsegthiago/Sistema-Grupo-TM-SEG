@@ -5,7 +5,6 @@ import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { formatDateBR } from '../lib/dateUtils';
 import { logAction } from '../lib/logger';
 import { supabase } from '../lib/supabase';
-import { LinkArquivo } from './ArquivoProtegido';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -1287,9 +1286,9 @@ const FinancialTransactionList: React.FC = () => {
                                                   });
                                                   if (comprovante.link) {
                                                     return (
-                                                      <LinkArquivo href={comprovante.link} title={reciboCliente ? 'Comprovante do pagamento do cliente' : 'Comprovante'} className="mt-0.5 block text-[9px] font-black text-emerald-800 underline uppercase" data-testid={`link-comprovante-${t.id}`}>
+                                                      <a href={comprovante.link} target="_blank" rel="noreferrer" title={reciboCliente ? 'Comprovante do pagamento do cliente' : 'Comprovante'} className="mt-0.5 block text-[9px] font-black text-emerald-800 underline uppercase" data-testid={`link-comprovante-${t.id}`}>
                                                         Comprovante
-                                                      </LinkArquivo>
+                                                      </a>
                                                     );
                                                   }
                                                   if (!comprovante.avisarFalta) return null;

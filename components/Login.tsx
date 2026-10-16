@@ -14,7 +14,6 @@ import { APP_VERSION } from '../constants';
 import { normalizarModulos } from '../lib/training/operadorAcademy';
 import { clearLocalStoragePreservingForceLogoutSeen } from '../lib/forceLogout';
 import { caminhoPortalDasPermissoes, usuarioSoPortal } from '../lib/cevaPortal/regrasAcesso';
-import { abrirSessaoNoLogin } from '../lib/financeiro/abrirSessao';
 
 interface LoginProps {
   onLogin: () => void;
@@ -182,10 +181,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         trainingScore: userCheck.training_score ?? null,
       };
 
-      await abrirSessaoNoLogin(userCheck.email, cleanPassword);
       if (requiresTimeclockUser(sessionUser)) {
         // Token pendente: validação facial chama /api/gemini/generate antes do login completo.
-        // A sessão financeira já foi gravada; o token abaixo segue o mesmo usuário.
+        localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
         setPendingUser(sessionUser);
         setFaceMode(hasFaceRegistered(sessionUser) ? 'verify' : 'register');
         setAuthPhase('face');
@@ -193,6 +191,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         return;
       }
 
+      localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
       localStorage.setItem('userData', JSON.stringify(sessionUser));
       localStorage.setItem('app_version', APP_VERSION);
 
@@ -225,7 +224,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         }}
         onCancel={() => {
           localStorage.removeItem('authToken');
-          localStorage.removeItem('authSessao');
           setAuthPhase('credentials');
           setPendingUser(null);
         }}

@@ -67,9 +67,8 @@ test('GTM-7828 — placeholder RAIO 200 não zera extra da rota 1135KM', () => {
   );
 
   assert.equal(result.client.excessKm, 75);
-  assert.equal(result.client.tarifaKmOrigem, 'zero_contratual');
-  assert.equal(result.client.unitPriceKm, 0);
-  assert.equal(result.client.extraKmVal, 0);
+  assert.equal(result.client.unitPriceKm, 6.9);
+  assert.equal(result.client.extraKmVal, 517.5);
   assert.equal(result.client.extraHrVal, 0);
   assert.equal(result.provider.excessKm, 10);
   assert.equal(result.provider.extraKmVal, 50);

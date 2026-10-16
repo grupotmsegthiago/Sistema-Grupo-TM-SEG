@@ -141,10 +141,6 @@ test('controle diário abre para o interno e fecha para comercial e cliente', ()
 
 test('auditoria da OS fica com Giovanna, Beatriz e Thiago Moreira', () => {
   assert.equal(controleDiarioOpensAudit('Giovanna Marsili'), true);
-  assert.equal(controleDiarioOpensAudit('ANA.FERNANDES'), true);
-  assert.equal(controleDiarioOpensAudit('Ana'), false);
-  assert.equal(controleDiarioOpensAudit('Lilian Raquel Viana'), false);
-  assert.equal(controleDiarioOpensAudit('Barbara Sgarlata'), false);
   assert.equal(controleDiarioOpensAudit('Beatriz Rocha'), true);
   assert.equal(controleDiarioOpensAudit('Beatriz Machado'), true);
   assert.equal(controleDiarioOpensAudit('Beatriz de Carvalho'), false);

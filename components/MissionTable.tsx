@@ -32,7 +32,6 @@ import OsActionPlanModal from './OsActionPlanModal';
 import MissionPrintModal from './MissionPrintModal';
 import MissionHistoryModal from './MissionHistoryModal';
 import MissionFinancialModal from './MissionFinancialModal';
-import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import MissionFullReportModal from './MissionFullReportModal';
 import DailyGoalThermometer from './DailyGoalThermometer';
 import EndEvidencePendingAlert from './EndEvidencePendingAlert';
@@ -816,28 +815,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
           return Array.from(byId.values());
       };
 
-      const lerTabelaPreco = async (nome: 'client_price_tables' | 'provider_cost_tables') => {
-          try {
-              return await fetchAllPagesOf(supabase.from(nome).select('*'));
-          } catch {
-              return [] as any[];
-          }
-      };
-      const lerCadastro = async (consulta: PromiseLike<{ data: any; error: any }>) => {
-          try {
-              const resultado = await consulta;
-              if (resultado?.error) return { data: [] as any[], error: resultado.error };
-              return { data: resultado?.data || [], error: null };
-          } catch {
-              return { data: [] as any[], error: { message: 'cadastro' } };
-          }
-      };
       const [missionsData, clientTablesRows, providerTablesRows, clientsRes, providersRes] = await Promise.all([
           fetchScoped(),
-          lerTabelaPreco('client_price_tables'),
-          lerTabelaPreco('provider_cost_tables'),
-          lerCadastro(supabase.from('clients').select('*')),
-          lerCadastro(supabase.from('providers').select('name, trading_name'))
+          fetchAllPagesOf(supabase.from('client_price_tables').select('*')),
+          fetchAllPagesOf(supabase.from('provider_cost_tables').select('*')),
+          supabase.from('clients').select('*'),
+          supabase.from('providers').select('name, trading_name')
       ]);
 
       setDbStatus('ok');
@@ -1683,15 +1666,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const handleOpenUpdateModal = (mission: Mission) => { setSelectedMission(mission); setIsUpdateModalOpen(true); };
     const handleUpdateSuccess = (reportText?: string) => { setIsUpdateModalOpen(false); setSelectedMission(null); fetchMissions(true); if (reportText) handleCopyToClipboard(reportText, 'relatorio', true); };
     const handleOpenStatusModal = async (mission: Mission) => { setMissionForStatusView(mission); setIsStatusModalOpen(true); const { data } = await supabase.from('mission_logs').select('*').eq('mission_id', mission.id).order('created_at', { ascending: false }); if (data) setMissionLogs(data as MissionLog[]); };
-    const podeAuditoria = useMemo(
-        () => podeAcessarAuditoriaFaturamento(currentUser),
-        [currentUser],
-    );
-    const handleOpenFinancialModal = (mission: Mission) => {
-        if (!podeAuditoria) return;
-        setMissionForFinancials(mission);
-        setIsFinancialModalOpen(true);
-    };
+    const handleOpenFinancialModal = (mission: Mission) => { setMissionForFinancials(mission); setIsFinancialModalOpen(true); };
 
     // Task #116: deep-link ?openMission=<id> abre o modal financeiro da OS
     // correspondente assim que as missões forem carregadas (uma única vez por
@@ -1700,18 +1675,10 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
     const openMissionDeepLinkConsumedRef = useRef(false);
     useEffect(() => {
         if (openMissionDeepLinkConsumedRef.current) return;
-        if (!currentUser) return;
         try {
             const params = new URLSearchParams(window.location.search);
             const targetId = params.get('openMission');
             if (!targetId) return;
-            if (!podeAcessarAuditoriaFaturamento(currentUser)) {
-                openMissionDeepLinkConsumedRef.current = true;
-                params.delete('openMission');
-                const qs = params.toString();
-                window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash);
-                return;
-            }
             const consume = (mission: Mission) => {
                 openMissionDeepLinkConsumedRef.current = true;
                 setMissionForFinancials(mission);
@@ -1750,7 +1717,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 } catch { /* ignore */ }
             })();
         } catch { /* ignore */ }
-    }, [allMissions, mapRawMissionRow, currentUser]);
+    }, [allMissions, mapRawMissionRow]);
     const handleOpenPrintModal = (mission: Mission) => { setMissionForPrint(mission); setIsPrintModalOpen(true); };
     const handleActionPlan = (mission: Mission) => { setPlanoAcaoId(mission.id); };
     const handleDeleteClick = (mission: Mission) => { setMissionToDelete(mission); setDeletePassword(''); setCancelEscortAtOrigin(null); setIsDeleteModalOpen(true); };
@@ -2297,13 +2264,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             </div></div>
   
 
-            <div className="bg-slate-100/70 p-4 min-h-[400px]">
-              {dbStatus === 'error' && !isLoading && (
-                <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" data-testid="erro-lista-os">
-                  <span>Não foi possível carregar as OS. Tente novamente.</span>
-                  <button type="button" onClick={() => { void fetchMissions(); }} className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-bold text-white" data-testid="tentar-lista-os">Tentar novamente</button>
-                </div>
-              )}
+          <div className="bg-slate-100/70 p-4 min-h-[400px]">
               {isLoading ? ( <div className="flex flex-col items-center justify-center h-64 text-gray-400"><Loader2 size={32} className="animate-spin mb-2 text-red-600" /><p className="text-sm font-medium">Carregando...</p></div> ) : sortedMissions.length === 0 ? ( <div className="relative flex flex-col items-center justify-center h-64 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl bg-white overflow-hidden">
                   <svg viewBox="0 0 320 80" className="absolute h-32 opacity-[0.06] pointer-events-none" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <g transform="translate(10, 5) scale(0.85)"><path d="M40 5 L10 15 V35 C10 55 25 70 40 75 C55 70 70 55 70 35 V15 L40 5 Z" stroke="#000" strokeWidth="4" fill="none" strokeLinejoin="round"/><path d="M20 50 Q40 65 60 40" stroke="#b91c1c" strokeWidth="6" strokeLinecap="round"/><path d="M28 22 L40 22 L40 55" stroke="#000" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round"/><path d="M45 22 L55 38 L65 22 L65 55 M45 55 L45 22" stroke="#000" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"/></g>

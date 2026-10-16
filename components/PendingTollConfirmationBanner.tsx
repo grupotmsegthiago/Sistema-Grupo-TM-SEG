@@ -69,15 +69,11 @@ const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
             }
 
             const ids = candidateMissions.map(m => m.id);
-            const { data: logs, error: logsError } = await supabase
+            const { data: logs } = await supabase
                 .from('system_logs')
                 .select('entity_id')
                 .eq('action_type', 'TOLL_CONFIRMATION')
                 .in('entity_id', ids);
-            if (logsError) {
-                setMissions([]);
-                return;
-            }
 
             const confirmedIds = new Set((logs || []).map((l: any) => l.entity_id));
             const pending = candidateMissions.filter(m => !confirmedIds.has(m.id));

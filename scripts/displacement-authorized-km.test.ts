@@ -31,35 +31,20 @@ describe('resolveDisplacementFromAuthorizedKm', () => {
     assert.equal(r.provider, 0);
   });
 
-  it('não troca tarifa zero da tabela pela tarifa regional', () => {
+  it('usa fallback DHL por UF quando taxa do cliente é 0', () => {
     const sc = resolveDisplacementFromAuthorizedKm({
-      dhlDeslocamentoKm: 190,
+      dhlDeslocamentoKm: 10,
       clientUnitPriceKm: 0,
-      providerUnitPriceKm: 4.5,
       origin: 'Palhoça - SC',
     });
-    assert.equal(sc.origemTarifaCliente, 'zero_contratual');
-    assert.equal(sc.client, 0);
-    assert.equal(sc.provider, 855);
+    assert.equal(sc.client, 73.5);
 
-    const ausente = resolveDisplacementFromAuthorizedKm({
+    const sp = resolveDisplacementFromAuthorizedKm({
       dhlDeslocamentoKm: 10,
-      clientUnitPriceKm: null,
+      clientUnitPriceKm: 0,
       origin: 'Santos - SP',
     });
-    assert.equal(ausente.origemTarifaCliente, 'ausente');
-    assert.equal(ausente.client, 0);
-  });
-
-  it('tarifa regional só entra quando a confirmação excepcional informa o valor', () => {
-    const sc = resolveDisplacementFromAuthorizedKm({
-      dhlDeslocamentoKm: 10,
-      clientUnitPriceKm: 0,
-      tarifaExcepcionalCliente: 7.35,
-      origin: 'Palhoça - SC',
-    });
-    assert.equal(sc.origemTarifaCliente, 'excepcional');
-    assert.equal(sc.client, 73.5);
+    assert.equal(sp.client, 69);
   });
 
   it('sem KM autorizado não inventa deslocamento', () => {

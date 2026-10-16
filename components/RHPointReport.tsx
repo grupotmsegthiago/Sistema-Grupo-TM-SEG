@@ -1,7 +1,5 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { ImgArquivo } from './ArquivoProtegido';
-import { assinarArquivo } from '../lib/financeiro/assinarArquivoCliente';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Download, FileText, Loader2, MapPin, PencilLine, Printer } from 'lucide-react';
 import { formatCivilDateBR, formatIsoDateBR, formatIsoDateFromTimestampBR, formatTimeBR } from '../lib/dateUtils';
@@ -235,7 +233,7 @@ const RHPointReport: React.FC = () => {
                                 })}
                                 <td className="px-4 py-4 text-center">
                                   {lastSigned?.signature_url ? (
-                                    <ImgArquivo src={lastSigned.signature_url} alt="Assinatura" className="h-8 mx-auto object-contain" />
+                                    <img src={lastSigned.signature_url} alt="Assinatura" className="h-8 mx-auto object-contain" />
                                   ) : (
                                     <span className="text-gray-400">—</span>
                                   )}
@@ -286,10 +284,10 @@ const RHPointReport: React.FC = () => {
                                         ) : '—'}
                                     </td>
                                     <td className="px-6 py-4 text-center">
-                                        {l.photo_url ? <button type="button" onClick={async () => { const url = await assinarArquivo(l.photo_url!); if (url) window.open(url, '_blank', 'noopener'); }} className="p-1"><ImgArquivo src={l.photo_url} className="w-8 h-8 rounded object-cover border" alt="" /></button> : '—'}
+                                        {l.photo_url ? <button type="button" onClick={() => window.open(l.photo_url!)} className="p-1"><img src={l.photo_url} className="w-8 h-8 rounded object-cover border" alt="" /></button> : '—'}
                                     </td>
                                     <td className="px-6 py-4 text-center">
-                                        {l.signature_url ? <ImgArquivo src={l.signature_url} className="h-8 mx-auto object-contain" alt="" /> : '—'}
+                                        {l.signature_url ? <img src={l.signature_url} className="h-8 mx-auto object-contain" alt="" /> : '—'}
                                     </td>
                                 </tr>
                             ))}

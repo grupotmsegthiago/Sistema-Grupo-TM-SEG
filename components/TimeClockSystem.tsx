@@ -4,7 +4,6 @@ import { Fingerprint, History, ShieldCheck } from 'lucide-react';
 import { formatDateBR, formatNowTimeBR, formatTimeBR } from '../lib/dateUtils';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import TimeClockModal from './TimeClockModal';
-import { ImgArquivo } from './ArquivoProtegido';
 import {
   TIME_CLOCK_STAGE_LABELS,
   TIME_CLOCK_STAGE_ORDER,
@@ -91,7 +90,7 @@ const TimeClockSystem: React.FC = () => {
                     <p className="text-sm font-black text-gray-900">{entry ? formatTimeBR(entry.timestamp, '--:--') : '--:--'}</p>
                   </div>
                   {entry?.photo_url && (
-                    <ImgArquivo src={entry.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover border-2 border-white shadow-sm" />
+                    <img src={entry.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover border-2 border-white shadow-sm" />
                   )}
                 </div>
               </div>

@@ -3,7 +3,6 @@ import { formatDateTimeBR, formatDateBR } from '../lib/dateUtils';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Monitor, Plus, Search, Trash2, Save, Loader2, Camera, X, ArrowLeft, Edit3, User, Package, ChevronDown, Image as ImageIcon, FileText, RefreshCw, Eye, Upload, Database, ChevronRight, ExternalLink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { ImgArquivo } from './ArquivoProtegido';
 import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { useNotification } from '../lib/NotificationContext';
@@ -419,7 +418,7 @@ const EquipmentManager: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               {editData.photo_urls.map((url, pIdx) => (
                 <div key={pIdx} className="relative group">
-                  <ImgArquivo src={url} alt={`Foto ${pIdx + 1}`} className="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" onClick={() => setPhotoPreview(url)} data-testid={`img-eq-photo-${pIdx}`} />
+                  <img src={url} alt={`Foto ${pIdx + 1}`} className="w-20 h-20 object-cover rounded-lg border border-slate-200 cursor-pointer" onClick={() => setPhotoPreview(url)} data-testid={`img-eq-photo-${pIdx}`} />
                   <button type="button" onClick={() => removePhoto(pIdx)} className="absolute -top-1 -right-1 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
                     <X size={10} />
                   </button>
@@ -459,7 +458,7 @@ const EquipmentManager: React.FC = () => {
 
         {photoPreview && (
           <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
-            <ImgArquivo src={photoPreview} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+            <img src={photoPreview} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
           </div>
         )}
       </div>
@@ -612,7 +611,7 @@ const EquipmentManager: React.FC = () => {
               {eq.photo_urls?.length > 0 && (
                 <div className="flex gap-1 mb-3 overflow-x-auto">
                   {eq.photo_urls.slice(0, 4).map((url, i) => (
-                    <ImgArquivo key={i} src={url} alt="" className="w-10 h-10 object-cover rounded border border-slate-200 cursor-pointer shrink-0" onClick={() => setPhotoPreview(url)} />
+                    <img key={i} src={url} alt="" className="w-10 h-10 object-cover rounded border border-slate-200 cursor-pointer shrink-0" onClick={() => setPhotoPreview(url)} />
                   ))}
                   {eq.photo_urls.length > 4 && <span className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center text-[9px] font-bold text-slate-500 shrink-0">+{eq.photo_urls.length - 4}</span>}
                 </div>
@@ -651,7 +650,7 @@ const EquipmentManager: React.FC = () => {
 
       {photoPreview && (
         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
-          <ImgArquivo src={photoPreview} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+          <img src={photoPreview} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
         </div>
       )}
 
@@ -676,8 +675,8 @@ const EquipmentManager: React.FC = () => {
               <p className="text-xs bg-slate-50 border rounded-lg p-3">{viewTerm.material_description}</p>
               <p className="text-[10px] text-slate-500">Assinado em {formatDateTimeBR(viewTerm.signed_at)} · Recebimento {formatDateBR(viewTerm.receipt_date)}</p>
               <div className="grid grid-cols-2 gap-3">
-                {viewTerm.face_photo_url && <ImgArquivo src={viewTerm.face_photo_url} alt="Reconhecimento facial" className="rounded-lg border w-full aspect-square object-cover" />}
-                {viewTerm.signature_url && <ImgArquivo src={viewTerm.signature_url} alt="Assinatura" className="rounded-lg border w-full bg-white object-contain" />}
+                {viewTerm.face_photo_url && <img src={viewTerm.face_photo_url} alt="Reconhecimento facial" className="rounded-lg border w-full aspect-square object-cover" />}
+                {viewTerm.signature_url && <img src={viewTerm.signature_url} alt="Assinatura" className="rounded-lg border w-full bg-white object-contain" />}
               </div>
             </div>
           </div>

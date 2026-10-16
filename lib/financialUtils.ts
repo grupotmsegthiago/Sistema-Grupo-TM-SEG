@@ -67,27 +67,7 @@ export function isSameClientName(a: string, b: string): boolean {
     return true;
 }
 
-export type OrigemTarifaKm = 'tabela' | 'zero_contratual' | 'ausente' | 'excepcional';
-
-/**
- * A tarifa vem da tabela vinculada.
- * Zero gravado é zero contratual. Nulo é parâmetro ausente.
- * A tarifa regional DHL não entra no lugar de nenhum dos dois.
- */
-export function classificarTarifaKm(
-  valor: number | null | undefined,
-  excepcional?: number | null,
-): { origem: OrigemTarifaKm; tarifa: number } {
-  if (excepcional != null && Number.isFinite(Number(excepcional)) && Number(excepcional) > 0) {
-    return { origem: 'excepcional', tarifa: Math.round(Number(excepcional) * 100) / 100 };
-  }
-  if (valor == null || !Number.isFinite(Number(valor))) return { origem: 'ausente', tarifa: 0 };
-  if (Number(valor) < 0) return { origem: 'ausente', tarifa: 0 };
-  if (Number(valor) === 0) return { origem: 'zero_contratual', tarifa: 0 };
-  return { origem: 'tabela', tarifa: Math.round(Number(valor) * 100) / 100 };
-}
-
-/** KM excedente padrão DHL por UF de origem (espelha planilha de medição — coluna AA). Só vale com confirmação explícita. */
+/** KM excedente padrão DHL por UF de origem (espelha planilha de medição — coluna AA). */
 export function dhlDefaultUnitKmExcess(originUF: string): number {
     const uf = String(originUF || '').toUpperCase().trim();
     return (uf === 'SC' || uf === 'RS') ? 7.35 : 6.90;
@@ -115,7 +95,7 @@ export function mentionsFixedKmBand(text: string | undefined | null, band: 100 |
 /**
  * Materializa R$ de deslocamento a partir do KM autorizado (`dhl_deslocamento_km`).
  * Se já houver `displacement_value` / `_provider` salvo (> 0), preserva.
- * Cliente: km × taxa da tabela vinculada. Zero ou ausência não viram tarifa regional.
+ * Cliente: km × taxa (tabela ou fallback DHL por UF).
  * Fornecedor: km × taxa da tabela de custo (0 se MESMA OS ou taxa 0).
  */
 export function resolveDisplacementFromAuthorizedKm(opts: {
@@ -124,16 +104,18 @@ export function resolveDisplacementFromAuthorizedKm(opts: {
   displacementValueProvider?: number | null;
   clientUnitPriceKm?: number | null;
   providerUnitPriceKm?: number | null;
-  tarifaExcepcionalCliente?: number | null;
   origin?: string | null;
   isSameOs?: boolean | null;
-}): { client: number; provider: number; km: number; clientRate: number; providerRate: number; origemTarifaCliente: OrigemTarifaKm } {
+}): { client: number; provider: number; km: number; clientRate: number; providerRate: number } {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
   const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
   const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
 
-  const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
-  const clientRate = tarifaCliente.tarifa;
+  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
+  if (km > 0 && clientRate <= 0) {
+    // Tabelas DHL fixas frequentemente têm price_per_extra_km = 0.
+    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ''));
+  }
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
 
   const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
@@ -143,7 +125,6 @@ export function resolveDisplacementFromAuthorizedKm(opts: {
     km,
     clientRate,
     providerRate,
-    origemTarifaCliente: tarifaCliente.origem,
     client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
     provider: opts.isSameOs ? 0 : (storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider),
   };
@@ -340,7 +321,6 @@ export interface CalculatedFinancials {
       excessHours: number;
       excessHoursReal: number;
       unitPriceKm: number;
-      tarifaKmOrigem?: OrigemTarifaKm;
       unitPriceHour: number;
       franchiseKm: number;
       franchiseHours: number;
@@ -677,7 +657,6 @@ export const calculateMissionFinancials = (
         providerTableId?: string; 
         forceIblFee?: boolean;
         customClientUnitKm?: number;
-        tarifaExcepcionalKm?: number;
         customClientUnitHour?: number;
         customProviderUnitKm?: number;
         customProviderUnitHour?: number;
@@ -1552,13 +1531,14 @@ export const calculateMissionFinancials = (
     let cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
     let cExcessHr = Math.max(0, durationHours - cFranchiseHr);
     
-    const tarifaKmTabela = classificarTarifaKm(
-        manualTableOverrides?.customClientUnitKm !== undefined
-            ? manualTableOverrides.customClientUnitKm
-            : appliedClientTable?.price_per_extra_km,
-        manualTableOverrides?.tarifaExcepcionalKm,
-    );
-    let cUnitPriceKm = tarifaKmTabela.tarifa;
+    let cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== undefined
+        ? manualTableOverrides.customClientUnitKm
+        : (appliedClientTable?.price_per_extra_km || 0);
+    // Tabelas DHL de rota nomeada têm price_per_extra_km = 0 no cadastro; o valor
+    // oficial por UF (6,90 / 7,35) vem da planilha de medição — aplicamos aqui.
+    if (cUnitPriceKm <= 0 && findDhlAutoClient(missionClientRaw) && manualTableOverrides?.customClientUnitKm === undefined) {
+        cUnitPriceKm = dhlDefaultUnitKmExcess(originUF);
+    }
 
     const cUnitPriceHour = manualTableOverrides?.customClientUnitHour !== undefined
         ? manualTableOverrides.customClientUnitHour
@@ -1790,7 +1770,6 @@ export const calculateMissionFinancials = (
             excessHours: cExcessHr,
             excessHoursReal: cExcessHrReal,
             unitPriceKm: cUnitPriceKm,
-            tarifaKmOrigem: tarifaKmTabela.origem,
             unitPriceHour: cUnitPriceHour,
             franchiseKm: cFranchiseKm,
             franchiseHours: cFranchiseHr,
