@@ -28,6 +28,7 @@ import ReaprovacaoFinanceiraPainel from './ReaprovacaoFinanceiraPainel';
 import EdicaoTotalConfirmacao from './EdicaoTotalConfirmacao';
 import { compararBooleano, compararNumero, compararTexto, juntarDiferencas } from '../lib/reaprovacaoFinanceira/camposEdicao';
 import { motivoBloqueioEdicaoTotal } from '../lib/reaprovacaoFinanceira/regras';
+import { avaliarPropagacaoValorCliente } from '../lib/financeiro/divergenciaValorCliente';
 import type { CampoAuditado } from '../lib/reaprovacaoFinanceira/tipos';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import {
@@ -834,6 +835,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
   const isEffectivelyLocked = negativeLockBlocks || (isBillingLocked && !unlockOverride && !isAdminFullAccess);
+  const avisoDivergenciaCliente = useMemo(() => {
+    if (!mission) return null;
+    return avaliarPropagacaoValorCliente({
+      status: mission.status,
+      receitaServico: Number(mission.revenue_value || 0),
+      custoServico: Number(mission.cost_value || 0),
+      pedagioCliente: Number(mission.toll_value || 0),
+      pedagioFornecedor: Number((mission as any).toll_value_provider || 0),
+      deslocamentoCliente: Number((mission as any).displacement_value || 0),
+      deslocamentoFornecedor: Number((mission as any).displacement_value_provider || 0),
+      motivoReceita: (mission as any).revenue_edit_reason,
+      motivoCusto: (mission as any).cost_edit_reason,
+    });
+  }, [mission]);
   const isPaidInvoiceEffectivelyLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
   const canUnlockPaidLock = canUnlockPaidInvoiceLock({ role: userRoleLower, name: userNameLower });
 
@@ -2278,6 +2293,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         }
         if (dhlDeslocAutoAppliedRef.current) return;
         if (isEffectivelyLocked || isSavingRef.current) return;
+        const statusOs = String(mission?.status || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        if ((statusOs.includes('recusad') || statusOs.includes('cancelad'))
+          && parseNumber(displacementInput) <= 0
+          && parseNumber(displacementProviderInput) <= 0) {
+          dhlDeslocAutoAppliedRef.current = true;
+          return;
+        }
         const hadClient = parseNumber(displacementInput) > 0;
         const hadProvider = parseNumber(displacementProviderInput) > 0;
         if (hadClient && (hadProvider || !!(mission as any)?.is_same_os || disp.provider <= 0)) {
@@ -2964,6 +2986,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           const revServiceOnly = revTotal - toll - displacement; 
           const costServiceOnly = costTotal - tollProv - dispProv;
+          const arredondar = (valor: number) => Math.round(valor * 100) / 100;
+          const divergenciaCliente = avaliarPropagacaoValorCliente({
+              status: mission.status,
+              receitaServico: arredondar(revServiceOnly),
+              custoServico: isSameOs ? 0 : arredondar(costServiceOnly),
+              pedagioCliente: arredondar(toll),
+              pedagioFornecedor: arredondar(tollProv),
+              deslocamentoCliente: arredondar(displacement),
+              deslocamentoFornecedor: isSameOs ? 0 : arredondar(dispProv),
+              motivoReceita: revenueEditReason,
+              motivoCusto: costEditReason,
+          });
+          if (divergenciaCliente.bloqueia) {
+              showNotification('Valor divergente', divergenciaCliente.mensagem, 'error');
+              setIsUpdating(false);
+              isSavingRef.current = false;
+              return;
+          }
           
           const { stage, label } = getApprovalStage(userName, userRole);
           
@@ -3124,6 +3164,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   ? `[${userName} - ${formatNowDateTimeBR()}] [DIVERGENTE DO MOTOR AUTO R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}]`
                   : `[${userName} - ${formatNowDateTimeBR()}]`;
               reasonFields.cost_edit_reason = `${prefix} ${costEditReason.trim()}`;
+          }
+          if (!isProviderOnlyUser && !reasonFields.revenue_edit_reason && revenueEditReason.trim().length >= 8) {
+              reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] ${revenueEditReason.trim()}`;
           }
           if (!isProviderOnlyUser && r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
@@ -6866,6 +6909,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <FileText size={14} className="shrink-0" />
                                     <span className="truncate">Plano DHL</span>
                                   </button>
+                                )}
+                                {avisoDivergenciaCliente?.bloqueia && (
+                                  <div className="w-full rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5" data-testid="banner-divergencia-valor-cliente">
+                                    <span className="text-[9px] sm:text-[10px] font-black uppercase text-amber-900 leading-tight">
+                                      {avisoDivergenciaCliente.mensagem}
+                                    </span>
+                                  </div>
                                 )}
                                 {negativeMarginHardLocked && (
                                   <div className="w-full flex items-center gap-2 rounded-lg border border-slate-300 bg-slate-100 px-2 py-1.5" data-testid="banner-negative-margin-lock">

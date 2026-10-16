@@ -1,5 +1,20 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — GTM-8606, SOMENTE LEITURA
+
+**Data:** 2026-10-16  
+**Pedido:** explicar a OS que foi salva zerada e mesmo assim mostrou valor para o cliente, e impedir que isso se repita. A OS real não foi alterada nem recalculada.
+
+**O que está no banco.** Status Recusada. Serviço do cliente R$ 0,00. Deslocamento do cliente R$ 1.396,50. Serviço do fornecedor -R$ 855,00. Deslocamento do fornecedor R$ 855,00. Na tela, o cliente fica R$ 1.396,50 e o fornecedor fecha em R$ 0,00. Snapshot aprovado por Giovanna Marsili em 16/10/2026 15:40, com total do cliente R$ 1.396,50. Não há fatura vinculada. O boletim já deixa OS Recusada de fora.
+
+**Causa.** Daniel Lima criou a OS em 14/10 à noite e recusou em seguida. O print de deslocamento tinha 190 km e o valor ficou zerado. Ao aprovar, a auditoria preencheu sozinha 190 km × R$ 7,35 = R$ 1.396,50 para o cliente e 190 km × R$ 4,50 = R$ 855,00 para o fornecedor. O serviço continuou zero, com o carimbo "Valor zero confirmado", e o custo do fornecedor foi para -R$ 855,00 para a tela do fornecedor mostrar zero. O snapshot gravou o total do cliente.
+
+**Por que não editou.** A aprovação trava a edição comum. A OS Recusada entra na lista de encerrada: a edição total responde que não reabre. A edição total, quando a OS é concluída, aprovada e sem fatura, continua disponível para Diretoria e Financeiro autorizado, com senha, justificativa, antes/depois e aviso à Diretoria. Ela corrige receita e custo. Não mexe no deslocamento e não foi usada para alterar a GTM-8606.
+
+**Proteção nova.** OS recusada ou cancelada com deslocamento zerado não recebe mais o preenchimento automático. Gravar serviço zero com deslocamento ou pedágio no cliente, sem justificativa de conferência, é recusado. A OS real permanece como está.
+
+**Publicação:** não.
+
 ## HANDOFF — BUCKETS E PAINEL DE CUSTO DE IA
 
 **Data:** 2026-10-16  
