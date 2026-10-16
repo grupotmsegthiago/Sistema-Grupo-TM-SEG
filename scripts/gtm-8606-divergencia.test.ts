@@ -6,11 +6,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   avaliarPropagacaoValorCliente,
+  compensacaoArtificial,
   conferenciaAutorizada,
+  divergenciaSnapshot,
   totalCliente,
   totalFornecedor,
 } from '../lib/financeiro/divergenciaValorCliente';
-import { camposAlterados, justificativaValida, montarResumoEdicao, podeEdicaoTotal } from '../lib/reaprovacaoFinanceira/regras';
+import { camposAlterados, justificativaValida, montarResumoEdicao, podeEdicaoTotal, podeReaprovar } from '../lib/reaprovacaoFinanceira/regras';
 
 const KM = 190;
 const TARIFA_CLIENTE = 7.35;
@@ -58,10 +60,41 @@ describe('divergência de valor zero com deslocamento', () => {
     assert.equal(semTexto.bloqueia, true);
     const conferido = {
       ...casoZerado,
+      custoServico: 0,
+      deslocamentoFornecedor: 0,
       motivoReceita: 'Cobrar o deslocamento de 190 km autorizado nesta OS',
     };
     assert.equal(conferenciaAutorizada(conferido), true);
     assert.equal(avaliarPropagacaoValorCliente(conferido).bloqueia, false);
+  });
+
+  it('bloqueia serviço negativo que só anula o deslocamento e aceita estorno justificado', () => {
+    assert.equal(compensacaoArtificial(casoZerado), true);
+    assert.equal(avaliarPropagacaoValorCliente(casoZerado).bloqueia, true);
+    const estorno = avaliarPropagacaoValorCliente({
+      ...casoZerado,
+      deslocamentoCliente: 0,
+      motivoReceita: 'Estorno do deslocamento conferido com o cliente',
+      motivoCusto: 'Estorno do fornecedor nesta OS recusada',
+    });
+    assert.equal(estorno.bloqueia, false);
+  });
+
+  it('snapshot divergente do valor salvo não passa como aprovado', () => {
+    const aviso = divergenciaSnapshot({
+      receitaServico: 0,
+      pedagioCliente: 0,
+      deslocamentoCliente: 0,
+      snapshot: { revenueServiceOnly: 0, displacementVal: 1396.5, totalGeral: 1396.5, tollVal: 0 },
+    });
+    assert.equal(aviso.diverge, true);
+    const igual = divergenciaSnapshot({
+      receitaServico: 0,
+      pedagioCliente: 0,
+      deslocamentoCliente: 1396.5,
+      snapshot: { revenueServiceOnly: 0, displacementVal: 1396.5, totalGeral: 1396.5, tollVal: 0 },
+    });
+    assert.equal(igual.diverge, false);
   });
 
   it('não trata serviço com valor como se fosse zero', () => {
@@ -81,15 +114,15 @@ describe('divergência de valor zero com deslocamento', () => {
 describe('edição total no caso da OS aprovada', () => {
   const giovanna = { id: '24', name: 'Giovanna Marsili', role: 'Financeiro' };
 
-  it('OS recusada aprovada não reabre pela edição total', () => {
-    const trava = podeEdicaoTotal(giovanna, {
+  it('OS recusada recebe correção excepcional e a reaprovação continua fechada', () => {
+    const os = {
       id: 'OS-FICTICIA-RECUSADA',
       status: 'Recusada',
       billing_approved: true,
       invoice_number: null,
-    });
-    assert.equal(trava.permitido, false);
-    assert.match(trava.motivo, /encerrada/);
+    };
+    assert.equal(podeEdicaoTotal(giovanna, os).permitido, true);
+    assert.equal(podeReaprovar(giovanna, os).permitido, false);
   });
 
   it('OS concluída aprovada e elegível exige senha, justificativa, antes/depois e aviso', () => {

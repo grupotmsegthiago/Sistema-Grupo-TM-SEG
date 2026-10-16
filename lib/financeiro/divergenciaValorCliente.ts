@@ -57,7 +57,19 @@ function motivoAutomatico(valor: unknown): boolean {
   return MOTIVOS_AUTOMATICOS.some((trecho) => motivo.includes(trecho));
 }
 
-/** Justificativa escrita por uma pessoa, diferente do carimbo automático de zero. */
+function motivoDeDesconto(valor: unknown): boolean {
+  const motivo = texto(valor);
+  return motivo.includes('desconto') || motivo.includes('estorno');
+}
+
+export function compensacaoArtificial(partes: PartesValorOs): boolean {
+  const custo = centavos(partes.custoServico);
+  if (custo >= 0) return false;
+  if (motivoDeDesconto(partes.motivoCusto) || motivoDeDesconto(partes.motivoReceita)) return false;
+  const deslocamento = centavos(partes.deslocamentoFornecedor);
+  const fornecedor = centavos(totalFornecedor(partes));
+  return deslocamento > 0 && Math.abs(fornecedor) <= 1;
+}
 export function conferenciaAutorizada(partes: PartesValorOs): boolean {
   const motivo = String(partes.motivoReceita || '').trim();
   return motivo.length >= 8 && !motivoAutomatico(motivo);
@@ -81,5 +93,36 @@ export function avaliarPropagacaoValorCliente(partes: PartesValorOs): Divergenci
       mensagem: `O serviço do cliente está zerado, mas o total do cliente fica ${reais(cliente)} por causa do deslocamento ou do pedágio. A gravação foi impedida.${complemento} Zere esse adicional ou registre a justificativa da cobrança antes de aprovar.`,
     };
   }
+  if (compensacaoArtificial(partes)) {
+    return {
+      bloqueia: true,
+      totalCliente: cliente,
+      totalFornecedor: fornecedor,
+      mensagem: `O serviço do fornecedor está negativo (${reais(partes.custoServico)}) só para anular o deslocamento. A gravação foi impedida. Desconto ou estorno legítimo precisa dessa palavra na justificativa.`,
+    };
+  }
   return { bloqueia: false, totalCliente: cliente, totalFornecedor: fornecedor, mensagem: '' };
+}
+
+export function divergenciaSnapshot(input: {
+  receitaServico: number;
+  pedagioCliente: number;
+  deslocamentoCliente: number;
+  snapshot?: { revenueServiceOnly?: unknown; displacementVal?: unknown; totalGeral?: unknown; tollVal?: unknown } | null;
+}): { diverge: boolean; mensagem: string } {
+  const cliente = centavos(input.receitaServico + input.pedagioCliente + input.deslocamentoCliente) / 100;
+  const snap = input.snapshot;
+  if (!snap) return { diverge: false, mensagem: '' };
+  const totalSnap = centavos(Number(snap.totalGeral || 0)) / 100;
+  const receitaSnap = centavos(Number(snap.revenueServiceOnly || 0)) / 100;
+  const deslocSnap = centavos(Number(snap.displacementVal || 0)) / 100;
+  if (Math.abs(centavos(totalSnap) - centavos(cliente)) > 1
+    || Math.abs(centavos(receitaSnap) - centavos(input.receitaServico)) > 1
+    || Math.abs(centavos(deslocSnap) - centavos(input.deslocamentoCliente)) > 1) {
+    return {
+      diverge: true,
+      mensagem: `O snapshot (${reais(totalSnap)}) não confere com o valor salvo (${reais(cliente)}). A aprovação não propaga essa divergência.`,
+    };
+  }
+  return { diverge: false, mensagem: '' };
 }

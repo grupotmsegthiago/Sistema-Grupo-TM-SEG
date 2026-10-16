@@ -35,13 +35,18 @@ const CAMPOS_PATCH_PERMITIDOS = new Set([
   'last_update',
 ]);
 
-const STATUS_ENCERRADOS = new Set([
+const STATUS_REAPROVACAO_FECHADA = new Set([
   'encerrada',
   'encerrado',
   'cancelada',
   'cancelado',
   'recusada',
   'recusado',
+]);
+
+const STATUS_EDICAO_FECHADA = new Set([
+  'encerrada',
+  'encerrado',
 ]);
 
 export function etapasVazias(): EtapasReaprovacao {
@@ -119,7 +124,7 @@ export function motivoBloqueioReaprovacao(os: OsReaprovacao | null | undefined):
   }
   const status = normalizar(os.status);
   if (status.includes('faturad')) return 'OS faturada. A reaprovação não desbloqueia a fatura.';
-  if (STATUS_ENCERRADOS.has(status) || status.includes('encerrad')) {
+  if (STATUS_REAPROVACAO_FECHADA.has(status) || status.includes('encerrad')) {
     return 'OS encerrada. A reaprovação não reabre.';
   }
   return null;
@@ -156,7 +161,7 @@ export function motivoBloqueioEdicaoTotal(os: OsReaprovacao | null | undefined):
   }
   const status = normalizar(os.status);
   if (status.includes('faturad')) return 'OS faturada. A edição total não desbloqueia a fatura.';
-  if (STATUS_ENCERRADOS.has(status) || status.includes('encerrad')) {
+  if (STATUS_EDICAO_FECHADA.has(status) || status.includes('encerrad')) {
     return 'OS encerrada. A edição total não reabre.';
   }
   return null;

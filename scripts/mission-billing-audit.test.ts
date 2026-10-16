@@ -461,7 +461,7 @@ describe('missionBillingAudit', () => {
     assert.equal(audit.provider.esperado, finReal100.provider.serviceTotal);
   });
 
-  it('valida GTM-6258 quando cálculo usa tabela errada (RAIO 300KM) mas valor lançado bate com faixa 100KM', () => {
+  it('GTM-6258 com tabela de km extra zero não usa a tarifa regional para validar o valor salvo', () => {
     clearMissionBillingAuditCache();
     const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
     const g8Name = 'COMANDO G8 - SEGURANCA PATRIMONIAL E TRANSPORTE DE VALORES LTDA';
@@ -548,16 +548,13 @@ describe('missionBillingAudit', () => {
       providersList,
     );
 
-    assert.equal(audit.overallStatus, 'validado');
-    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
-    assert.ok(Math.abs(audit.provider.diferenca) < 0.01);
+    assert.equal(audit.overallStatus, 'erro');
+    assert.ok(Math.abs(audit.client.diferenca) >= 1);
     assert.equal(audit.client.lancado, 1166.3);
     assert.equal(audit.provider.lancado, 809.6);
-    assert.ok((audit.client.tableName || '').includes('BARUERI-CAJAMAR'));
-    assert.equal(audit.provider.tableName, '100KM');
   });
 
-  it('valida GTM-6235 com tabela LOUVEIRA-SERRA selecionada manualmente', () => {
+  it('GTM-6235 com km extra zero na tabela não valida pela tarifa regional', () => {
     clearMissionBillingAuditCache();
     const dhlClient = 'DHL SUPPLY CHAIN (BRAZIL) LTDA';
     const clientTables = [
@@ -624,8 +621,8 @@ describe('missionBillingAudit', () => {
       },
     );
 
-    assert.equal(audit.overallStatus, 'validado');
-    assert.ok(Math.abs(audit.client.diferenca) < 0.01);
+    assert.equal(audit.overallStatus, 'erro');
+    assert.ok(Math.abs(audit.client.diferenca) >= 1);
     assert.equal(audit.client.lancado, 8180.97);
     assert.ok((audit.client.tableName || '').includes('LOUVEIRA-SERRA'));
   });

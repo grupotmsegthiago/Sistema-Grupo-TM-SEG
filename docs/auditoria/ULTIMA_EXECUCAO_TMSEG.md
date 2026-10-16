@@ -1,5 +1,18 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — CÁLCULO, EDIÇÃO EXCEPCIONAL E AUDITORIA
+
+**Data:** 2026-10-16  
+**A GTM-8606 real não foi alterada.**
+
+**Cálculo.** A tarifa de km passa a sair da tabela vinculada. Zero gravado é zero contratual. Valor nulo é parâmetro ausente. A tarifa regional de R$ 6,90 ou R$ 7,35 não entra no lugar deles. Ela só vale se a confirmação excepcional informar o valor. Serviço negativo que só anula o deslocamento não grava, salvo justificativa com desconto ou estorno.
+
+**Edição excepcional.** OS recusada ou cancelada pode ter o valor corrigido pela edição total, com senha, justificativa, antes/depois e aviso à Diretoria. O status operacional não muda. OS faturada, paga, encerrada ou com prejuízo travado continua bloqueada. A função nova está em `migrations/propostas/2026_10_16_edicao_total_excepcional.sql` e ainda não foi aplicada. O rollback é reaplicar `migrations/propostas/2026_10_16_edicao_total_financeira.sql`, que não apaga OS.
+
+**Auditoria de janeiro/2026 até agora, só leitura, 5826 OS.** O padrão da GTM-8606 aparece em 1 OS, com deslocamento de R$ 1.396,50. Serviço negativo: 15 OS, soma -R$ 1.327,20; só a GTM-8606 compensa deslocamento. As outras negativas parecem desconto, como -R$ 54,60. OS cancelada com serviço preenchido: 378, sem o padrão de deslocamento zerado no serviço. Snapshot diferente do valor salvo em mais de R$ 1: 243 OS, soma absoluta cerca de R$ 45.095. Nada disso foi recalculado.
+
+**Publicação desta etapa:** o corte de colunas, o fechamento dos buckets e a função excepcional só entram depois que o código novo estiver no ar.
+
 ## HANDOFF — GTM-8606, SOMENTE LEITURA
 
 **Data:** 2026-10-16  

@@ -28,7 +28,7 @@ import ReaprovacaoFinanceiraPainel from './ReaprovacaoFinanceiraPainel';
 import EdicaoTotalConfirmacao from './EdicaoTotalConfirmacao';
 import { compararBooleano, compararNumero, compararTexto, juntarDiferencas } from '../lib/reaprovacaoFinanceira/camposEdicao';
 import { motivoBloqueioEdicaoTotal } from '../lib/reaprovacaoFinanceira/regras';
-import { avaliarPropagacaoValorCliente } from '../lib/financeiro/divergenciaValorCliente';
+import { avaliarPropagacaoValorCliente, divergenciaSnapshot } from '../lib/financeiro/divergenciaValorCliente';
 import type { CampoAuditado } from '../lib/reaprovacaoFinanceira/tipos';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import {
@@ -837,7 +837,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isEffectivelyLocked = negativeLockBlocks || (isBillingLocked && !unlockOverride && !isAdminFullAccess);
   const avisoDivergenciaCliente = useMemo(() => {
     if (!mission) return null;
-    return avaliarPropagacaoValorCliente({
+    const aviso = avaliarPropagacaoValorCliente({
       status: mission.status,
       receitaServico: Number(mission.revenue_value || 0),
       custoServico: Number(mission.cost_value || 0),
@@ -848,6 +848,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       motivoReceita: (mission as any).revenue_edit_reason,
       motivoCusto: (mission as any).cost_edit_reason,
     });
+    if (aviso.bloqueia) return aviso;
+    const snap = divergenciaSnapshot({
+      receitaServico: Number(mission.revenue_value || 0),
+      pedagioCliente: Number(mission.toll_value || 0),
+      deslocamentoCliente: Number((mission as any).displacement_value || 0),
+      snapshot: mission.snapshot_data,
+    });
+    if (snap.diverge) {
+      return { ...aviso, bloqueia: true, mensagem: snap.mensagem };
+    }
+    return aviso;
   }, [mission]);
   const isPaidInvoiceEffectivelyLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
   const canUnlockPaidLock = canUnlockPaidInvoiceLock({ role: userRoleLower, name: userNameLower });
