@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mission, MissionStatus } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
+import { ImgArquivo } from './ArquivoProtegido';
 import { generateContent } from '../lib/gemini';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { googleMapsApiKey } from '../lib/maps';
@@ -873,7 +874,7 @@ Retorne APENAS HTML com sections: SÍNTESE OPERACIONAL, DILIGÊNCIA E CONSTATAÇ
                             <div className="grid grid-cols-2 gap-3">
                                 {evidenceUrls.map((ev, i) => (
                                     <div key={i} className="rounded-xl overflow-hidden border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow" style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }} onClick={() => window.open(ev.url, '_blank')}>
-                                        <img src={ev.url} alt={`Evidência ${i + 1}`} className="w-full h-44 object-contain bg-gray-50" crossOrigin="anonymous" />
+                                        <ImgArquivo src={ev.url} alt={`Evidência ${i + 1}`} className="w-full h-44 object-contain bg-gray-50" />
                                         <div className="px-3 py-1.5 bg-gray-50 flex items-center justify-between border-t border-gray-100">
                                             <div className="flex items-center gap-1.5">
                                                 <ImageIcon size={10} className="text-emerald-500" />

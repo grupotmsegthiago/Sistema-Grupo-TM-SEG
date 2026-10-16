@@ -7,6 +7,7 @@ import { buildChargeUpdateMessage } from '../lib/chargeUpdateMessage';
 import { copyTextAsync } from '../lib/clipboard';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
+import { ImgArquivo } from './ArquivoProtegido';
 import { 
   Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
   Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2, Lock, ClipboardList
@@ -1334,7 +1335,7 @@ Qualquer dúvida, estamos a disposição.
                         </div>
                         {evidenceList!.map((ev, idx) => (
                             <div key={idx} className="border border-gray-200 rounded-xl overflow-hidden shadow-sm cursor-pointer" onClick={() => setFullScreenImage(ev.url)} data-testid={`evidence-image-${idx}`}>
-                                <img src={ev.url} alt={`Evidência ${idx + 1}`} className="w-full object-contain max-h-[60vh] bg-gray-100" />
+                                <ImgArquivo src={ev.url} alt={`Evidência ${idx + 1}`} className="w-full object-contain max-h-[60vh] bg-gray-100" />
                                 <div className="p-2 bg-gray-50 flex items-center justify-between text-[11px]">
                                     <span className="font-bold text-gray-500">Enviado por <span className="text-gray-800 font-black">{ev.uploadedBy}</span></span>
                                     <span className="font-bold text-gray-400">{formatDateTime(ev.uploadedAt)}</span>

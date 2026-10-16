@@ -3,6 +3,7 @@ import { CalendarDays, GraduationCap, Megaphone, Newspaper, Paperclip, Receipt, 
 import { canAccessScreen } from '../lib/screenAccess';
 import { useNotification } from '../lib/NotificationContext';
 import { supabase } from '../lib/supabase';
+import { ImgArquivo } from './ArquivoProtegido';
 import { MODULOS } from '../lib/training/operadorAcademy';
 import { modulosDaSessao } from '../lib/training/trainingStore';
 import {
@@ -296,7 +297,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {noticia.fotos.map((foto) => (
               <figure key={foto.url} className="overflow-hidden rounded-xl border border-gray-100">
-                <img src={foto.url} alt={foto.legenda} className="h-40 w-full object-cover" />
+                <ImgArquivo src={foto.url} alt={foto.legenda} className="h-40 w-full object-cover" />
                 <figcaption className="px-2 py-1 text-[10px] font-bold text-gray-500">{foto.legenda}</figcaption>
               </figure>
             ))}
@@ -545,7 +546,7 @@ export default function TmsegNews({ compact = false }: { compact?: boolean }) {
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {completa.fotos.map((foto) => (
                     <figure key={foto.url} className="overflow-hidden rounded-xl border border-gray-100">
-                      <img src={foto.url} alt={foto.legenda} className="h-44 w-full object-cover" />
+                      <ImgArquivo src={foto.url} alt={foto.legenda} className="h-44 w-full object-cover" />
                       <figcaption className="px-2 py-1 text-[10px] font-bold text-gray-500">{foto.legenda}</figcaption>
                     </figure>
                   ))}

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
+import { LinkArquivo } from './ArquivoProtegido';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { ProviderData } from '../types';
 import { 
@@ -373,9 +374,9 @@ const AlvaraControl: React.FC = () => {
                                             </td>
                                             <td className="px-6 py-4 text-center">
                                                 {p.alvaraUrl ? (
-                                                    <a href={p.alvaraUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase border border-indigo-200 hover:bg-indigo-100 transition-colors">
+                                                    <LinkArquivo href={p.alvaraUrl} className="inline-flex items-center gap-2 bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase border border-indigo-200 hover:bg-indigo-100 transition-colors">
                                                         <Download size={14}/> VISUALIZAR PDF
-                                                    </a>
+                                                    </LinkArquivo>
                                                 ) : (
                                                     <span className="text-gray-300 italic text-[10px] font-bold">Arquivo não anexado</span>
                                                 )}

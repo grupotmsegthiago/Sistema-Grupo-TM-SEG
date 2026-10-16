@@ -1,5 +1,18 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## HANDOFF — BUCKETS E PAINEL DE CUSTO DE IA
+
+**Data:** 2026-10-16  
+**Pedido:** acesso seguro aos arquivos sensíveis e negar o painel de custo de IA quando o cadastro do servidor não confirma o perfil. Sem publicar.
+
+**Arquivos.** `mission-evidence`, `documents` e `comissoes-comprovantes` continuam públicos no Grupo TMSEG. A tela pede um link de 120 segundos em `/api/financeiro/arquivo/assinar`, com sessão e perfil do cadastro. Foto de OS, ponto e alvará seguem para quem opera por dentro. Pasta `financial`, pagamento manual e comprovante de comissão não saem para Operador, mesmo com `*`. Cliente do portal não recebe link. O endereço antigo continua no banco e só identifica o arquivo. Nenhum arquivo foi apagado, movido ou renomeado.
+
+**O que ainda não fecha.** A migration `migrations/propostas/2026_10_16_buckets_arquivos_privados.sql` não foi aplicada. Enquanto o bucket estiver público, quem já tem o endereço antigo ainda abre o arquivo. Um link assinado já emitido vale até expirar. Uma cópia já baixada não é recolhida. O rollback `migrations/rollback/2026_10_16_buckets_arquivos_privados.sql` devolve a leitura pública e não mexe nos arquivos. Aplicar o fechamento só depois que o código novo estiver no ar e a foto da OS, o documento e o comprovante forem conferidos.
+
+**Custo de IA.** O painel não aceita mais o perfil enviado pelo navegador. Se o servidor não ler o cadastro, o acesso é negado. `*` não abre o painel.
+
+**Publicação:** não. `main`, `dev`, TORRES, Asaas e PlugNotas não foram alterados. O corte de colunas e de tabelas financeiras também não foi aplicado.
+
 ## HANDOFF — COLUNAS FINANCEIRAS FORA DA CHAVE ANÔNIMA
 
 **Data:** 2026-10-16  
@@ -17,11 +30,11 @@
 
 **Sequência quando a publicação for autorizada.** 1) Publicar o código. 2) Confirmar o build no domínio. 3) Só então aplicar, nesta ordem, `2026_10_16_sessoes_financeiras.sql` se ainda não estiver, `2026_10_16_acesso_financeiro_colunas.sql` e `2026_10_16_acesso_financeiro_tabelas.sql`. 4) Provar que a chave anônima não lê receita, fatura nem comissão, e que a OS operacional continua. Se a listagem da OS falhar ou o número de OS mudar, aplicar os dois rollbacks de acesso e manter o código anterior. Quem já estava logado precisa entrar de novo para ver valor. A OS de status, rota, KM e hora continua no acesso direto durante a janela.
 
-**Critério para autorizar a publicação.** Os testes desta branch verdes. O build novo confirmado antes do corte. Rollback ensaiado. Aceitar, por escrito, que os buckets públicos de evidência, documento e comprovante de comissão continuam abertos até uma etapa própria de link assinado. Sem essa aceitação, a publicação não fecha o acesso financeiro por link direto.
+**Critério para autorizar a publicação.** Os testes desta branch verdes. O build novo confirmado antes do corte. Rollback ensaiado. O link assinado já está no código, mas os buckets continuam públicos até a migration própria ser aplicada depois do código no ar. Sem isso, a publicação não fecha o acesso por endereço antigo.
 
-**Espelho de custo de IA.** `billing_usage` tem RLS sem política para anon: a chave anônima não lê as 571 linhas. A permissão `*` deixou de abrir o painel. Diretoria, Administrador e CEO continuam. O fallback por cabeçalho só existe se o cadastro não puder ser lido.
+**Espelho de custo de IA.** `billing_usage` tem RLS sem política para anon: a chave anônima não lê as 571 linhas. A permissão `*` não abre o painel. O perfil do navegador também não abre. Diretoria, Administrador e CEO continuam quando o cadastro do servidor confirma.
 
-**Buckets.** `mission-evidence` mistura foto de OS, ponto, odômetro e a pasta `financial`. `documents` tem alvará e PDF de CNPJ. `comissoes-comprovantes` tem comprovante de pagamento. Os três são públicos. Fechar o bucket agora apagaria a foto da OS e o comprovante já gravado, porque a tela usa o link público. Isso fica pendente.
+**Buckets.** O código novo pede link assinado. Os três buckets seguem públicos até a migration própria ser autorizada e aplicada depois do código no ar.
 
 ## HANDOFF — FINALIZAÇÃO DO PR #339 SEM PUBLICAÇÃO
 

@@ -14,8 +14,13 @@ import {
   podeLerConsultaFinanceira,
   valoresDoPedido,
 } from '../lib/financeiro/consultaFinanceira';
-import { sessaoConfere } from '../lib/financeiro/sessao';
+import {
+  ARQUIVO_TTL_SEGUNDOS,
+  extrairArquivoProtegido,
+  podeVerArquivo,
+} from '../lib/financeiro/arquivoSeguro';
 import { senhasConferem } from '../lib/reaprovacaoFinanceira/capturaSenha';
+import { sessaoConfere } from '../lib/financeiro/sessao';
 import { createSupabaseAdminClient } from './supabaseConfig';
 
 const SESSAO_MS = 7 * 24 * 60 * 60 * 1000;
@@ -289,6 +294,40 @@ export function registerFinanceiroAcessoRoutes(
     } catch {
       res.status(400).json({ erro: 'A consulta financeira não foi executada.' });
     }
+  });
+
+  app.post('/api/financeiro/arquivo/assinar', requireAuth, async (req: Request, res: Response) => {
+    const principal = await principalDaSessao(req, abrirAdmin);
+    if (!principal) {
+      res.status(401).json({ erro: 'Sessão financeira ausente.' });
+      return;
+    }
+    const urls = (Array.isArray(req.body?.urls) ? req.body.urls : []).map((url: unknown) => String(url || '')).slice(0, 20);
+    const sb = abrirAdmin();
+    if (!sb) {
+      res.status(503).json({ erro: 'O servidor não conseguiu assinar o arquivo.' });
+      return;
+    }
+    const saida: Array<{ original: string; assinada: string | null; expira: number }> = [];
+    const expira = Date.now() + ARQUIVO_TTL_SEGUNDOS * 1000;
+    for (const original of urls) {
+      const arquivo = extrairArquivoProtegido(original);
+      if (!arquivo || !podeVerArquivo(principal, arquivo.bucket, arquivo.caminho)) {
+        saida.push({ original, assinada: null, expira: 0 });
+        continue;
+      }
+      const assinado = await sb.storage.from(arquivo.bucket).createSignedUrl(arquivo.caminho, ARQUIVO_TTL_SEGUNDOS);
+      saida.push({
+        original,
+        assinada: assinado.data?.signedUrl || null,
+        expira: assinado.data?.signedUrl ? expira : 0,
+      });
+    }
+    if (saida.length > 0 && saida.every((item) => !item.assinada)) {
+      res.status(403).json({ erro: 'Sem acesso ao arquivo.', urls: saida, ttl: ARQUIVO_TTL_SEGUNDOS });
+      return;
+    }
+    res.json({ urls: saida, ttl: ARQUIVO_TTL_SEGUNDOS });
   });
 }
 

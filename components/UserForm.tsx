@@ -5,6 +5,7 @@ import { Client, AccessProfile, ProviderData } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { supabase } from '../lib/supabase';
+import { ImgArquivo } from './ArquivoProtegido';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
 import { isPerfilOperador } from '../lib/training/operadorAcademy';
@@ -725,7 +726,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                         {linkedEquipments.map((eq, idx) => (
                           <div key={idx} className="bg-white rounded-lg border border-slate-200 p-3 flex items-center gap-3" data-testid={`linked-equipment-${idx}`}>
                             {eq.photo_urls && eq.photo_urls.length > 0 ? (
-                              <img src={eq.photo_urls[0]} alt="" className="w-10 h-10 object-cover rounded border border-slate-200 shrink-0 cursor-pointer" onClick={() => setPhotoPreview(eq.photo_urls![0])} />
+                              <ImgArquivo src={eq.photo_urls[0]} alt="" className="w-10 h-10 object-cover rounded border border-slate-200 shrink-0 cursor-pointer" onClick={() => setPhotoPreview(eq.photo_urls![0])} />
                             ) : (
                               <div className="w-10 h-10 bg-slate-100 rounded border border-slate-200 flex items-center justify-center shrink-0"><Monitor size={14} className="text-slate-400" /></div>
                             )}
@@ -946,7 +947,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       {photoPreview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setPhotoPreview(null)} data-testid="modal-photo-preview">
           <div className="relative max-w-3xl max-h-[80vh]">
-            <img src={photoPreview} alt="Foto do equipamento" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+            <ImgArquivo src={photoPreview} alt="Foto do equipamento" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
             <button onClick={() => setPhotoPreview(null)} className="absolute -top-3 -right-3 p-1.5 bg-white rounded-full shadow-lg text-gray-600 hover:text-gray-900">
               <X size={16} />
             </button>

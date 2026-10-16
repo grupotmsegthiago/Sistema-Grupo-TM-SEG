@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Upload, Trash2, ExternalLink, FileText } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { LinkArquivo } from '../ArquivoProtegido';
 import { useNotification } from '../../lib/NotificationContext';
 import { RH_DOC_TYPES, RH_INPUT_CLASS, RH_LABEL_CLASS, RH_SELECT_CLASS } from '../../lib/rh/constants';
 import { employeeDocumentsClient } from '../../lib/rh/employeeDocumentsClient';
@@ -140,9 +141,9 @@ const RhEmployeeDocuments: React.FC<Props> = ({
                 <p className="text-[10px] text-gray-400 uppercase">{doc.doc_type} · {formatDateBR(doc.created_at)}</p>
               </div>
               {doc.file_url && (
-                <a href={doc.file_url} target="_blank" rel="noreferrer" className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                <LinkArquivo href={doc.file_url} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
                   <ExternalLink size={16} />
-                </a>
+                </LinkArquivo>
               )}
               {editable && (
                 <button type="button" onClick={() => remove(doc.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg">
