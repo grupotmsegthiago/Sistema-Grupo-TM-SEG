@@ -1,7 +1,7 @@
 /**
  * Regras puras da reaprovação. Não gravam OS, snapshot, pedágio, franquia nem comissão.
  */
-import { podeAcessarAuditoriaFaturamento } from '../auditoriaFaturamentoAccess';
+import { perfilAuditoria, podeAcessarAuditoriaFaturamento } from '../auditoriaFaturamentoAccess';
 import { isFinanceProfileRole } from '../financeSupervisorAccess';
 import { carimboAprovacaoHumana } from '../missionSnapshot';
 import {
@@ -166,7 +166,7 @@ export function podeEdicaoTotal(
   usuario: UsuarioReaprovacao | null | undefined,
   os: OsReaprovacao | null | undefined,
 ): { permitido: boolean; motivo: string } {
-  if (!podeAcessarAuditoriaFaturamento(usuario)) {
+  if (perfilAuditoria(usuario?.role) === 'controller' || !podeAcessarAuditoriaFaturamento(usuario)) {
     return { permitido: false, motivo: 'Somente a Diretoria ou o Financeiro autorizado usa a edição total.' };
   }
   const trava = motivoBloqueioEdicaoTotal(os);

@@ -3987,7 +3987,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" data-testid="auditoria-faturamento-bloqueada">
         <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
           <p className="text-sm font-black text-gray-900 uppercase">Sem acesso à auditoria de faturamento</p>
-          <p className="text-xs text-gray-600 mt-2">Somente a Diretoria e o Financeiro autorizado visualizam ou editam esta auditoria.</p>
+          <p className="text-xs text-gray-600 mt-2">Somente a Diretoria, o Controller e o Financeiro autorizado visualizam ou editam esta auditoria.</p>
           <button type="button" onClick={onClose} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase">Fechar</button>
         </div>
       </div>

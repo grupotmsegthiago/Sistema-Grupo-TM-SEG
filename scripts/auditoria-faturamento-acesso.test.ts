@@ -53,18 +53,19 @@ function pedido(op: 'reaprovar' | 'edicao-total', principal: { id: string; name:
 }
 
 describe('auditoria de faturamento — quem entra', () => {
-  it('Diretoria, Giovanna, ANA.FERNANDES e Bárbara entram; os demais não', () => {
+  it('Diretoria, Controller, Giovanna, ANA.FERNANDES e Bárbara entram; os demais não', () => {
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Thiago Moreira', role: 'Diretoria' }), true);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Giovanna Marsili', role: 'Financeiro' }), true);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'ANA.FERNANDES', role: 'Financeiro' }), true);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Bárbara Sgarlata', role: 'Financeiro' }), true);
+    assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Controller', role: 'Controller' }), true);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Administrador', role: 'Administrador' }), false);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Giovanna Marsili', role: 'Administrador', permissions: ['*'] }), false);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Thiago Moreira', role: 'Administrador', permissions: ['*'] }), false);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Avançado', role: 'Avançado', permissions: ['*'] }), false);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Operador', role: 'Operador' }), false);
     assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Outro Financeiro', role: 'Financeiro' }), false);
-    assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Controller', role: 'Controller' }), false);
+    assert.equal(podeAcessarAuditoriaFaturamento({ name: 'Plinio', role: 'Operador' }), false);
     assert.equal(podeAcessarAuditoriaFaturamento(null), false);
   });
 });
@@ -88,6 +89,16 @@ describe('auditoria de faturamento — API direta', () => {
       });
     }
   }
+
+  it('Controller vê a auditoria, mas reaprovação e edição total continuam 403', async () => {
+    const principal = { id: 'ct', name: 'Controller', role: 'Controller' };
+    const reaprovar = await pedido('reaprovar', principal);
+    const edicao = await pedido('edicao-total', principal);
+    assert.equal(reaprovar.status, 403);
+    assert.equal(edicao.status, 403);
+    assert.equal(reaprovar.body.percentual, 0);
+    assert.equal(edicao.body.percentual, 0);
+  });
 
   it('as rotas de leitura, recálculo e gravação da auditoria exigem o guardião', () => {
     const routes = fs.readFileSync('server/routes.ts', 'utf8');

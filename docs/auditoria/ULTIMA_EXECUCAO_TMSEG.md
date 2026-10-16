@@ -5,7 +5,7 @@
 **Data:** 2026-10-16  
 **Pedido:** somente Diretoria e Financeiro autorizado visualizam ou editam a Auditoria de Faturamento. Sem merge e sem publicar. Sem alteração de segurança no banco.
 
-**Quem entra.** Perfil Diretoria. Perfil Financeiro com nome de Bárbara, Giovanna Marsili ou ANA.FERNANDES. No cadastro atual, Giovanna Marsili (24) e ANA.FERNANDES (29) estão Ativo e Financeiro. Thiago Moreira e Beatriz Rocha entram porque o perfil é Diretoria.
+**Quem entra.** Perfil Diretoria, perfil Controller e perfil Financeiro com nome de Bárbara, Giovanna Marsili ou ANA.FERNANDES. No cadastro atual, Giovanna Marsili (24) e ANA.FERNANDES (29) estão Ativo e Financeiro. Thiago Moreira e Beatriz Rocha entram porque o perfil é Diretoria. O Controller vê a tela e os valores; a edição total e a reaprovação continuam fora dele.
 
 **Quem sai.** Administrador, Avançado e Operador, mesmo com permissão `*` e mesmo que o nome seja Giovanna ou Thiago. Financeiro genérico também sai. Barbara Sgarlata está Ativo com perfil Administrador, então a auditoria fecha para ela. O cadastro dela não foi alterado.
 

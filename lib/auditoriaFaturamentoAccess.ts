@@ -1,6 +1,6 @@
 /**
  * Auditoria de Faturamento.
- * Só a Diretoria e o Financeiro autorizado (Bárbara, Giovanna Marsili e ANA.FERNANDES).
+ * Diretoria, Controller e Financeiro autorizado (Bárbara, Giovanna Marsili e ANA.FERNANDES).
  * Administrador, Avançado e Operador não entram, nem com permissão * nem pelo nome.
  */
 import { isFinanceProfileRole, isFinanceSupervisorName } from './financeSupervisorAccess';
@@ -27,7 +27,7 @@ export function podeAcessarAuditoriaFaturamento(
   if (!user) return false;
   const papel = perfilAuditoria(user.role);
   if (!papel || PAPEIS_BLOQUEADOS.has(papel)) return false;
-  if (papel === 'diretoria') return true;
+  if (papel === 'diretoria' || papel === 'controller') return true;
   return isFinanceProfileRole(user.role) && isFinanceSupervisorName(user.name);
 }
 
