@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ImagePlus, Loader2, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { LinkArquivo, ImgArquivo } from './ArquivoProtegido';
 import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { marcarOcorrenciaResolvida } from '../lib/marcarOcorrenciaResolvida';
@@ -351,7 +350,7 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
                     <p>
                       <span className="font-black uppercase text-zinc-400">Evidência </span>
                       {row.evidence_url ? (
-                        <LinkArquivo href={row.evidence_url} className="font-black text-orange-700 underline" data-testid={`occurrence-evidence-${row.id}`}>Abrir</LinkArquivo>
+                        <a href={row.evidence_url} target="_blank" rel="noreferrer" className="font-black text-orange-700 underline" data-testid={`occurrence-evidence-${row.id}`}>Abrir</a>
                       ) : (
                         <span className="font-semibold text-zinc-500">Sem evidência</span>
                       )}
@@ -360,7 +359,7 @@ const MissionOccurrenceDialog: React.FC<Props> = ({ missionId, canWrite, onClose
                   <p className="mt-2 text-[10px] font-black uppercase text-zinc-400">Motivo</p>
                   <p className="text-sm font-semibold text-gray-900" data-testid={`occurrence-reason-${row.id}`}>{row.description}</p>
                   {row.evidence_url && (
-                    <ImgArquivo src={row.evidence_url} alt="Evidência da ocorrência" className="mt-2 max-h-36 rounded-xl border border-orange-200" />
+                    <img src={row.evidence_url} alt="Evidência da ocorrência" className="mt-2 max-h-36 rounded-xl border border-orange-200" />
                   )}
                   {isOccurrenceOpen(row) && canWrite && (
                     <div className="mt-3">

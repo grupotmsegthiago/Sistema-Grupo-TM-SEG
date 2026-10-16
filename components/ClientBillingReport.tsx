@@ -14,7 +14,6 @@ import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/
 import { carimboAprovacaoHumana, carimboRecalculoAutomatico, devePreservarDetalhamentoRegistrado, estadoDetalhamentoSnapshot, origemSnapshotFinanceiro, primeiroLogDepoisDoAutomatico, ressincronizadoPorHumano, textoLeituraSnapshot, DIVERGENCIA_DETALHAMENTO_INCOMPLETO, DIVERGENCIA_DETALHAMENTO_ZERADO, DIVERGENCIA_SNAPSHOT_INVALIDO } from '../lib/missionSnapshot';
 import { computeDhlBand, findDhlAutoClient, franquiaKmBoletimAprovado, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
-import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 
 import { generateContent } from '../lib/gemini';
 import {
@@ -5132,10 +5131,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <button
                                                 key={w.id}
                                                 type="button"
-                                                onClick={() => {
-                                                    if (!podeAcessarAuditoriaFaturamento(JSON.parse(localStorage.getItem('userData') || '{}'))) return;
-                                                    if (mObj) setEditMission(mObj);
-                                                }}
+                                                onClick={() => { if (mObj) setEditMission(mObj); }}
                                                 disabled={!mObj}
                                                 title={`Clique para abrir a Auditoria de Faturamento — KM real: ${w.kmTotal} | Esperado: ${w.expected}KM | Aplicado: ${w.actual}KM`}
                                                 data-testid={`btn-edit-dhl-warning-${w.id}`}
@@ -5748,7 +5744,6 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 >
                                     {divEditSaving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {divEditSaving ? 'Salvando...' : 'Salvar e Recomparar'}
                                 </button>
-                                {podeAcessarAuditoriaFaturamento(JSON.parse(localStorage.getItem('userData') || '{}')) && (
                                 <button
                                     onClick={() => {
                                         const mId = editingDivergence.missionId;
@@ -5762,7 +5757,6 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 >
                                     <ExternalLink size={12} /> Auditoria
                                 </button>
-                                )}
                                 <button onClick={() => setEditingDivergence(null)} disabled={divEditSaving} className="px-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold text-[10px] uppercase py-2.5 rounded-lg">Cancelar</button>
                             </div>
                         </div>

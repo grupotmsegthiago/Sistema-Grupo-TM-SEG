@@ -6,7 +6,6 @@ import {
 import { canAccessScreen } from '../lib/screenAccess';
 import { useNotification } from '../lib/NotificationContext';
 import { supabase } from '../lib/supabase';
-import { ImgArquivo, LinkArquivo } from './ArquivoProtegido';
 import { fetchEmployeeForUser } from '../lib/timeclock/cltEmployee';
 import { TIME_CLOCK_STAGE_LABELS } from '../lib/timeclock/stages';
 import type { TimeClockStage } from '../lib/timeclock/types';
@@ -395,7 +394,7 @@ export default function MeuPortal() {
               <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 px-3 py-2">
                 <p className="text-sm font-bold">{item.reference_month || 'Competência'}</p>
                 {item.file_url
-                  ? <LinkArquivo href={item.file_url} className="text-xs font-black uppercase text-red-700">Baixar PDF</LinkArquivo>
+                  ? <a href={item.file_url} target="_blank" rel="noreferrer" className="text-xs font-black uppercase text-red-700">Baixar PDF</a>
                   : <span className="text-xs text-gray-400">Sem arquivo</span>}
               </div>
             ))}
@@ -412,7 +411,7 @@ export default function MeuPortal() {
                   <p className="text-sm font-bold">{doc.doc_type || 'Documento'}</p>
                   <p className="text-xs text-gray-500">{doc.file_name || ''} {doc.expiry_date ? `· validade ${doc.expiry_date}` : ''}</p>
                 </div>
-                {doc.file_url && <LinkArquivo href={doc.file_url} className="text-xs font-black uppercase text-red-700">Abrir</LinkArquivo>}
+                {doc.file_url && <a href={doc.file_url} target="_blank" rel="noreferrer" className="text-xs font-black uppercase text-red-700">Abrir</a>}
               </div>
             ))}
           </div>
@@ -424,10 +423,10 @@ export default function MeuPortal() {
             {funcionario?.cnh_expiry && <p className="text-sm">CNH válida até {funcionario.cnh_expiry}</p>}
             {profissionais.length === 0 && exames.length === 0 && <p className="text-sm text-gray-500">CNV, formação, reciclagem e ASO aparecem aqui quando o RH lança o documento ou o exame.</p>}
             {profissionais.map((doc) => (
-              <p key={doc.id} className="text-sm">{doc.doc_type} {doc.expiry_date ? `· validade ${doc.expiry_date}` : ''} {doc.file_url && <LinkArquivo href={doc.file_url} className="font-black text-red-700">Abrir</LinkArquivo>}</p>
+              <p key={doc.id} className="text-sm">{doc.doc_type} {doc.expiry_date ? `· validade ${doc.expiry_date}` : ''} {doc.file_url && <a href={doc.file_url} target="_blank" rel="noreferrer" className="font-black text-red-700">Abrir</a>}</p>
             ))}
             {exames.map((exame) => (
-              <p key={exame.id} className="text-sm">{exame.exam_type || 'ASO'} {exame.expiry_date ? `· validade ${exame.expiry_date}` : ''} {exame.result ? `· ${exame.result}` : ''} {exame.document_url && <LinkArquivo href={exame.document_url} className="font-black text-red-700">Abrir</LinkArquivo>}</p>
+              <p key={exame.id} className="text-sm">{exame.exam_type || 'ASO'} {exame.expiry_date ? `· validade ${exame.expiry_date}` : ''} {exame.result ? `· ${exame.result}` : ''} {exame.document_url && <a href={exame.document_url} target="_blank" rel="noreferrer" className="font-black text-red-700">Abrir</a>}</p>
             ))}
           </div>
         )}
@@ -458,7 +457,7 @@ export default function MeuPortal() {
                 <p className="text-sm font-black">{noticia.titulo}</p>
                 <p className="mt-1 text-sm text-gray-700">{noticia.texto}</p>
                 {noticia.fotos.map((foto) => (
-                  <ImgArquivo key={foto.url} src={foto.url} alt={foto.legenda} className="mt-2 h-36 w-full rounded-xl object-cover" />
+                  <img key={foto.url} src={foto.url} alt={foto.legenda} className="mt-2 h-36 w-full rounded-xl object-cover" />
                 ))}
                 {!!noticia.treinamento?.passos.length && (
                   <ol className="mt-2 space-y-1">
@@ -467,7 +466,7 @@ export default function MeuPortal() {
                     ))}
                   </ol>
                 )}
-                {noticia.anexoUrl && <LinkArquivo href={noticia.anexoUrl} className="mt-1 inline-block text-xs font-black uppercase text-red-700">{noticia.anexoNome || 'Abrir anexo'}</LinkArquivo>}
+                {noticia.anexoUrl && <a href={noticia.anexoUrl} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs font-black uppercase text-red-700">{noticia.anexoNome || 'Abrir anexo'}</a>}
                 <p className="mt-2 text-[11px] font-bold text-gray-500">{lidos[noticia.id] ? textoLidoEm(lidos[noticia.id]) : 'Ainda não lido'}</p>
                 {!lidos[noticia.id] && <button type="button" onClick={() => abrirComunicado(noticia)} className="mt-1 text-[11px] font-black uppercase text-gray-700 underline">Marcar como lido</button>}
               </article>

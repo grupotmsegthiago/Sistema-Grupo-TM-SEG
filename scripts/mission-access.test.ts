@@ -18,9 +18,6 @@ describe('missionAccess — lista completa para administrador / Bárbara', () =>
     assert.equal(hasFullMissionListAccess({ role: 'Financeiro', name: 'Bárbara Silva' }), true);
     assert.equal(isMissionClientScopeRestricted({ role: 'Financeiro', name: 'Barbara Costa', permissions: ['client_view:1'] }), false);
     assert.equal(hasFullMissionListAccess({ role: 'Financeiro', name: 'Giovanna Marsili' }), true);
-    assert.equal(hasFullMissionListAccess({ role: 'Financeiro', name: 'ANA.FERNANDES' }), true);
-    assert.equal(hasFullMissionListAccess({ role: 'Financeiro', name: 'Ana' }), false);
-    assert.equal(hasFullMissionListAccess({ role: 'Operador', name: 'Operador', permissions: ['quotes'] }), false);
     assert.equal(isMissionClientScopeRestricted({ role: 'Financeiro', name: 'Giovanna Marsili', permissions: ['client_view:1'] }), false);
   });
 

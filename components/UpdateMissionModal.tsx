@@ -6,7 +6,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
-import { ImgArquivo } from './ArquivoProtegido';
 import { publishMissionLive } from '../lib/missionLiveBroadcast';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
@@ -4296,7 +4295,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                         {deslocExistingUrl && !deslocFile && (
                                             <div className="mb-2 relative inline-block">
                                                 <a href={deslocExistingUrl} target="_blank" rel="noopener noreferrer">
-                                                    <ImgArquivo src={deslocExistingUrl} alt="Aprovação deslocamento" className="h-24 rounded-lg border border-red-200 object-cover" />
+                                                    <img src={deslocExistingUrl} alt="Aprovação deslocamento" className="h-24 rounded-lg border border-red-200 object-cover" />
                                                 </a>
                                                 <span className="absolute top-1 right-1 bg-red-600 text-white text-[8px] px-2 py-0.5 rounded font-black">ENVIADO</span>
                                             </div>
@@ -4322,7 +4321,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {mirroringExistingUrl && !mirroringPreview && (
                                 <div className="mb-2 relative">
                                     <a href={mirroringExistingUrl} target="_blank" rel="noopener noreferrer">
-                                        <ImgArquivo src={mirroringExistingUrl} alt="Espelhamento" className="w-full h-32 object-cover rounded-lg border border-green-200" />
+                                        <img src={mirroringExistingUrl} alt="Espelhamento" className="w-full h-32 object-cover rounded-lg border border-green-200" />
                                     </a>
                                     <span className="absolute top-1 right-1 bg-green-600 text-white text-[8px] px-2 py-0.5 rounded font-black">ENVIADO</span>
                                 </div>

@@ -30,7 +30,7 @@ function isDefaultRecipient(name: string): boolean {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  return n.includes('barbara') || n.includes('giovanna') || n.replace(/[.\s]+/g, ' ').trim() === 'ana fernandes';
+  return n.includes('barbara') || n.includes('giovanna');
 }
 
 const RequestOsAnalysisModal: React.FC<Props> = ({ open, onClose, payload, onSent }) => {

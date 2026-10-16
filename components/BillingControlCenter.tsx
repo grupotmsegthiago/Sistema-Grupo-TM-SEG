@@ -18,7 +18,6 @@ import {
 import { useNotification } from '../lib/NotificationContext';
 import { resolveStoredClientToll } from '../lib/toll/clientTollBilling';
 import MissionFinancialModal from './MissionFinancialModal';
-import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 
 const formatCurrency = (val: number | null | undefined) => {
     if (val === null || val === undefined) return 'R$ 0,00';
@@ -189,7 +188,7 @@ const BillingControlCenter: React.FC = () => {
 
     return (
         <div className="space-y-6 animate-fade-in pb-20">
-            {selectedMission && podeAcessarAuditoriaFaturamento(JSON.parse(localStorage.getItem('userData') || '{}')) && (
+            {selectedMission && (
                 <MissionFinancialModal 
                     isOpen={true} 
                     onClose={() => setSelectedMission(null)} 
@@ -315,7 +314,6 @@ const BillingControlCenter: React.FC = () => {
                                                 {hasDiff && <span className="text-[8px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-black animate-pulse uppercase mt-1 block w-fit ml-auto">Conferir</span>}
                                             </td>
                                             <td className="px-6 py-4 text-center">
-                                                {podeAcessarAuditoriaFaturamento(JSON.parse(localStorage.getItem('userData') || '{}')) && (
                                                 <button 
                                                     onClick={() => setSelectedMission(m)} 
                                                     className={`bg-white border-2 hover:shadow-lg ${hasDiff ? 'border-orange-500 text-orange-600 hover:bg-orange-50' : 'border-blue-500 text-blue-600 hover:bg-blue-50'} p-2 rounded-xl transition-all flex flex-col items-center gap-1 min-w-[90px] group`}
@@ -323,7 +321,6 @@ const BillingControlCenter: React.FC = () => {
                                                     <Wrench size={18} className="group-hover:rotate-12 transition-transform" />
                                                     <span className="text-[8px] font-black uppercase">Conferir & Aprovar</span>
                                                 </button>
-                                                )}
                                             </td>
                                         </tr>
                                     );

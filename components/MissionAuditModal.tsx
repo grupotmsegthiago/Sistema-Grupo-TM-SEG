@@ -1,5 +1,4 @@
 import React from 'react';
-import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import { X, ShieldCheck, AlertTriangle, MapPin, Clock, Route, CheckCircle2, XCircle } from 'lucide-react';
 import type { MissionBillingAuditResult } from '../lib/missionBillingAudit';
 import type { Mission } from '../types';
@@ -114,14 +113,6 @@ const CalcLine: React.FC<{ label: string; value: string }> = ({ label, value }) 
 );
 
 const MissionAuditModal: React.FC<MissionAuditModalProps> = ({ mission, audit, onClose }) => {
-  let usuario: { name?: string; role?: string; permissions?: string[] } | null = null;
-  try {
-    usuario = JSON.parse(localStorage.getItem('userData') || 'null');
-  } catch {
-    usuario = null;
-  }
-  if (!podeAcessarAuditoriaFaturamento(usuario)) return null;
-
   const headerColor =
     audit.overallStatus === 'validado'
       ? 'from-emerald-800 to-emerald-900'

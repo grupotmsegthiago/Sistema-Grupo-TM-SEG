@@ -9,7 +9,6 @@ import {
   AlertTriangle, ShieldAlert, BadgeCheck
 } from 'lucide-react';
 import MissionFinancialModal from './MissionFinancialModal';
-import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import MissionAuditModal from './MissionAuditModal';
 import {
   calculateMissionFinancials,
@@ -146,11 +145,6 @@ const MissionReportPage: React.FC = () => {
     const roleLower = (currentUser.role || '').toLowerCase();
     return nameLower.includes('daniel') || nameLower.includes('michelle') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('thiago') || roleLower === 'controller';
   }, [currentUser]);
-
-  const podeAuditoria = useMemo(
-    () => podeAcessarAuditoriaFaturamento(currentUser),
-    [currentUser],
-  );
 
   const fetchMissions = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
@@ -470,7 +464,7 @@ const MissionReportPage: React.FC = () => {
   // Auditoria em background — SOMENTE as OS da página atual (máx. 10),
   // para não travar com 100+ missões do período.
   useEffect(() => {
-    if (!auditEnabled || !podeAuditoria) {
+    if (!auditEnabled) {
       setAuditByMission(new Map());
       setAuditBusy(false);
       return;
@@ -536,11 +530,9 @@ const MissionReportPage: React.FC = () => {
     billingAdjustmentsMap,
     refDataReady,
     canSeeFinancials,
-    podeAuditoria,
   ]);
 
   const openAuditModal = useCallback((mission: Mission) => {
-    if (!podeAcessarAuditoriaFaturamento(currentUser)) return;
     clearMissionBillingAuditCache(mission.id);
     const clientMatch = clientsData.find(
       (c: any) => c.name === (mission as any).originalClientName || c.name === mission.client,
@@ -562,7 +554,7 @@ const MissionReportPage: React.FC = () => {
       mission.id ? billingAdjustmentsMap.get(mission.id) : undefined,
     );
     setAuditForModal({ mission, audit });
-  }, [clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap, currentUser]);
+  }, [clientPriceTables, providerCostTables, clientsData, providersData, billingAdjustmentsMap]);
 
   // Contadores dos chips = só a página atual (lote auditado).
   const auditSummary = useMemo(() => {
@@ -744,7 +736,7 @@ const MissionReportPage: React.FC = () => {
                   ? `${displayMissions.length} missões · pág. ${safePage}/${totalPages} · audita ${pagedMissions.length} nesta página`
                   : `${displayMissions.length} missões · pág. ${safePage}/${totalPages}`}
             </span>
-            {canSeeFinancials && podeAuditoria && (
+            {canSeeFinancials && (
               <div className="flex items-center gap-1.5 text-[10px] font-black">
                 <button
                   type="button"
@@ -1085,12 +1077,10 @@ const MissionReportPage: React.FC = () => {
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
                   )}
-                  {canSeeFinancials && podeAuditoria && (
+                  {canSeeFinancials && (
                     <th className="px-3 py-2.5 text-center font-black border-r border-gray-700">STATUS AUDITORIA</th>
                   )}
-                  {podeAuditoria && (
                   <th className="px-3 py-2.5 text-center font-black">FATURAMENTO</th>
-                  )}
                 </tr>
               </thead>
               <tbody>
@@ -1229,7 +1219,7 @@ const MissionReportPage: React.FC = () => {
                           })()}
                         </>
                       )}
-                      {canSeeFinancials && podeAuditoria && (() => {
+                      {canSeeFinancials && (() => {
                         if (!auditEnabled) {
                           return (
                             <td className="px-3 py-2 border-r border-gray-100 text-center text-[10px] text-gray-400" title="Auditoria desligada">OFF</td>
@@ -1305,7 +1295,6 @@ const MissionReportPage: React.FC = () => {
                           </td>
                         );
                       })()}
-                      {podeAuditoria && (
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center gap-1 justify-center">
                         <button
@@ -1332,7 +1321,6 @@ const MissionReportPage: React.FC = () => {
                         </button>
                         </div>
                       </td>
-                      )}
                     </tr>
                   );
                 })}
@@ -1351,12 +1339,10 @@ const MissionReportPage: React.FC = () => {
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}
                     </td>
-                    {podeAuditoria && (
                     <td className="px-3 py-2.5 text-center border-r border-gray-600 text-[10px]">
                       🟢{auditSummary.validado} 🟡{auditSummary.atencao} 🔴{auditSummary.erro}
                     </td>
-                    )}
-                    {podeAuditoria && <td className="px-3 py-2.5"></td>}
+                    <td className="px-3 py-2.5"></td>
                   </tr>
                 </tfoot>
               )}
@@ -1428,7 +1414,7 @@ const MissionReportPage: React.FC = () => {
         )}
       </div>
 
-      {isFinancialModalOpen && podeAuditoria && (
+      {isFinancialModalOpen && (
         <MissionFinancialModal
           isOpen={isFinancialModalOpen}
           onClose={() => setIsFinancialModalOpen(false)}
@@ -1441,7 +1427,7 @@ const MissionReportPage: React.FC = () => {
         />
       )}
 
-      {auditForModal && podeAuditoria && (
+      {auditForModal && (
         <MissionAuditModal
           mission={auditForModal.mission}
           audit={auditForModal.audit}

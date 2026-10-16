@@ -1,7 +1,7 @@
 import type { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
-import { calculateMissionFinancials, dhlDefaultUnitKmExcess, extractCityFromAddress, extractUF } from './financialUtils';
+import { calculateMissionFinancials, extractCityFromAddress } from './financialUtils';
 import { isAutoMasterRow } from './providerAutoPricing';
-import { computeDhlBand, findDhlAutoClient } from './dhlAutoTableSelector';
+import { computeDhlBand } from './dhlAutoTableSelector';
 import { missionEligibleForBillingAudit, isTerminalMissionStatusForAudit } from './missionBillingAuditConfig';
 
 export type AuditStatusLevel = 'validado' | 'atencao' | 'erro' | 'pendente' | 'em_viagem';
@@ -745,40 +745,6 @@ function narrowCatalogCandidates(
   return narrowed.length > 0 ? narrowed : candidates.slice(0, 40);
 }
 
-/**
- * Até 00:00 de 17/10/2026 em Brasília, a planilha DHL cobrava a tarifa regional
- * quando a tabela vinculada não tinha quilômetro extra. A auditoria usa essa
- * regra só para conferir OS daquela data. Operação nova continua na tarifa da tabela.
- */
-export const FIM_REGRA_KM_REGIONAL_DHL_MS = Date.parse('2026-10-17T03:00:00.000Z');
-
-export function tarifaKmRegionalDhlNaData(
-  mission: { client?: string | null; origin?: string | null; start_time?: string | null; startTime?: string | null; created_at?: string | null },
-  taxaTabela: number | null | undefined,
-): number | undefined {
-  const cliente = String(mission.client || '');
-  if (!findDhlAutoClient(cliente)) return undefined;
-  const raw = mission.start_time || mission.startTime || mission.created_at;
-  const quando = Date.parse(String(raw || ''));
-  if (!Number.isFinite(quando) || quando >= FIM_REGRA_KM_REGIONAL_DHL_MS) return undefined;
-  if (taxaTabela != null && Number.isFinite(Number(taxaTabela)) && Number(taxaTabela) > 0) return undefined;
-  return dhlDefaultUnitKmExcess(extractUF(String(mission.origin || '')));
-}
-
-function overridesComRegraDaData(
-  mission: Mission,
-  clientTables: ClientPriceTable[],
-  tableOverrides: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  const id = tableOverrides?.clientTableId ? String(tableOverrides.clientTableId) : '';
-  if (!id) return tableOverrides;
-  const tabela = clientTables.find((t) => String(t.id) === id);
-  if (!tabela) return tableOverrides;
-  const historica = tarifaKmRegionalDhlNaData(mission as any, tabela.price_per_extra_km);
-  if (historica == null) return tableOverrides;
-  return { ...(tableOverrides || {}), tarifaExcepcionalKm: historica };
-}
-
 /** Quando motor auto/snapshot erra, tenta casar valor lançado com tabela REAL do cadastro. */
 function tryMatchRealCatalogTable(
   side: 'cliente' | 'fornecedor',
@@ -820,15 +786,11 @@ function tryMatchRealCatalogTable(
 
   for (const table of candidates) {
     if (isSyntheticTableId(table.id)) continue;
-    const { tarifaExcepcionalKm: _tarifaHerdada, ...overridesSemTarifa } = (tableOverrides || {}) as Record<string, unknown>;
-    const taxaTabela = side === 'cliente' ? (table as ClientPriceTable).price_per_extra_km : undefined;
-    const historica = side === 'cliente' ? tarifaKmRegionalDhlNaData(mission as any, taxaTabela) : undefined;
     const override = {
-      ...overridesSemTarifa,
+      ...(tableOverrides || {}),
       ...(side === 'cliente'
         ? { clientTableId: String(table.id) }
         : { providerTableId: String(table.id) }),
-      ...(historica != null ? { tarifaExcepcionalKm: historica } : {}),
     };
     const calc = calculateMissionFinancials(
       mObj,
@@ -1117,14 +1079,13 @@ export function computeMissionBillingAudit(
     !tableOverrides?.providerTableId
   );
 
-  const overridesCalculo = overridesComRegraDaData(mission, clientTables, tableOverrides);
   const fin = calculateMissionFinancials(
     mObj,
     clientTables,
     providerTables,
     clientData,
     new Date(),
-    overridesCalculo as any,
+    tableOverrides,
     providers,
   );
 

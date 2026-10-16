@@ -15,7 +15,6 @@ import {
 import { useNotification } from '../lib/NotificationContext';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
 import { calculateMissionFinancials } from '../lib/financialUtils';
-import { podeAcessarAuditoriaFaturamento } from '../lib/auditoriaFaturamentoAccess';
 import VendorPeriodPicker from './VendorPeriodPicker';
 import {
     loadVendorFilters,
@@ -2201,7 +2200,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <div className="flex items-center justify-center gap-1.5">
-                                                    {podeAcessarAuditoriaFaturamento(userData) && (
                                                     <button
                                                         onClick={() => onOpenMission?.(m.id)}
                                                         className="p-2 rounded-xl transition-all bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
@@ -2210,7 +2208,6 @@ const VendorVerificationControl: React.FC<VendorVerificationControlProps> = ({ o
                                                     >
                                                         <FileText size={14} />
                                                     </button>
-                                                    )}
                                                     <button
                                                         onClick={() => openVerificationModal(m)}
                                                         className={`p-2 rounded-xl transition-all flex items-center gap-1 text-[9px] font-black uppercase ${

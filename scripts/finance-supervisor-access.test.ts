@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   canSeeMissionBillingSummary,
   canSeeOsComPrejuizo,
-  isAnaFernandes,
   isFinanceProfileRole,
   isFinanceSupervisorName,
   normalizePersonName,
@@ -19,16 +18,6 @@ describe('financeSupervisorAccess', () => {
   it('reconhece Giovanna Marsili (mesmo acesso da Bárbara)', () => {
     assert.equal(isFinanceSupervisorName('Giovanna Marsili'), true);
     assert.equal(isFinanceSupervisorName('giovanna marsili andré'), true);
-  });
-
-  it('reconhece somente o cadastro ANA.FERNANDES', () => {
-    assert.equal(isAnaFernandes('ANA.FERNANDES'), true);
-    assert.equal(isAnaFernandes('Ana Fernandes'), true);
-    assert.equal(isFinanceSupervisorName('ANA.FERNANDES'), true);
-    assert.equal(isAnaFernandes('Ana'), false);
-    assert.equal(isFinanceSupervisorName('Ana'), false);
-    assert.equal(isFinanceSupervisorName('Ana Comercial'), false);
-    assert.equal(isFinanceSupervisorName('Lilian Raquel Viana'), false);
   });
 
   it('não marca outros nomes', () => {

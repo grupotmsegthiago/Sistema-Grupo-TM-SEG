@@ -19,7 +19,7 @@ export function hasFullMissionListAccess(user: MissionAccessUser | null | undefi
   if (Array.isArray(user.permissions) && user.permissions.includes('*')) return true;
   const roleLower = String(user.role || '').toLowerCase().trim();
   if (roleLower === 'administrador') return true;
-  // Bárbara / Giovanna / Ana Fernandes — independente do rótulo exato do perfil no banco.
+  // Bárbara / Giovanna — independente do rótulo exato do perfil no banco.
   if (isFinanceSupervisorName(user.name)) return true;
   return false;
 }

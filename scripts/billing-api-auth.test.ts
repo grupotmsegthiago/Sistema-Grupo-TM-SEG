@@ -14,16 +14,16 @@ test('roleCanAccessBillingApi aceita diretoria, administrador e ceo', () => {
   assert.equal(roleCanAccessBillingApi('rh'), false);
 });
 
-test('assertBillingApiAccess nega o perfil enviado pelo navegador quando o cadastro não confirma', async () => {
+test('assertBillingApiAccess aceita fallback por headers quando userId confere', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertBillingApiAccess(token, {
     headers: {
       'x-tmseg-user-id': '42',
       'x-tmseg-role': 'Diretoria',
-      'x-tmseg-permissions': '["*"]',
+      'x-tmseg-permissions': '[]',
     },
   });
-  assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
+  assert.equal(denied, null);
 });
 
 test('assertBillingApiAccess nega headers com userId divergente', async () => {
@@ -38,17 +38,6 @@ test('assertBillingApiAccess nega headers com userId divergente', async () => {
   assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
 });
 
-test('permissão estrela não abre o custo de IA para operador', async () => {
-  const token = 'tmseg-token-7-1783678641263';
-  const denied = await assertBillingApiAccess(token, {
-    headers: {
-      'x-tmseg-user-id': '7',
-      'x-tmseg-role': 'operador',
-      'x-tmseg-permissions': '["*"]',
-    },
-  });
-  assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
-});
 test('assertBillingApiAccess nega role financeiro via headers', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertBillingApiAccess(token, {

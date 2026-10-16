@@ -5,7 +5,6 @@ import {
   TrendingUp, Percent, Briefcase, CircleDollarSign, Gift, ClipboardList,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { LinkArquivo } from './ArquivoProtegido';
 import { formatDateTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
@@ -422,9 +421,9 @@ function BlocoListaComissao({
                         </button>
                       )}
                       {comprovante.link && (
-                        <LinkArquivo href={comprovante.link} title="Comprovante do pagamento do cliente" className="text-[10px] font-black text-emerald-800 underline uppercase inline-flex items-center gap-1" data-testid={`link-comprovante-comissao-${r.id}`}>
+                        <a href={comprovante.link} target="_blank" rel="noreferrer" title="Comprovante do pagamento do cliente" className="text-[10px] font-black text-emerald-800 underline uppercase inline-flex items-center gap-1" data-testid={`link-comprovante-comissao-${r.id}`}>
                           <Receipt size={12} /> Comprovante
-                        </LinkArquivo>
+                        </a>
                       )}
                       {comprovante.avisarFalta && (
                         <div className="text-[10px] font-black text-amber-700 uppercase" data-testid={`aviso-comprovante-comissao-${r.id}`}>
