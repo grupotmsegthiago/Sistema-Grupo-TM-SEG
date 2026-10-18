@@ -191,13 +191,15 @@ async function safeCycle() {
   }
 }
 export async function runClientEmailQueueCycle(): Promise<void> {
-  await safeCycle();
+  // DESATIVADO (2026-07-14): a fila reenviava e-mails de OS antigas com
+  // email_pending_client=true (backlog milhares). Pedido operacional:
+  // só enviar o que for gerado na abertura da OS (síncrono).
+  console.log('[Email Queue] DESATIVADO — sem envio retroativo. Só abertura de OS.');
+  return;
 }
 
 export function startClientEmailQueueWorker() {
   if (started) return;
   started = true;
-  console.log(`[Email Queue] worker ativo — ciclo a cada ${CYCLE_MS / 60000} min (reprocessa e-mails do cliente pendentes).`);
-  setTimeout(safeCycle, 90_000);
-  setInterval(safeCycle, CYCLE_MS);
+  console.log('[Email Queue] worker NÃO iniciado — envio retroativo desativado (só abertura de OS).');
 }

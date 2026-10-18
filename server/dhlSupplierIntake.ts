@@ -1041,9 +1041,41 @@ async function checkAndSendDhlOperationalFollowups(): Promise<void> {
 }
 
 export async function runDhlWorkerTick(): Promise<void> {
-  await checkAndNotifyExpiredDhlIntakes();
-  await checkAndSendDhlIntakeReminders();
-  await checkAndSendDhlOperationalFollowups();
+  // DESATIVADO envio automático de lembretes/follow-ups/expirados (2026-07-14).
+  // Pedido: não mandar e-mail retroativo — só o que for gerado na abertura da OS
+  // (generate do link DHL). Ainda marca intakes vencidos como 'expirado' no banco,
+  // sem notificar por e-mail.
+  try {
+    await checkAndMarkExpiredDhlIntakesSilent();
+  } catch (e: any) {
+    console.error('[DHL Worker] mark expired falhou:', e?.message || e);
+  }
+  console.log('[DHL Worker] lembretes/follow-ups/e-mails de expiração DESATIVADOS (só abertura de OS).');
+}
+
+/** Marca intakes vencidos como expirado sem enviar e-mail. */
+async function checkAndMarkExpiredDhlIntakesSilent(): Promise<void> {
+  const sb = getSb();
+  const nowIso = new Date().toISOString();
+  const { data: vencidos, error: selErr } = await sb.from('dhl_supplier_intakes')
+    .select('id')
+    .eq('status', 'pendente')
+    .lt('expires_at', nowIso);
+  if (selErr) {
+    console.error('[DHL Expiry Worker] erro ao listar intakes vencidos:', selErr.message);
+    return;
+  }
+  const ids = (Array.isArray(vencidos) ? vencidos : []).map((i: any) => i.id);
+  if (ids.length === 0) return;
+  const { error: updErr } = await sb.from('dhl_supplier_intakes')
+    .update({ status: 'expirado' })
+    .in('id', ids)
+    .eq('status', 'pendente');
+  if (updErr) {
+    console.error('[DHL Expiry Worker] erro ao marcar como expirado:', updErr.message);
+    return;
+  }
+  console.log(`[DHL Expiry Worker] ${ids.length} intake(s) marcados como expirado (sem e-mail).`);
 }
 
 export function startDhlIntakeExpiryWorker(): void {
