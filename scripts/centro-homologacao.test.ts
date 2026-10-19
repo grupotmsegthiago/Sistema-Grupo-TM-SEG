@@ -12,7 +12,7 @@ import {
   definirDestino172,
   estadoInicial,
 } from '../lib/gestorFiscal/centroHomologacao';
-import { AUDITORIA_CLASSE_A, conciliarLancamentos, type LancamentoAuditado, type LeituraLancamento } from '../lib/gestorFiscal/lancamentosHomologacao';
+import { AUDITORIA_CLASSE_A, atribuicaoAmbiguida, conciliarLancamentos, type LancamentoAuditado, type LeituraLancamento } from '../lib/gestorFiscal/lancamentosHomologacao';
 
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
   url: 'https://app.exemplo.com/gestor-fiscal',
@@ -131,15 +131,21 @@ test('aprovar, rejeitar, pedir documento e desfazer ficam só na simulação', (
 test('o cenário apto completo só fecha com as três parcelas e sem gravar classe A sozinha', () => {
   const itens = conciliadosIguais();
   const completo = calcularCenario(aprovarTudoElegivel(estadoInicial(), itens), itens);
+  assert.equal(REFERENCIA_ETAPA_7.grupo.resultadoAptoCentavos + REFERENCIA_ETAPA_7.atribuicaoPendenteCentavos, REFERENCIA_ETAPA_7.grupo.resultadoElegivelCentavos);
   assert.equal(completo.listaAprovadaCentavos, 33_656_211);
-  assert.equal(completo.adicionalAprovadaCentavos, 83_022);
+  assert.equal(completo.adicionalAprovadaCentavos, 18_022);
   assert.equal(completo.grupo.despesaReconhecidaCentavos, 17_297);
-  assert.equal(completo.grupo.resultadoCentavos, 447_850_905);
+  assert.equal(completo.grupo.resultadoCentavos, 447_915_905);
   assert.equal(completo.grupo.margem, 41.14);
-  assert.equal(completo.aptoCompleto, true);
+  assert.equal(completo.aptoCompleto, false);
+  assert.equal(completo.elegivelAlcancado, true);
+  assert.equal(completo.diferencaParaAptoCentavos, 65_000);
   assert.equal(empresa(completo, 'TM SEGURANCA').despesaAprovadaSimuladaCentavos, 33_656_211);
   assert.equal(empresa(completo, 'TM GESTAO').despesaAprovadaSimuladaCentavos, 12_643);
-  assert.equal(empresa(completo, 'TM SECURITY').despesaAprovadaSimuladaCentavos, 70_379);
+  assert.equal(empresa(completo, 'TM SECURITY').despesaAprovadaSimuladaCentavos, 5_379);
+  assert.equal(empresa(completo, 'TM GESTAO').receitaCentavos, REFERENCIA_ETAPA_7.empresas['TM GESTAO'].receitaCentavos);
+  assert.equal(empresa(completo, 'TM SEGURANCA').custoOsCentavos, REFERENCIA_ETAPA_7.empresas['TM SEGURANCA'].custoOsCentavos);
+  assert.equal(empresa(completo, 'TM SECURITY').custoOsCentavos, REFERENCIA_ETAPA_7.empresas['TM SECURITY'].custoOsCentavos);
 });
 
 test('as empresas não herdam despesa da conta e fornecedor não entra de novo', () => {
@@ -218,6 +224,51 @@ test('a consulta individual fecha 161 lançamentos e bloqueia divergência', () 
   assert.equal(calcularCenario(aprovarTudoElegivel(estadoInicial(), fora.itens), fora.itens).listaAprovadaCentavos, 33_656_211);
 });
 
+test('o lançamento de R$ 650,00 cita duas empresas e não se confunde com o outro', () => {
+  const alvo = AUDITORIA_CLASSE_A.find((item) => item.id === 'd35e9740-bc86-4104-8a20-3ff18b7a3a29');
+  const outro = AUDITORIA_CLASSE_A.find((item) => item.id === '85e8b2e3-ad0e-4646-b387-9084591fa5c2');
+  if (!alvo || !outro) throw new Error('650');
+  assert.notEqual(alvo.id, outro.id);
+  assert.equal(alvo.valorCentavos, 65_000);
+  assert.equal(outro.valorCentavos, 65_000);
+  assert.notEqual(alvo.vencimento, outro.vencimento);
+  assert.notEqual(alvo.contaPagadora, outro.contaPagadora);
+  assert.equal(alvo.contaPagadora, 'TM SECURITY');
+  assert.equal(outro.contaPagadora, 'TM SEGURANÇA');
+  assert.equal(alvo.empresa, 'INDEFINIDA');
+  assert.equal(alvo.podeAprovar, false);
+  assert.equal(outro.parcela, 'indefinido');
+  assert.equal(atribuicaoAmbiguida([alvo.descricaoMascarada]), true);
+  assert.equal(atribuicaoAmbiguida(['TARIFA ITAU DA PROPRIA CONTA']), false);
+  assert.equal(atribuicaoAmbiguida(['MENSALIDADE TM SEGURANCA']), false);
+
+  const linha = conciliadosIguais().find((item) => item.auditoria.id === alvo.id);
+  if (!linha) throw new Error('linha');
+  assert.equal(linha.empresaPendente, true);
+  assert.equal(linha.podeSimularAprovacao, false);
+  assert.equal(linha.divergencias.length, 0);
+  const bloqueado = aplicarDecisao(estadoInicial(), { itemId: alvo.id, acao: 'aprovar' }, linha);
+  assert.match(bloqueado.erro || '', /Empresa pendente/);
+  assert.equal(calcularCenario(bloqueado.estado, [linha]).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos);
+
+  const documento = aplicarDecisao(estadoInicial(), { itemId: alvo.id, acao: 'pedir_documento' }, linha);
+  assert.equal(documento.erro, null);
+  assert.equal(documento.estado.decisoes[alvo.id], 'documentacao_solicitada');
+  assert.equal(calcularCenario(documento.estado, conciliadosIguais()).adicionalAprovadaCentavos, 0);
+  assert.equal(calcularCenario(documento.estado, conciliadosIguais()).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos);
+
+  const tarifa = AUDITORIA_CLASSE_A.find((item) => item.blocoId === 'SIM-SEC-TARIFAS' && item.podeAprovar);
+  if (!tarifa) throw new Error('tarifa');
+  const preservada = conciliadosIguais().find((item) => item.auditoria.id === tarifa.id);
+  assert.equal(preservada?.empresaPendente, false);
+  assert.equal(preservada?.podeSimularAprovacao, true);
+  assert.equal(preservada?.auditoria.empresa, 'TM SECURITY');
+  const todos = conciliadosIguais();
+  assert.equal(todos.filter((item) => item.empresaPendente).length, 3);
+  assert.equal(todos.filter((item) => item.auditoria.parcela === 'lista_seguranca' && item.podeSimularAprovacao).length, 161);
+  assert.equal(todos.filter((item) => item.auditoria.empresa === 'TM GESTAO' && item.podeSimularAprovacao).reduce((total, item) => total + item.auditoria.valorCentavos, 0), 12_643);
+});
+
 test('a tela simula as decisões e não as guarda', async () => {
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -241,6 +292,9 @@ test('a tela simula as decisões e não as guarda', async () => {
   assert.match(texto(), /R\$\s*830,22/);
   assert.match(texto(), /R\$\s*172,97/);
   assert.match(texto(), /R\$\s*4\.478\.509,05/);
+  assert.match(texto(), /R\$\s*4\.479\.159,05/);
+  assert.match(container.querySelector('[data-testid="referencia-cnpj"]')?.textContent || '', /d35e9740-bc86-4104-8a20-3ff18b7a3a29/);
+  assert.match(container.querySelector('[data-testid="referencia-cnpj"]')?.textContent || '', /não está homologado/);
   assert.equal(container.querySelector('[data-persistencia="nenhuma"]') !== null, true);
   assert.match(container.querySelector('[data-testid="status-SIM-SEG-COMISSAO"]')?.textContent || '', /Pendente/);
   assert.equal(container.querySelector<HTMLButtonElement>('[data-testid="aprovar-SIM-SEG-COMISSAO"]')?.disabled, true);

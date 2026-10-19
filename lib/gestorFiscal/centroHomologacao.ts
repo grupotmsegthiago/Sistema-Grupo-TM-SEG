@@ -89,9 +89,11 @@ export const REFERENCIA_ETAPA_7 = {
     custoOsCentavos: 607_106_543,
     resultadoPainelCentavos: 481_590_138,
     resultadoAptoCentavos: 447_850_905,
+    resultadoElegivelCentavos: 447_915_905,
     margemPainel: 44.23,
     margemApto: 41.14,
   },
+  atribuicaoPendenteCentavos: 65_000,
   listaSegurancaCentavos: 33_656_211,
   adicionalGestaoCentavos: 12_643,
   adicionalSecurityCentavos: 70_379,
@@ -117,7 +119,7 @@ export const ITENS_SIMULADOS: ItemSimulado[] = [
   item('SIM-SEG-SEGURO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Seguro', 2, 19_064, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
   item('SIM-SEG-TARIFAS', 'TM SEGURANCA', 'TM SEGURANÇA', 'Tarifas', 5, 13_443, 'gerencial', 'lista_seguranca', 'Tarifa da própria conta, sem outra empresa no texto.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
   item('SIM-GEST-TARIFAS', 'TM GESTAO', 'TM GESTÃO', 'Tarifas', null, 12_643, 'gerencial', 'adicional_outras', 'Tarifas da própria conta TM GESTÃO, empresa identificada.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
-  item('SIM-SEC-CONTABILIDADE', 'TM SECURITY', 'TM SECURITY', 'Contabilidade', null, 65_000, 'gerencial', 'adicional_outras', 'Contabilidade da própria conta TM SECURITY.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEC-CONTABILIDADE', 'TM SECURITY', 'TM SECURITY', 'Contabilidade', null, 65_000, 'gerencial', 'adicional_outras', 'Referência da etapa 7 na parcela da TM SECURITY. A descrição cita duas empresas e o documento não define o CNPJ.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
   item('SIM-SEC-TARIFAS', 'TM SECURITY', 'TM SECURITY', 'Tarifas', null, 5_379, 'gerencial', 'adicional_outras', 'Tarifas da própria conta TM SECURITY.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
   item('SIM-GEST-RECONHECIDO', 'TM GESTAO', 'TM SEGURANÇA', 'Comissão', 1, 17_297, 'gerencial', 'ja_reconhecido', 'Já está no painel da TM GESTÃO. Emissor do cliente: TM GESTÃO. Conta que pagou: TM SEGURANÇA.', false, 'Já reconhecido no painel. Aprovar de novo contaria duas vezes. Use a decisão A, B ou C.'),
   item('SIM-INDEF-CNPJ', 'INDEFINIDA', 'TM SEGURANÇA', 'Contabilidade e tarifas', 5, 110_863, 'pendente', 'indefinido', 'Cinco lançamentos citam outra empresa. A conta pagadora foi a TM SEGURANÇA.', false, 'CNPJ indefinido. A conta que pagou não escolhe a empresa.'),
@@ -210,6 +212,7 @@ export interface CenarioSimulado {
   adicionalAprovadaCentavos: number;
   reconhecidoDestino: Destino172;
   aptoCompleto: boolean;
+  elegivelAlcancado: boolean;
   diferencaParaAptoCentavos: number;
   diferencaParaPainelCentavos: number;
   fornecedorNoOperacionalCentavos: number;
@@ -219,7 +222,7 @@ export interface CenarioSimulado {
 export function calcularCenario(estado: EstadoHomologacao, lancamentos: LancamentoConciliado[] = []): CenarioSimulado {
   const aprovada = (id: string) => estado.decisoes[id] === 'aprovada_simulada';
   const somaLancamento = (parcela: 'lista_seguranca' | 'adicional_outras', empresa?: EmpresaSimulada) => lancamentos
-    .filter((item) => item.podeSimularAprovacao && item.auditoria.parcela === parcela && (!empresa || item.auditoria.empresa === empresa) && aprovada(item.auditoria.id))
+    .filter((item) => item.podeSimularAprovacao && !item.empresaPendente && item.auditoria.parcela === parcela && (!empresa || item.auditoria.empresa === empresa) && aprovada(item.auditoria.id))
     .reduce((total, item) => total + item.auditoria.valorCentavos, 0);
   const somaParcela = (parcela: ParcelaSimulada, empresa?: EmpresaSimulada) => ITENS_SIMULADOS
     .filter((item) => item.podeAprovar && item.parcela === parcela && (!empresa || item.empresa === empresa) && aprovada(item.id))
@@ -264,6 +267,10 @@ export function calcularCenario(estado: EstadoHomologacao, lancamentos: Lancamen
     && adicionalAprovada === REFERENCIA_ETAPA_7.adicionalOutrasCentavos
     && estado.destino172 === 'A'
     && grupoResultado === REFERENCIA_ETAPA_7.grupo.resultadoAptoCentavos;
+  const elegivelAlcancado = listaAprovada === REFERENCIA_ETAPA_7.listaSegurancaCentavos
+    && adicionalAprovada === REFERENCIA_ETAPA_7.adicionalOutrasCentavos - REFERENCIA_ETAPA_7.atribuicaoPendenteCentavos
+    && estado.destino172 === 'A'
+    && grupoResultado === REFERENCIA_ETAPA_7.grupo.resultadoElegivelCentavos;
 
   return {
     empresas,
@@ -279,6 +286,7 @@ export function calcularCenario(estado: EstadoHomologacao, lancamentos: Lancamen
     adicionalAprovadaCentavos: adicionalAprovada,
     reconhecidoDestino: estado.destino172,
     aptoCompleto,
+    elegivelAlcancado,
     diferencaParaAptoCentavos: grupoResultado - REFERENCIA_ETAPA_7.grupo.resultadoAptoCentavos,
     diferencaParaPainelCentavos: grupoResultado - REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos,
     fornecedorNoOperacionalCentavos: somaForcada(estado, 'custo_os'),
@@ -299,7 +307,7 @@ export function aprovarTudoElegivel(estado: EstadoHomologacao, lancamentos: Lanc
     atual = passo.estado;
   }
   for (const item of lancamentos) {
-    if (!item.podeSimularAprovacao) continue;
+    if (!item.podeSimularAprovacao || item.empresaPendente) continue;
     const passo = aplicarDecisao(atual, { itemId: item.auditoria.id, acao: 'aprovar' }, item);
     atual = passo.estado;
   }
@@ -323,7 +331,10 @@ function aplicarNoLancamento(
   }
   if (pedido.acao === 'aprovar') {
     if (!conciliado.podeSimularAprovacao) {
-      return { estado, erro: conciliado.divergencias[0] || conciliado.auditoria.bloqueio || 'Este lançamento não pode entrar na simulação.' };
+      const ambiguo = conciliado.empresaPendente
+        ? 'Empresa pendente. A descrição cita mais de uma empresa e não há documento que defina o CNPJ. A conta que pagou não faz essa escolha.'
+        : '';
+      return { estado, erro: conciliado.divergencias[0] || conciliado.auditoria.bloqueio || ambiguo || 'Este lançamento não pode entrar na simulação.' };
     }
     if (atual === 'aprovada_simulada') return { estado, erro: 'Este lançamento já está na simulação. Aprovar de novo contaria duas vezes.' };
     return { estado: comLancamento(estado, base, 'aprovada_simulada', 'aprovar', 'Aprovação simulada deste lançamento. Não foi gravada e não é homologação real.'), erro: null };

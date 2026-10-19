@@ -43,7 +43,28 @@ export interface LancamentoConciliado {
   leitura: LeituraLancamento | null;
   divergencias: string[];
   avisos: string[];
+  empresaPendente: boolean;
   podeSimularAprovacao: boolean;
+}
+
+const EMPRESAS_NO_TEXTO: { empresa: Exclude<EmpresaAuditada, 'INDEFINIDA'>; padrao: RegExp }[] = [
+  { empresa: 'TM SECURITY', padrao: /\bTM SECURITY\b|\bSECURITY\b/ },
+  { empresa: 'TM SEGURANCA', padrao: /\bTM SEGURANCA\b|\bSEGURANCA\b/ },
+  { empresa: 'TM GESTAO', padrao: /\bTM GESTAO\b|\bGESTAO\b/ },
+];
+
+export function empresasCitadas(descricao: string): Array<Exclude<EmpresaAuditada, 'INDEFINIDA'>> {
+  const texto = descricao.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+  return EMPRESAS_NO_TEXTO.filter((item) => item.padrao.test(texto)).map((item) => item.empresa);
+}
+
+/** Duas empresas no texto e nenhum documento que diga qual é o CNPJ. A conta pagadora não entra nesta conta. */
+export function atribuicaoAmbiguida(descricoes: string[]): boolean {
+  const citadas = new Set<Exclude<EmpresaAuditada, 'INDEFINIDA'>>();
+  for (const descricao of descricoes) {
+    for (const empresa of empresasCitadas(descricao)) citadas.add(empresa);
+  }
+  return citadas.size > 1;
 }
 
 export const AUDITORIA_CLASSE_A = auditoriaJson as LancamentoAuditado[];
@@ -99,12 +120,17 @@ export function conciliarLancamentos(leituras: LeituraLancamento[]): {
     if (leitura && leitura.vencimento !== auditoria.vencimento) avisos.push('O vencimento atual difere da leitura de 19/10/2026.');
     if (leitura && leitura.pagamento !== auditoria.pagamento) avisos.push('A data de pagamento atual difere da leitura de 19/10/2026.');
     if (leitura && leitura.documento !== auditoria.documento) avisos.push('A situação documental atual difere da leitura de 19/10/2026.');
+    const empresaPendente = atribuicaoAmbiguida([
+      auditoria.descricaoMascarada,
+      leitura?.descricaoMascarada || '',
+    ]);
     return {
       auditoria,
       leitura,
       divergencias,
       avisos,
-      podeSimularAprovacao: auditoria.podeAprovar && divergencias.length === 0,
+      empresaPendente,
+      podeSimularAprovacao: auditoria.podeAprovar && divergencias.length === 0 && !empresaPendente,
     };
   });
   const extras = leituras.filter((leitura) => !conhecidos.has(leitura.id));

@@ -121,7 +121,7 @@ const CentroHomologacao: React.FC<{
           teste="parcela-adicional"
           titulo="Adicional das outras empresas"
           valor={formatarReais(REFERENCIA_ETAPA_7.adicionalOutrasCentavos)}
-          detalhe={`TM GESTÃO ${formatarReais(REFERENCIA_ETAPA_7.adicionalGestaoCentavos)} e TM SECURITY ${formatarReais(REFERENCIA_ETAPA_7.adicionalSecurityCentavos)}. Simulado: ${formatarReais(cenario.adicionalAprovadaCentavos)}.`}
+          detalhe={`TM GESTÃO ${formatarReais(REFERENCIA_ETAPA_7.adicionalGestaoCentavos)} e TM SECURITY ${formatarReais(REFERENCIA_ETAPA_7.adicionalSecurityCentavos)}, referência da etapa 7. R$ 650,00 dessa parcela estão sem CNPJ comprovado. Simulado: ${formatarReais(cenario.adicionalAprovadaCentavos)}.`}
         />
         <Cartao
           teste="parcela-reconhecido"
@@ -134,8 +134,12 @@ const CentroHomologacao: React.FC<{
       <div className="grid gap-3 md:grid-cols-4">
         <Cartao teste="resultado-painel" titulo="Painel, referência" valor={formatarReais(REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos)} detalhe={`Margem ${REFERENCIA_ETAPA_7.grupo.margemPainel.toLocaleString('pt-BR')}%. Antes dos tributos.`} />
         <Cartao teste="resultado-simulado" titulo="Resultado desta simulação" valor={formatarReais(cenario.grupo.resultadoCentavos)} detalhe={`Margem ${cenario.grupo.margem.toLocaleString('pt-BR')}%. Diferença contra o painel: ${formatarReais(cenario.diferencaParaPainelCentavos)}.`} />
-        <Cartao teste="resultado-apto" titulo="Apto completo, referência" valor={formatarReais(REFERENCIA_ETAPA_7.grupo.resultadoAptoCentavos)} detalhe={`Margem ${REFERENCIA_ETAPA_7.grupo.margemApto.toLocaleString('pt-BR')}%. Só fecha se as três parcelas entrarem juntas.`} />
-        <Cartao teste="resultado-gap" titulo="Distância até o apto" valor={formatarReais(cenario.diferencaParaAptoCentavos)} detalhe={cenario.aptoCompleto ? 'A simulação reproduz o cenário apto. Continua sem gravação.' : 'Ainda falta simular alguma parcela, ou o destino dos R$ 172,97 não é a alternativa A.'} />
+        <Cartao teste="resultado-apto" titulo="Apto da etapa 7, referência histórica" valor={formatarReais(REFERENCIA_ETAPA_7.grupo.resultadoAptoCentavos)} detalhe={`Margem ${REFERENCIA_ETAPA_7.grupo.margemApto.toLocaleString('pt-BR')}%. Número histórico. Não é substituído pela simulação.`} />
+        <Cartao teste="resultado-gap" titulo="Distância até o apto histórico" valor={formatarReais(cenario.diferencaParaAptoCentavos)} detalhe={cenario.aptoCompleto ? 'A simulação reproduz o apto histórico. Continua sem gravação.' : cenario.elegivelAlcancado ? 'A simulação chegou na referência provisória. Os R$ 650,00 pendentes explicam a distância. Não é homologação.' : 'Ainda falta simular alguma parcela elegível, ou o destino dos R$ 172,97 não é a alternativa A.'} />
+      </div>
+
+      <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950" data-testid="referencia-cnpj">
+        Referência histórica da etapa 7: {formatarReais(REFERENCIA_ETAPA_7.grupo.resultadoAptoCentavos)}. Referência provisória elegível: {formatarReais(REFERENCIA_ETAPA_7.grupo.resultadoElegivelCentavos)}. Diferença pendente: {formatarReais(REFERENCIA_ETAPA_7.atribuicaoPendenteCentavos)}, do lançamento d35e9740-bc86-4104-8a20-3ff18b7a3a29. O painel oficial permanece {formatarReais(REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos)}. Este valor não está homologado.
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-4" data-testid="decisao-172">
@@ -278,7 +282,7 @@ function ListaLancamentos({
               <p className="font-mono text-sm font-black">{formatarReais(item.auditoria.valorCentavos)}</p>
             </div>
             <dl className="mt-2 grid gap-2 text-[11px] text-gray-700 md:grid-cols-3">
-              <div><dt className="font-black uppercase text-gray-400">Empresa da evidência</dt><dd>{nomeEmpresa(item.auditoria.empresa)}</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Empresa</dt><dd>{item.empresaPendente ? 'Empresa pendente' : nomeEmpresa(item.auditoria.empresa)}</dd></div>
               <div><dt className="font-black uppercase text-gray-400">Conta pagadora</dt><dd>{leitura?.contaPagadora || item.auditoria.contaPagadora}. Não define o CNPJ.</dd></div>
               <div><dt className="font-black uppercase text-gray-400">Categoria do cadastro</dt><dd>{leitura?.categoria || item.auditoria.categoria}</dd></div>
               <div><dt className="font-black uppercase text-gray-400">Vencimento</dt><dd>{leitura?.vencimento || item.auditoria.vencimento}</dd></div>
