@@ -16,6 +16,21 @@ function tabelaDe(url: string): string | null {
   }
 }
 
+const STATUS_SEM_CORPO = new Set([101, 204, 205, 304]);
+
+/** O PostgREST devolve 204 no update. Corpo vazio nesses status quebra o `Response` do navegador. */
+export function respostaDoPacote(
+  pacote: { status?: number; body?: string | null; contentType?: string; contentRange?: string | null },
+  statusHttp: number,
+): Response {
+  const status = pacote.status || statusHttp;
+  const headers = new Headers();
+  headers.set('content-type', pacote.contentType || 'application/json');
+  if (pacote.contentRange) headers.set('content-range', pacote.contentRange);
+  const corpo = STATUS_SEM_CORPO.has(status) ? null : (pacote.body ?? '');
+  return new Response(corpo, { status, headers });
+}
+
 function cabecalhosDe(init?: RequestInit): Record<string, string> {
   const saida: Record<string, string> = {};
   const origem = new Headers(init?.headers);
@@ -51,10 +66,7 @@ export function fetchDasTabelasProtegidas(original: typeof fetch): typeof fetch 
         body,
       }),
     });
-    const pacote = await resposta.json() as { status?: number; body?: string; contentType?: string; contentRange?: string | null };
-    const headers = new Headers();
-    headers.set('content-type', pacote.contentType || 'application/json');
-    if (pacote.contentRange) headers.set('content-range', pacote.contentRange);
-    return new Response(pacote.body ?? '', { status: pacote.status || resposta.status, headers });
+    const pacote = await resposta.json() as { status?: number; body?: string | null; contentType?: string; contentRange?: string | null };
+    return respostaDoPacote(pacote, resposta.status);
   };
 }
