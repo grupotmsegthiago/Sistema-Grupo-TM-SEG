@@ -1,6 +1,6 @@
 # 07 — Plano de fases
 
-A Fase 0 fecha aqui. Nenhuma fase abaixo está autorizada por este documento. Cada uma começa só com ordem explícita do proprietário. Preservar cálculo, Asaas e NF até a fase que os cite.
+A Fase 0 fecha aqui. A Fase 1 foi autorizada depois, só para documentação e regras, e está registrada em `ESTADO-ATUAL.md` e nos arquivos 08 a 17. A Fase 2 em diante continua sem autorização. Preservar cálculo, Asaas e NF até a fase que os cite.
 
 ## Fase 1 — Governança
 

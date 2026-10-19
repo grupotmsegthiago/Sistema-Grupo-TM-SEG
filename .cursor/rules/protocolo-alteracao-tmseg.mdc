@@ -1,0 +1,24 @@
+---
+description: Ordem obrigatória antes de criar código, migration ou integração
+alwaysApply: true
+---
+
+# Protocolo de alteração
+
+Detalhe: `docs/governanca/08-CONSTITUICAO-TECNICA.md` artigos 8 e 9, `11-PROTOCOLO-MIGRATIONS.md`, `15-MODELO-RELATORIO-EXECUCAO.md`.
+
+Antes de escrever código:
+
+1. Objetivo de negócio.
+2. Implementação que já existe.
+3. Fonte única.
+4. Writers e readers.
+5. Testes e dependências.
+6. Impacto em OS, financeiro, Asaas, NF, TORRES e WhatsApp.
+7. Reutilizar ou estender.
+8. Justificar arquivo novo.
+9. Parar se mudar comportamento, banco ou produção e a ordem ainda não cobrir esse efeito.
+
+Cada entrega registra baseline git, arquivos, regras preservadas, banco, riscos, rollback, testes de verdade e autorização. Bug: reproduzir e testar regressão quando der. No fim, atualizar `docs/governanca/ESTADO-ATUAL.md` e `RELATORIO_ULTIMA_EXECUCAO.md`.
+
+Não passar de 50 entradas em `vercel.json` `functions`. Não incluir `.env` nem segredo.
