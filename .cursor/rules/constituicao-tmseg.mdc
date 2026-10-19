@@ -1,0 +1,23 @@
+---
+description: Constituição técnica do Grupo TM SEG — preservação, cálculo canônico e proibições
+alwaysApply: true
+---
+
+# Constituição TM SEG
+
+Ler `docs/governanca/ESTADO-ATUAL.md` no início da sessão. Texto completo: `docs/governanca/08-CONSTITUICAO-TECNICA.md`. Esta regra não revoga `.cursorrules` nem `publicar.mdc`.
+
+- Não apagar nem substituir funcionalidade sem autorização explícita.
+- Não mudar cálculo de OS, pedágio, comissão, financeiro ou NF sem aprovação dessa fórmula.
+- Motor de OS: `calculateMissionFinancials` em `lib/financialUtils.ts`. Não criar outro. `motor-calculo-padrao/` não é produção.
+- Valor aprovado, faturado ou com override manual não é recalculado em silêncio.
+- Não criar tabela, RPC, API ou integração duplicada. Reutilizar antes.
+- Não alterar banco por conveniência. Não rodar migration sozinho. Não usar `exec_sql` para objeto novo. Não alargar permissão para esconder erro.
+- App: Supabase `ajhmmjuewdsukecaimik`, OS em `missions`. TORRES é outro projeto (`service_orders`, `escort_billings`). Não misturar comandos.
+- Não há banco de homologação comprovado. Tratar como produção até prova em contrário.
+- Merge e deploy só com autorização. Pedido de publicar / deploy / colocar no ar já é a autorização de `publicar.mdc`. Fora dessas palavras, não publicar.
+- Z-API está no ar. Não remover e não criar outro WhatsApp. Descontinuação não está decidida.
+- Asaas permanece no fluxo já existente. Boleto não é nota fiscal. Não inventar emissor de NF.
+- Troca de mês não lança conta a pagar da TORRES.
+- Teste não executado não passou. Build verde não encerra a tarefa.
+- Não iniciar a Fase 2 sem ordem explícita.

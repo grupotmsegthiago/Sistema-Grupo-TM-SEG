@@ -1,3 +1,8 @@
+---
+description: Validar em localhost:5000 antes de sugerir publicação
+alwaysApply: true
+---
+
 # Validar em localhost antes de publicar
 
 Preferência permanente do Thiago: **toda alteração deve ser vista primeiro em** `http://localhost:5000/` **antes de ir para produção**.

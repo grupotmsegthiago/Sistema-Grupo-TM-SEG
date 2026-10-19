@@ -1,0 +1,18 @@
+---
+description: Fontes únicas da verdade e separação TM SEG / TORRES
+alwaysApply: true
+---
+
+# Fontes da verdade
+
+Mapa completo: `docs/governanca/09-FONTES-UNICAS-DA-VERDADE.md`.
+
+- OS e valores oficiais: tabela `missions` (receita, custo, pedágio, deslocamento).
+- Preço: `client_price_tables` vinculada e `provider_cost_tables`. Motor de fornecedor: `lib/providerAutoPricing.ts`.
+- Fatura: `financial_invoices`. Vínculo: `financial_invoice_missions`. Título: `financial_transactions`.
+- Comissão na TM SEG: `comissoes` e `lib/comissao/comissaoCalc.ts`. Título da TORRES: só `lib/comissao/contaPagarTorres.ts` no clique, no outro Supabase.
+- Identidade: `system_users` e `profiles`. Ponto: `time_clock`. WhatsApp: Z-API já integrada.
+- NF: PlugNotas e o `nf_provider` já gravado. Cobrança: fluxo Asaas existente.
+- Produção: branch `main` e `/api/version` no Vercel `sistema-grupo-tm-seg`.
+- Antes de SQL, confirmar o ref. Catálogo com `service_orders` e sem `missions` não é a TM SEG.
+- `origin/dev` pode estar atrás da `main`. Não usá-la como base sem avanço direto autorizado.
