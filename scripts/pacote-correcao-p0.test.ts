@@ -18,7 +18,7 @@ describe('pacote restante do P0', () => {
   });
 
   it('fecha as policies abertas e preserva o tempo real das missões', () => {
-    assert.match(texto, /RLS já está ativo/);
+    assert.match(texto, /O RLS já está ativo/);
     assert.match(texto, /public_access_fin_trans/);
     assert.match(texto, /financial_invoices_anon_select/);
     assert.match(texto, /tmp_auth_/);
@@ -26,7 +26,13 @@ describe('pacote restante do P0', () => {
     assert.match(pacote, /DROP POLICY public_access_fin_acc ON public\.financial_accounts/);
     assert.match(pacote, /DROP POLICY financial_invoices_anon_select ON public\.financial_invoices/);
     assert.match(pacote, /DROP POLICY public_access_users ON public\.system_users/);
+    assert.match(texto, /public_access_clients/);
+    assert.match(texto, /tmp_auth_select_all/);
+    assert.match(texto, /Etapa 2/);
+    assert.match(pacote, /public_access_clients/);
+    assert.match(pacote, /tmp_auth_delete_all/);
     assert.doesNotMatch(pacote, /DROP POLICY public_access_missions/);
+    assert.doesNotMatch(pacote, /DROP POLICY public_access_clients/);
     assert.doesNotMatch(pacote, /DROP POLICY[^;]*tmp_auth_/);
     assert.doesNotMatch(pacote, /ENABLE ROW LEVEL SECURITY/);
     assert.match(pacote, /relrowsecurity IS NOT TRUE/);
@@ -35,7 +41,7 @@ describe('pacote restante do P0', () => {
   it('não manda aplicar a RLS antiga de JWT nem mexe em cálculo, Asaas ou TORRES', () => {
     assert.match(texto, /Não usar `sql\/2026_10_19_p0_financeiro_rls\.NAO_EXECUTAR\.sql`/);
     assert.match(texto, /app_metadata/);
-    assert.match(texto, /Asaas e o cálculo da OS não entram neste pacote/);
+    assert.match(texto, /Asaas e o cálculo da OS não mudam/);
     assert.doesNotMatch(pacote, /contaPagarTorres|computeCanonicalRevenueCost|calculateMissionFinancials/);
   });
 

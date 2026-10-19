@@ -2,15 +2,14 @@
 -- Projeto ajhmmjuewdsukecaimik. Não apaga linha.
 -- Não altera Asaas, comissão TORRES nem cálculo de OS.
 --
--- Diagnóstico reconciliado: o RLS já está ativo em
--- clients, financial_accounts, financial_invoices, financial_transactions,
--- missions e system_users. O furo é o GRANT SELECT do anon mais as policies
--- public_access_fin_trans, public_access_fin_acc, financial_invoices_anon_select
--- e public_access_users.
+-- Etapa 1, reconciliada com o catálogo lido em ajhmmjuewdsukecaimik.
+-- O RLS já está ativo. Esta etapa só fecha leitura anônima de financeiro
+-- e a senha em system_users.
 --
--- Este arquivo não liga RLS, não cria policy de JWT e não derruba
--- public_access_missions. O tempo real das missões ainda depende dessa leitura.
--- tmp_auth_* e clients ficam de fora até o export trazer tabela, papel, cmd e qual.
+-- Não derruba public_access_missions: o postgres_changes da OS ainda depende dela.
+-- Não derruba public_access_clients: é ALL para public e as telas de OS ainda gravam cliente.
+-- Não derruba tmp_auth_select_all, tmp_auth_insert_all, tmp_auth_update_all
+-- nem tmp_auth_delete_all: são do papel authenticated, em várias tabelas, com condição true.
 
 BEGIN;
 
@@ -66,12 +65,51 @@ BEGIN
     WHERE p.schemaname = 'public'
       AND p.policyname = esperado.nome
       AND p.tablename = esperado.tabela
-      AND p.cmd = 'SELECT'
-      AND p.roles && ARRAY['anon']::name[]
+      AND p.cmd IN ('SELECT', 'ALL')
+      AND (
+        p.roles && ARRAY['anon']::name[]
+        OR p.roles && ARRAY['public']::name[]
+      )
   );
 
   IF falta IS NOT NULL THEN
     RAISE EXCEPTION 'Catálogo diferente do confirmado (%). Não aplique este arquivo.', falta;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'clients'
+      AND policyname = 'public_access_clients'
+      AND cmd = 'ALL'
+      AND roles && ARRAY['public']::name[]
+      AND qual = 'true'
+      AND with_check = 'true'
+  ) THEN
+    RAISE EXCEPTION 'public_access_clients não está como ALL para public. Pare e reconcilie.';
+  END IF;
+
+  SELECT string_agg(nome, ', ')
+    INTO falta
+  FROM (
+    VALUES
+      ('tmp_auth_select_all'),
+      ('tmp_auth_insert_all'),
+      ('tmp_auth_update_all'),
+      ('tmp_auth_delete_all')
+  ) AS esperado(nome)
+  WHERE NOT EXISTS (
+    SELECT 1
+    FROM pg_policies AS p
+    WHERE p.schemaname = 'public'
+      AND p.policyname = esperado.nome
+      AND p.roles && ARRAY['authenticated']::name[]
+      AND p.qual = 'true'
+  );
+
+  IF falta IS NOT NULL THEN
+    RAISE EXCEPTION 'Policy temporária ausente ou diferente (%). Não aplique este arquivo.', falta;
   END IF;
 END
 $$;
@@ -99,7 +137,9 @@ CREATE POLICY system_users_tela_select
   TO anon
   USING (true);
 
--- public_access_missions permanece. Sem ela, o postgres_changes da OS para.
--- clients e tmp_auth_* permanecem até o export nomear cada policy.
+-- Etapa 2, de propósito fora deste arquivo:
+-- public_access_missions, depois de o tempo real da OS deixar de depender do anon.
+-- public_access_clients, depois de a OS gravar cliente só pela API.
+-- tmp_auth_* do papel authenticated, uma tabela por vez, depois do inventário completo.
 
 COMMIT;

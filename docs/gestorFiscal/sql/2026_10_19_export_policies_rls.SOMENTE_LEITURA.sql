@@ -51,6 +51,22 @@ WHERE schemaname = 'public'
 ORDER BY tablename, policyname;
 
 SELECT
+  tablename,
+  policyname,
+  roles,
+  cmd,
+  qual,
+  with_check
+FROM pg_policies
+WHERE schemaname = 'public'
+  AND (
+    policyname LIKE 'public_access_%'
+    OR policyname LIKE 'tmp_auth_%'
+    OR policyname = 'financial_invoices_anon_select'
+  )
+ORDER BY policyname, tablename;
+
+SELECT
   table_name,
   grantee,
   privilege_type

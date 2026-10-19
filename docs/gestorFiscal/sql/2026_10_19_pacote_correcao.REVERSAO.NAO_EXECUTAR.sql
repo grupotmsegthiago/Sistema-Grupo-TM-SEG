@@ -1,6 +1,7 @@
 -- NÃO EXECUTAR como estado final.
--- Devolve só o que o pacote reconciliado retira, no projeto ajhmmjuewdsukecaimik.
--- Não recria a RLS antiga de JWT e não mexe em public_access_missions.
+-- Devolve só o que a etapa 1 retira, no projeto ajhmmjuewdsukecaimik.
+-- Não recria a RLS antiga de JWT.
+-- Não mexe em public_access_missions, public_access_clients nem tmp_auth_*.
 
 BEGIN;
 

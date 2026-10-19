@@ -1,74 +1,66 @@
-# Pacote restante do PR 348
+# Plano consolidado do PR 348
 
 Nada disto foi executado. Não fazer merge nem deploy.
 
-A sessão SQL disponível neste ambiente continua sem `system_users`. O catálogo abaixo é o que foi lido no projeto `ajhmmjuewdsukecaimik`, não uma suposição de RLS desligado.
+Catálogo lido no projeto `ajhmmjuewdsukecaimik`. O RLS já está ativo. O furo são policies e grants abertos.
 
-## Diagnóstico
-
-O RLS já está ativo em `clients`, `financial_accounts`, `financial_invoices`, `financial_transactions`, `missions` e `system_users`. O anon tem privilégio `SELECT` e policies que autorizam a leitura.
-
-Policies confirmadas:
-
-- `public_access_users`
-- `public_access_missions`
-- `public_access_fin_trans`
-- `public_access_fin_acc`
-- `financial_invoices_anon_select`
-- policies temporárias `tmp_auth_*`
-
-O problema é permissão aberta com RLS ligado. Ligar RLS de novo não fecha o furo.
-
-## 1. O que a correção mexe, e o que preserva
+## Etapa 1 — financeiro e senha
 
 Arquivo fechado: `sql/2026_10_19_pacote_correcao.NAO_EXECUTAR.sql`.
-Reversão desse recorte: `sql/2026_10_19_pacote_correcao.REVERSAO.NAO_EXECUTAR.sql`.
+Reversão só deste recorte: `sql/2026_10_19_pacote_correcao.REVERSAO.NAO_EXECUTAR.sql`.
 
-Não usar `sql/2026_10_19_p0_financeiro_rls.NAO_EXECUTAR.sql` nem a reversão que recria `Allow all`. A primeira depende de JWT `app_metadata`, que o login próprio não emite. A segunda não restaura os nomes confirmados.
-
-| Policy | Tabela | Nesta correção |
+| Policy | O que é | Ação |
 | --- | --- | --- |
-| `public_access_fin_trans` | `financial_transactions` | Sai, e o anon perde `SELECT` |
-| `public_access_fin_acc` | `financial_accounts` | Sai, e o anon perde `SELECT` |
-| `financial_invoices_anon_select` | `financial_invoices` | Sai, e o anon perde `SELECT` |
-| `public_access_users` | `system_users` | Sai. O anon continua lendo só as colunas de tela, sem `password` |
-| `public_access_missions` | `missions` | Fica. O `postgres_changes` da OS ainda depende dela |
-| `tmp_auth_*` | não nomeada | Fica até o export trazer tabela, papel, comando e expressão |
-| clients | policy não nomeada | Fica até o export nomear a policy |
+| `public_access_fin_trans` | Leitura aberta de lançamentos | Sai, e o anon perde `SELECT` |
+| `public_access_fin_acc` | Leitura aberta de contas | Sai, e o anon perde `SELECT` |
+| `financial_invoices_anon_select` | `SELECT` do anon em faturas | Sai, e o anon perde `SELECT` |
+| `public_access_users` | Leitura aberta de usuários, inclusive senha | Sai. O anon fica só com as colunas de tela |
 
-O login e a sessão no servidor usam `service_role`, que ignora RLS. O script aborta se esse papel deixar de ignorar RLS. O canal broadcast de OS não usa essas policies. O tempo real por `postgres_changes` em `missions` usa.
+O login próprio não usa essas policies. Ele lê `system_users` com `service_role`, que ignora RLS. O script aborta se esse papel deixar de ignorar RLS.
 
-Asaas e o cálculo da OS não entram neste pacote.
+Não aplicar a etapa 1 em cima do commit publicado `7676ea63`. Esse código ainda lê financeiro pela chave anônima. Antes vêm o backup recuperável e a homologação das telas com a sessão nova.
 
-## 2. Quando aplicar
+O arquivo também aborta se o catálogo não bater: as policies da etapa 1 precisam ser `SELECT` ou `ALL` para `anon` ou `public`; `public_access_clients` precisa continuar `ALL` para `public` com `qual` e `with_check` true; e as quatro `tmp_auth_*` precisam existir para `authenticated` com `qual` true. Existir não é remover.
 
-Só depois de backup recuperável confirmado no projeto `ajhmmjuewdsukecaimik` e de homologação das telas com a sessão nova. O commit publicado `7676ea63` ainda lê financeiro pela chave anônima. Aplicar este SQL antes de trocar esse código tira fatura e lançamento do ar.
+## Etapa 2 — o que este pacote não remove
 
-O arquivo aborta sem as marcas `tmseg.p0_backup = conferido`, `tmseg.p0_telas = validadas` e `tmseg.p0_correcao = autorizada`. Também aborta se alguma policy nomeada não for `SELECT` do anon, ou se o RLS dessas seis tabelas não estiver ativo.
+### Missões
 
-## 3. Senha
+`public_access_missions` fica. O `postgres_changes` em `lib/RealtimeProvider.tsx` ainda acorda a OS por essa leitura anônima. O canal broadcast `mission-updates` já cobre observação, ocorrência e passagem de plantão, mas não substitui sozinho a atualização da lista.
 
-As telas não pedem a coluna `password` de volta. A policy `public_access_users`, enquanto existir, ainda entrega a senha pela chave anônima. A correção troca essa policy por leitura das colunas de tela.
+A policy só sai depois de a lista de OS atualizar por esse broadcast, com a tela homologada sem a leitura anônima de `missions`.
 
-## 4. Backup
+### Clientes
 
-Não confirmado. Sem a tela de backup desse projeto, a marca `tmseg.p0_backup` não deve ser ligada.
+`public_access_clients` é `ALL` para `public`, com `qual` e `with_check` true. O anon lê e grava clientes. Risco alto, e a OS publicada ainda depende disso. Sai na etapa 2, quando o cadastro de cliente passar só pela API. Não entra na remoção da etapa 1.
 
-## 5. Regressão
+### Policies temporárias
 
-Os testes já feitos de sessão, ponte, simulação do Gestor Fiscal, faturamento, pedágio, RH, ponto e comissão não foram repetidos. O teste deste pacote é `scripts/pacote-correcao-p0.test.ts`.
+Confirmadas, no papel `authenticated`, com condição true:
 
-Depois da aplicação, e antes de publicar: login, OS ao vivo, fatura, pedágio e a lista de usuários sem senha.
+- `tmp_auth_select_all`
+- `tmp_auth_insert_all`
+- `tmp_auth_update_all`
+- `tmp_auth_delete_all`
 
-## 6. Rollback
+Estão em várias tabelas, entre elas financeiro, RH, patrimônio, missões auxiliares e configurações. A lista completa de tabelas ainda é a consulta `sql/2026_10_19_export_policies_rls.SOMENTE_LEITURA.sql`, que filtra `tmp_auth_%` e `public_access_%`.
 
-Código publicado: `7676ea63`. Esta branch ainda não foi para produção. A reversão do SQL só recria as quatro policies que este pacote remove e devolve o `SELECT` do anon nelas. `public_access_missions` não entra nessa reversão porque não é removida.
+Não são a causa da leitura que a chave anônima já fez. O papel é `authenticated`, e o login próprio não abre sessão do Supabase Auth. O risco é latente: um JWT `authenticated` ganha leitura e escrita nessas tabelas. Remover as quatro de uma vez pode quebrar uma tabela que ainda grave por esse papel. A etapa 2 classifica cada tabela do export e só então retira a policy daquela tabela.
 
-## 7. Publicar só quando
+| Domínio | Risco enquanto existirem | Dependência para retirar |
+| --- | --- | --- |
+| Financeiro | JWT `authenticated` altera lançamento, conta e fatura | Etapa 1 já sem anon, e nenhuma tela usando esse JWT |
+| RH e patrimônio | O mesmo JWT altera cadastro pessoal e bens | Telas de RH conferidas com a API |
+| Missões auxiliares | O mesmo JWT altera histórico e apoios da OS | Tempo real e OS homologados |
+| Configurações | O mesmo JWT altera ajuste do sistema | Tela de configuração conferida |
+
+## Fora deste plano
+
+Não usar `sql/2026_10_19_p0_financeiro_rls.NAO_EXECUTAR.sql`. Ela depende de JWT `app_metadata`. Asaas e o cálculo da OS não mudam.
+
+## Publicar só quando
 
 - O backup de `ajhmmjuewdsukecaimik` estiver confirmado.
-- A homologação da sessão nova tiver aberto OS, fatura e usuário.
-- Este SQL tiver rodado nesse projeto, não em outro.
-- A chave anônima não ler lançamento, conta, fatura nem senha.
-- A OS continuar atualizando ao vivo.
-- Diretoria autorizar. Merge e deploy ficam para depois disso.
+- A etapa 1 tiver sido homologada: anon sem lançamento, conta, fatura e senha; OS ainda atualizando ao vivo; login próprio funcionando.
+- A etapa 2 tiver o export completo das `tmp_auth_*` e a OS atualizando sem `public_access_missions`.
+- A Diretoria autorizar. Merge e deploy ficam para depois disso.
