@@ -115,11 +115,13 @@ test('grava hash e, se a coluna não existe, preserva o texto', async () => {
       };
     },
   };
-  const modo = await gravarSenhaNoServidor(cliente, 'fun', 'senha-ficticia-nova');
+  const modo = await gravarSenhaNoServidor(cliente, 'fun', 'senha-ficticia-nova', { force_password_change: true, session_epoch: 1 });
   assert.equal(modo, 'texto');
   assert.equal(String(chamadas[0].password_hash).startsWith('scrypt$v1$'), true);
   assert.equal(chamadas[0].password, null);
   assert.equal(chamadas[1].password, 'senha-ficticia-nova');
+  assert.equal(chamadas[1].force_password_change, undefined);
+  assert.equal(chamadas[1].session_epoch, undefined);
   assert.equal(JSON.stringify(chamadas).includes('senha-ficticia-nova') && chamadas[0].password === null, true);
 });
 

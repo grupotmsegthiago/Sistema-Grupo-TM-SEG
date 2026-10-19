@@ -1,6 +1,6 @@
 /**
  * Grava a senha nova. Prefere o hash versionado e apaga o texto.
- * Se a coluna password_hash ainda não existir, mantém o texto para a troca não travar o funcionário.
+ * Se a coluna password_hash ainda não existir, mantém o texto e não exige troca obrigatória, para o funcionário não travar.
  */
 import { gerarHashVersionado } from '../gestorFiscal/ponteAuth/hashSenha';
 
@@ -44,7 +44,8 @@ export async function gravarSenhaNoServidor(
   }
   const legado: Record<string, unknown> = { password: senha };
   for (const [chave, valor] of Object.entries(extras)) {
-    if (chave !== 'session_epoch') legado[chave] = valor;
+    if (chave === 'session_epoch' || chave === 'force_password_change') continue;
+    legado[chave] = valor;
   }
   const texto = await cliente.from('system_users').update(legado).eq('id', usuarioId);
   if (texto.error) throw new Error('Falha ao gravar a senha.');
