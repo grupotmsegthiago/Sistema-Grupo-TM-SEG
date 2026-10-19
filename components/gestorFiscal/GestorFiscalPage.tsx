@@ -404,8 +404,8 @@ function Conteudo(props: {
         <section className="space-y-3" data-testid="painel-notas">
           <h2 className="text-sm font-black uppercase tracking-wide text-gray-800">Gestão de Notas Fiscais</h2>
           <p className="text-xs font-semibold text-gray-600">
-            O campo “Emite nota fiscal?” ainda não existe em <span className="font-mono">providers</span>.
-            A escolha abaixo vale só nesta simulação. Mapeamento previsto, sem migration: coluna <span className="font-mono">providers.emite_nota_fiscal</span> com Sim, Não ou Não informado.
+            O valor oficial fica no cadastro do fornecedor, na coluna <span className="font-mono">providers.emite_nota_fiscal</span>.
+            A lista abaixo começa com o que está gravado. Mudar o seletor aqui vale só nesta simulação.
           </p>
           <div className="grid gap-3 md:grid-cols-2">
             <Card titulo="Com crédito marcado e NF válida" valor={brl(comNf.lucroLiquidoLucroReal)} detalhe={`Crédito usado ${brl(comNf.creditoUsado)}. NF sozinha não gera crédito.`} />

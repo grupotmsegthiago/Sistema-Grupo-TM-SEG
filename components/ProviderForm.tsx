@@ -56,7 +56,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     state: '',
     alvaraValidity: '',
     alvaraUrl: '',
-    dhl_channel_preference: 'both' as 'email' | 'whatsapp' | 'both'
+    dhl_channel_preference: 'both' as 'email' | 'whatsapp' | 'both',
+    emite_nota_fiscal: 'nao_informado' as 'sim' | 'nao' | 'nao_informado'
   });
   const [operatingCoverage, setOperatingCoverage] = useState<ProviderOperatingCoverageRow[]>([]);
   const [coverageTouched, setCoverageTouched] = useState(false);
@@ -209,7 +210,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     state: data.state || '',
                     alvaraValidity: data.alvara_validity || '',
                     alvaraUrl: data.alvara_url || '',
-                    dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both'
+                    dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both',
+                    emite_nota_fiscal: data.emite_nota_fiscal === 'sim' || data.emite_nota_fiscal === 'nao' ? data.emite_nota_fiscal : 'nao_informado'
                 });
                 const coverage = parseOperatingCoverage(data.operating_coverage);
                 setOperatingCoverage(coverage);
@@ -665,7 +667,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             address: fullAddress,
             alvara_validity: formData.alvaraValidity || null, 
             alvara_url: formData.alvaraUrl,
-            dhl_channel_preference: formData.dhl_channel_preference || 'both'
+            dhl_channel_preference: formData.dhl_channel_preference || 'both',
+            emite_nota_fiscal: formData.emite_nota_fiscal === 'sim' || formData.emite_nota_fiscal === 'nao' ? formData.emite_nota_fiscal : 'nao_informado'
        };
        if (coverageTouched) {
            payload.operating_coverage = serializeOperatingCoverage(operatingCoverage, formData.state, formData.city);
@@ -680,18 +683,19 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                delete (fallback as any).operating_coverage;
                coverageColumnMissing = true;
            }
+           if (/emite_nota_fiscal/i.test(errMsg)) delete (fallback as any).emite_nota_fiscal;
            if (op === 'update') return await supabase.from('providers').update(fallback).eq('id', id);
            return await supabase.from('providers').insert([fallback]);
        };
        if (id) {
            let { error } = await supabase.from('providers').update(payload).eq('id', id);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
            if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
            let { error } = await supabase.from('providers').insert([payload]);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
            void publicarNovidadeCadastro({
@@ -801,14 +805,11 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     </div>
                     <div className="space-y-1.5 md:col-span-3">
                         <label className={LABEL_CLASS}>Emite nota fiscal?</label>
-                        <select className={INPUT_CLASS} disabled value="nao_informado" aria-disabled="true">
+                        <select className={INPUT_CLASS} value={formData.emite_nota_fiscal} onChange={e => setFormData({ ...formData, emite_nota_fiscal: e.target.value === 'sim' || e.target.value === 'nao' ? e.target.value : 'nao_informado' })}>
                             <option value="sim">Sim</option>
                             <option value="nao">Não</option>
                             <option value="nao_informado">Não informado</option>
                         </select>
-                        <p className="text-[10px] font-bold text-amber-700">
-                          Previsto para o cadastro. Ainda não grava: o banco não tem este campo. A escolha fica só na simulação do Gestor Fiscal.
-                        </p>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Razão Social *</label>

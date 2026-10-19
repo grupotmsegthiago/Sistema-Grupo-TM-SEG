@@ -63,9 +63,9 @@ describe('gestor fiscal — premissas e fontes', () => {
     assert.match(carga, /computeCanonicalRevenueCost/);
     const form = fs.readFileSync('components/ProviderForm.tsx', 'utf8');
     assert.match(form, /Emite nota fiscal\?/);
-    assert.equal(form.includes('emite_nota_fiscal'), false);
+    assert.match(form, /emite_nota_fiscal/);
     const payload = form.slice(form.indexOf('const payload: any = {'), form.indexOf('};', form.indexOf('const payload: any = {')));
-    assert.equal(/nota fiscal/i.test(payload), false);
+    assert.match(payload, /emite_nota_fiscal/);
   });
 
   it('CNPJ vazio não cai na TM GESTÃO e o histórico corta 2025', () => {
@@ -228,15 +228,15 @@ describe('gestor fiscal — teto, margem e reajuste', () => {
     assert.notEqual(precisa.aumento, margem.reajusteValor);
   });
 
-  it('prepara a coluna de NF sem colocá-la em migrations e sem tocar a TORRES', () => {
+  it('grava a coluna de NF do fornecedor sem tocar a TORRES', () => {
     assert.equal(interpretarEmiteNf('sim'), 'sim');
     assert.equal(interpretarEmiteNf('Não'), 'nao');
     assert.equal(interpretarEmiteNf(''), 'nao_informado');
     const migrations = fs.readdirSync('migrations');
-    assert.equal(migrations.some((nome) => nome.includes('emite_nota')), false);
-    const sql = fs.readFileSync('docs/governanca/sql/providers-emite-nota-fiscal.NAO_EXECUTAR.sql', 'utf8');
-    assert.match(sql, /NÃO EXECUTAR/);
-    assert.match(sql, /emite_nota_fiscal/);
+    assert.equal(migrations.some((nome) => nome.includes('emite_nota')), true);
+    const sql = fs.readFileSync('migrations/2026_10_19_providers_emite_nota_fiscal.sql', 'utf8');
+    assert.match(sql, /ADD COLUMN IF NOT EXISTS emite_nota_fiscal/);
+    assert.equal(/drop table/i.test(sql), false);
     const carga = fs.readFileSync('lib/gestorFiscal/carregarFontes.ts', 'utf8');
     assert.equal(carga.includes('service_orders'), false);
     assert.equal(/torres/i.test(carga), false);
