@@ -8,7 +8,9 @@ import {
   FORMULAS_FISCAIS,
   classificarMargem,
   creditoDaLinha,
+  interpretarEmiteNf,
   reajusteParaMargemIdeal,
+  reajusteParaPreservarLucro,
   simularPeriodo,
   tetoReajusteFornecedor,
 } from '../lib/gestorFiscal/simulacao';
@@ -83,6 +85,10 @@ describe('gestor fiscal — laboratório e integridade', () => {
     assert.equal(analise.incompleto, true);
     assert.equal(analise.tributoPago, 1_000);
     assert.equal(analise.tributoPendente, 500);
+    assert.equal(analise.receitaForaDaEmpresa, 999_999);
+    assert.equal(analise.despesaSemEmpresa, 7_777);
+    assert.equal(analise.tributoSemEmpresa, 4_000);
+    assert.ok(analise.conferencia.some((item) => item.regra.includes('Crédito') && item.estado === 'ATENDE'));
     assert.ok(analise.duplicatas.length >= 2);
     assert.equal(analise.rotuloModo, 'LABORATÓRIO');
     assert.ok(analise.avisos.some((a) => a.includes('fictícios')));
@@ -158,6 +164,14 @@ describe('gestor fiscal — teto, margem e reajuste', () => {
       base,
     );
     assert.ok(noTeto.lucroLiquidoLucroReal + 0.05 >= (teto.lucroReferencia || 0));
+    assert.ok((noTeto.margem || 0) + 1e-9 >= 0.3);
+    const acima = simularPeriodo(
+      [{ ...meses[0], custoFornecedor: 10_000 + (teto.teto || 0) + 0.01 }],
+      base,
+    );
+    const furaMargem = (acima.margem || 0) + 1e-9 < 0.3;
+    const furaLucro = acima.lucroLiquidoLucroReal + 0.005 < (teto.lucroReferencia || 0);
+    assert.equal(furaMargem || furaLucro, true);
   });
 
   it('segura o teto pela margem de 30% quando o lucro ainda tem folga', () => {
@@ -176,6 +190,44 @@ describe('gestor fiscal — teto, margem e reajuste', () => {
     assert.equal(teto.status, 'SEM_FOLGA');
     assert.equal(teto.teto, 0);
     assert.equal(teto.exemploReduz?.contraReferencia, 'REDUZ');
+  });
+
+  it('cobra a mais do cliente só quando o Lucro Real fica abaixo do Simples', () => {
+    const meses = [{ mes: '2026-01', receita: 100_000, custoFornecedor: 40_000, despesasOperacionais: 0, creditoPisCofins: 0 }];
+    const semAliquota = reajusteParaPreservarLucro(meses, PREMISSAS_INICIAIS);
+    assert.equal(semAliquota.status, 'PREMISSA_AUSENTE');
+    assert.equal(semAliquota.aumento, null);
+
+    const ja = reajusteParaPreservarLucro(meses, { ...PREMISSAS_INICIAIS, simplesAliquotaEfetiva: 0.5 });
+    assert.equal(ja.status, 'JA_PRESERVA');
+    assert.equal(ja.aumento, 0);
+
+    const premissas = { ...PREMISSAS_INICIAIS, simplesAliquotaEfetiva: 0.06 };
+    const precisa = reajusteParaPreservarLucro(meses, premissas);
+    assert.equal(precisa.status, 'REAJUSTE');
+    assert.ok((precisa.aumento || 0) > 0);
+    const depois = simularPeriodo([{ ...meses[0], receita: 100_000 + (precisa.aumento || 0) }], premissas);
+    assert.ok(depois.lucroLiquidoLucroReal + 0.05 >= (precisa.lucroReferencia || 0));
+    const umCentavoAntes = simularPeriodo([{ ...meses[0], receita: 100_000 + (precisa.aumento || 0) - 0.01 }], premissas);
+    assert.ok(umCentavoAntes.lucroLiquidoLucroReal + 0.005 < (precisa.lucroReferencia || 0));
+    const margem = reajusteParaMargemIdeal(100_000, 40_000, 0, premissas);
+    assert.equal(margem.reajusteValor, 0);
+    assert.notEqual(precisa.aumento, margem.reajusteValor);
+  });
+
+  it('prepara a coluna de NF sem colocá-la em migrations e sem tocar a TORRES', () => {
+    assert.equal(interpretarEmiteNf('sim'), 'sim');
+    assert.equal(interpretarEmiteNf('Não'), 'nao');
+    assert.equal(interpretarEmiteNf(''), 'nao_informado');
+    const migrations = fs.readdirSync('migrations');
+    assert.equal(migrations.some((nome) => nome.includes('emite_nota')), false);
+    const sql = fs.readFileSync('docs/governanca/sql/providers-emite-nota-fiscal.NAO_EXECUTAR.sql', 'utf8');
+    assert.match(sql, /NÃO EXECUTAR/);
+    assert.match(sql, /emite_nota_fiscal/);
+    const carga = fs.readFileSync('lib/gestorFiscal/carregarFontes.ts', 'utf8');
+    assert.equal(carga.includes('service_orders'), false);
+    assert.equal(/torres/i.test(carga), false);
+    assert.match(carga, /emite_nota_fiscal/);
   });
 
   it('calcula o reajuste do cliente para chegar a 40%', () => {
@@ -200,6 +252,7 @@ describe('gestor fiscal — teto, margem e reajuste', () => {
       despesas: [],
       documentos: [],
       tributos: [],
+      emiteLido: {},
     }, filtroLab({ empresaKey: 'TM GESTAO' }), PREMISSAS_INICIAIS, {}, {});
     assert.equal(analise.semCredito.receita, 0);
     assert.equal(analise.documentos.length, 0);

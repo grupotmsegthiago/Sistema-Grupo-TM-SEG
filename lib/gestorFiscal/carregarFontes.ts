@@ -12,7 +12,7 @@ import type { Client, ClientPriceTable, ProviderCostTable } from '../../types';
 import { classificarEmpresa } from './empresas';
 import { HISTORICO_INICIO, mesDeIso } from './periodo';
 import type { CargaFiscal, DespesaLinha, DocumentoLinha, FatiaOs, TributoLancado } from './base';
-import type { SituacaoNf } from './simulacao';
+import { interpretarEmiteNf, type EmiteNf, type SituacaoNf } from './simulacao';
 
 const COLS_MISSAO = [
   'id', 'status', 'client', 'provider', 'origin', 'destination',
@@ -147,8 +147,20 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
     falhou('Faturas e NF de cliente', erro);
   }
 
+  const emiteLido: Record<string, EmiteNf> = {};
+  try {
+    const fornecedores = await paginar('providers', (q) => q.select('id, name, emite_nota_fiscal', { count: 'exact' }));
+    for (const row of fornecedores) {
+      const nome = texto(row.name);
+      if (!nome) continue;
+      emiteLido[nome] = interpretarEmiteNf(row.emite_nota_fiscal);
+    }
+  } catch {
+    mensagens.push('A emissão de NF do fornecedor não foi lida. A coluna ainda não está no banco ou a consulta falhou. Fica não informado e nada é gravado.');
+  }
+
   if (estado === 'ERRO') {
-    return { estado, modo: 'leitura', mensagens, fatias: [], despesas: [], documentos: [], tributos: [] };
+    return { estado, modo: 'leitura', mensagens, fatias: [], despesas: [], documentos: [], tributos: [], emiteLido };
   }
 
   const clientePorNome = new Map<string, Linha>();
@@ -282,5 +294,5 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
     mensagens.push('Nenhum lançamento encontrado no período para as fontes lidas.');
   }
 
-  return { estado, modo: 'leitura', mensagens, fatias, despesas, documentos, tributos };
+  return { estado, modo: 'leitura', mensagens, fatias, despesas, documentos, tributos, emiteLido };
 }

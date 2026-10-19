@@ -15,6 +15,7 @@ export const FORMULAS_FISCAIS = {
   liquido: 'Lucro líquido do regime = resultado operacional − tributos desse regime.',
   teto: 'Teto do fornecedor = maior aumento de custo que, no Lucro Real, preserva ao mesmo tempo a margem mínima e o lucro líquido de referência do Simples.',
   cliente: 'Receita para a meta = (custo do fornecedor + despesas do recorte) ÷ (1 − margem ideal). Reajuste = essa receita − a receita atual.',
+  preservar: 'Aumento para preservar o lucro = menor acréscimo de receita que faz o lucro líquido do Lucro Real voltar ao lucro líquido de referência do Simples. Não substitui o reajuste da margem de 40%.',
 } as const;
 
 export interface MesOperacional {
@@ -237,6 +238,21 @@ export function reajusteParaMargemIdeal(
   };
 }
 
+export interface ReajustePreservarLucro {
+  status: 'JA_PRESERVA' | 'REAJUSTE' | 'PREMISSA_AUSENTE' | 'INDETERMINADO' | 'LIMITE_DA_BUSCA';
+  aumento: number | null;
+  lucroReferencia: number | null;
+  lucroDepois: number | null;
+  motivo: string;
+  formula: string;
+}
+
+export interface ItemConferencia {
+  regra: string;
+  estado: 'ATENDE' | 'NAO_ATENDE' | 'PREMISSA_AUSENTE' | 'NAO_SE_APLICA';
+  detalhe: string;
+}
+
 function aplicarDelta(meses: MesOperacional[], delta: number): MesOperacional[] {
   if (meses.length === 0 || delta === 0) return meses.map((m) => ({ ...m }));
   const totalCusto = soma(meses.map((m) => m.custoFornecedor));
@@ -347,6 +363,155 @@ export function tetoReajusteFornecedor(meses: MesOperacional[], premissas: Premi
     exemploReduz: exemplo((lo + 100) / 100, meses, premissas, referencia),
     formula,
   };
+}
+
+function aplicarDeltaReceita(meses: MesOperacional[], delta: number): MesOperacional[] {
+  if (meses.length === 0 || delta === 0) return meses.map((m) => ({ ...m }));
+  const total = soma(meses.map((m) => m.receita));
+  if (total <= 0) {
+    return meses.map((m, i) => (i === 0 ? { ...m, receita: m.receita + delta } : { ...m }));
+  }
+  return meses.map((m) => ({
+    ...m,
+    receita: m.receita + delta * (m.receita / total),
+  }));
+}
+
+/** Quanto cobrar a mais do cliente para o Lucro Real não ficar abaixo do lucro do Simples. */
+export function reajusteParaPreservarLucro(meses: MesOperacional[], premissas: PremissasFiscais): ReajustePreservarLucro {
+  const formula = FORMULAS_FISCAIS.preservar;
+  if (!aliquotaValida(premissas.simplesAliquotaEfetiva)) {
+    return {
+      status: 'PREMISSA_AUSENTE',
+      aumento: null,
+      lucroReferencia: null,
+      lucroDepois: null,
+      motivo: 'Sem a alíquota do Simples não há lucro de referência para preservar.',
+      formula,
+    };
+  }
+  const atual = simularPeriodo(meses, premissas);
+  const referencia = atual.lucroLiquidoSimples;
+  if (referencia == null || !(atual.receita > 0)) {
+    return {
+      status: 'INDETERMINADO',
+      aumento: null,
+      lucroReferencia: referencia,
+      lucroDepois: null,
+      motivo: 'Receita do recorte é zero. O aumento de preço fica indeterminado.',
+      formula,
+    };
+  }
+  const restaura = (centavos: number): boolean => {
+    const r = simularPeriodo(aplicarDeltaReceita(meses, centavos / 100), premissas);
+    return r.lucroLiquidoLucroReal + 0.005 >= referencia;
+  };
+  if (restaura(0)) {
+    return {
+      status: 'JA_PRESERVA',
+      aumento: 0,
+      lucroReferencia: referencia,
+      lucroDepois: atual.lucroLiquidoLucroReal,
+      motivo: 'O lucro líquido do Lucro Real já não fica abaixo do Simples. Não há aumento de preço para preservar o lucro.',
+      formula,
+    };
+  }
+  const capCentavos = Math.max(100, Math.round(atual.receita * 100 * 20));
+  if (!restaura(capCentavos)) {
+    return {
+      status: 'LIMITE_DA_BUSCA',
+      aumento: null,
+      lucroReferencia: referencia,
+      lucroDepois: null,
+      motivo: 'Mesmo com a receita vinte vezes maior, o Lucro Real não alcança a referência. A premissa tributária precisa ser revista.',
+      formula,
+    };
+  }
+  let lo = 0;
+  let hi = capCentavos;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (restaura(mid)) hi = mid;
+    else lo = mid + 1;
+  }
+  const aumento = arredondar(lo / 100);
+  const depois = simularPeriodo(aplicarDeltaReceita(meses, aumento), premissas);
+  return {
+    status: 'REAJUSTE',
+    aumento,
+    lucroReferencia: referencia,
+    lucroDepois: depois.lucroLiquidoLucroReal,
+    motivo: 'Este aumento de preço preserva o lucro líquido. O reajuste para a margem de 40% é outra conta e pode ser diferente.',
+    formula,
+  };
+}
+
+export function conferirRegras(entrada: {
+  premissas: PremissasFiscais;
+  margemAtual: number | null;
+  teto: TetoFornecedor;
+  reajusteMargem: ReajusteCliente;
+  preservar: ReajustePreservarLucro;
+  creditoUsadoSemMarca: number;
+}): ItemConferencia[] {
+  const itens: ItemConferencia[] = [];
+  if (entrada.margemAtual == null) {
+    itens.push({ regra: 'Margem operacional', estado: 'NAO_SE_APLICA', detalhe: 'Receita zero. A margem não é calculada.' });
+  } else if (entrada.margemAtual + 1e-9 < entrada.premissas.margemMinima) {
+    itens.push({ regra: 'Margem mínima de 30%', estado: 'NAO_ATENDE', detalhe: 'O recorte atual está abaixo do mínimo. O teto do fornecedor fica zerado.' });
+  } else if (entrada.margemAtual + 1e-9 < entrada.premissas.margemIdeal) {
+    itens.push({ regra: 'Margem mínima de 30%', estado: 'ATENDE', detalhe: 'Acima de 30% e abaixo da meta de 40%. O reajuste do cliente cobre a meta.' });
+  } else {
+    itens.push({ regra: 'Margem mínima de 30% e meta de 40%', estado: 'ATENDE', detalhe: 'O recorte já está na meta. O reajuste de margem do cliente é zero.' });
+  }
+
+  if (entrada.teto.status === 'PREMISSA_AUSENTE' || entrada.teto.status === 'INDETERMINADO') {
+    itens.push({ regra: 'Teto do fornecedor', estado: 'PREMISSA_AUSENTE', detalhe: entrada.teto.motivo });
+  } else if (entrada.teto.teto == null) {
+    itens.push({ regra: 'Teto do fornecedor', estado: 'NAO_ATENDE', detalhe: entrada.teto.motivo });
+  } else {
+    itens.push({
+      regra: 'Teto do fornecedor preserva margem e lucro',
+      estado: 'ATENDE',
+      detalhe: entrada.teto.motivo,
+    });
+  }
+
+  if (entrada.reajusteMargem.status === 'INDETERMINADO') {
+    itens.push({ regra: 'Reajuste do cliente para 40%', estado: 'NAO_SE_APLICA', detalhe: 'Sem base de receita e custo.' });
+  } else if (entrada.reajusteMargem.status === 'JA_ATINGE') {
+    itens.push({ regra: 'Reajuste do cliente para 40%', estado: 'ATENDE', detalhe: 'A margem operacional já alcança a meta.' });
+  } else {
+    itens.push({ regra: 'Reajuste do cliente para 40%', estado: 'ATENDE', detalhe: 'O valor indicado leva a margem operacional à meta de 40%.' });
+  }
+
+  if (entrada.preservar.status === 'PREMISSA_AUSENTE' || entrada.preservar.status === 'INDETERMINADO') {
+    itens.push({ regra: 'Preço para preservar o lucro líquido', estado: 'PREMISSA_AUSENTE', detalhe: entrada.preservar.motivo });
+  } else if (entrada.preservar.status === 'LIMITE_DA_BUSCA') {
+    itens.push({ regra: 'Preço para preservar o lucro líquido', estado: 'NAO_ATENDE', detalhe: entrada.preservar.motivo });
+  } else {
+    itens.push({ regra: 'Preço para preservar o lucro líquido', estado: 'ATENDE', detalhe: entrada.preservar.motivo });
+  }
+
+  itens.push({
+    regra: 'Crédito tributário não é automático',
+    estado: entrada.creditoUsadoSemMarca === 0 ? 'ATENDE' : 'NAO_ATENDE',
+    detalhe: entrada.creditoUsadoSemMarca === 0
+      ? 'Despesa e NF só viram crédito se a simulação marcar o fornecedor.'
+      : 'Houve crédito sem marcação. Isso fere a regra.',
+  });
+  return itens;
+}
+
+export function interpretarEmiteNf(valor: unknown): EmiteNf {
+  const s = String(valor ?? '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (s === 'sim' || s === 's' || s === 'true' || s === '1') return 'sim';
+  if (s === 'nao' || s === 'n' || s === 'false' || s === '0') return 'nao';
+  return 'nao_informado';
 }
 
 export type EmiteNf = 'sim' | 'nao' | 'nao_informado';

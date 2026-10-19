@@ -45,6 +45,14 @@ Teto do fornecedor = maior aumento de custo que, no Lucro Real, ainda segura a m
 
 Reajuste do cliente para 40% = (custo + despesa do recorte) / 0,60 − receita. Na lista por cliente, a despesa fixa não é rateada. Isso está escrito na tela.
 
+Aumento para preservar o lucro = menor acréscimo de receita que faz o lucro líquido do Lucro Real voltar ao lucro líquido do Simples. Se o Lucro Real já não fica abaixo, o aumento é zero. Sem alíquota do Simples, o valor não é inventado. Essa conta não substitui o reajuste de 40%.
+
+O teto do fornecedor, no centavo encontrado, mantém margem de pelo menos 30% e lucro líquido do Lucro Real maior ou igual ao do Simples. O centavo seguinte fura uma das duas.
+
+Receita de outro CNPJ, despesa sem emissora e tributo sem emissora aparecem em valor e ficam fora da soma.
+
+A coluna `providers.emite_nota_fiscal` está preparada em `docs/governanca/sql/providers-emite-nota-fiscal.NAO_EXECUTAR.sql`. O arquivo não roda comando. A leitura tenta a coluna e, se ela não existir, deixa “não informado”.
+
 Tributo compensado é número digitado. O banco não tem essa coluna.
 
 ## Rollback

@@ -100,11 +100,17 @@ const GestorFiscalPage: React.FC<{
           despesas: [],
           documentos: [],
           tributos: [],
+          emiteLido: {},
         });
       })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
   }, [modo, periodo.inicio, periodo.fim]);
+
+  useEffect(() => {
+    if (modo !== 'leitura' || !carga) return;
+    setEmite((atual) => ({ ...carga.emiteLido, ...atual }));
+  }, [carga, modo]);
 
   const filtro: FiltroFiscal = {
     empresaKey,
@@ -203,8 +209,8 @@ const GestorFiscalPage: React.FC<{
       {carregando ? <p className="text-sm font-bold text-gray-500">Lendo as fontes, sem gravar nada…</p> : null}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${modo === 'leitura' ? 'bg-black text-white' : 'bg-white text-gray-600 border'}`} onClick={() => { setModo('leitura'); setEmpresaKey(''); setCarga(null); }}>Leitura das fontes</button>
-        <button type="button" className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${modo === 'laboratorio' ? 'bg-amber-600 text-white' : 'bg-white text-gray-600 border'}`} onClick={() => { setModo('laboratorio'); setEmpresaKey(EMPRESA_LABORATORIO.key); setCarga(CARGA_LABORATORIO); }} data-testid="botao-laboratorio">Laboratório fictício</button>
+        <button type="button" className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${modo === 'leitura' ? 'bg-black text-white' : 'bg-white text-gray-600 border'}`} onClick={() => { setModo('leitura'); setEmpresaKey(''); setCarga(null); setEmite({}); }}>Leitura das fontes</button>
+        <button type="button" className={`rounded-lg px-3 py-2 text-xs font-black uppercase ${modo === 'laboratorio' ? 'bg-amber-600 text-white' : 'bg-white text-gray-600 border'}`} onClick={() => { setModo('laboratorio'); setEmpresaKey(EMPRESA_LABORATORIO.key); setCarga(CARGA_LABORATORIO); setEmite({ 'FORNECEDOR FICTICIO COM NF': 'sim', 'FORNECEDOR FICTICIO SEM NF': 'nao' }); }} data-testid="botao-laboratorio">Laboratório fictício</button>
         <label className="flex items-center gap-2 text-xs font-bold text-gray-600">
           <input type="checkbox" checked={incluirEstimados} onChange={(e) => setIncluirEstimados(e.target.checked)} />
           Incluir OS estimadas na base
@@ -283,6 +289,18 @@ function Conteudo(props: {
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <Termometro margem={base.margem} faixa={analise.faixa} />
           </div>
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card titulo="Receita de outro CNPJ" valor={brl(analise.receitaForaDaEmpresa)} detalhe="Ficou fora desta soma." teste="kpi-outro-cnpj" />
+            <Card titulo="Despesa sem empresa" valor={brl(analise.despesaSemEmpresa)} detalhe="Sem emissora identificada. Não entrou no resultado." />
+            <Card titulo="Tributo sem empresa" valor={brl(analise.tributoSemEmpresa)} detalhe="Lançamento de imposto sem CNPJ. Não entrou no resultado." />
+          </div>
+          <ul className="rounded-xl border border-gray-200 bg-white p-4 text-xs" data-testid="conferencia-regras">
+            {analise.conferencia.map((item) => (
+              <li key={item.regra} className="border-t border-gray-100 py-2 first:border-t-0">
+                <span className="font-black uppercase">{item.estado}</span> — {item.regra}. {item.detalhe}
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 
@@ -326,8 +344,12 @@ function Conteudo(props: {
       {props.mostrar('clientes') ? (
         <section className="space-y-3" data-testid="painel-clientes">
           <h2 className="text-sm font-black uppercase tracking-wide text-gray-800">Simulador de Reajuste de Clientes</h2>
-          <Card titulo="Reajuste consolidado para 40%" valor={brl(analise.reajusteCliente.reajusteValor)} detalhe={`${analise.reajusteCliente.status} · margem atual ${pct(analise.reajusteCliente.margemAtual)}`} teste="kpi-reajuste-cliente" />
+          <div className="grid gap-3 md:grid-cols-2">
+            <Card titulo="Reajuste para a margem de 40%" valor={brl(analise.reajusteCliente.reajusteValor)} detalhe={`${analise.reajusteCliente.status} · margem atual ${pct(analise.reajusteCliente.margemAtual)}`} teste="kpi-reajuste-cliente" />
+            <Card titulo="Cobrar a mais para preservar o lucro" valor={brl(analise.preservarLucro.aumento)} detalhe={analise.preservarLucro.motivo} teste="kpi-preservar-lucro" />
+          </div>
           <p className="text-xs font-semibold text-gray-600">{analise.reajusteCliente.formula}</p>
+          <p className="text-xs font-semibold text-gray-600">{analise.preservarLucro.formula}</p>
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
             <table className="min-w-full text-left text-xs">
               <thead className="bg-gray-50 font-black uppercase text-gray-500">

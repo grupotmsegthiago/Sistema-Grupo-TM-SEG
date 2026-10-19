@@ -159,6 +159,10 @@ export const CARGA_LABORATORIO: CargaFiscal = {
       origem: 'financial_invoices',
     },
   ],
+  emiteLido: {
+    'FORNECEDOR FICTICIO COM NF': 'sim',
+    'FORNECEDOR FICTICIO SEM NF': 'nao',
+  },
   tributos: [
     { id: 'LAB-TRIB-PAGO', mes: '2026-01', empresaKey: E, valor: 1_000, status: 'pago', descricao: 'Tributo fictício pago' },
     { id: 'LAB-TRIB-PEND', mes: '2026-01', empresaKey: E, valor: 500, status: 'pendente', descricao: 'Tributo fictício pendente' },

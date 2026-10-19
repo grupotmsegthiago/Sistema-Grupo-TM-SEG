@@ -12,11 +12,14 @@ import {
   simularPeriodo,
   tetoReajusteFornecedor,
   reajusteParaMargemIdeal,
+  reajusteParaPreservarLucro,
+  conferirRegras,
   classificarMargem,
   FORMULAS_FISCAIS,
   type EmiteNf,
   type MesOperacional,
   type SituacaoNf,
+  type EmiteNf,
 } from './simulacao';
 import type { PremissasFiscais } from './premissas';
 
@@ -77,6 +80,8 @@ export interface CargaFiscal {
   documentos: DocumentoLinha[];
   tributos: TributoLancado[];
   modo: 'leitura' | 'laboratorio';
+  /** Lido do cadastro quando a coluna existir. Vazio se a coluna ainda não está no banco. */
+  emiteLido: Record<string, EmiteNf>;
 }
 
 export interface FiltroFiscal {
@@ -116,6 +121,11 @@ export interface AnaliseFiscal {
   faixa: ReturnType<typeof classificarMargem>;
   teto: ReturnType<typeof tetoReajusteFornecedor>;
   reajusteCliente: ReturnType<typeof reajusteParaMargemIdeal>;
+  preservarLucro: ReturnType<typeof reajusteParaPreservarLucro>;
+  conferencia: ReturnType<typeof conferirRegras>;
+  despesaSemEmpresa: number;
+  tributoSemEmpresa: number;
+  receitaForaDaEmpresa: number;
   fornecedores: FornecedorVista[];
   clientes: { nome: string; receita: number; custo: number; reajuste: ReturnType<typeof reajusteParaMargemIdeal> }[];
   documentos: DocumentoLinha[];
@@ -294,13 +304,32 @@ export function analisarCarga(
   const meses = [...mesesMap.values()].map((m) => ({ ...m, creditoPisCofins: 0 }));
   const semCredito = simularPeriodo(meses, premissas);
   const comCredito = simularPeriodo(mesesComCredito, premissas);
-  const teto = tetoReajusteFornecedor(mesesComCredito.length ? mesesComCredito : meses, premissas);
+  const mesesDoTeto = mesesComCredito.length ? mesesComCredito : meses;
+  const teto = tetoReajusteFornecedor(mesesDoTeto, premissas);
   const reajusteCliente = reajusteParaMargemIdeal(
     semCredito.receita,
     semCredito.custoFornecedor,
     semCredito.despesasOperacionais,
     premissas,
   );
+  const preservarLucro = reajusteParaPreservarLucro(meses, premissas);
+  const conferencia = conferirRegras({
+    premissas,
+    margemAtual: semCredito.margem,
+    teto,
+    reajusteMargem: reajusteCliente,
+    preservar: preservarLucro,
+    creditoUsadoSemMarca: semCredito.creditoUsado,
+  });
+  const despesaSemEmpresa = carga.despesas
+    .filter((d) => d.empresaKey === 'SEM_EMISSORA' && noPeriodo(d.mes))
+    .reduce((s, d) => s + d.valor, 0);
+  const tributoSemEmpresa = carga.tributos
+    .filter((t) => t.empresaKey === 'SEM_EMISSORA' && noPeriodo(t.mes))
+    .reduce((s, t) => s + t.valor, 0);
+  const receitaForaDaEmpresa = carga.fatias
+    .filter((f) => f.empresaKey !== filtro.empresaKey && noPeriodo(f.mes) && (filtro.incluirEstimados || f.valueStatus === 'official'))
+    .reduce((s, f) => s + f.receita, 0);
 
   const porCliente = new Map<string, { receita: number; custo: number }>();
   for (const f of baseOs) {
@@ -350,6 +379,11 @@ export function analisarCarga(
     faixa: classificarMargem(semCredito.margem, premissas),
     teto,
     reajusteCliente,
+    preservarLucro,
+    conferencia,
+    despesaSemEmpresa,
+    tributoSemEmpresa,
+    receitaForaDaEmpresa,
     fornecedores,
     clientes,
     documentos: docsSep.unicos,

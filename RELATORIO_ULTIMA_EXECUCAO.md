@@ -22,7 +22,9 @@ Acesso: perfil Diretoria que já vê Faturamento, ou que tenha a permissão nova
 
 ## 2. O que foi testado
 
-`npx tsx --test scripts/gestor-fiscal.test.ts`: 12 testes, 0 falhas.
+`npx tsx --test scripts/gestor-fiscal.test.ts`: 14 testes, 0 falhas.
+
+A conferência das regras, ainda com números fictícios, confirma: no teto do fornecedor a margem fica em pelo menos 30% e o lucro do Lucro Real não fica abaixo do Simples; o centavo seguinte fura uma das duas. O reajuste de 40% é outra conta. O aumento de preço para preservar o lucro só aparece quando o Lucro Real fica abaixo do Simples. Receita de outro CNPJ e despesa ou tributo sem emissora ficam fora da soma, com o valor mostrado.
 
 Cobriu fornecedor com e sem NF, reajuste que melhora, mantém e reduz o lucro, margem abaixo de 30%, cliente que precisa de reajuste para 40%, ausência de despesa e de documento, OS estimada fora da base, duplicata de despesa e de fatura, e CNPJs que não se misturam.
 
@@ -42,7 +44,7 @@ Prévia visual do laboratório, com faixa de valores fictícios: `/opt/cursor/ar
 - P0 da Fase 2: senha em texto, leitura anônima, ingest de comissão e token de logout. Continuam abertos.
 - Fast-forward da `dev`.
 
-Conclusão desta etapa: cerca de 75%.
+Conclusão desta etapa: a parte que não depende da contabilidade foi conferida no código. As alíquotas oficiais e a homologação com operação real continuam pendentes. A coluna de NF está só preparada, sem execução. Cerca de 75% segue sendo a estimativa da etapa inteira, não uma garantia de tributo oficial.
 
 ## 4. Riscos
 
