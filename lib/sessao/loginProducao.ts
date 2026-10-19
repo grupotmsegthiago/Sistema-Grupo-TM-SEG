@@ -3,7 +3,7 @@
  * Não há fallback para o token antigo.
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { conferirSenhaExistente } from '../gestorFiscal/ponteAuth/formatoSenha';
+import { conferirSenhaDaFicha } from '../gestorFiscal/ponteAuth/formatoSenha';
 import { usuarioSoPortal } from '../cevaPortal/regrasAcesso';
 import { getSupabaseServiceRoleKey, getSupabaseUrl } from '../supabaseAdmin';
 import { gravarSenhaNoServidor } from './gravarSenha';
@@ -28,6 +28,8 @@ interface Ficha {
   email: string;
   status: string;
   password: string | null;
+  password_hash?: string | null;
+  session_epoch?: number | null;
   client_id: string | null;
   provider_id: string | null;
   force_password_change: boolean | null;
@@ -84,21 +86,35 @@ function clienteAdmin(): SupabaseClient | null {
 }
 
 const COLUNAS = `
+  id, name, email, password, password_hash, session_epoch, status, client_id, provider_id, force_password_change,
+  permissions, training_required, training_passed_at, training_modules, training_score,
+  profiles:profile_id ( name, permissions )
+`;
+
+const COLUNAS_ANTIGAS = `
   id, name, email, password, status, client_id, provider_id, force_password_change,
   permissions, training_required, training_passed_at, training_modules, training_score,
   profiles:profile_id ( name, permissions )
 `;
 
+async function lerFicha(
+  cliente: SupabaseClient,
+  aplicar: (consulta: { ilike(coluna: string, valor: string): { maybeSingle(): Promise<{ data: unknown; error: { message?: string } | null }> }; eq(coluna: string, valor: string): { maybeSingle(): Promise<{ data: unknown; error: { message?: string } | null }> } }) => Promise<{ data: unknown; error: { message?: string } | null }>,
+): Promise<Ficha | null | 'erro'> {
+  const primeira = await aplicar(cliente.from('system_users').select(COLUNAS) as never);
+  if (!primeira.error) return (primeira.data as Ficha | null) ?? null;
+  if (!/password_hash|session_epoch/i.test(primeira.error.message || '')) return 'erro';
+  const segunda = await aplicar(cliente.from('system_users').select(COLUNAS_ANTIGAS) as never);
+  if (segunda.error) return 'erro';
+  return (segunda.data as Ficha | null) ?? null;
+}
+
 async function porEmail(cliente: SupabaseClient, email: string): Promise<Ficha | null | 'erro'> {
-  const { data, error } = await cliente.from('system_users').select(COLUNAS).ilike('email', email).maybeSingle();
-  if (error) return 'erro';
-  return (data as Ficha | null) ?? null;
+  return lerFicha(cliente, (consulta) => consulta.ilike('email', email).maybeSingle());
 }
 
 async function porId(cliente: SupabaseClient, id: string): Promise<Ficha | null | 'erro'> {
-  const { data, error } = await cliente.from('system_users').select(COLUNAS).eq('id', id).maybeSingle();
-  if (error) return 'erro';
-  return (data as Ficha | null) ?? null;
+  return lerFicha(cliente, (consulta) => consulta.eq('id', id).maybeSingle());
 }
 
 function sessaoDoPedido(pedido: PedidoLogin, segredo: string, agora: number) {
@@ -109,13 +125,13 @@ function sessaoDoPedido(pedido: PedidoLogin, segredo: string, agora: number) {
 
 export async function atenderLoginProducao(
   pedido: PedidoLogin,
-  opcoes: { env?: Record<string, string | undefined>; agora?: () => number } = {},
+  opcoes: { env?: Record<string, string | undefined>; agora?: () => number; cliente?: SupabaseClient } = {},
 ): Promise<RespostaLogin> {
   const env = opcoes.env ?? process.env;
   const agora = opcoes.agora ?? (() => Date.now());
   const segredo = segredoDaSessao(env);
   if (!segredo) return recusar(503, 'sessao_indisponivel', 'O segredo da sessão não está configurado.');
-  const cliente = clienteAdmin();
+  const cliente = opcoes.cliente ?? clienteAdmin();
   if (!cliente) return recusar(503, 'fonte_indisponivel', 'A fonte confiável não está disponível. O acesso foi negado.');
 
   try {
@@ -127,6 +143,9 @@ export async function atenderLoginProducao(
     if (!ficha || ficha.status !== 'Ativo') {
       return recusar(403, 'usuario_desativado', 'Usuário desativado.', [cookieSessao('', 0)]);
     }
+    if (typeof ficha.session_epoch === 'number' && ficha.session_epoch !== aberta.epoch) {
+      return recusar(401, 'sessao_invalida', 'A sessão foi encerrada.', [cookieSessao('', 0)]);
+    }
     if (pedido.acao === 'logout') {
       return { status: 200, body: { ok: true, codigo: 'ok' }, cookies: [cookieSessao('', 0)] };
     }
@@ -134,7 +153,7 @@ export async function atenderLoginProducao(
       return { status: 200, body: { ok: true, codigo: 'ok', usuario: publico(ficha) }, cookies: [] };
     }
     if (pedido.acao === 'confirmar') return confirmar(pedido, ficha);
-    if (pedido.acao === 'senha') return trocar(pedido, cliente, ficha);
+    if (pedido.acao === 'senha') return trocar(pedido, cliente, ficha, segredo, agora());
     if (pedido.acao === 'personificar') return personificar(pedido, cliente, ficha, segredo, agora());
     return recusar(405, 'metodo_nao_permitido', 'Ação não aceita.');
   } catch {
@@ -157,7 +176,8 @@ async function entrar(
   if (!email || !senha.trim()) return recusar(401, 'credenciais_invalidas', 'Credenciais não conferem.');
   const ficha = await porEmail(cliente, email);
   if (ficha === 'erro') return recusar(503, 'fonte_indisponivel', 'A fonte confiável não respondeu. O acesso foi negado.');
-  if (!ficha || !conferirSenhaExistente(senha, ficha.password)) {
+  const conferida = ficha ? conferirSenhaDaFicha(senha, ficha) : 'nao';
+  if (!ficha || conferida === 'nao') {
     return recusar(401, 'credenciais_invalidas', 'Credenciais não conferem.');
   }
   if (ficha.status !== 'Ativo') return recusar(403, 'usuario_desativado', 'Usuário desativado. Nenhuma sessão foi aberta.');
@@ -165,7 +185,11 @@ async function entrar(
   if (usuarioSoPortal(perfil.permissoes)) {
     return recusar(403, 'portal_only', 'Este acesso é somente o portal do cliente.');
   }
-  const emitida = emitirSessao(segredo, String(ficha.id), agora, TTL_SESSAO_MS);
+  if (conferida === 'texto') {
+    const modo = await gravarSenhaNoServidor(cliente, String(ficha.id), senha.trim(), { force_password_change: true });
+    if (modo === 'hash') ficha.force_password_change = true;
+  }
+  const emitida = emitirSessao(segredo, String(ficha.id), agora, TTL_SESSAO_MS, Number(ficha.session_epoch || 0));
   return {
     status: 200,
     body: { ok: true, codigo: 'ok', csrf: emitida.csrf, token: emitida.token, usuario: publico(ficha) },
@@ -179,20 +203,44 @@ function confirmar(pedido: PedidoLogin, ficha: Ficha): RespostaLogin {
   if (pedidoId && pedidoId !== String(ficha.id)) {
     return recusar(403, 'sem_permissao', 'A confirmação exige a senha de quem está na sessão.');
   }
-  const ok = conferirSenhaExistente(senha, ficha.password);
+  const ok = conferirSenhaDaFicha(senha, ficha) !== 'nao';
   return { status: 200, body: { ok, codigo: ok ? 'ok' : 'credenciais_invalidas' }, cookies: [] };
 }
 
-async function trocar(pedido: PedidoLogin, cliente: SupabaseClient, ficha: Ficha): Promise<RespostaLogin> {
+async function trocar(
+  pedido: PedidoLogin,
+  cliente: SupabaseClient,
+  ficha: Ficha,
+  segredo: string,
+  agora: number,
+): Promise<RespostaLogin> {
   if (pedido.method !== 'POST') return recusar(405, 'metodo_nao_permitido', 'A troca de senha aceita POST.');
-  const nova = String(pedido.body.senhaNova || '');
+  const nova = String(pedido.body.senhaNova || '').trim();
   const atual = String(pedido.body.senhaAtual || '');
-  if (nova.trim().length < 6) return recusar(400, 'senha_curta', 'A nova senha deve ter no mínimo 6 caracteres.');
-  if (atual && !conferirSenhaExistente(atual, ficha.password)) {
+  if (nova.length < 6) return recusar(400, 'senha_curta', 'A nova senha deve ter no mínimo 6 caracteres.');
+  const alvoId = String(pedido.body.usuarioId || '');
+  if (alvoId && alvoId !== String(ficha.id)) {
+    const perfil = dobrar(perfilDe(ficha).nome);
+    if (perfil !== 'diretoria' && perfil !== 'administrador' && perfil !== 'ceo') {
+      return recusar(403, 'sem_permissao', 'A ficha do servidor não autoriza gravar a senha de outro usuário.');
+    }
+    await gravarSenhaNoServidor(cliente, alvoId, nova, { force_password_change: true });
+    return { status: 200, body: { ok: true, codigo: 'ok' }, cookies: [] };
+  }
+  if (!ficha.force_password_change && conferirSenhaDaFicha(atual, ficha) === 'nao') {
     return recusar(401, 'credenciais_invalidas', 'A senha atual não confere.');
   }
-  await gravarSenhaNoServidor(cliente, String(ficha.id), nova.trim(), { force_password_change: false });
-  return { status: 200, body: { ok: true, codigo: 'ok' }, cookies: [] };
+  const epoch = Number(ficha.session_epoch || 0) + 1;
+  await gravarSenhaNoServidor(cliente, String(ficha.id), nova, {
+    force_password_change: false,
+    session_epoch: epoch,
+  });
+  const emitida = emitirSessao(segredo, String(ficha.id), agora, TTL_SESSAO_MS, epoch);
+  return {
+    status: 200,
+    body: { ok: true, codigo: 'ok', token: emitida.token, csrf: emitida.csrf },
+    cookies: [cookieSessao(emitida.token, Math.floor(TTL_SESSAO_MS / 1000))],
+  };
 }
 
 async function personificar(
@@ -211,7 +259,7 @@ async function personificar(
   const alvo = await porId(cliente, alvoId);
   if (alvo === 'erro') return recusar(503, 'fonte_indisponivel', 'A fonte confiável não respondeu. O acesso foi negado.');
   if (!alvo || alvo.status !== 'Ativo') return recusar(403, 'usuario_desativado', 'Usuário desativado.');
-  const emitida = emitirSessao(segredo, String(alvo.id), agora, TTL_SESSAO_MS);
+  const emitida = emitirSessao(segredo, String(alvo.id), agora, TTL_SESSAO_MS, Number(alvo.session_epoch || 0));
   return {
     status: 200,
     body: { ok: true, codigo: 'ok', token: emitida.token, csrf: emitida.csrf, usuario: publico(alvo) },

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'crypto';
+import { conferirSenhaDaFicha } from '../gestorFiscal/ponteAuth/formatoSenha.js';
 import { usuarioSoPortal } from './regrasAcesso.js';
 
 /** Cadastro do sistema (system_users) usado para reconhecer a equipe interna. */
@@ -25,15 +25,13 @@ export function ehEquipeInterna(usuario: CadastroEquipeInterna | null | undefine
   return !tipo && !usuario.client_id && !usuario.provider_id;
 }
 
-/** Mesma comparação do login do sistema: senha em texto, com a digitada sem espaços nas pontas. */
-export function senhaEquipeConfere(informada: string, gravada: string | null | undefined): boolean {
-  const limpa = String(informada ?? '').trim();
-  const salva = gravada == null ? '' : String(gravada);
-  if (!limpa || !salva) return false;
-  const digitada = Buffer.from(limpa);
-  const armazenada = Buffer.from(salva);
-  if (digitada.length !== armazenada.length) return false;
-  return timingSafeEqual(digitada, armazenada);
+/** Aceita o hash versionado e, na transição, a senha antiga ainda em texto. */
+export function senhaEquipeConfere(
+  informada: string,
+  gravada: string | null | undefined,
+  hash?: string | null,
+): boolean {
+  return conferirSenhaDaFicha(informada, { password: gravada, password_hash: hash }) !== 'nao';
 }
 
 /** Prefixo próprio para o id do sistema não cair na tabela de usuários do portal. */

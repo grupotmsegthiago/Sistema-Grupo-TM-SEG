@@ -546,14 +546,24 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data: sistema, error: erroSistema } = await sb
+      const colunasEquipe = 'id, name, email, password, password_hash, status, client_id, provider_id, user_type, permissions';
+      let consultaEquipe = await sb
         .from('system_users')
-        .select('id, name, email, password, status, client_id, provider_id, user_type, permissions')
+        .select(colunasEquipe)
         .ilike('email', email)
         .maybeSingle();
+      if (consultaEquipe.error && /password_hash/i.test(consultaEquipe.error.message || '')) {
+        consultaEquipe = await sb
+          .from('system_users')
+          .select('id, name, email, password, status, client_id, provider_id, user_type, permissions')
+          .ilike('email', email)
+          .maybeSingle();
+      }
+      const sistema = consultaEquipe.data;
+      const erroSistema = consultaEquipe.error;
       if (erroSistema) {
         console.error(`[${cfg().logPrefix}] login equipe`, erroSistema.message || erroSistema);
-      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password)) {
+      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password, sistema.password_hash)) {
         clearFailures(key);
         const session = sessaoDaEquipe(sistema);
         res.status(200).json({ token: tokenDaEquipeInterna(cfg().tokenPrefix, sistema.id), user: session });

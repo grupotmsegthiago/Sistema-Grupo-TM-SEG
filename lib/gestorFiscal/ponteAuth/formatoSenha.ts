@@ -28,6 +28,16 @@ export function gerarHashScryptCompativel(senha: string): string {
   return `scrypt$${salt}$${hash}`;
 }
 
+/** Hash versionado tem prioridade. Texto puro só vale enquanto a migração não gravou o hash. */
+export function conferirSenhaDaFicha(
+  informada: string,
+  ficha: { password?: string | null; password_hash?: string | null },
+): 'hash' | 'texto' | 'nao' {
+  if (ficha.password_hash && verificarSenhaArmazenada(informada, ficha.password_hash)) return 'hash';
+  if (conferirSenhaExistente(informada, ficha.password)) return 'texto';
+  return 'nao';
+}
+
 export function conferirSenhaExistente(informada: string, gravada: string | null | undefined): boolean {
   const formato = classificarSenhaGravada(gravada);
   const limpa = String(informada ?? '').trim();

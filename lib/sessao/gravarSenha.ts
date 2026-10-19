@@ -14,6 +14,11 @@ export interface ClienteSenha {
   };
 }
 
+function colunaAusente(mensagem: string, coluna: string): boolean {
+  return new RegExp(coluna, 'i').test(mensagem)
+    && /does not exist|n[aã]o existe|schema cache|could not find/i.test(mensagem);
+}
+
 export async function gravarSenhaNoServidor(
   cliente: ClienteSenha,
   usuarioId: string,
@@ -21,16 +26,27 @@ export async function gravarSenhaNoServidor(
   extras: Record<string, unknown> = {},
 ): Promise<'hash' | 'texto'> {
   const hash = gerarHashVersionado(senha);
-  const comHash = await cliente.from('system_users').update({
+  const base: Record<string, unknown> = {
     password_hash: hash,
     password: null,
     ...extras,
-  }).eq('id', usuarioId);
-  if (!comHash.error) return 'hash';
-  const texto = await cliente.from('system_users').update({
-    password: senha,
-    ...extras,
-  }).eq('id', usuarioId);
-  if (texto.error) throw new Error(texto.error.message || 'Falha ao gravar a senha.');
+  };
+  let resultado = await cliente.from('system_users').update(base).eq('id', usuarioId);
+  if (resultado.error && colunaAusente(resultado.error.message || '', 'session_epoch')) {
+    const semEpoch = { ...base };
+    delete semEpoch.session_epoch;
+    resultado = await cliente.from('system_users').update(semEpoch).eq('id', usuarioId);
+  }
+  if (!resultado.error) return 'hash';
+  const mensagem = resultado.error.message || '';
+  if (!colunaAusente(mensagem, 'password_hash')) {
+    throw new Error('Falha ao gravar a senha.');
+  }
+  const legado: Record<string, unknown> = { password: senha };
+  for (const [chave, valor] of Object.entries(extras)) {
+    if (chave !== 'session_epoch') legado[chave] = valor;
+  }
+  const texto = await cliente.from('system_users').update(legado).eq('id', usuarioId);
+  if (texto.error) throw new Error('Falha ao gravar a senha.');
   return 'texto';
 }

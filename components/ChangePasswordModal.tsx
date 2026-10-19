@@ -38,10 +38,11 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onSuccess }) 
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ senhaNova: newPassword }),
       });
-      const corpo = await resposta.json().catch(() => ({})) as { motivo?: string };
+      const corpo = await resposta.json().catch(() => ({})) as { motivo?: string; token?: string };
       if (!resposta.ok) {
         throw new Error(corpo.motivo || 'Falha ao atualizar a senha.');
       }
+      if (corpo.token) localStorage.setItem('authToken', corpo.token);
 
       alert('Senha atualizada com sucesso! Você já pode acessar o sistema.');
       onSuccess();

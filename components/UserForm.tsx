@@ -312,7 +312,6 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
           const payload: any = {
               name: formData.name,
               email: formData.email,
-              password: formData.password,
               profile_id: formData.profileId || null,
               client_id: userType === 'client' ? (isClientUser ? currentUserClientId : formData.clientId) : null,
               provider_id: userType === 'provider' ? formData.providerId : null,
@@ -331,7 +330,6 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               payload.permissions = permissoesDoPortal(portalCliente.caminho, perfilPortal);
               payload.force_password_change = false;
           }
-          if (id && !formData.password) delete payload.password;
           const vincularComercial = async (userId: string | number) => {
               if (userType !== 'internal') return;
               const profile = profiles.find((p) => String(p.id) === String(formData.profileId));
@@ -364,6 +362,18 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   await vincularComercial(data[0].id);
               }
           }
+          if (formData.password && usuarioId) {
+              const tokenSessao = localStorage.getItem('authToken') || '';
+              const respostaSenha = await fetch('/api/ponte-auth/senha', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenSessao}` },
+                  body: JSON.stringify({ usuarioId, senhaNova: formData.password }),
+              });
+              if (!respostaSenha.ok) {
+                  throw new Error('Usuário salvo, mas a senha não foi gravada no servidor.');
+              }
+          }
           if (portalCliente && usuarioId) {
               const resposta = await authFetch('/api/portal-cliente/acesso', {
                   method: 'POST',
@@ -371,7 +381,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                       clientId: payload.client_id,
                       nome: payload.name,
                       email: payload.email,
-                      senha: payload.password,
+                      senha: formData.password,
                       perfil: perfilPortal,
                       ativo: payload.status === 'Ativo',
                       systemUserId: usuarioId,

@@ -27,19 +27,20 @@ export function emitirSessao(
   usuarioId: string,
   agora = Date.now(),
   ttl = TTL_SESSAO_MS,
-): { token: string; csrf: string; expiraEm: number } {
+  epoch = 0,
+): { token: string; csrf: string; expiraEm: number; epoch: number } {
   if (!segredo || !usuarioId) throw new Error('sessao_indisponivel');
   const csrf = randomBytes(32).toString('base64url');
   const expiraEm = agora + ttl;
-  const corpo = Buffer.from(JSON.stringify({ sub: usuarioId, exp: expiraEm, csrf }), 'utf8').toString('base64url');
-  return { token: `${PREFIXO}${corpo}.${assinar(segredo, corpo)}`, csrf, expiraEm };
+  const corpo = Buffer.from(JSON.stringify({ sub: usuarioId, exp: expiraEm, csrf, ep: epoch }), 'utf8').toString('base64url');
+  return { token: `${PREFIXO}${corpo}.${assinar(segredo, corpo)}`, csrf, expiraEm, epoch };
 }
 
 export function abrirSessao(
   segredo: string,
   token: string,
   agora = Date.now(),
-): { usuarioId: string; csrf: string; expiraEm: number } | null {
+): { usuarioId: string; csrf: string; expiraEm: number; epoch: number } | null {
   const limpo = String(token || '').replace(/^Bearer\s+/i, '').trim();
   if (!segredo || tokenLegado(limpo) || !limpo.startsWith(PREFIXO)) return null;
   const resto = limpo.slice(PREFIXO.length);
@@ -56,10 +57,16 @@ export function abrirSessao(
       sub?: string;
       exp?: number;
       csrf?: string;
+      ep?: number;
     };
     if (!json.sub || typeof json.exp !== 'number' || !json.csrf) return null;
     if (agora >= json.exp) return null;
-    return { usuarioId: String(json.sub), csrf: json.csrf, expiraEm: json.exp };
+    return {
+      usuarioId: String(json.sub),
+      csrf: json.csrf,
+      expiraEm: json.exp,
+      epoch: typeof json.ep === 'number' ? json.ep : 0,
+    };
   } catch {
     return null;
   }

@@ -1,5 +1,6 @@
 import { hashSenha, validarSenha, type PerfilCeva } from './acesso.js';
 import { permissoesDoPortal, preservarSenhaPortal, semMarcasDePortal, usuarioSoPortal } from './regrasAcesso.js';
+import { gravarSenhaNoServidor } from '../sessao/gravarSenha.js';
 
 type Consulta = { from: (tabela: string) => any };
 
@@ -80,9 +81,11 @@ export async function vincularCadastroCliente(
     force_password_change: false,
     permissions: permissoes,
   };
-  if (input.senhaTemporaria) payload.password = input.senhaTemporaria;
   const { data, error } = await sb.from('system_users').insert(payload).select('id').single();
   if (error || !data?.id) return { ok: false, error: 'Não foi possível criar o usuário no cadastro do cliente.' };
+  if (input.senhaTemporaria) {
+    await gravarSenhaNoServidor(sb, String(data.id), input.senhaTemporaria, { force_password_change: false });
+  }
   return { ok: true, id: String(data.id) };
 }
 
