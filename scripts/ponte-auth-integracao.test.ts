@@ -212,10 +212,13 @@ test('falha de leitura, sessões concorrentes, logs e rotas atuais intocadas', a
   assert.equal(login.includes('tmseg-token-${userCheck.id}-${Date.now()}'), true);
   assert.equal(login.includes('userCheck.password !== cleanPassword'), true);
   assert.equal(login.includes('ponteAuth'), false);
-  for (const pasta of ['api', 'server', 'components']) {
+  for (const pasta of ['server', 'components']) {
     assert.deepEqual(arquivosCom(pasta, 'ponteAuth'), []);
     assert.deepEqual(arquivosCom(pasta, 'criarIntegracaoIsolada'), []);
   }
+  const apiPonte = arquivosCom('api', 'ponteAuth');
+  assert.deepEqual(apiPonte.filter((caminho) => !caminho.startsWith(`api${path.sep}ponte-auth${path.sep}`)), []);
+  assert.deepEqual(arquivosCom('api', 'criarIntegracaoIsolada'), []);
   assert.equal(fs.readFileSync('App.tsx', 'utf8').includes('ponteAuth'), false);
   const sql = fs.readFileSync('docs/gestorFiscal/sql/2026_10_19_p0_financeiro_rls.NAO_EXECUTAR.sql', 'utf8');
   assert.match(sql, /NÃO EXECUTAR/);

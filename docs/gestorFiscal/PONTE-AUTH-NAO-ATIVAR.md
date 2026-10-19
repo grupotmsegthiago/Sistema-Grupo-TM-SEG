@@ -54,6 +54,20 @@ Nas rotas preparadas, o token `tmseg-token-<id>-<hora>` não é fallback. Perfil
 4. Só então reavaliar a SQL de RLS.
 5. Rollback desta fase: remover os arquivos novos da ponte e o teste `scripts/ponte-auth-integracao.test.ts`. O login atual não depende deles.
 
+## Fase 3 — rotas HTTP reais, ainda fechadas
+
+As rotas existem em `api/ponte-auth/`: login, sessão, logout e consulta do Gestor Fiscal. Não foram acrescentadas ao mapa `functions` do `vercel.json`, que permanece com 50 entradas.
+
+Com a flag ausente, respondem `ponte_desligada`. Com as duas flags de ambiente ligadas, respondem `integracao_incompleta`. A constante `INTEGRACAO_HTTP_LIBERADA` continua falsa, então a flag sozinha não abre login, sessão nem consulta.
+
+O depósito definitivo proposto é `tmseg_private.ponte_sessoes`, no arquivo `docs/gestorFiscal/sql/2026_10_19_ponte_sessoes.NAO_EXECUTAR.sql`. Ele não foi executado. A tabela guarda hashes, usuário, expiração, revogação, criação e última atividade. O cookie previsto é `tmseg_ponte`, HttpOnly, Secure e SameSite=Strict, só no caminho `/api/ponte-auth`. O CSRF vai no cabeçalho `x-tmseg-csrf`. O token novo não vai para o `localStorage`.
+
+A senha de funcionário continua em texto em `system_users`. O portal já usa `scrypt$` com sal hexadecimal. Outro prefixo, como bcrypt, não é aceito como texto. Esta fase não reescreve senha. A troca futura grava hash só depois de um login bem-sucedido, em coluna nova, sem apagar o texto antigo de uma vez.
+
+A consulta do gestor chama `computeCanonicalRevenueCost`, separa pela empresa emissora e ignora conta pagadora e CNPJ do pedido. A homologação real segue desligada. A tela atual não chama essa API.
+
+Rollback desta fase: apagar `api/ponte-auth/` e os arquivos novos da ponte. As rotas antigas não dependem deles.
+
 ## Veredito
 
 A ponte não está ativada. Nada foi publicado e o banco não foi alterado.
