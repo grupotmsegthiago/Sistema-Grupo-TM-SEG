@@ -518,6 +518,9 @@ describe('gestor fiscal — correções de conciliação', () => {
     const carga = fs.readFileSync('lib/gestorFiscal/carregarFontes.ts', 'utf8');
     const base = fs.readFileSync('lib/gestorFiscal/base.ts', 'utf8');
     const conciliacao = fs.readFileSync('lib/gestorFiscal/conciliacao.ts', 'utf8');
+    const blocoFatura = carga.slice(carga.lastIndexOf('for (const f of faturas)'));
+    assert.equal(/const numero =/.test(blocoFatura), false);
+    assert.match(blocoFatura, /valor: numero\(f\.amount\)/);
     assert.match(carga, /financial_invoice_missions/);
     assert.match(carga, /osComprovadamenteFaturada/);
     assert.equal(carga.includes('.insert('), false);

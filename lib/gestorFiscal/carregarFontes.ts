@@ -394,7 +394,7 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
     if (statusFatura === 'CANCELADA') continue;
     const mes = mesDeIso(texto(f.date));
     if (!mes) continue;
-    const numero = texto(f.nf_number) || texto(f.number);
+    const numeroNota = texto(f.nf_number) || texto(f.number);
     documentos.push({
       id: texto(f.id),
       mes,
@@ -402,10 +402,10 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
       tipo: 'fatura_cliente',
       cliente: texto(f.client),
       fornecedor: '',
-      numero,
+      numero: numeroNota,
       valor: numero(f.amount),
-      situacao: classificarSituacaoNf(f.nf_status, !!numero),
-      impressaoDigital: `${classificarEmpresa(texto(f.issuer_company))}|${numero}|${numero(f.amount)}`,
+      situacao: classificarSituacaoNf(f.nf_status, !!numeroNota),
+      impressaoDigital: `${classificarEmpresa(texto(f.issuer_company))}|${numeroNota}|${numero(f.amount)}`,
       origem: 'financial_invoices',
       osIds: vinculosOk ? (osPorFatura.get(texto(f.id)) || []) : undefined,
     });
