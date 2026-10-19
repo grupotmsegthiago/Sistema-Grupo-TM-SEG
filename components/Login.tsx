@@ -25,18 +25,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  const [imageLoaded, setImageLoaded] = useState(false);
   const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [agora, setAgora] = useState(() => new Date());
   const [authPhase, setAuthPhase] = useState<'credentials' | 'face'>('credentials');
   const [pendingUser, setPendingUser] = useState<TimeClockUserContext | null>(null);
   const [faceMode, setFaceMode] = useState<'register' | 'verify'>('register');
-
-  const bgImages = [
-    'https://images.unsplash.com/photo-1614064641938-3bbee52942c7?q=80&w=2070&auto=format&fit=crop',
-    'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?q=80&w=2070&auto=format&fit=crop',
-    'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?q=80&w=2070&auto=format&fit=crop',
-  ];
 
   useEffect(() => {
     let logoutReason = '';
@@ -76,10 +69,8 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentImageIndex(prev => (prev + 1) % bgImages.length);
-    }, 8000);
-    return () => clearInterval(interval);
+    const relogio = setInterval(() => setAgora(new Date()), 1000);
+    return () => clearInterval(relogio);
   }, []);
 
   useEffect(() => {
@@ -221,43 +212,37 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     );
   }
 
+  const horaOperacional = agora.toLocaleTimeString('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: 'America/Sao_Paulo',
+  });
+
   return (
-    <div className="flex font-sans overflow-y-auto relative min-h-screen-ios scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
+    <div className="tmseg-login font-sans">
 
-      <div className="absolute inset-0 z-0">
-        {bgImages.map((img, idx) => (
-          <img
-            key={idx}
-            src={img}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover transition-opacity duration-[2000ms]"
-            style={{ opacity: idx === currentImageIndex ? 1 : 0 }}
-            onLoad={() => idx === 0 && setImageLoaded(true)}
-          />
-        ))}
-        <div className="absolute inset-0 bg-gradient-to-r from-black via-black/95 to-black/40"></div>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/30"></div>
+      <div className="tmseg-hero" aria-hidden="true">
+        <img src="/login-hero.jpg" alt="" className="tmseg-hero-img" />
+        <div className="tmseg-hero-shade" />
       </div>
-
-      <div className="hidden lg:flex absolute top-0 right-0 bottom-0 w-[55%] z-[1] items-center justify-center pointer-events-none">
-        <div className="relative">
-          <div className="absolute -inset-20 bg-red-600/5 rounded-full blur-3xl"></div>
-          <div className="text-center space-y-4 relative">
-            <div className="inline-flex items-center gap-3 bg-white/5 backdrop-blur-sm border border-white/10 rounded-full px-6 py-3">
-              <Radio size={14} className="text-red-500 animate-pulse" />
-              <span className="text-white/60 text-xs font-bold uppercase tracking-[0.3em]">Gestão Operacional 24h</span>
-            </div>
-            <h2 className="text-5xl font-black text-white/10 tracking-widest uppercase">Consultoria</h2>
-            <h2 className="text-5xl font-black text-white/5 tracking-widest uppercase">& Intermediação</h2>
-          </div>
+      <div className="tmseg-brand">
+        <img src="/logo.png" alt="Grupo TM SEG" />
+      </div>
+      <div className="tmseg-login-copy">
+        <h2>Segurança<br />em movimento.</h2>
+        <p>Inteligência, controle e proteção em cada missão.</p>
+        <div className="tmseg-central">
+          <Radio size={16} />
+          <span>Central 24h · {horaOperacional}<small>Monitoramento em tempo real</small></span>
         </div>
       </div>
 
-      <div className="relative z-10 flex items-start sm:items-center w-full lg:w-[45%] min-h-full py-safe overflow-y-auto">
-        <div className="w-full max-w-md mx-auto px-4 sm:px-8 md:px-12 py-6 sm:py-12">
+      <div className="tmseg-login-card">
+        <div className="tmseg-login-card-inner">
 
-          <div className="mb-10">
-            <div className="flex items-center gap-4 mb-8">
+          <div className="mb-6">
+            <div className="flex items-center gap-4 mb-5">
               <div className="relative">
                 <div className="flex items-center justify-center">
                   <img
@@ -284,12 +269,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </div>
             </div>
 
-            <div className="space-y-2 mb-8">
-              <h2 className="text-xl font-black text-white">Acesso ao Sistema</h2>
-              <p className="text-sm text-gray-500 font-medium">Área restrita. Identifique-se para continuar.</p>
+            <div className="space-y-1 mb-5">
+              <h2 className="text-xl font-black text-white">Bem-vindo de volta</h2>
+              <p className="text-sm text-gray-400 font-medium">Acesse sua central de operações.</p>
             </div>
 
-            <div className="flex items-center gap-3 mb-8">
+            <div className="flex items-center gap-3 mb-5">
               <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-lg px-3 py-2">
                 <Shield size={12} className="text-red-500" />
                 <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Conexão Segura</span>
@@ -365,15 +350,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 ) : (
                   <>
                     <ShieldCheck size={18} />
-                    Acessar Sistema
+                    Entrar no sistema
                   </>
                 )}
               </button>
             </div>
           </form>
 
-          <div className="mt-10 pt-6 border-t border-white/5">
-            <div className="flex items-center justify-between">
+          <div className="mt-6 pt-5 border-t border-white/10">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-gray-600 font-mono font-bold">v{APP_VERSION}</span>
                 <div className="w-px h-3 bg-white/10"></div>
@@ -388,27 +373,83 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-2 sm:gap-3">
-            {[
-              { label: 'Intermediação de Escolta', icon: Shield },
-              { label: 'Gestão Operacional', icon: Radio },
-              { label: 'Consultoria em Segurança', icon: Fingerprint },
-            ].map((item, i) => (
-              <div key={i} className="flex flex-col items-center gap-2 p-3 bg-white/[0.02] rounded-xl border border-white/5">
-                <item.icon size={16} className="text-red-600/60" />
-                <span className="text-[9px] font-bold text-gray-600 uppercase tracking-wider text-center leading-tight">{item.label}</span>
-              </div>
-            ))}
-          </div>
-
         </div>
       </div>
 
       <style>{`
-        @keyframes scan {
-          0%, 100% { transform: translateY(-100%); opacity: 0; }
-          10%, 90% { opacity: 0.03; }
-          50% { transform: translateY(100%); opacity: 0.03; }
+        .tmseg-login {
+          position: relative;
+          min-height: 100vh;
+          min-height: 100dvh;
+          overflow: hidden;
+          background:
+            radial-gradient(900px 520px at 18% 18%, rgba(196, 0, 24, 0.28), transparent 60%),
+            radial-gradient(700px 420px at 80% 80%, rgba(255, 45, 45, 0.08), transparent 55%),
+            #050507;
+          color: #fff;
+        }
+        .tmseg-hero { position: absolute; inset: 0; overflow: hidden; }
+        .tmseg-hero-img {
+          position: absolute; inset: -4%; width: 108%; height: 108%; object-fit: cover; object-position: 42% center;
+          animation: tmseg-ken 22s ease-in-out infinite alternate;
+        }
+        .tmseg-hero-shade {
+          position: absolute; inset: 0;
+          background:
+            linear-gradient(90deg, rgba(0,0,0,.2) 0 48%, rgba(0,0,0,.55) 70%, rgba(0,0,0,.78) 100%),
+            linear-gradient(to top, rgba(0,0,0,.72) 0 18%, transparent 42%);
+        }
+        .tmseg-hero::after {
+          content: ""; position: absolute; inset: 0; pointer-events: none;
+          background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,.14) 48%, transparent 60%);
+          transform: translateX(-70%);
+          animation: tmseg-sheen 7.5s ease-in-out infinite;
+        }
+        .tmseg-brand { position: absolute; z-index: 2; left: 3vw; top: 3vh; }
+        .tmseg-brand img {
+          height: 92px; width: auto; mix-blend-mode: screen;
+          filter: drop-shadow(0 8px 18px rgba(0,0,0,.45));
+          animation: tmseg-logo 3.6s ease-in-out infinite;
+        }
+        .tmseg-login-copy { position: absolute; left: 4vw; bottom: 7vh; max-width: 560px; z-index: 2; }
+        .tmseg-login-copy h2 {
+          margin: 0; font-size: clamp(42px, 5vw, 68px); line-height: .9; font-weight: 900;
+          letter-spacing: -0.04em; text-transform: uppercase;
+        }
+        .tmseg-login-copy p { margin: 14px 0 0; max-width: 420px; color: rgba(255,255,255,.78); font-size: 16px; }
+        .tmseg-central { display: flex; align-items: center; gap: 10px; margin-top: 22px; color: #ff4d4d; }
+        .tmseg-central span { display: grid; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+        .tmseg-central small { color: rgba(255,255,255,.62); font-weight: 600; letter-spacing: .14em; }
+        .tmseg-login-card {
+          position: relative; z-index: 3; width: min(460px, calc(100% - 32px));
+          margin: 28px auto; max-height: calc(100dvh - 56px); overflow: auto;
+        }
+        .tmseg-login-card-inner {
+          padding: 28px 26px 22px; border-radius: 28px;
+          background: linear-gradient(180deg, rgba(16,16,20,.82), rgba(8,8,10,.9));
+          border: 1px solid rgba(255,255,255,.12);
+          box-shadow: 0 30px 80px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+          backdrop-filter: blur(18px);
+        }
+        @media (min-width: 1100px) {
+          .tmseg-login-card {
+            position: absolute; right: 4vw; top: 50%; transform: translateY(-50%); margin: 0;
+          }
+        }
+        @media (max-width: 1099px) {
+          .tmseg-login { overflow: auto; }
+          .tmseg-hero { position: relative; height: 46vh; min-height: 280px; }
+          .tmseg-brand { left: 16px; top: 12px; }
+          .tmseg-brand img { height: 64px; }
+          .tmseg-login-copy { left: 16px; right: 16px; bottom: 16px; }
+          .tmseg-login-copy h2 { font-size: 34px; }
+          .tmseg-login-card { margin: -28px auto 24px; }
+        }
+        @keyframes tmseg-ken { to { transform: scale(1.08) translate3d(-1.5%, -1%, 0); } }
+        @keyframes tmseg-sheen { to { transform: translateX(70%); } }
+        @keyframes tmseg-logo { 50% { filter: drop-shadow(0 0 16px rgba(255,40,40,.55)); } }
+        @media (prefers-reduced-motion: reduce) {
+          .tmseg-hero-img, .tmseg-hero::after, .tmseg-brand img { animation: none !important; }
         }
       `}</style>
     </div>
