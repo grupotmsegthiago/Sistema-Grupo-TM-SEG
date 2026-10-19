@@ -5,7 +5,7 @@ Data: 2026-10-19
 SHA de produção: `c714a624f432e5a471b6347c4afc570382f6aedd` (`/api/version` 3.7.65, medido na Fase 0; não houve publicação depois)
 Branch de trabalho: `cursor/fase-1-governanca-9d36`, em cima do baseline documental `7a009601`
 
-Nenhuma lógica de negócio, migration, RLS, credencial, dependência, merge ou publicação. Push não foi feito: esta fase proibiu push sem autorização adicional.
+Nenhuma lógica de negócio, migration, RLS, credencial, dependência, merge ou publicação. Push autorizado depois, só desta branch, sem `--force`. `main` e `dev` permanecem nos SHAs abaixo.
 
 ## 1. Objetivo e escopo
 
@@ -31,7 +31,7 @@ Nenhum. Ref não foi operado.
 
 ## 6. Riscos e rollback
 
-Rollback desta fase é reverter o commit documental. Riscos de produto (R01–R04) seguem abertos. G2: as regras ainda não estão no GitHub.
+Rollback desta fase é reverter o commit documental. Riscos de produto (R01–R04) seguem abertos. O push foi feito; o merge não.
 
 ## 7. Testes
 
@@ -43,30 +43,38 @@ Não se aplica a mudança de tela. A validação foi a simulação dos sete pedi
 
 ## 9. Autorização
 
-Pedido da Fase 1: documentação e regras; proibido funcional, banco, produção, merge e push.
+Pedido da Fase 1: documentação e regras. O push desta branch foi autorizado depois, sem merge, sem deploy e sem migration. O commit que grava este relatório vem em seguida e só altera este arquivo e `ESTADO-ATUAL.md`.
 
-## 10. Pendências
+## 10. Versionamento autorizado
 
-Push desta branch. Fast-forward da `dev`. Dono humano por domínio além do proprietário: não designado. ADR-006b: descontinuar Z-API não foi aceito. P0 de segurança intactos.
+- Commit da Fase 1: `94cff4c3753403ae4f04f062a09ee66701025c62`
+- Commit de baseline incluído: `7a0096014089cc91cd761bf95fd4592947773816` (só documentação da Fase 0; a Fase 1 depende desses arquivos)
+- Branch enviada: `origin/cursor/fase-1-governanca-9d36` (criada neste push; sem `--force`)
+- `main` remota: `c714a624f432e5a471b6347c4afc570382f6aedd` (não movida)
+- `dev` remota: `766c9895079fd93342ad50ad28d52d13c0cfdddf` (não movida)
+- PR: https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/346 (rascunho, base `main`, head `cursor/fase-1-governanca-9d36`)
+- Diff contra `main`: 25 arquivos de governança, +1401 linhas, nenhum arquivo funcional, migration ou `vercel.json`
+- Segredo no diff: nenhum
+- Teste documental: 49 âncoras, 0 falhas
 
-## 11. Próxima fase autorizada
+## 11. Pendências
 
-Nenhuma. A Fase 2 não começa.
+Homologar a PR #346 antes de qualquer merge. Fast-forward da `dev` não foi pedido. Dono humano por domínio além do proprietário: não designado. ADR-006b: descontinuar Z-API não foi aceito. P0 de segurança intactos.
 
-## 12. BLOCO PARA CONTINUAÇÃO
+## 12. Próxima fase autorizada
+
+Nenhuma. A Fase 2 não começa. Próxima ação: revisar a PR #346.
+
+## 13. BLOCO PARA CONTINUAÇÃO
 
 ```
-FASE 1 INSTALADA EM 2026-10-19 NA BRANCH cursor/fase-1-governanca-9d36.
-PUSH NAO FEITO. PRODUCAO SEGUE c714a624.
+GOVERNANCA NA PR 346, RASCUNHO, BASE main c714a624, HEAD 94cff4c3.
+BRANCH cursor/fase-1-governanca-9d36. MAIN E DEV NAO FORAM MOVIDAS.
+SEM MERGE, SEM DEPLOY, SEM MIGRATION.
 LER docs/governanca/ESTADO-ATUAL.md E 08-CONSTITUICAO-TECNICA.md.
-REGRAS AUTO: .cursor/rules/constituicao-tmseg.mdc, fontes-verdade-tmseg.mdc, protocolo-alteracao-tmseg.mdc.
-NAO REVOGAM publicar.mdc NEM .cursorrules.
-Z-API CONTINUA NO AR. TORRES E OUTRO BANCO. NAO INICIAR FASE 2.
-DEV origin/dev 766c9895, 31 ATRAS DA MAIN.
+NAO INICIAR FASE 2.
 ```
 
 ## Veredito
 
-FASE 1 — GOVERNANÇA INSTALADA E VALIDADA
-
-Escopo autorizado cumprido no working tree, com 49 verificações documentais. O push fica de fora até autorização, e isso não reabre a fase.
+GOVERNANÇA VERSIONADA — AGUARDANDO HOMOLOGAÇÃO DA PR

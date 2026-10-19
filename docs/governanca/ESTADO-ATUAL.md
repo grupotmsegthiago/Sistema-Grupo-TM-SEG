@@ -4,7 +4,7 @@ Atualizado na Fase 1, em 2026-10-19. Este arquivo é a memória curta. O relató
 
 | Campo | Valor |
 | --- | --- |
-| Última fase concluída | Fase 1 — governança, nesta branch, ainda sem push (a Fase 1 proibiu push) |
+| Última fase concluída | Fase 1 — governança versionada na PR #346, sem merge |
 | Próxima fase autorizada | nenhuma. A Fase 2 não começa sozinha |
 | Último commit de produção homologado | `c714a624f432e5a471b6347c4afc570382f6aedd` (PR #344, `main` = build publicado 3.7.65) |
 | `origin/dev` | `766c9895079fd93342ad50ad28d52d13c0cfdddf`, 31 commits atrás da `main`, zero commits exclusivos |
@@ -23,9 +23,13 @@ Atualizado na Fase 1, em 2026-10-19. Este arquivo é a memória curta. O relató
 - Z-API é a integração de WhatsApp que está no ar (cron de 1 minuto, webhooks, envio na atualização da OS). Não está descontinuada no código. Não remover e não criar um segundo provedor até o proprietário dizer o contrário.
 - A palavra publicar / deploy / colocar no ar continua sendo a autorização já escrita em `.cursorrules` e `.cursor/rules/publicar.mdc`. Deploy espontâneo segue proibido.
 
+## Versionamento
+
+Branch `cursor/fase-1-governanca-9d36` no GitHub, HEAD `94cff4c3`, PR rascunho #346 contra `main` (`c714a624`). `main` e `dev` não foram movidas. Sem merge e sem deploy.
+
 ## Pendências
 
-- Push desta governança: só com autorização explícita.
+- Homologar a PR #346. Merge só com ordem nova.
 - Fast-forward da `dev` até a `main`: não foi pedido.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
 - Policies do Postgres da TM SEG: não carregadas na Fase 0.
