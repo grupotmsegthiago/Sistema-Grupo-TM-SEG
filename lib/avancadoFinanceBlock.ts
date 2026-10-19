@@ -18,6 +18,7 @@ export function telaFinanceiraOcultaParaAvancado(screenId: string): boolean {
   if (id === 'finance-group' || id.startsWith('fin-')) return true;
   return [
     'diretoria-faturamento',
+    'gestor-fiscal',
     'comissoes-comerciais',
     'gestao-investimento',
     'quotes',

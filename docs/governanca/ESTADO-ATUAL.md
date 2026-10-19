@@ -1,13 +1,13 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado na Fase 1, em 2026-10-19. Este arquivo é a memória curta. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-19, na etapa 1 do Gestor Fiscal. Este arquivo é a memória curta. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
 
 | Campo | Valor |
 | --- | --- |
-| Última fase concluída | Fase 1 — governança versionada na PR #346, sem merge |
-| Próxima fase autorizada | nenhuma. A Fase 2 não começa sozinha |
-| Último commit de produção homologado | `c714a624f432e5a471b6347c4afc570382f6aedd` (PR #344, `main` = build publicado 3.7.65) |
-| `origin/dev` | `766c9895079fd93342ad50ad28d52d13c0cfdddf`, 31 commits atrás da `main`, zero commits exclusivos |
+| Última fase concluída | Fase 1 — na `main` `7676ea63` e no ar (`/api/version` 3.7.65) |
+| Próxima etapa | Gestor Fiscal, etapa 1, nesta branch. Correção da Fase 2 não autorizada |
+| Produção agora | `7676ea63edcff02292c2374472f51fff4d138758`, health 200. Esta etapa não publicou |
+| `origin/dev` | `766c9895079fd93342ad50ad28d52d13c0cfdddf`, 35 commits atrás da `main`, zero commits exclusivos |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
 | Outro Postgres | modelo TORRES (`service_orders`, `escort_billings`). Ref no código: `erjhxwbutjyylxdthuuz`. O conector da Fase 0 caiu nesse modelo |
@@ -25,15 +25,15 @@ Atualizado na Fase 1, em 2026-10-19. Este arquivo é a memória curta. O relató
 
 ## Versionamento
 
-Branch `cursor/fase-1-governanca-9d36` no GitHub, HEAD `94cff4c3`, PR rascunho #346 contra `main` (`c714a624`). `main` e `dev` não foram movidas. Sem merge e sem deploy.
+A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch local `cursor/gestor-fiscal-9d36`, sem push, sem merge e sem deploy. A `dev` não foi sincronizada.
 
 ## Pendências
 
-- Homologar a PR #346. Merge só com ordem nova.
+- Gestor Fiscal: coluna de emissão de NF no fornecedor, alíquotas da contabilidade e atribuição de despesa/tributo por CNPJ. Sem migration.
 - Fast-forward da `dev` até a `main`: não foi pedido.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
-- Policies do Postgres da TM SEG: não carregadas na Fase 0.
-- P0 de segurança (senha em texto, anon no financeiro, ingest, token de logout): abertos. São a Fase 2, se for autorizada.
+- Policies do Postgres da TM SEG: não carregadas.
+- P0 de segurança (senha em texto, anon no financeiro, ingest, token de logout): abertos. Não foram resolvidos nesta etapa.
 
 ## Bloqueios
 

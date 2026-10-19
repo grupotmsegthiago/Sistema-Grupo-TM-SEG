@@ -799,6 +799,17 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                           <p className="text-[10px] font-bold text-red-600 mt-1">{cnpjError}</p>
                         )}
                     </div>
+                    <div className="space-y-1.5 md:col-span-3">
+                        <label className={LABEL_CLASS}>Emite nota fiscal?</label>
+                        <select className={INPUT_CLASS} disabled value="nao_informado" aria-disabled="true">
+                            <option value="sim">Sim</option>
+                            <option value="nao">Não</option>
+                            <option value="nao_informado">Não informado</option>
+                        </select>
+                        <p className="text-[10px] font-bold text-amber-700">
+                          Previsto para o cadastro. Ainda não grava: o banco não tem este campo. A escolha fica só na simulação do Gestor Fiscal.
+                        </p>
+                    </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Razão Social *</label>
                         <div className="relative">

@@ -97,6 +97,7 @@ import FinancialReport from './components/FinancialReport';
 import DashboardDiretoria from './components/dashboard/DashboardDiretoria';
 import ComissoesComerciaisPage from './components/ComissoesComerciaisPage';
 import DiretoriaFaturamentoPage from './components/DiretoriaFaturamentoPage';
+import GestorFiscalPage from './components/gestorFiscal/GestorFiscalPage';
 import GestaoInvestimento from './components/investimentos/GestaoInvestimento'; 
 import ClientBillingReport from './components/ClientBillingReport';
 import DailyCashMovement from './components/DailyCashMovement';
@@ -642,6 +643,7 @@ const App: React.FC = () => {
           ? <ComissoesComerciaisPage />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
+      case 'gestor-fiscal': return <GestorFiscalPage />;
       case 'diretoria-faturamento': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canAccessFaturamentoDiretoria(u)

@@ -85,6 +85,7 @@ const CLIENT_FORBIDDEN_IDS = new Set([
   'diretoria-group',
   'diretoria-cockpit',
   'diretoria-faturamento',
+  'gestor-fiscal',
   'comissoes-comerciais',
   'gestao-investimento',
   'os-analysis-pending',
@@ -184,6 +185,12 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
   // Faturamento / Comissões: perfil Diretoria E tela vinculada (ou *).
   if (screenId === 'diretoria-faturamento') {
     return canAccessFaturamentoDiretoria(user) && hasProfilePermission(user, screenId);
+  }
+  // Mesma audiência do Faturamento. Herda a permissão já vinculada para não exigir gravação de perfil.
+  if (screenId === 'gestor-fiscal') {
+    return canAccessFaturamentoDiretoria(user) && (
+      hasProfilePermission(user, 'gestor-fiscal') || hasProfilePermission(user, 'diretoria-faturamento')
+    );
   }
   if (screenId === 'comissoes-comerciais') {
     return canAccessComissoesComerciais(user);

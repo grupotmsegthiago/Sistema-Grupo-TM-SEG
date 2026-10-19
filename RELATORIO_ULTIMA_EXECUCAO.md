@@ -1,80 +1,72 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
-Fase: 1 — governança permanente
+Etapa: Gestor Fiscal, primeira entrega
 Data: 2026-10-19
-SHA de produção: `c714a624f432e5a471b6347c4afc570382f6aedd` (`/api/version` 3.7.65, medido na Fase 0; não houve publicação depois)
-Branch de trabalho: `cursor/fase-1-governanca-9d36`, em cima do baseline documental `7a009601`
+Branch: `cursor/gestor-fiscal-9d36`
+Base: `main` `7676ea63edcff02292c2374472f51fff4d138758`
+Produção: o mesmo SHA, versão 3.7.65, `/api/health` 200. Nada desta etapa foi publicado.
 
-Nenhuma lógica de negócio, migration, RLS, credencial, dependência, merge ou publicação. Push autorizado depois, só desta branch, sem `--force`. `main` e `dev` permanecem nos SHAs abaixo.
+Sem migration, sem RLS, sem mudança de login, sem escrita no banco, sem TORRES, sem merge, sem push.
 
-## 1. Objetivo e escopo
+## 1. O que foi construído
 
-Instalar constituição, fontes da verdade, propriedade, protocolos e regras do Cursor sem substituir `.cursorrules`, `publicar.mdc`, `testar-antes-entregar.mdc`, `atualizar-dev-antes.mdc` nem `subir-reuniao.mdc`.
+Tela Diretoria → Gestor Fiscal, com visão geral, Simples × Lucro Real, reajuste de fornecedor, reajuste de cliente, notas, histórico mensal e termômetro.
 
-## 2. Baseline
+O simulador fica em `lib/gestorFiscal/`. Ele não recalcula OS. Receita e custo passam por `computeCanonicalRevenueCost`. A leitura em `lib/gestorFiscal/carregarFontes.ts` não insere, não atualiza e não chama `recalculate-open`.
 
-`main` e produção continuam em `c714a624`. `origin/dev` continua em `766c9895`, 31 commits atrás, 0 exclusivos. Working tree da Fase 1 começou limpa. Supabase do app: `ajhmmjuewdsukecaimik`. Nenhum SQL nesta etapa.
+Alíquotas são premissas editáveis. A do Simples começa vazia. Não há 27% fixo. Crédito tributário só entra se for marcado e houver NF válida de quem emite nota.
 
-## 3. Arquivos
+No cadastro do fornecedor, o campo “Emite nota fiscal?” aparece desabilitado e não entra no payload. A coluna prevista está em `docs/governanca/20-GESTOR-FISCAL-ETAPA-1.md`.
 
-Novos: `docs/governanca/ESTADO-ATUAL.md`, `08` a `17`, três regras `.cursor/rules/*-tmseg.mdc`.
+Acesso: perfil Diretoria que já vê Faturamento, ou que tenha a permissão nova. Administrador, Financeiro, Avançado e cliente do portal ficam de fora.
 
-Ajuste mínimo: frontmatter `alwaysApply` em `validar-localhost-primeiro.mdc` (texto intacto); ponteiro em `AGENTS.md`; uma frase de status em `07-PLANO-DE-FASES.md`.
+## 2. O que foi testado
 
-## 4. Regras preservadas
+`npx tsx --test scripts/gestor-fiscal.test.ts`: 12 testes, 0 falhas.
 
-Gatilho de publicar sem segunda pergunta. Fast-forward da `dev` só quando a branch é `dev`. Pacote “subir reunião”. Teste com evidência. Trava de prejuízo com os nomes já escritos. Z-API não foi declarada desligada.
+Cobriu fornecedor com e sem NF, reajuste que melhora, mantém e reduz o lucro, margem abaixo de 30%, cliente que precisa de reajuste para 40%, ausência de despesa e de documento, OS estimada fora da base, duplicata de despesa e de fatura, e CNPJs que não se misturam.
 
-## 5. Banco
+Também passaram os testes de acesso da Diretoria e do perfil Avançado. O teste antigo `fallback escolhe primeira tela liberada` em `scripts/screen-access.test.ts` falha com `controle-diario` no lugar de `quotes`. Isso já acontece com a regra atual do Controle Diário, que abre para usuário interno antes das telas do perfil. Não foi alterado aqui.
 
-Nenhum. Ref não foi operado.
+O Vite concluiu o bundle do frontend (3035 módulos), incluindo a tela nova. O passo seguinte do `npm run build`, `npx esbuild` dos bundles DHL, quebrou neste ambiente com `Class extends value undefined is not a constructor or null`. O esbuild local gerou o bundle DHL de HTML em 6 ms. O script de build não foi modificado.
 
-## 6. Riscos e rollback
+Prévia visual do laboratório, com faixa de valores fictícios: `/opt/cursor/artifacts/gestor-fiscal-laboratorio.png`. A rota logada não foi aberta. Não há sessão e o login não foi alterado para furar a porta.
 
-Rollback desta fase é reverter o commit documental. Riscos de produto (R01–R04) seguem abertos. O push foi feito; o merge não.
+## 3. O que permanece pendente
 
-## 7. Testes
+- Coluna `providers.emite_nota_fiscal`. Não criada.
+- Alíquotas, ISS, créditos e compensação confirmados pela contabilidade.
+- Despesa e tributo lançados sem empresa emissora. Ficam de fora da soma de propósito.
+- NF de fornecedor no título não tem o CNPJ da TM SEG. Aparece na empresa que usa o fornecedor e não entra no custo.
+- Leitura ao vivo com um usuário Diretoria.
+- P0 da Fase 2: senha em texto, leitura anônima, ingest de comissão e token de logout. Continuam abertos.
+- Fast-forward da `dev`.
 
-Verificador documental: 49 âncoras, 0 falhas. Não rodou `npm run build` nem a suíte `scripts/`: não houve código de aplicação. Não houve localhost: não houve tela.
+Conclusão desta etapa: cerca de 75%.
 
-## 8. Homologação
+## 4. Riscos
 
-Não se aplica a mudança de tela. A validação foi a simulação dos sete pedidos em `docs/governanca/17-VALIDACAO-DOCUMENTAL-FASE-1.md`.
+- Publicar ou dar push nesta branch abre deploy de preview na Vercel. Por isso o commit fica local até ordem de envio.
+- A tela lê as mesmas fontes que o financeiro já lê. Não cria permissão nova no Supabase e também não fecha as que estão abertas.
+- Tratar o lucro do Lucro Real como tributo devido da empresa. A faixa da tela diz que é simulação.
+- Rateio de despesa fixa por cliente não foi inventado. O card consolidado inclui a despesa; a lista por cliente, não.
+- `vercel.json` segue no limite de 50 funções. Esta etapa não criou função.
 
-## 9. Autorização
+## 5. O que depende de autorização
 
-Pedido da Fase 1: documentação e regras. O push desta branch foi autorizado depois, sem merge, sem deploy e sem migration. O commit que grava este relatório vem em seguida e só altera este arquivo e `ESTADO-ATUAL.md`.
+- Enviar a branch ao GitHub.
+- Merge ou publicação.
+- Migration da coluna de NF do fornecedor.
+- Alíquotas e regra de crédito da contabilidade.
+- Qualquer correção de RLS, grant, login ou senha.
+- Sincronizar a `dev`.
 
-## 10. Versionamento autorizado
+## Rollback
 
-- Commit da Fase 1: `94cff4c3753403ae4f04f062a09ee66701025c62`
-- Commit de baseline incluído: `7a0096014089cc91cd761bf95fd4592947773816` (só documentação da Fase 0; a Fase 1 depende desses arquivos)
-- Branch enviada: `origin/cursor/fase-1-governanca-9d36` (criada neste push; sem `--force`)
-- `main` remota: `c714a624f432e5a471b6347c4afc570382f6aedd` (não movida)
-- `dev` remota: `766c9895079fd93342ad50ad28d52d13c0cfdddf` (não movida)
-- PR: https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/346 (rascunho, base `main`, head `cursor/fase-1-governanca-9d36`)
-- Diff contra `main`: 25 arquivos de governança, +1401 linhas, nenhum arquivo funcional, migration ou `vercel.json`
-- Segredo no diff: nenhum
-- Teste documental: 49 âncoras, 0 falhas
-
-## 11. Pendências
-
-Homologar a PR #346 antes de qualquer merge. Fast-forward da `dev` não foi pedido. Dono humano por domínio além do proprietário: não designado. ADR-006b: descontinuar Z-API não foi aceito. P0 de segurança intactos.
-
-## 12. Próxima fase autorizada
-
-Nenhuma. A Fase 2 não começa. Próxima ação: revisar a PR #346.
-
-## 13. BLOCO PARA CONTINUAÇÃO
-
-```
-GOVERNANCA NA PR 346, RASCUNHO, BASE main c714a624, HEAD 94cff4c3.
-BRANCH cursor/fase-1-governanca-9d36. MAIN E DEV NAO FORAM MOVIDAS.
-SEM MERGE, SEM DEPLOY, SEM MIGRATION.
-LER docs/governanca/ESTADO-ATUAL.md E 08-CONSTITUICAO-TECNICA.md.
-NAO INICIAR FASE 2.
-```
+Reverter o commit desta branch. Produção permanece em `7676ea63`. Não há objeto de banco para desfazer.
 
 ## Veredito
 
-GOVERNANÇA VERSIONADA — AGUARDANDO HOMOLOGAÇÃO DA PR
+GESTOR FISCAL ETAPA 1 NA BRANCH LOCAL
+NADA PUBLICADO
+FASE 2 NÃO CORRIGIDA
