@@ -68,6 +68,10 @@ A consulta do gestor chama `computeCanonicalRevenueCost`, separa pela empresa em
 
 Rollback desta fase: apagar `api/ponte-auth/` e os arquivos novos da ponte. As rotas antigas não dependem deles.
 
+## Fase 4 — migração de senha, ainda desligada
+
+O algoritmo e o fluxo estão em `lib/gestorFiscal/ponteAuth/hashSenha.ts` e `migracaoSenha.ts`. `MIGRACAO_SENHA_LIBERADA` permanece falsa. O detalhe está em `docs/gestorFiscal/MIGRACAO-SENHA-NAO-ATIVAR.md`. A coluna `password_hash` está só no SQL não executado.
+
 ## Veredito
 
-A ponte não está ativada. Nada foi publicado e o banco não foi alterado.
+A ponte não está ativada. A migração de senha não está ativada. Nada foi publicado e o banco não foi alterado.

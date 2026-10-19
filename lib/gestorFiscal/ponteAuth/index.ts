@@ -8,3 +8,4 @@ export { criarPonteIsolada, atenderProducao } from './ponte';
 export type { FonteConfiavel, PonteIsolada } from './ponte';
 export { criarIntegracaoIsolada, entrarProducao, ROTAS_PREPARADAS, consultarGestorProducao } from './integracao';
 export type { IntegracaoIsolada } from './integracao';
+export { MIGRACAO_SENHA_LIBERADA, autenticarEMigrar, respostaPublica } from './migracaoSenha';

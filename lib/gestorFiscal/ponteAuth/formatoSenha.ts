@@ -5,6 +5,7 @@
  * Prefixo de outro algoritmo não é tratado como texto.
  */
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { identificarFormatoHash, verificarSenhaArmazenada } from './hashSenha';
 
 export type FormatoSenhaExistente = 'texto' | 'scrypt' | 'vazia' | 'nao_reconhecido';
 
@@ -14,9 +15,9 @@ export function classificarSenhaGravada(gravada: string | null | undefined): For
   if (salva.startsWith('$2a$') || salva.startsWith('$2b$') || salva.startsWith('$2y$') || salva.startsWith('$argon2')) {
     return 'nao_reconhecido';
   }
-  const partes = salva.split('$');
-  if (partes[0] === 'scrypt' && partes.length === 3 && partes[1] && partes[2]) return 'scrypt';
-  if (salva.includes('$')) return 'nao_reconhecido';
+  const formato = identificarFormatoHash(salva);
+  if (formato === 'scrypt_portal' || formato === 'scrypt_v1') return 'scrypt';
+  if (formato === 'outro' || salva.includes('$')) return 'nao_reconhecido';
   return 'texto';
 }
 
@@ -31,18 +32,10 @@ export function conferirSenhaExistente(informada: string, gravada: string | null
   const formato = classificarSenhaGravada(gravada);
   const limpa = String(informada ?? '').trim();
   if (!limpa || formato === 'vazia' || formato === 'nao_reconhecido') return false;
-  if (formato === 'scrypt') return scryptConfere(limpa, String(gravada));
+  if (formato === 'scrypt') return verificarSenhaArmazenada(limpa, gravada);
   const digitada = Buffer.from(limpa);
   const armazenada = Buffer.from(String(gravada));
   if (digitada.length !== armazenada.length) return false;
   return timingSafeEqual(digitada, armazenada);
 }
 
-function scryptConfere(senha: string, armazenada: string): boolean {
-  const partes = armazenada.split('$');
-  if (partes.length !== 3 || partes[0] !== 'scrypt' || !partes[1] || !partes[2]) return false;
-  const calculado = scryptSync(senha, partes[1], 32);
-  const salvo = Buffer.from(partes[2], 'hex');
-  if (calculado.length !== salvo.length || !/^[0-9a-f]+$/i.test(partes[2])) return false;
-  return timingSafeEqual(calculado, salvo);
-}
