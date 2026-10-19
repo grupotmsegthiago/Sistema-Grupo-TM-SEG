@@ -1,80 +1,55 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
-Fase: 1 — governança permanente
+Fase: encerramento da Fase 1 e diagnóstico da Fase 2
 Data: 2026-10-19
-SHA de produção: `c714a624f432e5a471b6347c4afc570382f6aedd` (`/api/version` 3.7.65, medido na Fase 0; não houve publicação depois)
-Branch de trabalho: `cursor/fase-1-governanca-9d36`, em cima do baseline documental `7a009601`
+SHA da `main`: `7676ea63edcff02292c2374472f51fff4d138758`
+Produção: o mesmo SHA
 
-Nenhuma lógica de negócio, migration, RLS, credencial, dependência, merge ou publicação. Push autorizado depois, só desta branch, sem `--force`. `main` e `dev` permanecem nos SHAs abaixo.
+Nenhuma migration, nenhuma mudança de RLS, nenhum login alterado, nenhum push para `main` nesta etapa, TORRES intocada, `dev` não sincronizada.
 
-## 1. Objetivo e escopo
+## 1. Produção
 
-Instalar constituição, fontes da verdade, propriedade, protocolos e regras do Cursor sem substituir `.cursorrules`, `publicar.mdc`, `testar-antes-entregar.mdc`, `atualizar-dev-antes.mdc` nem `subir-reuniao.mdc`.
+PR #346 está `MERGED`. O commit da `main` é o merge dessa PR.
 
-## 2. Baseline
+Vercel, projeto `sistema-grupo-tm-seg`: status `success` no commit `7676ea63`, descrição “Deployment has completed”.
 
-`main` e produção continuam em `c714a624`. `origin/dev` continua em `766c9895`, 31 commits atrás, 0 exclusivos. Working tree da Fase 1 começou limpa. Supabase do app: `ajhmmjuewdsukecaimik`. Nenhum SQL nesta etapa.
+`https://sistema.grupotmseg.com.br/api/version` devolve `version` `3.7.65` e `buildId` `7676ea63`, `builtAt` `2026-10-19T01:22:54.261Z`.
 
-## 3. Arquivos
+`/api/health` devolve `status: ok`, HTTP 200.
 
-Novos: `docs/governanca/ESTADO-ATUAL.md`, `08` a `17`, três regras `.cursor/rules/*-tmseg.mdc`.
+O HTML traz o título “Grupo TMSEG - Sistema de Gestão” e o Supabase `ajhmmjuewdsukecaimik`. A tela de login renderizou: “Acesso ao Sistema”, e-mail, senha, botão “Acessar sistema”, rodapé `v3.7.65` e “Sistema operacional”. Sem overlay de erro JavaScript.
 
-Ajuste mínimo: frontmatter `alwaysApply` em `validar-localhost-primeiro.mdc` (texto intacto); ponteiro em `AGENTS.md`; uma frase de status em `07-PLANO-DE-FASES.md`.
+## 2. Fase 1
 
-## 4. Regras preservadas
+Concluída no GitHub e no ar. Motivo: o `buildId` de produção é o merge da governança.
 
-Gatilho de publicar sem segunda pergunta. Fast-forward da `dev` só quando a branch é `dev`. Pacote “subir reunião”. Teste com evidência. Trava de prejuízo com os nomes já escritos. Z-API não foi declarada desligada.
+## 3. Segurança — confirmado de novo, sem correção
 
-## 5. Banco
+Anon no projeto da TM SEG ainda lê `system_users.password` (não é bcrypt), `missions` (6306), `financial_transactions` (3385), `financial_invoices` (199), `comissoes` (139), `client_price_tables` (1353), `rh_salary_configs` (16) e `time_clock` (1061).
 
-Nenhum. Ref não foi operado.
+`/api/gemini/health` responde 200 sem sessão.
 
-## 6. Riscos e rollback
+## 4. Ainda não validado
 
-Rollback desta fase é reverter o commit documental. Riscos de produto (R01–R04) seguem abertos. O push foi feito; o merge não.
+Lista viva de policies. Se a anon consegue gravar, não só ler. Se o `EXECUTE` anon de `registrar_baixa_manual_fatura` está de fato no banco. Chamada real de `/api/gemini/generate` (não foi feita, para não gastar a chave).
 
-## 7. Testes
+## 5. Plano da Fase 2
 
-Verificador documental: 49 âncoras, 0 falhas. Não rodou `npm run build` nem a suíte `scripts/`: não houve código de aplicação. Não houve localhost: não houve tela.
+Está em `docs/governanca/18-DIAGNOSTICO-FASE-2-SEGURANCA.md`. Resumo: login no servidor no mesmo change set que fecha a senha; depois uma família de tabelas por vez; testes de sonda e de login; rollback por policy no projeto `ajhmmjuewdsukecaimik` apenas.
 
-## 8. Homologação
+## 6. Dev
 
-Não se aplica a mudança de tela. A validação foi a simulação dos sete pedidos em `docs/governanca/17-VALIDACAO-DOCUMENTAL-FASE-1.md`.
+35 commits atrás da `main`, sem commit exclusivo. Plano, se for autorizado: `merge --ff-only` da `main` na `dev` e push sem `--force`. Não executado.
 
-## 9. Autorização
+## 7. Programa
 
-Pedido da Fase 1: documentação e regras. O push desta branch foi autorizado depois, sem merge, sem deploy e sem migration. O commit que grava este relatório vem em seguida e só altera este arquivo e `ESTADO-ATUAL.md`.
+Fases 0 e 1 encerradas. Fase 2 só diagnosticada. Cerca de 25% das oito fases. Maturidade do sistema continua em 52%, porque os P0 de segurança seguem abertos.
 
-## 10. Versionamento autorizado
+## 8. Próxima ação que exige autorização
 
-- Commit da Fase 1: `94cff4c3753403ae4f04f062a09ee66701025c62`
-- Commit de baseline incluído: `7a0096014089cc91cd761bf95fd4592947773816` (só documentação da Fase 0; a Fase 1 depende desses arquivos)
-- Branch enviada: `origin/cursor/fase-1-governanca-9d36` (criada neste push; sem `--force`)
-- `main` remota: `c714a624f432e5a471b6347c4afc570382f6aedd` (não movida)
-- `dev` remota: `766c9895079fd93342ad50ad28d52d13c0cfdddf` (não movida)
-- PR: https://github.com/grupotmsegthiago/Sistema-Grupo-TM-SEG/pull/346 (rascunho, base `main`, head `cursor/fase-1-governanca-9d36`)
-- Diff contra `main`: 25 arquivos de governança, +1401 linhas, nenhum arquivo funcional, migration ou `vercel.json`
-- Segredo no diff: nenhum
-- Teste documental: 49 âncoras, 0 falhas
-
-## 11. Pendências
-
-Homologar a PR #346 antes de qualquer merge. Fast-forward da `dev` não foi pedido. Dono humano por domínio além do proprietário: não designado. ADR-006b: descontinuar Z-API não foi aceito. P0 de segurança intactos.
-
-## 12. Próxima fase autorizada
-
-Nenhuma. A Fase 2 não começa. Próxima ação: revisar a PR #346.
-
-## 13. BLOCO PARA CONTINUAÇÃO
-
-```
-GOVERNANCA NA PR 346, RASCUNHO, BASE main c714a624, HEAD 94cff4c3.
-BRANCH cursor/fase-1-governanca-9d36. MAIN E DEV NAO FORAM MOVIDAS.
-SEM MERGE, SEM DEPLOY, SEM MIGRATION.
-LER docs/governanca/ESTADO-ATUAL.md E 08-CONSTITUICAO-TECNICA.md.
-NAO INICIAR FASE 2.
-```
+Autorizar o passo 1 da Fase 2: leitura do catálogo de policies no projeto `ajhmmjuewdsukecaimik`, sem DDL. Ou autorizar o fast-forward da `dev`. Nenhuma das duas foi feita.
 
 ## Veredito
 
-GOVERNANÇA VERSIONADA — AGUARDANDO HOMOLOGAÇÃO DA PR
+FASE 1 CONCLUÍDA EM PRODUÇÃO
+FASE 2 NÃO INICIADA
