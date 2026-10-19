@@ -1,48 +1,33 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado na Fase 1, em 2026-10-19. Este arquivo é a memória curta. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-19, depois da conferência de produção da Fase 1.
 
 | Campo | Valor |
 | --- | --- |
-| Última fase concluída | Fase 1 — governança versionada na PR #346, sem merge |
-| Próxima fase autorizada | nenhuma. A Fase 2 não começa sozinha |
-| Último commit de produção homologado | `c714a624f432e5a471b6347c4afc570382f6aedd` (PR #344, `main` = build publicado 3.7.65) |
-| `origin/dev` | `766c9895079fd93342ad50ad28d52d13c0cfdddf`, 31 commits atrás da `main`, zero commits exclusivos |
-| Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
+| Última fase concluída | Fase 1 — governança na `main` e no ar |
+| Próxima fase autorizada | nenhuma. A Fase 2 está diagnosticada e não começou |
+| `main` | `7676ea63edcff02292c2374472f51fff4d138758` (merge da PR #346) |
+| Produção | `https://sistema.grupotmseg.com.br` — `buildId` `7676ea63`, versão `3.7.65`, `/api/health` ok, tela de login carregou |
+| Projeto Vercel | `sistema-grupo-tm-seg` |
+| `origin/dev` | `766c9895`, 35 commits atrás, zero commits exclusivos. Não sincronizada |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
-| Outro Postgres | modelo TORRES (`service_orders`, `escort_billings`). Ref no código: `erjhxwbutjyylxdthuuz`. O conector da Fase 0 caiu nesse modelo |
-| Vercel | somente `sistema-grupo-tm-seg` |
+| TORRES | outro projeto. Não foi alterada |
 
-## Decisões vigentes
+## Evidência da Fase 1
 
-- Motor de OS: `calculateMissionFinancials` em `lib/financialUtils.ts`. Não criar outro.
-- Valor oficial da OS: colunas de `missions`. Override com motivo não é recalculado por cima.
-- Tarifa vinculada (PR #344) está em produção. O rollback do PR #339 (PR #343) também está. Não reaplicar o #339 sem pedido novo.
-- Asaas permanece no fluxo já existente. Boleto não é nota fiscal. NF viva: PlugNotas e, quando a fatura já marca, o provedor Asaas. eNotas não tem cliente ativo; não inventar um e não apagar o legado sem ordem.
-- Troca de mês na comissão não lança conta a pagar. Lançamento da TORRES só no clique, no banco dela.
-- Z-API é a integração de WhatsApp que está no ar (cron de 1 minuto, webhooks, envio na atualização da OS). Não está descontinuada no código. Não remover e não criar um segundo provedor até o proprietário dizer o contrário.
-- A palavra publicar / deploy / colocar no ar continua sendo a autorização já escrita em `.cursorrules` e `.cursor/rules/publicar.mdc`. Deploy espontâneo segue proibido.
+PR #346 `MERGED`. Vercel do commit `7676ea63`: estado `success`, texto “Deployment has completed”. Domínio oficial responde o mesmo `buildId`.
 
-## Versionamento
+## Fase 2
 
-Branch `cursor/fase-1-governanca-9d36` no GitHub, HEAD `94cff4c3`, PR rascunho #346 contra `main` (`c714a624`). `main` e `dev` não foram movidas. Sem merge e sem deploy.
+Diagnóstico em `docs/governanca/18-DIAGNOSTICO-FASE-2-SEGURANCA.md`. A anon ainda lê senha, OS, financeiro, preço, salário e ponto. Correção não autorizada.
 
 ## Pendências
 
-- Homologar a PR #346. Merge só com ordem nova.
-- Fast-forward da `dev` até a `main`: não foi pedido.
-- Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
-- Policies do Postgres da TM SEG: não carregadas na Fase 0.
-- P0 de segurança (senha em texto, anon no financeiro, ingest, token de logout): abertos. São a Fase 2, se for autorizada.
+- Fast-forward da `dev` até a `main`, só com pedido.
+- Dono humano por domínio: não designado.
+- Catálogo `pg_policies` da TM SEG: não carregado.
+- ADR-006b: Z-API continua no ar.
 
 ## Bloqueios
 
-- Não operar o banco da TM SEG pelo conector que apontou para o modelo TORRES.
-- Não usar `exec_sql` para criar objeto.
-- Não acrescentar a 51ª chave em `vercel.json` `functions` sem fundir rota.
-- Não limpar Z-API, Edge `zapi-webhook` nem envio de WhatsApp da OS até decisão explícita.
-- Não presumir banco de homologação separado. Não há evidência de um terceiro Supabase.
-
-## Regras que não se revogam sem ordem
-
-Preservação de OS, financeiro, Asaas e NF (`.cursorrules`). Testar com evidência. Projeto Vercel oficial. Separação TM SEG / TORRES. Import React nos TSX com hooks. Integridade de conjunto (`.limit` não é o universo).
+Não operar a TM SEG pelo conector da TORRES. Não usar `exec_sql` para criar objeto. Não passar de 50 funções na Vercel. Não limpar WhatsApp sem ordem. Não presumir banco de homologação separado.
