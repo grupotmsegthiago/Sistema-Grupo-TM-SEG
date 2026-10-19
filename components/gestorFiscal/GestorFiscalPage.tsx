@@ -280,20 +280,46 @@ function Conteudo(props: {
       {props.mostrar('visao') ? (
         <section className="space-y-3" data-testid="painel-visao">
           <h2 className="text-sm font-black uppercase tracking-wide text-gray-800">Visão Geral Fiscal</h2>
-          <div className="grid gap-3 md:grid-cols-4">
-            <Card titulo="Receita da base" valor={brl(base.receita)} detalhe="Origem: computeCanonicalRevenueCost" teste="kpi-receita" />
-            <Card titulo="Custo de fornecedor" valor={brl(base.custoFornecedor)} detalhe="Custo da OS. Conta a pagar não entra de novo." />
-            <Card titulo="Despesas operacionais" valor={brl(base.despesasOperacionais)} detalhe="Só da empresa selecionada, sem duplicata." />
-            <Card titulo="Resultado operacional" valor={brl(base.resultadoOperacional)} detalhe="Antes do tributo." />
+          <div className="grid gap-3 md:grid-cols-3">
+            <Card titulo="Receita operacional" valor={brl(analise.separacao.receitaOperacional)} detalhe="OS canônica, inclusive cancelada com valor comercial. Não é o valor da nota." teste="kpi-receita" />
+            <Card titulo="Faturamento fiscal" valor={brl(analise.separacao.faturamentoFiscal)} detalhe="Notas do CNPJ, com partes do mesmo conjunto de OS somadas uma vez." teste="kpi-faturamento-fiscal" />
+            <Card titulo="Recebimento" valor={brl(analise.separacao.recebimento)} detalhe="Só entra com número único de nota no texto do lançamento." teste="kpi-recebimento" />
+            <Card titulo="Custo da OS" valor={brl(analise.separacao.custo)} detalhe="Custo canônico. Conta a pagar de fornecedor não entra de novo." teste="kpi-custo" />
+            <Card titulo="Despesas com CNPJ" valor={brl(base.despesasOperacionais)} detalhe="Só da empresa selecionada, sem duplicata e sem custo de fornecedor." />
+            <Card titulo="Lucro estimado" valor={brl(analise.separacao.lucroEstimado)} detalhe="Simulação: receita operacional − custo da OS − despesas com CNPJ. Não é lucro contábil nem caixa." teste="kpi-lucro-estimado" />
           </div>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <Termometro margem={base.margem} faixa={analise.faixa} />
           </div>
           <div className="grid gap-3 md:grid-cols-3">
             <Card titulo="Receita de outro CNPJ" valor={brl(analise.receitaForaDaEmpresa)} detalhe="Ficou fora desta soma." teste="kpi-outro-cnpj" />
-            <Card titulo="Despesa sem empresa" valor={brl(analise.despesaSemEmpresa)} detalhe="Sem emissora identificada. Não entrou no resultado." />
+            <Card titulo="Despesa sem empresa" valor={brl(analise.despesaSemEmpresa)} detalhe="Sem emissora identificada. Não entrou no resultado." teste="kpi-despesa-sem-empresa" />
             <Card titulo="Tributo sem empresa" valor={brl(analise.tributoSemEmpresa)} detalhe="Lançamento de imposto sem CNPJ. Não entrou no resultado." />
           </div>
+          <section className="space-y-2 rounded-xl border border-gray-200 bg-white p-4" data-testid="painel-canceladas">
+            <h3 className="text-xs font-black uppercase tracking-wide text-gray-800">OS canceladas na receita operacional</h3>
+            <p className="text-xs font-semibold text-gray-600">
+              {analise.canceladas.quantidade} OS · {brl(analise.canceladas.receita)} já inclusos na receita operacional. A regra comercial da OS não é recalculada aqui.
+            </p>
+            <div className="grid gap-3 md:grid-cols-4">
+              <Card titulo="Cancelada faturada" valor={brl(analise.canceladas.faturada.valor)} detalhe={`${analise.canceladas.faturada.quantidade} OS com nota ou vínculo.`} />
+              <Card titulo="Cancelada aprovada sem nota" valor={brl(analise.canceladas.aprovadaSemNota.valor)} detalhe={`${analise.canceladas.aprovadaSemNota.quantidade} OS. Aprovação não é nota.`} />
+              <Card titulo="Cancelada pendente" valor={brl(analise.canceladas.pendente.valor)} detalhe={`${analise.canceladas.pendente.quantidade} OS com valor, sem aprovação e sem nota.`} />
+              <Card titulo="Cancelada sem valor" valor={brl(analise.canceladas.semValor.valor)} detalhe={`${analise.canceladas.semValor.quantidade} OS.`} />
+            </div>
+          </section>
+          <section className="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4" data-testid="painel-pendencias">
+            <h3 className="text-xs font-black uppercase tracking-wide text-amber-950">Pendências fora do resultado da empresa</h3>
+            <ul className="space-y-1 text-xs font-semibold text-amber-950">
+              <li>{analise.pendencias.despesaSemCnpjQuantidade} despesa(s) sem CNPJ: {brl(analise.pendencias.despesaSemCnpj)}.</li>
+              <li>Tributo sem empresa: {brl(analise.pendencias.tributoSemEmpresa)}.</li>
+              <li>{analise.pendencias.recebimentoSemDocumentoQuantidade} recebimento(s) sem documento único: {brl(analise.pendencias.recebimentoSemDocumento)}.</li>
+              <li>Faturamento sem empresa: {brl(analise.pendencias.faturamentoSemEmpresa)}.</li>
+              <li>{analise.pendencias.osSemComprovacao} OS sem comprovação de nota: {brl(analise.pendencias.osSemComprovacaoValor)}. Continuam pendentes.</li>
+              <li>{analise.pendencias.osNaoDeterminada} OS com vínculo não carregado: {brl(analise.pendencias.osNaoDeterminadaValor)}.</li>
+              <li>{analise.pendencias.custoFornecedorEmContasQuantidade} conta(s) de fornecedor: {brl(analise.pendencias.custoFornecedorEmContas)}. Não soma no custo da OS.</li>
+            </ul>
+          </section>
           <ul className="rounded-xl border border-gray-200 bg-white p-4 text-xs" data-testid="conferencia-regras">
             {analise.conferencia.map((item) => (
               <li key={item.regra} className="border-t border-gray-100 py-2 first:border-t-0">
@@ -382,6 +408,26 @@ function Conteudo(props: {
             <Card titulo="Sem crédito" valor={brl(base.lucroLiquidoLucroReal)} detalhe="Fornecedor sem NF, não informado ou não marcado." />
           </div>
           <TabelaFornecedores {...props} />
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white" data-testid="grupos-fatura">
+            <table className="min-w-full text-left text-xs">
+              <thead className="bg-gray-50 font-black uppercase text-gray-500">
+                <tr><th className="p-2">Conjunto</th><th className="p-2">Partes</th><th className="p-2">OS</th><th className="p-2">Faturamento</th><th className="p-2">Receita das OS</th><th className="p-2">Diferença</th></tr>
+              </thead>
+              <tbody>
+                {analise.gruposFatura.map((g) => (
+                  <tr key={g.chave} className="border-t border-gray-100">
+                    <td className="p-2">{g.osIds.length ? g.osIds.join(', ') : 'Sem OS vinculada'}</td>
+                    <td className="p-2">{g.partes.length}</td>
+                    <td className="p-2">{g.osIds.length}</td>
+                    <td className="p-2 font-mono">{brl(g.valorFiscal)}</td>
+                    <td className="p-2 font-mono">{brl(g.receitaOs)}</td>
+                    <td className="p-2 font-mono">{brl(g.diferenca)}</td>
+                  </tr>
+                ))}
+                {analise.gruposFatura.length === 0 ? <tr><td className="p-3 font-bold text-gray-500" colSpan={6}>Nenhuma nota de cliente neste recorte.</td></tr> : null}
+              </tbody>
+            </table>
+          </div>
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
             <table className="min-w-full text-left text-xs">
               <thead className="bg-gray-50 font-black uppercase text-gray-500">

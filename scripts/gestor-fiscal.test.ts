@@ -16,7 +16,13 @@ import {
 } from '../lib/gestorFiscal/simulacao';
 import { analisarCarga } from '../lib/gestorFiscal/base';
 import { CARGA_LABORATORIO } from '../lib/gestorFiscal/laboratorio';
-import { classificarSituacaoNf } from '../lib/gestorFiscal/carregarFontes';
+import { classificarSituacaoNf, papelDoLancamento } from '../lib/gestorFiscal/carregarFontes';
+import {
+  atribuirRecebimentoPorDocumento,
+  consolidarFaturasPorConjuntoDeOs,
+  osComprovadamenteFaturada,
+} from '../lib/gestorFiscal/conciliacao';
+import type { CargaFiscal, DocumentoLinha, FatiaOs } from '../lib/gestorFiscal/base';
 import { canAccessScreen } from '../lib/screenAccess';
 import type { PremissasFiscais } from '../lib/gestorFiscal/premissas';
 import type { FiltroFiscal } from '../lib/gestorFiscal/base';
@@ -88,6 +94,13 @@ describe('gestor fiscal — laboratório e integridade', () => {
     assert.equal(analise.receitaForaDaEmpresa, 999_999);
     assert.equal(analise.despesaSemEmpresa, 7_777);
     assert.equal(analise.tributoSemEmpresa, 4_000);
+    assert.equal(analise.separacao.receitaOperacional, 150_000);
+    assert.equal(analise.separacao.custo, 50_000);
+    assert.equal(analise.separacao.lucroEstimado, 90_000);
+    assert.equal(analise.reajusteCliente.status, 'JA_ATINGE');
+    assert.equal(analise.reajusteCliente.reajusteValor, 0);
+    assert.equal(analise.preservarLucro.status, 'PREMISSA_AUSENTE');
+    assert.notEqual(analise.separacao.faturamentoFiscal, analise.separacao.receitaOperacional);
     assert.ok(analise.conferencia.some((item) => item.regra.includes('Crédito') && item.estado === 'ATENDE'));
     assert.ok(analise.duplicatas.length >= 2);
     assert.equal(analise.rotuloModo, 'LABORATÓRIO');
@@ -258,6 +271,285 @@ describe('gestor fiscal — teto, margem e reajuste', () => {
     assert.equal(analise.documentos.length, 0);
     assert.equal(analise.rotuloModo, 'SIMULAÇÃO');
     assert.ok(analise.avisos.some((a) => a.includes('Nenhuma OS oficial')));
+  });
+});
+
+function fatia(extra: Partial<FatiaOs> & Pick<FatiaOs, 'id' | 'receita' | 'custo'>): FatiaOs {
+  return {
+    mes: '2026-03',
+    empresaKey: 'LABORATORIO',
+    cliente: 'CLIENTE FICTICIO',
+    fornecedor: 'FORNECEDOR FICTICIO COM NF',
+    regiao: 'SUDESTE',
+    valueStatus: 'official',
+    origem: 'computeCanonicalRevenueCost',
+    ...extra,
+  };
+}
+
+function nota(extra: Partial<DocumentoLinha> & Pick<DocumentoLinha, 'id' | 'valor'>): DocumentoLinha {
+  return {
+    mes: '2026-03',
+    empresaKey: 'LABORATORIO',
+    tipo: 'fatura_cliente',
+    cliente: 'CLIENTE FICTICIO',
+    fornecedor: '',
+    numero: extra.id,
+    situacao: 'valida',
+    impressaoDigital: `nota-${extra.id}`,
+    origem: 'financial_invoices',
+    ...extra,
+  };
+}
+
+function cargaMinima(extra: Partial<CargaFiscal>): CargaFiscal {
+  return {
+    estado: 'ENCONTRADO',
+    modo: 'laboratorio',
+    mensagens: [],
+    fatias: [],
+    despesas: [],
+    documentos: [],
+    tributos: [],
+    recebimentos: [],
+    emiteLido: {},
+    ...extra,
+  };
+}
+
+describe('gestor fiscal — correções de conciliação', () => {
+  it('soma partes da mesma OS uma vez e não duplica a receita', () => {
+    const grupos = consolidarFaturasPorConjuntoDeOs([
+      { id: 'S2', numero: 'NF-S2', valor: 800.1, osIds: ['OS-B', 'OS-A'] },
+      { id: 'S1', numero: 'NF-S1', valor: 700, osIds: ['OS-A', 'OS-B'] },
+    ]);
+    assert.equal(grupos.length, 1);
+    assert.equal(grupos[0].partes.length, 2);
+    assert.equal(grupos[0].valorFiscal, 1500.1);
+    assert.deepEqual(grupos[0].osIds, ['OS-A', 'OS-B']);
+
+    const analise = analisarCarga(cargaMinima({
+      fatias: [
+        fatia({ id: 'OS-A', receita: 1000, custo: 100, faturada: true, comprovacao: 'comprovada' }),
+        fatia({ id: 'OS-B', receita: 500, custo: 50, faturada: true, comprovacao: 'comprovada' }),
+      ],
+      documentos: [
+        nota({ id: 'S1', valor: 700, numero: 'NF-S1', osIds: ['OS-A', 'OS-B'] }),
+        nota({ id: 'S2', valor: 800.1, numero: 'NF-S2', osIds: ['OS-B', 'OS-A'] }),
+      ],
+    }), filtroLab({ mes: '2026-03' }), PREMISSAS_INICIAIS, {}, {});
+    assert.equal(analise.osNaBase, 2);
+    assert.equal(analise.separacao.receitaOperacional, 1500);
+    assert.equal(analise.separacao.faturamentoFiscal, 1500.1);
+    assert.equal(analise.separacao.custo, 150);
+    assert.equal(analise.gruposFatura.length, 1);
+    assert.equal(analise.gruposFatura[0].diferenca, 0.1);
+    assert.equal(analise.pendencias.osSemComprovacao, 0);
+  });
+
+  it('não junta notas com conjuntos diferentes nem casa OS pelo cliente e mês', () => {
+    const grupos = consolidarFaturasPorConjuntoDeOs([
+      { id: 'P1', numero: 'NF-P1', valor: 1000, osIds: ['OS-A', 'OS-B'] },
+      { id: 'P2', numero: 'NF-P2', valor: 400, osIds: ['OS-A'] },
+      { id: 'AV', numero: 'NF-AV', valor: 900, osIds: [] },
+    ]);
+    assert.equal(grupos.length, 3);
+
+    assert.equal(osComprovadamenteFaturada({
+      invoiceNumber: '',
+      missionId: 'OS-1',
+      idsVinculados: new Set(),
+      notaDoMesmoClienteNoMes: true,
+    }), false);
+    assert.equal(osComprovadamenteFaturada({ invoiceNumber: '1234', missionId: 'OS-1' }), true);
+    assert.equal(osComprovadamenteFaturada({ invoiceNumber: '0', missionId: 'OS-1', idsVinculados: new Set(['OS-1']) }), true);
+
+    const analise = analisarCarga(cargaMinima({
+      fatias: [fatia({
+        id: 'OS-1',
+        receita: 1000,
+        custo: 400,
+        cliente: 'ACME',
+        faturada: false,
+        comprovacao: 'pendente',
+        status: 'Concluída',
+      })],
+      documentos: [nota({ id: 'NF-ACME', valor: 1000, cliente: 'ACME', osIds: [], numero: 'NF-ACME-MES' })],
+    }), filtroLab({ mes: '2026-03' }), PREMISSAS_INICIAIS, {}, {});
+    assert.equal(analise.pendencias.osSemComprovacao, 1);
+    assert.equal(analise.pendencias.osSemComprovacaoValor, 1000);
+    assert.equal(analise.separacao.receitaOperacional, 1000);
+    assert.equal(analise.separacao.faturamentoFiscal, 1000);
+    assert.equal(analise.gruposFatura[0].osIds.length, 0);
+  });
+
+  it('mantém a OS cancelada na receita e separa faturado, aprovado e pendente', () => {
+    const analise = analisarCarga(cargaMinima({
+      fatias: [
+        fatia({ id: 'C1', status: 'Cancelada', aprovada: true, faturada: true, comprovacao: 'comprovada', receita: 100, custo: 0 }),
+        fatia({ id: 'C2', status: 'Cancelada', aprovada: true, faturada: false, comprovacao: 'pendente', receita: 200, custo: 0 }),
+        fatia({ id: 'C3', status: 'Cancelada', aprovada: false, faturada: false, comprovacao: 'pendente', receita: 50, custo: 0 }),
+        fatia({ id: 'C4', status: 'Cancelada', aprovada: false, faturada: false, comprovacao: 'pendente', receita: 0, custo: 0 }),
+        fatia({ id: 'OK', status: 'Concluída', faturada: false, comprovacao: 'pendente', receita: 1000, custo: 100 }),
+      ],
+    }), filtroLab({ mes: '2026-03' }), PREMISSAS_INICIAIS, {}, {});
+    assert.equal(analise.separacao.receitaOperacional, 1350);
+    assert.equal(analise.canceladas.quantidade, 4);
+    assert.equal(analise.canceladas.receita, 350);
+    assert.equal(analise.canceladas.faturada.quantidade, 1);
+    assert.equal(analise.canceladas.faturada.valor, 100);
+    assert.equal(analise.canceladas.aprovadaSemNota.quantidade, 1);
+    assert.equal(analise.canceladas.aprovadaSemNota.valor, 200);
+    assert.equal(analise.canceladas.pendente.quantidade, 1);
+    assert.equal(analise.canceladas.pendente.valor, 50);
+    assert.equal(analise.canceladas.semValor.quantidade, 1);
+    assert.equal(
+      analise.canceladas.faturada.quantidade
+      + analise.canceladas.aprovadaSemNota.quantidade
+      + analise.canceladas.pendente.quantidade
+      + analise.canceladas.semValor.quantidade,
+      analise.canceladas.quantidade,
+    );
+  });
+
+  it('deixa despesa sem CNPJ e custo de fornecedor fora do resultado da empresa', () => {
+    assert.equal(papelDoLancamento({
+      entityType: 'Other',
+      categoryName: 'FORNECEDOR - ESCOLTA',
+      categoryTag: '',
+      categoryGroup: '',
+    }), 'custo_fornecedor');
+    assert.equal(papelDoLancamento({
+      entityType: 'Provider',
+      categoryName: 'Administrativa',
+      categoryTag: '',
+      categoryGroup: '',
+    }), 'custo_fornecedor');
+    assert.equal(papelDoLancamento({
+      entityType: 'Other',
+      categoryName: 'Aluguel',
+      categoryTag: '',
+      categoryGroup: '',
+    }), 'despesa');
+    assert.equal(papelDoLancamento({
+      entityType: '',
+      categoryName: '',
+      categoryTag: 'IMPOSTO',
+      categoryGroup: '',
+    }), 'tributo');
+
+    const analise = analisarCarga(cargaMinima({
+      fatias: [fatia({ id: 'OS-1', receita: 1000, custo: 400 })],
+      despesas: [
+        {
+          id: 'SEM',
+          mes: '2026-03',
+          empresaKey: 'SEM_EMISSORA',
+          valor: 777,
+          entidade: 'SEM CNPJ',
+          descricao: 'Sem emissora',
+          impressaoDigital: 'sem',
+          origem: 'financial_transactions',
+        },
+        {
+          id: 'COM',
+          mes: '2026-03',
+          empresaKey: 'LABORATORIO',
+          valor: 100,
+          entidade: 'COM CNPJ',
+          descricao: 'Da empresa',
+          impressaoDigital: 'com',
+          origem: 'financial_transactions',
+        },
+      ],
+      documentos: [nota({
+        id: 'PAGAR',
+        tipo: 'nf_fornecedor',
+        valor: 400,
+        fornecedor: 'FORNECEDOR FICTICIO COM NF',
+        cliente: '',
+        empresaKey: 'SEM_EMISSORA',
+        origem: 'financial_transactions.doc_nf_status',
+      })],
+    }), filtroLab({ mes: '2026-03' }), PREMISSAS_INICIAIS, {}, {});
+    assert.equal(analise.separacao.custo, 400);
+    assert.equal(analise.semCredito.despesasOperacionais, 100);
+    assert.equal(analise.separacao.lucroEstimado, 500);
+    assert.equal(analise.pendencias.despesaSemCnpj, 777);
+    assert.equal(analise.pendencias.despesaSemCnpjQuantidade, 1);
+    assert.equal(analise.pendencias.custoFornecedorEmContas, 400);
+    assert.equal(analise.separacao.receitaOperacional - analise.separacao.custo - analise.semCredito.despesasOperacionais, analise.separacao.lucroEstimado);
+  });
+
+  it('atribui recebimento só por número único de nota e preserva teto e reajustes', () => {
+    const notas = [
+      { id: 'F1', numero: 'TMSEG-20261002-172535-MKAM', empresaKey: 'TM SEGURANCA' },
+      { id: 'F2', numero: '12', empresaKey: 'TM GESTAO' },
+      { id: 'F3', numero: '9999', empresaKey: 'TM SECURITY' },
+      { id: 'F4', numero: '9999', empresaKey: 'TM GESTAO' },
+    ];
+    assert.equal(atribuirRecebimentoPorDocumento('Baixa TMSEG-20261002-172535-MKAM', notas).empresaKey, 'TM SEGURANCA');
+    assert.equal(atribuirRecebimentoPorDocumento('Baixa 12 do cliente', notas).vinculado, false);
+    assert.equal(atribuirRecebimentoPorDocumento('Baixa 9999', notas).vinculado, false);
+    assert.equal(atribuirRecebimentoPorDocumento('FOUR LOG', notas).vinculado, false);
+
+    const analise = analisarCarga(cargaMinima({
+      fatias: [fatia({ id: 'OS-1', receita: 1000, custo: 200 })],
+      recebimentos: [
+        { id: 'R1', mes: '2026-03', empresaKey: 'LABORATORIO', valor: 300, descricao: 'nota', numeroNota: 'NF-1', vinculado: true, origem: 'financial_transactions' },
+        { id: 'R2', mes: '2026-03', empresaKey: 'SEM_EMISSORA', valor: 900, descricao: 'sem nota', numeroNota: '', vinculado: false, origem: 'financial_transactions' },
+      ],
+    }), filtroLab({ mes: '2026-03' }), PREMISSAS_INICIAIS, {}, {});
+    assert.equal(analise.separacao.recebimento, 300);
+    assert.equal(analise.pendencias.recebimentoSemDocumento, 900);
+    assert.notEqual(analise.separacao.recebimento, analise.separacao.receitaOperacional);
+    assert.notEqual(analise.separacao.faturamentoFiscal, analise.separacao.receitaOperacional);
+    assert.equal(analise.teto.status, 'PREMISSA_AUSENTE');
+    assert.equal(analise.reajusteCliente.status, 'JA_ATINGE');
+    assert.equal(analise.reajusteCliente.reajusteValor, 0);
+    assert.equal(analise.preservarLucro.status, 'PREMISSA_AUSENTE');
+    assert.equal(analise.preservarLucro.aumento, null);
+    assert.equal(analise.formulas.teto, FORMULAS_FISCAIS.teto);
+    assert.equal(analise.formulas.cliente, FORMULAS_FISCAIS.cliente);
+    assert.equal(analise.formulas.preservar, FORMULAS_FISCAIS.preservar);
+  });
+
+  it('não grava, não recalcula OS e não usa a TORRES na conciliação', () => {
+    const carga = fs.readFileSync('lib/gestorFiscal/carregarFontes.ts', 'utf8');
+    const base = fs.readFileSync('lib/gestorFiscal/base.ts', 'utf8');
+    const conciliacao = fs.readFileSync('lib/gestorFiscal/conciliacao.ts', 'utf8');
+    assert.match(carga, /financial_invoice_missions/);
+    assert.match(carga, /osComprovadamenteFaturada/);
+    assert.equal(carga.includes('.insert('), false);
+    assert.equal(carga.includes('.update('), false);
+    assert.equal(carga.includes('.delete('), false);
+    assert.equal(carga.includes('service_orders'), false);
+    assert.equal(/torres/i.test(carga + base + conciliacao), false);
+    assert.equal(base.includes('calculateMissionFinancials'), false);
+    assert.equal(conciliacao.includes('calculateMissionFinancials'), false);
+    assert.match(conciliacao, /notaDoMesmoClienteNoMes/);
+  });
+
+  it('mostra na tela a separação, as canceladas e as pendências', async () => {
+    const React = await import('react');
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const pagina = await import('../components/gestorFiscal/GestorFiscalPage');
+    const html = renderToStaticMarkup(React.createElement(pagina.default, {
+      modoInicial: 'laboratorio',
+      abaInicial: 'visao',
+      expandido: true,
+    }));
+    assert.match(html, /Receita operacional/);
+    assert.match(html, /Faturamento fiscal/);
+    assert.match(html, /Recebimento/);
+    assert.match(html, /Lucro estimado/);
+    assert.match(html, /OS canceladas na receita operacional/);
+    assert.match(html, /Pendências fora do resultado/);
+    assert.match(html, /Reajuste para a margem de 40%/);
+    assert.match(html, /Teto de reajuste/);
+    assert.match(html, /data-testid="kpi-lucro-estimado"/);
+    const fonte = fs.readFileSync('components/gestorFiscal/GestorFiscalPage.tsx', 'utf8');
+    assert.match(fonte, /import React, \{ useEffect, useMemo, useState \} from 'react'/);
   });
 });
 

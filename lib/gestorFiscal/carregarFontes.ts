@@ -11,7 +11,8 @@ import { extractUF, UF_TO_REGION } from '../financialUtils';
 import type { Client, ClientPriceTable, ProviderCostTable } from '../../types';
 import { classificarEmpresa } from './empresas';
 import { HISTORICO_INICIO, mesDeIso } from './periodo';
-import type { CargaFiscal, DespesaLinha, DocumentoLinha, FatiaOs, TributoLancado } from './base';
+import type { CargaFiscal, DespesaLinha, DocumentoLinha, FatiaOs, RecebimentoLinha, TributoLancado } from './base';
+import { atribuirRecebimentoPorDocumento, osComprovadamenteFaturada, type NotaParaRecebimento } from './conciliacao';
 import { interpretarEmiteNf, type EmiteNf, type SituacaoNf } from './simulacao';
 
 const COLS_MISSAO = [
@@ -19,6 +20,7 @@ const COLS_MISSAO = [
   'start_time', 'end_time', 'created_at', 'last_update',
   'start_km', 'end_km', 'total_distance',
   'revenue_value', 'cost_value', 'billing_approved', 'billing_verified_by', 'is_same_os',
+  'invoice_number', 'parent_mission_id',
   'toll_value', 'toll_value_provider', 'dhl_deslocamento_km',
   'displacement_value', 'displacement_value_provider',
 ].join(', ');
@@ -47,13 +49,41 @@ function regiaoDe(origem: unknown, destino: unknown): string {
   return UF_TO_REGION[uf] || 'SEM_REGIAO';
 }
 
+function semAcento(valor: string): string {
+  return valor.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+}
+
 function ehImposto(tag: unknown, nome: unknown): boolean {
   if (texto(tag).toUpperCase() === 'IMPOSTO') return true;
   return /imposto|tributo/i.test(texto(nome));
 }
 
+/** Categoria de fornecedor ou título de fornecedor não entra de novo no custo da OS. */
+export function papelDoLancamento(args: {
+  entityType: string;
+  categoryName: string;
+  categoryTag: string;
+  categoryGroup: string;
+}): 'tributo' | 'custo_fornecedor' | 'despesa' {
+  if (ehImposto(args.categoryTag, args.categoryName)) return 'tributo';
+  if (semAcento(args.entityType) === 'PROVIDER') return 'custo_fornecedor';
+  const nome = semAcento(args.categoryName);
+  const tag = semAcento(args.categoryTag);
+  const grupo = semAcento(args.categoryGroup);
+  if (nome.startsWith('FORNECEDOR') || tag === 'FORNECEDOR' || grupo === 'FORNECEDOR') return 'custo_fornecedor';
+  return 'despesa';
+}
+
+export function statusRecebido(status: string): boolean {
+  return ['PAID', 'PAGO', 'PAGA', 'RECEBIDO', 'RECEIVED', 'SETTLED', 'CONFIRMED'].includes(status.toUpperCase());
+}
+
+function aprovada(valor: unknown): boolean {
+  return valor === true || valor === 'true' || valor === 't' || valor === 1 || valor === '1';
+}
+
 async function paginar(tabela: string, aplicar: (q: any) => any): Promise<Linha[]> {
-  const { rows } = await fetchAllPages<Linha>(async (from, size) => {
+  const { rows, complete } = await fetchAllPages<Linha>(async (from, size) => {
     const res = await aplicar(supabase.from(tabela))
       .order('id', { ascending: true })
       .range(from, from + size - 1);
@@ -65,6 +95,7 @@ async function paginar(tabela: string, aplicar: (q: any) => any): Promise<Linha[
       return id;
     },
   });
+  if (!complete) throw new Error(`Leitura de ${tabela} incompleta. O painel não usa a página parcial.`);
   return rows;
 }
 
@@ -91,6 +122,8 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
   let transacoes: Linha[] = [];
   let categorias: Linha[] = [];
   let faturas: Linha[] = [];
+  let vinculos: Linha[] = [];
+  let vinculosOk = true;
 
   try {
     const porInicio = await paginar('missions', (q) => q.select(COLS_MISSAO, { count: 'exact' }).gte('start_time', inicioIso).lte('start_time', fimIso));
@@ -146,6 +179,29 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
   } catch (erro) {
     falhou('Faturas e NF de cliente', erro);
   }
+  try {
+    const lidos = await fetchAllPages<Linha>(async (from, size) => {
+      const res = await supabase.from('financial_invoice_missions')
+        .select('invoice_id, mission_id', { count: 'exact' })
+        .order('invoice_id', { ascending: true })
+        .order('mission_id', { ascending: true })
+        .range(from, from + size - 1);
+      return { data: res.data as Linha[] | null, error: res.error, count: res.count };
+    }, 1000, 50_000, {
+      getRowKey: (row) => {
+        const chave = `${texto(row.invoice_id)}|${texto(row.mission_id)}`;
+        if (chave === '|') throw new Error('Vínculo fatura–OS sem identificador. A leitura parou.');
+        return chave;
+      },
+    });
+    if (!lidos.complete) throw new Error('Leitura do vínculo fatura–OS incompleta.');
+    vinculos = lidos.rows;
+  } catch (erro) {
+    vinculosOk = false;
+    vinculos = [];
+    falhou('Vínculo fatura e OS', erro);
+    mensagens.push('Sem o vínculo fatura–OS, a OS não é marcada como faturada nem como comprovadamente sem nota.');
+  }
 
   const emiteLido: Record<string, EmiteNf> = {};
   try {
@@ -160,7 +216,21 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
   }
 
   if (estado === 'ERRO') {
-    return { estado, modo: 'leitura', mensagens, fatias: [], despesas: [], documentos: [], tributos: [], emiteLido };
+    return { estado, modo: 'leitura', mensagens, fatias: [], despesas: [], documentos: [], tributos: [], recebimentos: [], emiteLido };
+  }
+
+  const idsVinculados = new Set<string>();
+  const osPorFatura = new Map<string, string[]>();
+  if (vinculosOk) {
+    for (const vinculo of vinculos) {
+      const faturaId = texto(vinculo.invoice_id);
+      const osId = texto(vinculo.mission_id);
+      if (!faturaId || !osId) continue;
+      idsVinculados.add(osId);
+      const lista = osPorFatura.get(faturaId) || [];
+      if (!lista.includes(osId)) lista.push(osId);
+      osPorFatura.set(faturaId, lista);
+    }
   }
 
   const clientePorNome = new Map<string, Linha>();
@@ -179,36 +249,55 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
     const nomeCliente = texto(m.client);
     const cadastro = clientePorNome.get(nomeCliente);
     const empresaKey = classificarEmpresa(texto(cadastro?.issuer_company));
-    let canon;
-    try {
-      canon = computeCanonicalRevenueCost(m, refs);
-    } catch {
-      fatias.push({
-        id: texto(m.id),
-        mes,
-        empresaKey,
-        cliente: nomeCliente || 'SEM CLIENTE',
-        fornecedor: texto(m.provider) || 'SEM FORNECEDOR',
-        regiao: regiaoDe(m.origin, m.destination),
-        receita: 0,
-        custo: 0,
-        valueStatus: 'needs_validation',
-        origem: 'computeCanonicalRevenueCost',
-      });
-      continue;
-    }
-    fatias.push({
-      id: texto(m.id),
+    const osId = texto(m.id);
+    const faturadaDireta = osComprovadamenteFaturada({
+      invoiceNumber: texto(m.invoice_number),
+      missionId: osId,
+      idsVinculados: vinculosOk ? idsVinculados : null,
+      notaDoMesmoClienteNoMes: false,
+    });
+    const comprovacao = faturadaDireta ? 'comprovada' : (vinculosOk ? 'pendente' : 'nao_determinada');
+    const comum = {
+      id: osId,
       mes,
       empresaKey,
       cliente: nomeCliente || 'SEM CLIENTE',
       fornecedor: texto(m.provider) || 'SEM FORNECEDOR',
       regiao: regiaoDe(m.origin, m.destination),
+      origem: 'computeCanonicalRevenueCost' as const,
+      status: texto(m.status),
+      aprovada: aprovada(m.billing_approved),
+      faturada: faturadaDireta,
+      comprovacao,
+    };
+    let canon;
+    try {
+      canon = computeCanonicalRevenueCost(m, refs);
+    } catch {
+      fatias.push({
+        ...comum,
+        receita: 0,
+        custo: 0,
+        valueStatus: 'needs_validation',
+      });
+      continue;
+    }
+    fatias.push({
+      ...comum,
       receita: canon.rev,
       custo: canon.cost,
       valueStatus: canon.valueStatus,
-      origem: 'computeCanonicalRevenueCost',
     });
+  }
+
+  const faturadasDiretas = new Set(fatias.filter((f) => f.faturada).map((f) => f.id));
+  const fatiaPorId = new Map(fatias.map((f) => [f.id, f]));
+  for (const m of missoes) {
+    const pai = texto(m.parent_mission_id);
+    const filha = fatiaPorId.get(texto(m.id));
+    if (!filha || filha.faturada || !pai || !faturadasDiretas.has(pai)) continue;
+    filha.faturada = true;
+    filha.comprovacao = 'comprovada';
   }
 
   const catPorId = new Map<string, Linha>();
@@ -217,17 +306,49 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
   const despesas: DespesaLinha[] = [];
   const documentos: DocumentoLinha[] = [];
   const tributos: TributoLancado[] = [];
+  const recebimentos: RecebimentoLinha[] = [];
+  const notasParaRecebimento: NotaParaRecebimento[] = [];
+  for (const f of faturas) {
+    if (texto(f.status).toUpperCase() === 'CANCELADA') continue;
+    const empresaKey = classificarEmpresa(texto(f.issuer_company));
+    const nf = texto(f.nf_number);
+    const numero = texto(f.number);
+    if (nf) notasParaRecebimento.push({ id: texto(f.id), numero: nf, empresaKey });
+    if (numero && numero !== nf) notasParaRecebimento.push({ id: texto(f.id), numero, empresaKey });
+  }
 
   for (const t of transacoes) {
     const status = texto(t.status).toUpperCase();
     if (status === 'CANCELLED') continue;
-    if (texto(t.type).toUpperCase() !== 'EXPENSE') continue;
+    const tipo = texto(t.type).toUpperCase();
     const mes = mesDeIso(texto(t.due_date));
     if (!mes) continue;
+    if (tipo === 'INCOME') {
+      if (!statusRecebido(status)) continue;
+      const atribuido = atribuirRecebimentoPorDocumento(texto(t.description), notasParaRecebimento);
+      recebimentos.push({
+        id: texto(t.id),
+        mes,
+        empresaKey: atribuido.empresaKey,
+        valor: numero(t.amount),
+        descricao: texto(t.description),
+        numeroNota: atribuido.numero,
+        vinculado: atribuido.vinculado,
+        origem: 'financial_transactions',
+      });
+      continue;
+    }
+    if (tipo !== 'EXPENSE') continue;
     const cat = catPorId.get(texto(t.category_id));
     const valor = numero(t.amount);
     const entidade = texto(t.entity_name) || 'SEM ENTIDADE';
-    if (ehImposto(cat?.tag, cat?.name)) {
+    const papel = papelDoLancamento({
+      entityType: texto(t.entity_type),
+      categoryName: texto(cat?.name),
+      categoryTag: texto(cat?.tag),
+      categoryGroup: texto(cat?.group),
+    });
+    if (papel === 'tributo') {
       const cliente = texto(t.entity_type) === 'Client' ? clientePorNome.get(texto(t.entity_name)) : undefined;
       tributos.push({
         id: texto(t.id),
@@ -239,7 +360,7 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
       });
       continue;
     }
-    if (texto(t.entity_type) === 'Provider') {
+    if (papel === 'custo_fornecedor') {
       documentos.push({
         id: texto(t.id),
         mes,
@@ -286,6 +407,7 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
       situacao: classificarSituacaoNf(f.nf_status, !!numero),
       impressaoDigital: `${classificarEmpresa(texto(f.issuer_company))}|${numero}|${numero(f.amount)}`,
       origem: 'financial_invoices',
+      osIds: vinculosOk ? (osPorFatura.get(texto(f.id)) || []) : undefined,
     });
   }
 
@@ -294,5 +416,5 @@ export async function carregarFontesGestorFiscal(inicio: string, fim: string): P
     mensagens.push('Nenhum lançamento encontrado no período para as fontes lidas.');
   }
 
-  return { estado, modo: 'leitura', mensagens, fatias, despesas, documentos, tributos, emiteLido };
+  return { estado, modo: 'leitura', mensagens, fatias, despesas, documentos, tributos, recebimentos, emiteLido };
 }

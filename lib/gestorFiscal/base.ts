@@ -7,6 +7,7 @@
 
 import { empresaPorChave, formatarCnpj } from './empresas';
 import { mesDentro } from './periodo';
+import { consolidarFaturasPorConjuntoDeOs, type ComprovacaoOs, type GrupoFaturaConsolidado } from './conciliacao';
 import {
   creditoDaLinha,
   simularPeriodo,
@@ -19,7 +20,6 @@ import {
   type EmiteNf,
   type MesOperacional,
   type SituacaoNf,
-  type EmiteNf,
 } from './simulacao';
 import type { PremissasFiscais } from './premissas';
 
@@ -36,6 +36,13 @@ export interface FatiaOs {
   custo: number;
   valueStatus: 'official' | 'estimated' | 'needs_validation';
   origem: 'computeCanonicalRevenueCost';
+  /** Status comercial já gravado. Ausente no laboratório antigo. */
+  status?: string;
+  /** billing_approved. Não é nota fiscal. */
+  aprovada?: boolean;
+  /** Só é verdadeira com número de nota na OS ou vínculo fatura–OS. */
+  faturada?: boolean;
+  comprovacao?: ComprovacaoOs;
 }
 
 export interface DespesaLinha {
@@ -61,6 +68,8 @@ export interface DocumentoLinha {
   situacao: SituacaoNf;
   impressaoDigital: string;
   origem: string;
+  /** Vazio = fatura sem OS vinculada. Não casa por cliente e mês. */
+  osIds?: string[];
 }
 
 export interface TributoLancado {
@@ -72,6 +81,17 @@ export interface TributoLancado {
   descricao: string;
 }
 
+export interface RecebimentoLinha {
+  id: string;
+  mes: string;
+  empresaKey: string;
+  valor: number;
+  descricao: string;
+  numeroNota: string;
+  vinculado: boolean;
+  origem: 'financial_transactions';
+}
+
 export interface CargaFiscal {
   estado: EstadoConjunto;
   mensagens: string[];
@@ -79,6 +99,8 @@ export interface CargaFiscal {
   despesas: DespesaLinha[];
   documentos: DocumentoLinha[];
   tributos: TributoLancado[];
+  /** Recebimentos lidos. Ausente = nenhum, sem inventar zero de caixa. */
+  recebimentos?: RecebimentoLinha[];
   modo: 'leitura' | 'laboratorio';
   /** Lido do cadastro quando a coluna existir. Vazio se a coluna ainda não está no banco. */
   emiteLido: Record<string, EmiteNf>;
@@ -105,6 +127,49 @@ export interface FornecedorVista {
   documentos: number;
   credito: number;
   motivoCredito: string;
+}
+
+export interface FaixaQuantia {
+  quantidade: number;
+  valor: number;
+}
+
+export interface CanceladasVista {
+  quantidade: number;
+  receita: number;
+  faturada: FaixaQuantia;
+  aprovadaSemNota: FaixaQuantia;
+  pendente: FaixaQuantia;
+  semValor: FaixaQuantia;
+}
+
+export interface SeparacaoFiscal {
+  receitaOperacional: number;
+  faturamentoFiscal: number;
+  recebimento: number;
+  custo: number;
+  lucroEstimado: number;
+}
+
+export interface PendenciasFiscais {
+  despesaSemCnpj: number;
+  despesaSemCnpjQuantidade: number;
+  tributoSemEmpresa: number;
+  recebimentoSemDocumento: number;
+  recebimentoSemDocumentoQuantidade: number;
+  faturamentoSemEmpresa: number;
+  osSemComprovacao: number;
+  osSemComprovacaoValor: number;
+  osNaoDeterminada: number;
+  osNaoDeterminadaValor: number;
+  custoFornecedorEmContas: number;
+  custoFornecedorEmContasQuantidade: number;
+}
+
+export interface GrupoFaturaNaAnalise extends GrupoFaturaConsolidado {
+  receitaOs: number;
+  diferenca: number;
+  osForaDoRecorte: number;
 }
 
 export interface AnaliseFiscal {
@@ -135,6 +200,10 @@ export interface AnaliseFiscal {
   compensadoOrigem: string;
   osNaBase: number;
   osFora: number;
+  separacao: SeparacaoFiscal;
+  canceladas: CanceladasVista;
+  pendencias: PendenciasFiscais;
+  gruposFatura: GrupoFaturaNaAnalise[];
   formulas: typeof FORMULAS_FISCAIS;
 }
 
@@ -154,6 +223,41 @@ function separarDuplicados<T extends { id: string; impressaoDigital: string }>(l
     unicos.push(linha);
   }
   return { unicos, duplicatas };
+}
+
+function faixaVazia(): FaixaQuantia {
+  return { quantidade: 0, valor: 0 };
+}
+
+function somarFaixa(faixa: FaixaQuantia, valor: number) {
+  faixa.quantidade += 1;
+  faixa.valor += valor;
+}
+
+function ehCancelada(fatia: FatiaOs): boolean {
+  const status = (fatia.status || '').trim().toLowerCase();
+  return status === 'cancelada' || status === 'cancelado';
+}
+
+function montarCanceladas(fatias: FatiaOs[]): CanceladasVista {
+  const vista: CanceladasVista = {
+    quantidade: 0,
+    receita: 0,
+    faturada: faixaVazia(),
+    aprovadaSemNota: faixaVazia(),
+    pendente: faixaVazia(),
+    semValor: faixaVazia(),
+  };
+  for (const fatia of fatias) {
+    if (!ehCancelada(fatia)) continue;
+    vista.quantidade += 1;
+    vista.receita += fatia.receita;
+    if (fatia.faturada) somarFaixa(vista.faturada, fatia.receita);
+    else if (fatia.aprovada) somarFaixa(vista.aprovadaSemNota, fatia.receita);
+    else if (fatia.receita !== 0) somarFaixa(vista.pendente, fatia.receita);
+    else somarFaixa(vista.semValor, fatia.receita);
+  }
+  return vista;
 }
 
 function situacaoFornecedor(docs: SituacaoNf[]): SituacaoNf {
@@ -358,6 +462,73 @@ export function analisarCarga(
     avisos.push(`${tributosSemEmpresa.length} tributo(s) lançado(s) sem empresa emissora não entraram neste CNPJ.`);
   }
 
+  const canceladas = montarCanceladas(baseOs);
+  if (canceladas.quantidade > 0) {
+    avisos.push(`${canceladas.quantidade} OS cancelada(s) permanecem na receita operacional, com faturado, aprovado e pendente separados.`);
+  }
+
+  const osSemComprovacao = baseOs.filter((f) => f.comprovacao !== 'nao_determinada' && !f.faturada);
+  const osNaoDeterminada = baseOs.filter((f) => f.comprovacao === 'nao_determinada' && !f.faturada);
+  if (osSemComprovacao.length > 0) {
+    avisos.push(`${osSemComprovacao.length} OS sem comprovação documental de nota continuam pendentes. Cliente e mês iguais não faturam a OS.`);
+  }
+  if (osNaoDeterminada.length > 0) {
+    avisos.push(`${osNaoDeterminada.length} OS sem o vínculo fatura–OS carregado. Não foram marcadas como sem nota nem como faturadas.`);
+  }
+
+  const faturasCliente = docsSep.unicos.filter((d) => d.tipo === 'fatura_cliente');
+  const gruposBase = consolidarFaturasPorConjuntoDeOs(faturasCliente);
+  const receitaPorOs = new Map(baseOs.map((f) => [f.id, f.receita]));
+  const idsNoFiltro = new Set(fatias.map((f) => f.id));
+  const gruposFatura = gruposBase.map((grupo) => {
+    let receitaOs = 0;
+    let osForaDoRecorte = 0;
+    for (const id of grupo.osIds) {
+      if (receitaPorOs.has(id)) receitaOs += receitaPorOs.get(id) || 0;
+      else if (!idsNoFiltro.has(id)) osForaDoRecorte += 1;
+    }
+    return {
+      ...grupo,
+      receitaOs,
+      diferenca: Math.round((grupo.valorFiscal - receitaOs) * 100) / 100,
+      osForaDoRecorte,
+    };
+  });
+  const faturamentoFiscal = gruposFatura.reduce((s, g) => s + g.valorFiscal, 0);
+  if (gruposFatura.some((g) => g.partes.length > 1)) {
+    avisos.push('Há nota dividida em partes do mesmo conjunto de OS. O valor fiscal soma as partes uma vez e a OS não é duplicada.');
+  }
+
+  const faturasSemEmpresaBrutas = carga.documentos.filter((d) => d.tipo === 'fatura_cliente' && d.empresaKey === 'SEM_EMISSORA' && noPeriodo(d.mes));
+  const faturasSemEmpresa = separarDuplicados(faturasSemEmpresaBrutas);
+  const faturamentoSemEmpresa = consolidarFaturasPorConjuntoDeOs(faturasSemEmpresa.unicos).reduce((s, g) => s + g.valorFiscal, 0);
+  if (faturasSemEmpresa.unicos.length > 0) {
+    avisos.push(`${faturasSemEmpresa.unicos.length} nota(s) sem empresa emissora ficaram fora do faturamento deste CNPJ.`);
+  }
+
+  const recebimentos = (carga.recebimentos || []).filter((r) => noPeriodo(r.mes));
+  const recebimento = recebimentos
+    .filter((r) => r.vinculado && daEmpresa(r.empresaKey))
+    .reduce((s, r) => s + r.valor, 0);
+  const semDocumento = recebimentos.filter((r) => !r.vinculado || r.empresaKey === 'SEM_EMISSORA');
+  const recebimentoSemDocumento = semDocumento.reduce((s, r) => s + r.valor, 0);
+  if (semDocumento.length > 0) {
+    avisos.push(`${semDocumento.length} recebimento(s) sem CNPJ ou sem número único de nota ficaram fora do caixa deste CNPJ.`);
+  }
+
+  const contasFornecedor = separarDuplicados(carga.documentos.filter((d) => {
+    if (d.tipo !== 'nf_fornecedor' || !noPeriodo(d.mes)) return false;
+    if (filtro.fornecedor && d.fornecedor !== filtro.fornecedor) return false;
+    return true;
+  })).unicos;
+  const custoFornecedorEmContas = contasFornecedor.reduce((s, d) => s + d.valor, 0);
+  if (contasFornecedor.length > 0) {
+    avisos.push('Conta a pagar de fornecedor aparece à parte e não soma de novo no custo da OS.');
+  }
+
+  const despesasSemCnpj = carga.despesas.filter((d) => d.empresaKey === 'SEM_EMISSORA' && noPeriodo(d.mes));
+  const lucroEstimado = semCredito.resultadoOperacional;
+
   if (!baseOs.length && (carga.estado === 'ENCONTRADO' || carga.estado === 'NAO_EXISTE')) {
     avisos.push('Nenhuma OS oficial neste recorte. Ausência de base não vira lucro zero da empresa.');
   }
@@ -393,6 +564,29 @@ export function analisarCarga(
     compensadoOrigem: 'Premissa digitada nesta tela. O banco não tem coluna de tributo compensado.',
     osNaBase: baseOs.length,
     osFora: fora.length,
+    separacao: {
+      receitaOperacional: semCredito.receita,
+      faturamentoFiscal,
+      recebimento,
+      custo: semCredito.custoFornecedor,
+      lucroEstimado,
+    },
+    canceladas,
+    pendencias: {
+      despesaSemCnpj: despesaSemEmpresa,
+      despesaSemCnpjQuantidade: despesasSemCnpj.length,
+      tributoSemEmpresa,
+      recebimentoSemDocumento,
+      recebimentoSemDocumentoQuantidade: semDocumento.length,
+      faturamentoSemEmpresa,
+      osSemComprovacao: osSemComprovacao.length,
+      osSemComprovacaoValor: osSemComprovacao.reduce((s, f) => s + f.receita, 0),
+      osNaoDeterminada: osNaoDeterminada.length,
+      osNaoDeterminadaValor: osNaoDeterminada.reduce((s, f) => s + f.receita, 0),
+      custoFornecedorEmContas,
+      custoFornecedorEmContasQuantidade: contasFornecedor.length,
+    },
+    gruposFatura,
     formulas: FORMULAS_FISCAIS,
   };
 }
