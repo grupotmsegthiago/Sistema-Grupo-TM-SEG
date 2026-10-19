@@ -1,6 +1,6 @@
 /** Payload mínimo do relatório DHL — evita import estático de lib/ no handler Vercel. */
 import { createRequire } from 'node:module';
-import { usuarioIdDoToken } from '../../lib/sessao/token';
+import { usuarioIdDoToken } from '../../lib/sessao/token.js';
 
 // Bundles CJS gerados no build (build-server.mjs) — requires ESTÁTICOS para o file
 // tracer da Vercel incluir os .cjs no bundle da função. require(path.join(...))

@@ -1,4 +1,15 @@
-import { atenderDadosProtegidos } from '../lib/dadosProtegidos/proxy';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { atenderDadosProtegidos } = require('./_dados-protegidos-core.cjs') as {
+  atenderDadosProtegidos: (pedido: {
+    method: string;
+    url: string;
+    headers: Record<string, string>;
+    body: string | null;
+    authorization: string | null;
+  }) => Promise<{ status: number; body: string; contentType: string; contentRange: string | null }>;
+};
 
 type Requisicao = {
   method?: string;

@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
-import { usuarioIdDoToken } from '../sessao/token';
+import { usuarioIdDoToken } from '../sessao/token.js';
 
 type ReqHeaders = Record<string, unknown> | undefined;
 

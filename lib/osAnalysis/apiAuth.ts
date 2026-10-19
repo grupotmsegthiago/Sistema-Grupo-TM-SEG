@@ -10,7 +10,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
-import { usuarioIdDoToken } from '../sessao/token';
+import { usuarioIdDoToken } from '../sessao/token.js';
 import { canRequestOsAnalysis } from '../osAnalysisAccess.js';
 import {
   createSupabaseAdminClient,

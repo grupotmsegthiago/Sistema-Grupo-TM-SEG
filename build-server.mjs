@@ -114,6 +114,18 @@ execSync(
 );
 console.log('Gestão Investimento core bundle: api/_gestao-investimento-core.cjs');
 
+// Login e leitura das tabelas protegidas. Import TS sem extensão vira
+// ERR_MODULE_NOT_FOUND na Vercel. O prefixo _ evita função extra.
+execSync(
+  'npx esbuild lib/sessao/vercel.ts --bundle --platform=node --format=cjs --outfile=api/ponte-auth/_sessao.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+execSync(
+  'npx esbuild lib/dadosProtegidos/proxy.ts --bundle --platform=node --format=cjs --outfile=api/_dados-protegidos-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Sessão e dados protegidos empacotados.');
+
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(
   'npx esbuild server/vercelAppEntry.ts --bundle --platform=node --format=cjs --outfile=dist/vercelApp.cjs --packages=external',

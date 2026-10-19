@@ -2,7 +2,7 @@
  * Auth leve para rotas serverless de billing (Vercel).
  * A sessão precisa ser assinada. Cabeçalho de perfil do navegador não autoriza.
  */
-import { usuarioIdDoToken } from './sessao/token';
+import { usuarioIdDoToken } from './sessao/token.js';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';

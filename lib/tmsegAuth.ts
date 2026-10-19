@@ -1,6 +1,6 @@
 /** Auth mínimo para handlers serverless leves (sem Express). */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { usuarioIdDoToken } from "./sessao/token";
+import { usuarioIdDoToken } from "./sessao/token.js";
 
 const DEFAULT_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
