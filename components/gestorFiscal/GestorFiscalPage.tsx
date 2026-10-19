@@ -6,8 +6,9 @@ import { analisarCarga, type AnaliseFiscal, type CargaFiscal, type FiltroFiscal 
 import { CARGA_LABORATORIO } from '../../lib/gestorFiscal/laboratorio';
 import { carregarFontesGestorFiscal } from '../../lib/gestorFiscal/carregarFontes';
 import type { EmiteNf } from '../../lib/gestorFiscal/simulacao';
+import CentroHomologacao from './CentroHomologacao';
 
-type Aba = 'visao' | 'regimes' | 'fornecedores' | 'clientes' | 'notas' | 'historico' | 'termometro';
+type Aba = 'visao' | 'regimes' | 'fornecedores' | 'clientes' | 'notas' | 'historico' | 'termometro' | 'homologacao';
 type Modo = 'leitura' | 'laboratorio';
 
 const ABAS: { id: Aba; nome: string }[] = [
@@ -18,6 +19,7 @@ const ABAS: { id: Aba; nome: string }[] = [
   { id: 'notas', nome: 'Gestão de Notas Fiscais' },
   { id: 'historico', nome: 'Análise Histórica Mensal' },
   { id: 'termometro', nome: 'Termômetro de Rentabilidade' },
+  { id: 'homologacao', nome: 'Centro de Homologação' },
 ];
 
 function hojeIso(): string {
@@ -225,7 +227,9 @@ const GestorFiscalPage: React.FC<{
         ))}
       </nav>
 
-      {!empresaKey || !analise ? (
+      {aba === 'homologacao' ? (
+        <CentroHomologacao />
+      ) : !empresaKey || !analise ? (
         <p className="rounded-xl border border-gray-200 bg-white p-6 text-sm font-bold text-gray-600">Selecione uma empresa. Os CNPJs não são somados juntos.</p>
       ) : (
         <Conteudo
