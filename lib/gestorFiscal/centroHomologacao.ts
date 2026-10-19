@@ -1,8 +1,11 @@
+import type { LancamentoConciliado } from './lancamentosHomologacao';
+
 /**
  * Centro de Homologação — simulação local.
  * Identificadores SIM-* são fictícios. Os valores de referência vêm do
  * relatório da etapa 7 e não são uma leitura nova do banco.
  * Esta função não grava, não chama o banco e não altera o motor canônico.
+ * Os blocos da lista e do adicional não se aprovam inteiros: a simulação é por lançamento.
  */
 
 export const PERSISTENCIA = 'nenhuma' as const;
@@ -99,23 +102,23 @@ export const REFERENCIA_ETAPA_7 = {
 const bloqueioNatureza = 'Esta natureza não entra como despesa operacional. A simulação não a homologa.';
 
 export const ITENS_SIMULADOS: ItemSimulado[] = [
-  item('SIM-SEG-COMISSAO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Comissão', 48, 16_715_794, 'gerencial', 'lista_seguranca', 'Texto de comissão e pagamento feito.', true, ''),
-  item('SIM-SEG-SALARIO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Salário', 54, 12_711_884, 'gerencial', 'lista_seguranca', 'Texto de salário e pagamento feito.', true, ''),
-  item('SIM-SEG-BONUS', 'TM SEGURANCA', 'TM SEGURANÇA', 'Bônus', 14, 1_680_619, 'gerencial', 'lista_seguranca', 'Texto de bônus na própria categoria.', true, ''),
-  item('SIM-SEG-ADVOGADO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Advogado', 5, 822_645, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-PENSAO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Pensão', 9, 660_000, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-CONTABILIDADE', 'TM SEGURANCA', 'TM SEGURANÇA', 'Contabilidade', 8, 628_000, 'gerencial', 'lista_seguranca', 'Honorário contábil, sem DAS.', true, ''),
-  item('SIM-SEG-CONSUMO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Consumo', 6, 211_353, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-CESTA', 'TM SEGURANCA', 'TM SEGURANÇA', 'Cesta básica', 2, 79_010, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-VIVO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Vivo', 5, 36_199, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-VT', 'TM SEGURANCA', 'TM SEGURANÇA', 'VT', 1, 33_200, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-FOLHA', 'TM SEGURANCA', 'TM SEGURANÇA', 'Pessoal com texto de folha', 1, 25_000, 'gerencial', 'lista_seguranca', 'Descrição de folha dentro de pessoal.', true, ''),
-  item('SIM-SEG-MENSALIDADE', 'TM SEGURANCA', 'TM SEGURANÇA', 'Mensalidade', 1, 20_000, 'gerencial', 'lista_seguranca', 'Descrição compatível com a categoria.', true, ''),
-  item('SIM-SEG-SEGURO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Seguro', 2, 19_064, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', true, ''),
-  item('SIM-SEG-TARIFAS', 'TM SEGURANCA', 'TM SEGURANÇA', 'Tarifas', 5, 13_443, 'gerencial', 'lista_seguranca', 'Tarifa da própria conta, sem outra empresa no texto.', true, ''),
-  item('SIM-GEST-TARIFAS', 'TM GESTAO', 'TM GESTÃO', 'Tarifas', null, 12_643, 'gerencial', 'adicional_outras', 'Tarifas da própria conta TM GESTÃO, empresa identificada.', true, ''),
-  item('SIM-SEC-CONTABILIDADE', 'TM SECURITY', 'TM SECURITY', 'Contabilidade', null, 65_000, 'gerencial', 'adicional_outras', 'Contabilidade da própria conta TM SECURITY.', true, ''),
-  item('SIM-SEC-TARIFAS', 'TM SECURITY', 'TM SECURITY', 'Tarifas', null, 5_379, 'gerencial', 'adicional_outras', 'Tarifas da própria conta TM SECURITY.', true, ''),
+  item('SIM-SEG-COMISSAO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Comissão', 48, 16_715_794, 'gerencial', 'lista_seguranca', 'Texto de comissão e pagamento feito.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-SALARIO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Salário', 54, 12_711_884, 'gerencial', 'lista_seguranca', 'Texto de salário e pagamento feito.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-BONUS', 'TM SEGURANCA', 'TM SEGURANÇA', 'Bônus', 14, 1_680_619, 'gerencial', 'lista_seguranca', 'Texto de bônus na própria categoria.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-ADVOGADO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Advogado', 5, 822_645, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-PENSAO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Pensão', 9, 660_000, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-CONTABILIDADE', 'TM SEGURANCA', 'TM SEGURANÇA', 'Contabilidade', 8, 628_000, 'gerencial', 'lista_seguranca', 'Honorário contábil, sem DAS.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-CONSUMO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Consumo', 6, 211_353, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-CESTA', 'TM SEGURANCA', 'TM SEGURANÇA', 'Cesta básica', 2, 79_010, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-VIVO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Vivo', 5, 36_199, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-VT', 'TM SEGURANCA', 'TM SEGURANÇA', 'VT', 1, 33_200, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-FOLHA', 'TM SEGURANCA', 'TM SEGURANÇA', 'Pessoal com texto de folha', 1, 25_000, 'gerencial', 'lista_seguranca', 'Descrição de folha dentro de pessoal.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-MENSALIDADE', 'TM SEGURANCA', 'TM SEGURANÇA', 'Mensalidade', 1, 20_000, 'gerencial', 'lista_seguranca', 'Descrição compatível com a categoria.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-SEGURO', 'TM SEGURANCA', 'TM SEGURANÇA', 'Seguro', 2, 19_064, 'gerencial', 'lista_seguranca', 'Categoria específica, integralmente na lista.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEG-TARIFAS', 'TM SEGURANCA', 'TM SEGURANÇA', 'Tarifas', 5, 13_443, 'gerencial', 'lista_seguranca', 'Tarifa da própria conta, sem outra empresa no texto.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-GEST-TARIFAS', 'TM GESTAO', 'TM GESTÃO', 'Tarifas', null, 12_643, 'gerencial', 'adicional_outras', 'Tarifas da própria conta TM GESTÃO, empresa identificada.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEC-CONTABILIDADE', 'TM SECURITY', 'TM SECURITY', 'Contabilidade', null, 65_000, 'gerencial', 'adicional_outras', 'Contabilidade da própria conta TM SECURITY.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
+  item('SIM-SEC-TARIFAS', 'TM SECURITY', 'TM SECURITY', 'Tarifas', null, 5_379, 'gerencial', 'adicional_outras', 'Tarifas da própria conta TM SECURITY.', false, 'A simulação deste bloco é por lançamento. Abra a lista. O bloco inteiro não é aprovado de uma vez.'),
   item('SIM-GEST-RECONHECIDO', 'TM GESTAO', 'TM SEGURANÇA', 'Comissão', 1, 17_297, 'gerencial', 'ja_reconhecido', 'Já está no painel da TM GESTÃO. Emissor do cliente: TM GESTÃO. Conta que pagou: TM SEGURANÇA.', false, 'Já reconhecido no painel. Aprovar de novo contaria duas vezes. Use a decisão A, B ou C.'),
   item('SIM-INDEF-CNPJ', 'INDEFINIDA', 'TM SEGURANÇA', 'Contabilidade e tarifas', 5, 110_863, 'pendente', 'indefinido', 'Cinco lançamentos citam outra empresa. A conta pagadora foi a TM SEGURANÇA.', false, 'CNPJ indefinido. A conta que pagou não escolhe a empresa.'),
   item('SIM-SEG-PROVAVEL', 'TM SEGURANCA', 'TM SEGURANÇA', 'Despesas prováveis', 54, 9_929_906, 'pendente', 'provavel', 'Débito sem detalhe, reembolso sem OS e bônus em categoria trocada.', false, 'Ainda é despesa pendente. A simulação não trata como homologada.'),
@@ -140,8 +143,10 @@ export function estadoInicial(): EstadoHomologacao {
 export function aplicarDecisao(
   estado: EstadoHomologacao,
   pedido: { itemId: string; acao: 'aprovar' | 'rejeitar' | 'pedir_documento' | 'reverter' },
+  conciliado?: LancamentoConciliado | null,
 ): { estado: EstadoHomologacao; erro: string | null } {
   const item = POR_ID.get(pedido.itemId);
+  if (!item && conciliado?.auditoria.id === pedido.itemId) return aplicarNoLancamento(estado, pedido, conciliado);
   if (!item) return { estado, erro: 'Item simulado não encontrado.' };
   const atual = estado.decisoes[item.id] || 'pendente';
   if (pedido.acao === 'reverter') {
@@ -211,11 +216,15 @@ export interface CenarioSimulado {
   naturezaForaNoOperacionalCentavos: number;
 }
 
-export function calcularCenario(estado: EstadoHomologacao): CenarioSimulado {
+export function calcularCenario(estado: EstadoHomologacao, lancamentos: LancamentoConciliado[] = []): CenarioSimulado {
   const aprovada = (id: string) => estado.decisoes[id] === 'aprovada_simulada';
+  const somaLancamento = (parcela: 'lista_seguranca' | 'adicional_outras', empresa?: EmpresaSimulada) => lancamentos
+    .filter((item) => item.podeSimularAprovacao && item.auditoria.parcela === parcela && (!empresa || item.auditoria.empresa === empresa) && aprovada(item.auditoria.id))
+    .reduce((total, item) => total + item.auditoria.valorCentavos, 0);
   const somaParcela = (parcela: ParcelaSimulada, empresa?: EmpresaSimulada) => ITENS_SIMULADOS
     .filter((item) => item.podeAprovar && item.parcela === parcela && (!empresa || item.empresa === empresa) && aprovada(item.id))
-    .reduce((total, item) => total + item.valorCentavos, 0);
+    .reduce((total, item) => total + item.valorCentavos, 0)
+    + (parcela === 'lista_seguranca' || parcela === 'adicional_outras' ? somaLancamento(parcela, empresa) : 0);
 
   const reconhecido = REFERENCIA_ETAPA_7.jaReconhecidoCentavos;
   const reconhecidoPorEmpresa: Record<Exclude<EmpresaSimulada, 'INDEFINIDA'>, number> = {
@@ -228,7 +237,9 @@ export function calcularCenario(estado: EstadoHomologacao): CenarioSimulado {
     const base = REFERENCIA_ETAPA_7.empresas[empresa];
     const despesaAprovada = ITENS_SIMULADOS
       .filter((item) => item.podeAprovar && item.empresa === empresa && item.natureza === 'gerencial' && aprovada(item.id))
-      .reduce((total, item) => total + item.valorCentavos, 0);
+      .reduce((total, item) => total + item.valorCentavos, 0)
+      + somaLancamento('lista_seguranca', empresa)
+      + somaLancamento('adicional_outras', empresa);
     const despesaReconhecida = reconhecidoPorEmpresa[empresa];
     const resultado = base.receitaCentavos - base.custoOsCentavos - despesaReconhecida - despesaAprovada;
     return {
@@ -280,14 +291,71 @@ export function calcularCenario(estado: EstadoHomologacao): CenarioSimulado {
   };
 }
 
-export function aprovarTudoElegivel(estado: EstadoHomologacao): EstadoHomologacao {
+export function aprovarTudoElegivel(estado: EstadoHomologacao, lancamentos: LancamentoConciliado[] = []): EstadoHomologacao {
   let atual = estado;
   for (const item of ITENS_SIMULADOS) {
     if (!item.podeAprovar) continue;
     const passo = aplicarDecisao(atual, { itemId: item.id, acao: 'aprovar' });
     atual = passo.estado;
   }
+  for (const item of lancamentos) {
+    if (!item.podeSimularAprovacao) continue;
+    const passo = aplicarDecisao(atual, { itemId: item.auditoria.id, acao: 'aprovar' }, item);
+    atual = passo.estado;
+  }
   return atual;
+}
+
+function aplicarNoLancamento(
+  estado: EstadoHomologacao,
+  pedido: { itemId: string; acao: 'aprovar' | 'rejeitar' | 'pedir_documento' | 'reverter' },
+  conciliado: LancamentoConciliado,
+): { estado: EstadoHomologacao; erro: string | null } {
+  const atual = estado.decisoes[conciliado.auditoria.id] || 'pendente';
+  const base = {
+    id: conciliado.auditoria.id,
+    empresa: conciliado.auditoria.empresa,
+    valorCentavos: conciliado.auditoria.valorCentavos,
+  };
+  if (pedido.acao === 'reverter') {
+    if (atual === 'pendente') return { estado, erro: 'Não há decisão simulada para desfazer.' };
+    return { estado: comLancamento(estado, base, 'pendente', 'reverter', 'Decisão simulada desfeita. O lançamento voltou a pendente.'), erro: null };
+  }
+  if (pedido.acao === 'aprovar') {
+    if (!conciliado.podeSimularAprovacao) {
+      return { estado, erro: conciliado.divergencias[0] || conciliado.auditoria.bloqueio || 'Este lançamento não pode entrar na simulação.' };
+    }
+    if (atual === 'aprovada_simulada') return { estado, erro: 'Este lançamento já está na simulação. Aprovar de novo contaria duas vezes.' };
+    return { estado: comLancamento(estado, base, 'aprovada_simulada', 'aprovar', 'Aprovação simulada deste lançamento. Não foi gravada e não é homologação real.'), erro: null };
+  }
+  if (pedido.acao === 'rejeitar') {
+    if (atual === 'rejeitada_simulada') return { estado, erro: 'Este lançamento já está rejeitado na simulação.' };
+    return { estado: comLancamento(estado, base, 'rejeitada_simulada', 'rejeitar', 'Rejeição simulada. O valor não entra no resultado.'), erro: null };
+  }
+  if (atual === 'documentacao_solicitada') return { estado, erro: 'A documentação deste lançamento já foi pedida na simulação.' };
+  return { estado: comLancamento(estado, base, 'documentacao_solicitada', 'pedir_documento', 'Pedido simulado de documentação. O valor continua fora do resultado.'), erro: null };
+}
+
+function comLancamento(
+  estado: EstadoHomologacao,
+  item: { id: string; empresa: EmpresaSimulada; valorCentavos: number },
+  status: StatusSimulado,
+  acao: EventoSimulado['acao'],
+  detalhe: string,
+): EstadoHomologacao {
+  return {
+    ...estado,
+    decisoes: { ...estado.decisoes, [item.id]: status },
+    historico: estado.historico.concat({
+      sequencia: estado.proximaSequencia,
+      itemId: item.id,
+      acao,
+      detalhe,
+      valorCentavos: item.valorCentavos,
+      empresa: item.empresa,
+    }),
+    proximaSequencia: estado.proximaSequencia + 1,
+  };
 }
 
 export function margemPercentual(resultadoCentavos: number, receitaCentavos: number): number {

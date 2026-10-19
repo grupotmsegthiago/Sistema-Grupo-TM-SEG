@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ITENS_SIMULADOS,
   PERSISTENCIA,
@@ -15,6 +15,8 @@ import {
   type ItemSimulado,
   type StatusSimulado,
 } from '../../lib/gestorFiscal/centroHomologacao';
+import { consultarLancamentosAuditados } from '../../lib/gestorFiscal/consultaHomologacao';
+import { rotuloDocumento, type LancamentoConciliado, type LeituraLancamento } from '../../lib/gestorFiscal/lancamentosHomologacao';
 
 type Filtro = 'elegiveis' | 'pendencias' | 'fora' | 'todos';
 
@@ -26,9 +28,10 @@ const FILTROS: { id: Filtro; nome: string }[] = [
 ];
 
 function entraNoFiltro(item: ItemSimulado, filtro: Filtro): boolean {
+  const individual = item.parcela === 'lista_seguranca' || item.parcela === 'adicional_outras' || item.parcela === 'ja_reconhecido';
   if (filtro === 'todos') return true;
-  if (filtro === 'elegiveis') return item.podeAprovar;
-  if (filtro === 'pendencias') return !item.podeAprovar && item.parcela !== 'fora_do_operacional';
+  if (filtro === 'elegiveis') return item.podeAprovar || individual;
+  if (filtro === 'pendencias') return !item.podeAprovar && !individual && item.parcela !== 'fora_do_operacional';
   return item.parcela === 'fora_do_operacional';
 }
 
@@ -39,15 +42,49 @@ function rotuloStatus(status: StatusSimulado): string {
   return 'Pendente';
 }
 
-const CentroHomologacao: React.FC = () => {
+const CentroHomologacao: React.FC<{
+  consultar?: typeof consultarLancamentosAuditados;
+}> = ({ consultar = consultarLancamentosAuditados }) => {
   const [estado, setEstado] = useState<EstadoHomologacao>(estadoInicial);
   const [filtro, setFiltro] = useState<Filtro>('elegiveis');
   const [aviso, setAviso] = useState('');
-  const cenario = useMemo(() => calcularCenario(estado), [estado]);
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+  const [lancamentos, setLancamentos] = useState<LancamentoConciliado[]>([]);
+  const [extras, setExtras] = useState<LeituraLancamento[]>([]);
+  const [resumoConsulta, setResumoConsulta] = useState('');
+  const cenario = useMemo(() => calcularCenario(estado, lancamentos), [estado, lancamentos]);
+  const porBloco = useMemo(() => {
+    const mapa = new Map<string, LancamentoConciliado[]>();
+    for (const item of lancamentos) {
+      const lista = mapa.get(item.auditoria.blocoId) || [];
+      lista.push(item);
+      mapa.set(item.auditoria.blocoId, lista);
+    }
+    return mapa;
+  }, [lancamentos]);
+
+  useEffect(() => {
+    let vivo = true;
+    consultar()
+      .then((resultado) => {
+        if (!vivo) return;
+        setLancamentos(resultado.itens);
+        setExtras(resultado.extras);
+        const lista = resultado.itens.filter((item) => item.auditoria.parcela === 'lista_seguranca');
+        const fechados = lista.filter((item) => item.divergencias.length === 0).length;
+        const divergentesLista = lista.filter((item) => item.divergencias.length > 0).length;
+        setResumoConsulta(`${resultado.itens.length} lançamentos da evidência histórica localizados. ${fechados} de ${lista.length} da lista da TM SEGURANÇA fecharam com a auditoria. Divergências na lista: ${divergentesLista}. Fora da evidência: ${resultado.extras.length}.`);
+      })
+      .catch((erro: unknown) => {
+        if (!vivo) return;
+        setResumoConsulta(erro instanceof Error ? erro.message : 'A consulta dos lançamentos falhou. Nenhum item individual foi liberado.');
+      });
+    return () => { vivo = false; };
+  }, [consultar]);
   const visiveis = ITENS_SIMULADOS.filter((item) => entraNoFiltro(item, filtro));
 
-  const agir = (itemId: string, acao: 'aprovar' | 'rejeitar' | 'pedir_documento' | 'reverter') => {
-    const passo = aplicarDecisao(estado, { itemId, acao });
+  const agir = (itemId: string, acao: 'aprovar' | 'rejeitar' | 'pedir_documento' | 'reverter', conciliado?: LancamentoConciliado) => {
+    const passo = aplicarDecisao(estado, { itemId, acao }, conciliado);
     setEstado(passo.estado);
     setAviso(passo.erro || '');
   };
@@ -69,8 +106,9 @@ const CentroHomologacao: React.FC = () => {
       </header>
 
       <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-950" data-testid="banner-simulacao">
-        SIMULAÇÃO LOCAL — identificadores SIM-* são fictícios. Os totais marcados como referência vêm do relatório da etapa 7 e não são uma nova leitura do banco. Os filtros das outras abas não se aplicam aqui.
+        SIMULAÇÃO LOCAL — a aprovação por lançamento não é gravada e não é homologação real. A classe A é evidência histórica de 19/10/2026, não uma classificação nova do cadastro. A conta que pagou não escolhe o CNPJ. Os filtros das outras abas não se aplicam aqui.
       </div>
+      <p className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-800" data-testid="resumo-consulta">{resumoConsulta || 'Consultando os lançamentos, sem gravar…'}</p>
 
       <div className="grid gap-3 md:grid-cols-3">
         <Cartao
@@ -175,11 +213,31 @@ const CentroHomologacao: React.FC = () => {
                 <button type="button" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-black text-gray-700" onClick={() => agir(item.id, 'rejeitar')} data-testid={`rejeitar-${item.id}`}>Simular rejeição</button>
                 <button type="button" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-black text-gray-700" onClick={() => agir(item.id, 'pedir_documento')} data-testid={`documento-${item.id}`}>Pedir documentação</button>
                 <button type="button" className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-black text-gray-700" onClick={() => agir(item.id, 'reverter')} data-testid={`reverter-${item.id}`}>Desfazer</button>
+                {(porBloco.get(item.id) || []).length > 0 ? (
+                  <button type="button" className="rounded-lg border border-red-800 bg-white px-3 py-1.5 text-xs font-black text-red-800" onClick={() => setAbertos((atual) => ({ ...atual, [item.id]: !atual[item.id] }))} data-testid={`abrir-${item.id}`}>
+                    {abertos[item.id] ? 'Ocultar lançamentos' : `Ver ${(porBloco.get(item.id) || []).length} lançamentos`}
+                  </button>
+                ) : null}
               </div>
+              {abertos[item.id] ? <ListaLancamentos itens={porBloco.get(item.id) || []} decisoes={estado.decisoes} agir={agir} /> : null}
             </article>
           );
         })}
       </div>
+
+      {extras.length > 0 ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4" data-testid="extras-consulta">
+          <h3 className="text-sm font-black uppercase tracking-wide text-red-900">Fora da evidência de 19/10/2026</h3>
+          <p className="mt-1 text-xs font-semibold text-red-900">Estes lançamentos não têm correspondência com os 161 da lista nem com as parcelas separadas. A simulação de aprovação fica bloqueada. O banco não foi corrigido.</p>
+          <ul className="mt-2 space-y-1">
+            {extras.map((item) => (
+              <li key={item.id} className="text-[11px] font-semibold text-red-950" data-testid={`extra-${item.id}`}>
+                {item.id} · {item.categoria} · {item.contaPagadora} · {formatarReais(item.valorCentavos)} · {item.descricaoMascarada}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-gray-200 bg-white p-4" data-testid="historico-simulado">
         <h3 className="text-sm font-black uppercase tracking-wide text-gray-800">Histórico desta simulação</h3>
@@ -198,6 +256,54 @@ const CentroHomologacao: React.FC = () => {
     </section>
   );
 };
+
+function ListaLancamentos({
+  itens,
+  decisoes,
+  agir,
+}: {
+  itens: LancamentoConciliado[];
+  decisoes: EstadoHomologacao['decisoes'];
+  agir: (itemId: string, acao: 'aprovar' | 'rejeitar' | 'pedir_documento' | 'reverter', conciliado?: LancamentoConciliado) => void;
+}) {
+  return (
+    <div className="mt-3 space-y-2" data-testid="lista-lancamentos">
+      {itens.map((item) => {
+        const status = decisoes[item.auditoria.id] || 'pendente';
+        const leitura = item.leitura;
+        return (
+          <div key={item.auditoria.id} className="rounded-lg border border-gray-100 bg-gray-50 p-3" data-testid={`lancamento-${item.auditoria.id}`}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="font-mono text-[11px] font-bold text-gray-800">{item.auditoria.id}</p>
+              <p className="font-mono text-sm font-black">{formatarReais(item.auditoria.valorCentavos)}</p>
+            </div>
+            <dl className="mt-2 grid gap-2 text-[11px] text-gray-700 md:grid-cols-3">
+              <div><dt className="font-black uppercase text-gray-400">Empresa da evidência</dt><dd>{nomeEmpresa(item.auditoria.empresa)}</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Conta pagadora</dt><dd>{leitura?.contaPagadora || item.auditoria.contaPagadora}. Não define o CNPJ.</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Categoria do cadastro</dt><dd>{leitura?.categoria || item.auditoria.categoria}</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Vencimento</dt><dd>{leitura?.vencimento || item.auditoria.vencimento}</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Pagamento</dt><dd>{leitura?.pagamento || item.auditoria.pagamento || 'sem pagamento'}</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Situação documental</dt><dd>{rotuloDocumento(leitura?.documento || item.auditoria.documento)}</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Classe histórica</dt><dd>Classe {item.auditoria.classeHistorica}. Evidência de 19/10/2026, não é dado novo do cadastro.</dd></div>
+              <div><dt className="font-black uppercase text-gray-400">Situação simulada</dt><dd data-testid={`status-${item.auditoria.id}`}>{rotuloStatus(status)}</dd></div>
+            </dl>
+            <p className="mt-2 text-[11px] font-semibold text-gray-700"><span className="font-black">Descrição: </span>{leitura?.descricaoMascarada || item.auditoria.descricaoMascarada}</p>
+            <p className="mt-1 text-[11px] font-semibold text-gray-700"><span className="font-black">Evidência histórica: </span>{item.auditoria.evidenciaHistorica}</p>
+            {item.divergencias.map((texto) => <p key={texto} className="mt-1 text-[11px] font-bold text-red-800">{texto}</p>)}
+            {item.avisos.map((texto) => <p key={texto} className="mt-1 text-[11px] font-bold text-amber-900">{texto}</p>)}
+            {item.auditoria.bloqueio ? <p className="mt-1 text-[11px] font-bold text-amber-900">{item.auditoria.bloqueio}</p> : null}
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button type="button" className="rounded-lg bg-red-700 px-2 py-1 text-[11px] font-black text-white disabled:cursor-not-allowed disabled:bg-gray-300" disabled={!item.podeSimularAprovacao || status === 'aprovada_simulada'} onClick={() => agir(item.auditoria.id, 'aprovar', item)} data-testid={`aprovar-${item.auditoria.id}`}>Simular aprovação</button>
+              <button type="button" className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-black text-gray-700" onClick={() => agir(item.auditoria.id, 'rejeitar', item)} data-testid={`rejeitar-${item.auditoria.id}`}>Simular rejeição</button>
+              <button type="button" className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-black text-gray-700" onClick={() => agir(item.auditoria.id, 'pedir_documento', item)} data-testid={`documento-${item.auditoria.id}`}>Pedir documentação</button>
+              <button type="button" className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-[11px] font-black text-gray-700" onClick={() => agir(item.auditoria.id, 'reverter', item)} data-testid={`reverter-${item.auditoria.id}`}>Desfazer</button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function Cartao({ titulo, valor, detalhe, teste }: { titulo: string; valor: string; detalhe: string; teste: string }) {
   return (

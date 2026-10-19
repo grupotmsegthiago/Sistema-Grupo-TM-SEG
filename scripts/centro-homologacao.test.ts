@@ -12,6 +12,7 @@ import {
   definirDestino172,
   estadoInicial,
 } from '../lib/gestorFiscal/centroHomologacao';
+import { AUDITORIA_CLASSE_A, conciliarLancamentos, type LancamentoAuditado, type LeituraLancamento } from '../lib/gestorFiscal/lancamentosHomologacao';
 
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
   url: 'https://app.exemplo.com/gestor-fiscal',
@@ -40,6 +41,37 @@ before(async () => {
   ({ default: Pagina } = await import('../components/gestorFiscal/GestorFiscalPage'));
 });
 
+function leituraIgual(item: LancamentoAuditado): LeituraLancamento {
+  return {
+    id: item.id,
+    valorCentavos: item.valorCentavos,
+    categoria: item.categoria,
+    contaPagadora: item.contaPagadora,
+    vencimento: item.vencimento,
+    pagamento: item.pagamento,
+    documento: item.documento,
+    descricaoMascarada: item.descricaoMascarada,
+    status: 'PAID',
+    cancelado: false,
+  };
+}
+
+function conciliadosIguais() {
+  return conciliarLancamentos(AUDITORIA_CLASSE_A.map(leituraIgual)).itens;
+}
+
+function fontesTs(caminhos: string[]): string[] {
+  return caminhos.flatMap((caminho) => {
+    const stat = fs.statSync(caminho);
+    if (stat.isFile()) return [caminho];
+    return fs.readdirSync(caminho, { withFileTypes: true }).flatMap((entrada) => {
+      const filho = `${caminho}/${entrada.name}`;
+      if (entrada.isDirectory()) return entrada.name === 'node_modules' ? [] : fontesTs([filho]);
+      return /\.(ts|tsx|js|mjs)$/.test(entrada.name) ? [filho] : [];
+    });
+  });
+}
+
 function empresa(cenario: ReturnType<typeof calcularCenario>, chave: 'TM GESTAO' | 'TM SEGURANCA' | 'TM SECURITY') {
   const linha = cenario.empresas.find((item) => item.empresa === chave);
   if (!linha) throw new Error(chave);
@@ -58,40 +90,47 @@ test('a lista simulada começa pendente e reproduz as três parcelas da etapa 7'
   assert.equal(cenario.grupo.margem, 44.23);
   assert.equal(cenario.aptoCompleto, false);
   assert.equal(Object.values(estado.decisoes).every((status) => status === 'pendente'), true);
-  assert.equal(ITENS_SIMULADOS.filter((item) => item.podeAprovar).length, 17);
+  assert.equal(ITENS_SIMULADOS.filter((item) => item.parcela === 'lista_seguranca' && item.podeAprovar).length, 0);
 });
 
 test('aprovar, rejeitar, pedir documento e desfazer ficam só na simulação', () => {
+  const salario = conciliadosIguais().find((item) => item.auditoria.blocoId === 'SIM-SEG-SALARIO');
+  if (!salario) throw new Error('salario');
   let estado = estadoInicial();
-  const aprovado = aplicarDecisao(estado, { itemId: 'SIM-SEG-SALARIO', acao: 'aprovar' });
+  const bloco = aplicarDecisao(estado, { itemId: 'SIM-SEG-SALARIO', acao: 'aprovar' });
+  assert.match(bloco.erro || '', /por lançamento/);
+  assert.equal(calcularCenario(bloco.estado).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos);
+
+  const aprovado = aplicarDecisao(estado, { itemId: salario.auditoria.id, acao: 'aprovar' }, salario);
   estado = aprovado.estado;
   assert.equal(aprovado.erro, null);
-  assert.equal(estado.decisoes['SIM-SEG-SALARIO'], 'aprovada_simulada');
-  assert.equal(calcularCenario(estado).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos - 12_711_884);
+  assert.equal(estado.decisoes[salario.auditoria.id], 'aprovada_simulada');
+  assert.equal(calcularCenario(estado, [salario]).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos - salario.auditoria.valorCentavos);
 
-  const repetido = aplicarDecisao(estado, { itemId: 'SIM-SEG-SALARIO', acao: 'aprovar' });
+  const repetido = aplicarDecisao(estado, { itemId: salario.auditoria.id, acao: 'aprovar' }, salario);
   assert.match(repetido.erro || '', /duas vezes/);
-  assert.equal(calcularCenario(repetido.estado).grupo.resultadoCentavos, calcularCenario(estado).grupo.resultadoCentavos);
+  assert.equal(calcularCenario(repetido.estado, [salario]).grupo.resultadoCentavos, calcularCenario(estado, [salario]).grupo.resultadoCentavos);
 
-  const documento = aplicarDecisao(estado, { itemId: 'SIM-SEG-BONUS', acao: 'pedir_documento' });
+  const documento = aplicarDecisao(estado, { itemId: salario.auditoria.id, acao: 'pedir_documento' }, salario);
   estado = documento.estado;
-  assert.equal(estado.decisoes['SIM-SEG-BONUS'], 'documentacao_solicitada');
-  assert.equal(calcularCenario(estado).listaAprovadaCentavos, 12_711_884);
+  assert.equal(estado.decisoes[salario.auditoria.id], 'documentacao_solicitada');
+  assert.equal(calcularCenario(estado, [salario]).listaAprovadaCentavos, 0);
 
-  const rejeitado = aplicarDecisao(estado, { itemId: 'SIM-SEG-SALARIO', acao: 'rejeitar' });
+  const rejeitado = aplicarDecisao(estado, { itemId: salario.auditoria.id, acao: 'rejeitar' }, salario);
   estado = rejeitado.estado;
-  assert.equal(estado.decisoes['SIM-SEG-SALARIO'], 'rejeitada_simulada');
-  assert.equal(calcularCenario(estado).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos);
+  assert.equal(estado.decisoes[salario.auditoria.id], 'rejeitada_simulada');
+  assert.equal(calcularCenario(estado, [salario]).grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos);
 
-  const desfeito = aplicarDecisao(estado, { itemId: 'SIM-SEG-SALARIO', acao: 'reverter' });
+  const desfeito = aplicarDecisao(estado, { itemId: salario.auditoria.id, acao: 'reverter' }, salario);
   estado = desfeito.estado;
-  assert.equal(estado.decisoes['SIM-SEG-SALARIO'], 'pendente');
+  assert.equal(estado.decisoes[salario.auditoria.id], 'pendente');
   assert.equal(estado.historico.length, 4);
-  assert.equal(aplicarDecisao(estadoInicial(), { itemId: 'SIM-SEG-SALARIO', acao: 'reverter' }).erro !== null, true);
+  assert.equal(aplicarDecisao(estadoInicial(), { itemId: salario.auditoria.id, acao: 'reverter' }, salario).erro !== null, true);
 });
 
 test('o cenário apto completo só fecha com as três parcelas e sem gravar classe A sozinha', () => {
-  const completo = calcularCenario(aprovarTudoElegivel(estadoInicial()));
+  const itens = conciliadosIguais();
+  const completo = calcularCenario(aprovarTudoElegivel(estadoInicial(), itens), itens);
   assert.equal(completo.listaAprovadaCentavos, 33_656_211);
   assert.equal(completo.adicionalAprovadaCentavos, 83_022);
   assert.equal(completo.grupo.despesaReconhecidaCentavos, 17_297);
@@ -123,9 +162,11 @@ test('as empresas não herdam despesa da conta e fornecedor não entra de novo',
     assert.equal(cenario.grupo.resultadoCentavos, REFERENCIA_ETAPA_7.grupo.resultadoPainelCentavos);
   }
 
-  const soGestao = aplicarDecisao(estadoInicial(), { itemId: 'SIM-GEST-TARIFAS', acao: 'aprovar' }).estado;
-  const parcial = calcularCenario(soGestao);
-  assert.equal(empresa(parcial, 'TM GESTAO').despesaAprovadaSimuladaCentavos, 12_643);
+  const tarifaGestao = conciliadosIguais().find((item) => item.auditoria.blocoId === 'SIM-GEST-TARIFAS');
+  if (!tarifaGestao) throw new Error('tarifa gestao');
+  const soGestao = aplicarDecisao(estadoInicial(), { itemId: tarifaGestao.auditoria.id, acao: 'aprovar' }, tarifaGestao).estado;
+  const parcial = calcularCenario(soGestao, [tarifaGestao]);
+  assert.equal(empresa(parcial, 'TM GESTAO').despesaAprovadaSimuladaCentavos, tarifaGestao.auditoria.valorCentavos);
   assert.equal(empresa(parcial, 'TM SEGURANCA').despesaAprovadaSimuladaCentavos, 0);
   assert.equal(empresa(parcial, 'TM SECURITY').despesaAprovadaSimuladaCentavos, 0);
 });
@@ -143,35 +184,83 @@ test('as alternativas dos R$ 172,97 mudam só a empresa indicada', () => {
   assert.equal(calcularCenario(aprovarTudoElegivel(definirDestino172(estadoInicial(), 'B').estado)).aptoCompleto, false);
 });
 
+test('a consulta individual fecha 161 lançamentos e bloqueia divergência', () => {
+  const fechada = conciliarLancamentos(AUDITORIA_CLASSE_A.map(leituraIgual));
+  assert.equal(new Set(AUDITORIA_CLASSE_A.map((item) => item.id)).size, AUDITORIA_CLASSE_A.length);
+  assert.equal(fechada.listaConciliada, 161);
+  assert.equal(fechada.listaCentavos, 33_656_211);
+  assert.equal(fechada.divergentes, 0);
+  const amostra = AUDITORIA_CLASSE_A.find((item) => item.parcela === 'lista_seguranca');
+  if (!amostra) throw new Error('amostra');
+  const trocada = leituraIgual(amostra);
+  trocada.valorCentavos += 1;
+  const divergente = conciliarLancamentos([
+    ...AUDITORIA_CLASSE_A.filter((item) => item.id !== amostra.id).map(leituraIgual),
+    trocada,
+  ]).itens.find((item) => item.auditoria.id === amostra.id);
+  assert.equal(divergente?.podeSimularAprovacao, false);
+  assert.match(divergente?.divergencias.join(' ') || '', /valor atual difere/);
+  const duplicada = leituraIgual(amostra);
+  const comDupla = conciliarLancamentos([duplicada, { ...duplicada }]).itens.find((item) => item.auditoria.id === amostra.id);
+  assert.match(comDupla?.divergencias.join(' ') || '', /mais de uma vez/);
+  const indefinido = fechada.itens.find((item) => item.auditoria.parcela === 'indefinido');
+  assert.equal(indefinido?.podeSimularAprovacao, false);
+  const reconhecido = fechada.itens.find((item) => item.auditoria.id === '4189cd33-4f71-4a14-8777-48f95b7d2b41');
+  assert.equal(reconhecido?.podeSimularAprovacao, false);
+  const fora = conciliarLancamentos([
+    ...AUDITORIA_CLASSE_A.map(leituraIgual),
+    { ...leituraIgual(amostra), id: 'fora-da-evidencia' },
+  ]);
+  assert.equal(fora.extras.length, 1);
+  assert.equal(fora.listaConciliada, 161);
+  assert.equal(fora.listaCentavos, 33_656_211);
+  assert.equal(fora.itens.some((item) => item.auditoria.id === 'fora-da-evidencia'), false);
+  assert.equal(calcularCenario(aprovarTudoElegivel(estadoInicial(), fora.itens), fora.itens).listaAprovadaCentavos, 33_656_211);
+});
+
 test('a tela simula as decisões e não as guarda', async () => {
   window.localStorage.clear();
+  window.sessionStorage.clear();
+  const alvo = AUDITORIA_CLASSE_A.find((item) => item.blocoId === 'SIM-SEG-COMISSAO');
+  if (!alvo) throw new Error('comissao');
+  const consultar = async () => ({
+    ...conciliarLancamentos([leituraIgual(alvo)]),
+    lidoEm: 'teste',
+    origem: 'teste',
+  });
   const container = window.document.createElement('div');
   window.document.body.appendChild(container);
   const root = createRoot(container);
-  await React.act(async () => { root.render(React.createElement(Centro)); });
+  await React.act(async () => { root.render(React.createElement(Centro, { consultar })); });
+  await React.act(async () => { await Promise.resolve(); });
 
   const texto = () => container.textContent || '';
   assert.match(texto(), /SIMULAÇÃO LOCAL/);
-  assert.match(texto(), /identificadores SIM-\* são fictícios/);
+  assert.match(texto(), /não é homologação real/);
   assert.match(texto(), /R\$\s*336\.562,11/);
   assert.match(texto(), /R\$\s*830,22/);
   assert.match(texto(), /R\$\s*172,97/);
   assert.match(texto(), /R\$\s*4\.478\.509,05/);
   assert.equal(container.querySelector('[data-persistencia="nenhuma"]') !== null, true);
   assert.match(container.querySelector('[data-testid="status-SIM-SEG-COMISSAO"]')?.textContent || '', /Pendente/);
+  assert.equal(container.querySelector<HTMLButtonElement>('[data-testid="aprovar-SIM-SEG-COMISSAO"]')?.disabled, true);
 
+  await React.act(async () => {
+    container.querySelector<HTMLButtonElement>('[data-testid="abrir-SIM-SEG-COMISSAO"]')?.click();
+  });
+  assert.match(container.querySelector(`[data-testid="lancamento-${alvo.id}"]`)?.textContent || '', /Classe A/);
   const resultadoAntes = container.querySelector('[data-testid="resultado-simulado"]')?.textContent;
   await React.act(async () => {
-    container.querySelector<HTMLButtonElement>('[data-testid="aprovar-SIM-SEG-COMISSAO"]')?.click();
+    container.querySelector<HTMLButtonElement>(`[data-testid="aprovar-${alvo.id}"]`)?.click();
   });
-  assert.match(container.querySelector('[data-testid="status-SIM-SEG-COMISSAO"]')?.textContent || '', /Aprovação simulada/);
+  assert.match(container.querySelector(`[data-testid="status-${alvo.id}"]`)?.textContent || '', /Aprovação simulada/);
   assert.notEqual(container.querySelector('[data-testid="resultado-simulado"]')?.textContent, resultadoAntes);
-  assert.match(container.querySelector('[data-testid="historico-simulado"]')?.textContent || '', /SIM-SEG-COMISSAO/);
+  assert.match(container.querySelector('[data-testid="historico-simulado"]')?.textContent || '', new RegExp(alvo.id));
 
   await React.act(async () => {
-    container.querySelector<HTMLButtonElement>('[data-testid="reverter-SIM-SEG-COMISSAO"]')?.click();
+    container.querySelector<HTMLButtonElement>(`[data-testid="reverter-${alvo.id}"]`)?.click();
   });
-  assert.match(container.querySelector('[data-testid="status-SIM-SEG-COMISSAO"]')?.textContent || '', /Pendente/);
+  assert.match(container.querySelector(`[data-testid="status-${alvo.id}"]`)?.textContent || '', /Pendente/);
 
   await React.act(async () => {
     container.querySelector<HTMLButtonElement>('[data-testid="rejeitar-SIM-SEG-BONUS"]')?.click();
@@ -192,6 +281,7 @@ test('a tela simula as decisões e não as guarda', async () => {
   assert.match(container.querySelector('[data-testid="item-SIM-REF-FORNECEDOR"]')?.textContent || '', /dupla contagem/);
   assert.match(container.querySelector('[data-testid="status-SIM-REF-FORNECEDOR"]')?.textContent || '', /Pendente/);
   assert.equal(window.localStorage.length, 0);
+  assert.equal(window.sessionStorage.length, 0);
 
   await React.act(async () => { root.unmount(); });
   container.remove();
@@ -236,7 +326,20 @@ test('as sete abas continuam e o centro não entra nelas', async () => {
   const tela = fs.readFileSync('components/gestorFiscal/CentroHomologacao.tsx', 'utf8');
   const canonico = fs.readFileSync('lib/missionFinancialsCanonical.ts', 'utf8');
   assert.match(pagina, /import React, \{ useEffect, useMemo, useState \} from 'react'/);
-  assert.match(tela, /import React, \{ useMemo, useState \} from 'react'/);
+  assert.match(tela, /import React, \{ useEffect, useMemo, useState \} from 'react'/);
+  const consulta = fs.readFileSync('lib/gestorFiscal/consultaHomologacao.ts', 'utf8');
+  const lancamentos = fs.readFileSync('lib/gestorFiscal/lancamentosHomologacao.ts', 'utf8');
+  assert.equal(consulta.includes('.insert('), false);
+  assert.equal(consulta.includes('.update('), false);
+  assert.equal(consulta.includes('.delete('), false);
+  assert.equal(consulta.includes('localStorage'), false);
+  assert.equal(consulta.includes('sessionStorage'), false);
+  assert.equal(lancamentos.includes('localStorage'), false);
+  assert.equal(consulta.includes('computeCanonicalRevenueCost'), false);
+  assert.equal(consulta.includes('service_orders'), false);
+  assert.equal(/erjhxwbutjyylxdthuuz/.test(consulta.replace('erjhxwbutjyylxdthuuz', '')), false);
+  const fontes = fontesTs(['api', 'server', 'App.tsx']);
+  assert.equal(fontes.some((arquivo) => fs.readFileSync(arquivo, 'utf8').includes('consultaHomologacao')), false);
   assert.equal(nucleo.includes('computeCanonicalRevenueCost'), false);
   assert.equal(tela.includes('computeCanonicalRevenueCost'), false);
   assert.equal(nucleo.includes('supabase'), false);
