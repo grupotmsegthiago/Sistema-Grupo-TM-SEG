@@ -148,10 +148,10 @@ import { operadorBloqueado, normalizarModulos } from './lib/training/operadorAca
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('authToken') || '';
     const userData = localStorage.getItem('userData');
-    // Não exige app_version === APP_VERSION: após auto-update o login deve persistir.
-    return !!(token && userData);
+    // Sessão antiga, forjável, não mantém a tela aberta.
+    return token.startsWith('ponte.v1.') && !!userData;
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
@@ -222,19 +222,22 @@ const App: React.FC = () => {
 
   const verifySessionInDatabase = async () => {
       const storedUser = localStorage.getItem('userData');
+      const token = localStorage.getItem('authToken') || '';
       if (!storedUser) return;
+      if (!token.startsWith('ponte.v1.')) { handleLogout(); return; }
       try {
           const user = JSON.parse(storedUser);
-          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, training_required, training_passed_at, training_modules, training_score, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
-          if (error) {
-            console.warn('[Sessão] Falha temporária ao verificar usuário — mantendo login:', error.message);
-            return;
-          }
-          if (!data || data.status !== 'Ativo') { handleLogout(); return; }
+          const resposta = await fetch('/api/ponte-auth/sessao', {
+            credentials: 'include',
+            headers: { authorization: `Bearer ${token}` },
+          });
+          if (resposta.status === 401 || resposta.status === 403) { handleLogout(); return; }
+          if (!resposta.ok) return;
+          const corpo = await resposta.json() as { usuario?: { name?: string; role?: string; permissions?: string[]; force_password_change?: boolean; clientId?: string | null; trainingRequired?: boolean; trainingPassedAt?: string | null; trainingModules?: unknown; trainingScore?: number | null } };
+          const data = corpo.usuario;
+          if (!data) { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
-          const profilePerms = data.profiles?.permissions || [];
-          const userPerms = data.permissions || [];
-          const combinedPermissions = [...new Set([...profilePerms, ...userPerms])];
+          const combinedPermissions = data.permissions || [];
           let needsUpdate = false;
           if (JSON.stringify(user.permissions) !== JSON.stringify(combinedPermissions)) {
               user.permissions = combinedPermissions;
@@ -244,14 +247,14 @@ const App: React.FC = () => {
               user.name = data.name;
               needsUpdate = true;
           }
-          if (data.profiles?.name && (!user.role || user.role === 'Usuário')) {
-              user.role = data.profiles.name;
+          if (data.role && (!user.role || user.role === 'Usuário')) {
+              user.role = data.role;
               needsUpdate = true;
           }
-          user.trainingRequired = Boolean(data.training_required);
-          user.trainingPassedAt = data.training_passed_at || null;
-          user.trainingModules = normalizarModulos(data.training_modules);
-          user.trainingScore = data.training_score ?? null;
+          user.trainingRequired = Boolean(data.trainingRequired);
+          user.trainingPassedAt = data.trainingPassedAt || null;
+          user.trainingModules = normalizarModulos(data.trainingModules);
+          user.trainingScore = data.trainingScore ?? null;
           needsUpdate = true;
           if (needsUpdate) {
               localStorage.setItem('userData', JSON.stringify(user));
@@ -261,8 +264,8 @@ const App: React.FC = () => {
             email: user.email,
           });
           localStorage.setItem('userData', JSON.stringify(enriched));
-          if (data.client_id) {
-              const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.client_id).single();
+          if (data.clientId) {
+              const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.clientId).single();
               if (clientData && (clientData.name || '').toUpperCase().includes('CEVA')) {
                   setIsCevaClient(true);
               }

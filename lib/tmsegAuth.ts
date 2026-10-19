@@ -1,5 +1,6 @@
 /** Auth mínimo para handlers serverless leves (sem Express). */
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { usuarioIdDoToken } from "./sessao/token";
 
 const DEFAULT_SUPABASE_URL = "https://ajhmmjuewdsukecaimik.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
@@ -36,16 +37,6 @@ function normalizeRole(role: string): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-}
-
-function parsePermissions(raw: string): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return raw.split(",").map((p) => p.trim()).filter(Boolean);
-  }
 }
 
 function readProfile(data: { profiles?: ProfileRow | ProfileRow[] | null }): ProfileRow | null {
@@ -88,8 +79,7 @@ export function readBearer(req: { headers?: ReqHeaders }): string {
 }
 
 export function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 export function supabaseLite(): SupabaseClient {
@@ -152,48 +142,19 @@ async function resolveFromDatabase(userId: string): Promise<{
   };
 }
 
-function resolveFromHeaders(
-  token: string,
-  req?: { headers?: EnvHeaders },
-  options: { adminOnly?: boolean; financeOnly?: boolean } = {},
-): { ok: boolean; principal: LitePrincipal | null } | null {
-  if (!req?.headers) return null;
-  const userId = extractUserIdFromToken(token);
-  const headerUserId = headerValue(req, "x-tmseg-user-id");
-  if (!userId || !headerUserId || userId !== headerUserId) return null;
-
-  const role = normalizeRole(headerValue(req, "x-tmseg-role"));
-  const permissions = parsePermissions(headerValue(req, "x-tmseg-permissions"));
-  let ok = !!userId;
-  if (options.adminOnly) ok = canAccessWhatsapp(role, permissions);
-  if (options.financeOnly) ok = canAccessFinanceNf(role, permissions);
-  return {
-    ok,
-    principal: {
-      id: userId,
-      name: headerValue(req, "x-tmseg-user-name") || null,
-      email: null,
-      role,
-    },
-  };
-}
-
-export async function resolveLitePrincipal(token: string, req?: { headers?: ReqHeaders }): Promise<LitePrincipal | null> {
+export async function resolveLitePrincipal(token: string, _req?: { headers?: ReqHeaders }): Promise<LitePrincipal | null> {
   if (!token) return null;
   const userId = extractUserIdFromToken(token);
   if (!userId) return null;
 
   const fromDb = await resolveFromDatabase(userId);
-  if (fromDb.principal) return fromDb.principal;
-
-  const fromHeaders = resolveFromHeaders(token, req, { adminOnly: false });
-  return fromHeaders?.principal || null;
+  return fromDb.principal;
 }
 
 /** Retorna null se autorizado; mensagem se negado. */
 export async function assertWhatsappAdminAccess(
   token: string,
-  req?: { headers?: ReqHeaders },
+  _req?: { headers?: ReqHeaders },
 ): Promise<string | null> {
   if (!token) return "Não autorizado";
   const userId = extractUserIdFromToken(token);
@@ -205,16 +166,13 @@ export async function assertWhatsappAdminAccess(
     return "Sem permissão — apenas Diretoria, Administrador ou CEO.";
   }
 
-  const fromHeaders = resolveFromHeaders(token, req, { adminOnly: true });
-  if (fromHeaders?.ok) return null;
-
   return "Sem permissão — apenas Diretoria, Administrador ou CEO.";
 }
 
 /** Qualquer usuário autenticado (bot-status popup). */
 export async function assertAuthenticatedAccess(
   token: string,
-  req?: { headers?: ReqHeaders },
+  _req?: { headers?: ReqHeaders },
 ): Promise<string | null> {
   if (!token) return "Não autorizado";
   const userId = extractUserIdFromToken(token);
@@ -223,16 +181,13 @@ export async function assertAuthenticatedAccess(
   const fromDb = await resolveFromDatabase(userId);
   if (fromDb.found && fromDb.active && fromDb.principal) return null;
 
-  const fromHeaders = resolveFromHeaders(token, req, { adminOnly: false });
-  if (fromHeaders?.ok) return null;
-
   return "Sessão inválida";
 }
 
 /** Controle de Faturas / NF — espelha requireRole(administrador, diretoria, financeiro). */
 export async function assertFinanceNfAccess(
   token: string,
-  req?: { headers?: EnvHeaders },
+  _req?: { headers?: ReqHeaders },
 ): Promise<string | null> {
   if (!token) return "Não autorizado";
   const userId = extractUserIdFromToken(token);
@@ -243,9 +198,6 @@ export async function assertFinanceNfAccess(
   if (fromDb.found && fromDb.active && !fromDb.financeOk) {
     return "Sem permissão — apenas Diretoria, Administrador ou Financeiro.";
   }
-
-  const fromHeaders = resolveFromHeaders(token, req, { financeOnly: true });
-  if (fromHeaders?.ok) return null;
 
   return "Sem permissão — apenas Diretoria, Administrador ou Financeiro.";
 }

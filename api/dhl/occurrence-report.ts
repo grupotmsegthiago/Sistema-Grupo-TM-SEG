@@ -1,5 +1,6 @@
 /** Payload mínimo do relatório DHL — evita import estático de lib/ no handler Vercel. */
 import { createRequire } from 'node:module';
+import { usuarioIdDoToken } from '../../lib/sessao/token';
 
 // Bundles CJS gerados no build (build-server.mjs) — requires ESTÁTICOS para o file
 // tracer da Vercel incluir os .cjs no bundle da função. require(path.join(...))
@@ -61,8 +62,7 @@ function authToken(req: { headers?: Record<string, unknown> }): string {
 }
 
 function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 function decodeSupabaseRef(key: string): string | null {

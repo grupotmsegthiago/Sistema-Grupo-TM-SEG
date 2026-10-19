@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from 'express';
+import { usuarioIdDoToken } from '../lib/sessao/token';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { emailDeAcesso, nomeDeAcesso, perfilDeAcesso } from '../lib/cevaPortal/acesso';
 import { perfilPortalDasPermissoes } from '../lib/cevaPortal/regrasAcesso';
@@ -6,9 +7,7 @@ import { sincronizarAcessoPortal } from '../lib/cevaPortal/cadastroSistema';
 import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
 
 function idDoTokenInterno(token: string): string | null {
-  const limpo = String(token || '').replace(/^Bearer\s+/i, '').trim();
-  const match = limpo.match(/^(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 /** Cadastro de Usuários do cliente libera o portal sem abrir o restante do sistema. */

@@ -59,35 +59,25 @@ const ProfileSettingsModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     setIsLoading(true);
 
     try {
-      // 1. Verificar a senha atual
-      const { data, error: checkError } = await supabase
-        .from('system_users')
-        .select('id')
-        .eq('email', currentUser.email)
-        .eq('password', currentPassword)
-        .single();
-
-      if (checkError || !data) {
-        throw new Error('A senha atual está incorreta.');
-      }
-
-      // 2. Preparar payload de atualização
-      const updatePayload: any = {};
-      if (emailChanged) {
-        updatePayload.email = newEmail.trim();
-      }
+      const token = localStorage.getItem('authToken') || '';
       if (passwordChanged) {
-        updatePayload.password = newPassword.trim();
+        const resposta = await fetch('/api/ponte-auth/senha', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ senhaAtual: currentPassword, senhaNova: newPassword.trim() }),
+        });
+        const corpo = await resposta.json().catch(() => ({})) as { codigo?: string; motivo?: string };
+        if (!resposta.ok) {
+          throw new Error(corpo.codigo === 'credenciais_invalidas' ? 'A senha atual está incorreta.' : (corpo.motivo || 'Falha ao atualizar a senha.'));
+        }
       }
-
-      // 3. Executar atualização
-      const { error: updateError } = await supabase
-        .from('system_users')
-        .update(updatePayload)
-        .eq('id', currentUser.id);
-
-      if (updateError) {
-        throw new Error(updateError.message);
+      if (emailChanged) {
+        const { error: updateError } = await supabase
+          .from('system_users')
+          .update({ email: newEmail.trim() })
+          .eq('id', currentUser.id);
+        if (updateError) throw new Error(updateError.message);
       }
       
       onSuccess();

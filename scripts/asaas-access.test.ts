@@ -41,7 +41,7 @@ test('principalCanAccessAsaasApi nega sem role nem permissão', () => {
   );
 });
 
-test('assertAsaasApiAccess aceita fallback por headers quando userId confere', async () => {
+test('assertAsaasApiAccess recusa token antigo mesmo com perfil no navegador', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertAsaasApiAccess(token, {
     headers: {
@@ -50,7 +50,7 @@ test('assertAsaasApiAccess aceita fallback por headers quando userId confere', a
       'x-tmseg-permissions': '[]',
     },
   });
-  assert.equal(denied, null);
+  assert.equal(denied, 'Não autorizado');
 });
 
 test('assertAsaasApiAccess nega headers com userId divergente', async () => {
@@ -62,5 +62,5 @@ test('assertAsaasApiAccess nega headers com userId divergente', async () => {
       'x-tmseg-permissions': '[]',
     },
   });
-  assert.equal(denied, 'Permissão negada');
+  assert.equal(denied, 'Não autorizado');
 });

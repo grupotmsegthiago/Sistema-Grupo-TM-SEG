@@ -14,7 +14,7 @@ test('roleCanAccessBillingApi aceita diretoria, administrador e ceo', () => {
   assert.equal(roleCanAccessBillingApi('rh'), false);
 });
 
-test('assertBillingApiAccess aceita fallback por headers quando userId confere', async () => {
+test('assertBillingApiAccess recusa token antigo mesmo com perfil no navegador', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertBillingApiAccess(token, {
     headers: {
@@ -23,10 +23,10 @@ test('assertBillingApiAccess aceita fallback por headers quando userId confere',
       'x-tmseg-permissions': '[]',
     },
   });
-  assert.equal(denied, null);
+  assert.equal(denied, 'Não autorizado');
 });
 
-test('assertBillingApiAccess nega headers com userId divergente', async () => {
+test('assertBillingApiAccess nega token antigo com userId divergente', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertBillingApiAccess(token, {
     headers: {
@@ -35,10 +35,10 @@ test('assertBillingApiAccess nega headers com userId divergente', async () => {
       'x-tmseg-permissions': '[]',
     },
   });
-  assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
+  assert.equal(denied, 'Não autorizado');
 });
 
-test('assertBillingApiAccess nega role financeiro via headers', async () => {
+test('assertBillingApiAccess nega token antigo de financeiro', async () => {
   const token = 'tmseg-token-42-1783678641263';
   const denied = await assertBillingApiAccess(token, {
     headers: {
@@ -47,5 +47,5 @@ test('assertBillingApiAccess nega role financeiro via headers', async () => {
       'x-tmseg-permissions': '[]',
     },
   });
-  assert.equal(denied, 'Permissão negada — apenas Diretoria, Administrador ou CEO');
+  assert.equal(denied, 'Não autorizado');
 });

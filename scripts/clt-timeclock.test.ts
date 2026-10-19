@@ -185,13 +185,13 @@ test('history usa contract_type case-insensitive', async () => {
   assert.match(src, /ilike\('contract_type', 'clt'\)/);
 });
 
-test('extractUserIdFromToken aceita ID numérico e UUID', () => {
-  assert.equal(extractUserIdFromToken('tmseg-token-5-1783516873131'), '5');
-  assert.equal(
-    extractUserIdFromToken('tmseg-token-550e8400-e29b-41d4-a716-446655440000-99'),
-    '550e8400-e29b-41d4-a716-446655440000',
-  );
-  assert.equal(extractUserIdFromToken('impersonation-token-23-1000'), '23');
+test('extractUserIdFromToken só aceita sessão assinada', async () => {
+  process.env.SESSION_SECRET = 'segredo-de-teste-clt';
+  const { emitirSessao } = await import('../lib/sessao/token');
+  const emitido = emitirSessao('segredo-de-teste-clt', '550e8400-e29b-41d4-a716-446655440000');
+  assert.equal(extractUserIdFromToken(emitido.token), '550e8400-e29b-41d4-a716-446655440000');
+  assert.equal(extractUserIdFromToken('tmseg-token-5-1783516873131'), null);
+  assert.equal(extractUserIdFromToken('impersonation-token-23-1000'), null);
   assert.equal(extractUserIdFromToken('invalid'), null);
 });
 

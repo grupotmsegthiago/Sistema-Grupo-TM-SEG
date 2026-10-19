@@ -242,13 +242,13 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
   const loadUser = async () => {
       try {
-          const { data, error } = await supabase.from('system_users').select('*').eq('id', id).single();
+          const { data, error } = await supabase.from('system_users').select('id, name, email, status, profile_id, client_id, provider_id, permissions, user_type').eq('id', id).single();
           if (error) throw error;
           if (data) {
               setFormData({
                   name: data.name,
                   email: data.email,
-                  password: data.password,
+                  password: '',
                   profileId: data.profile_id || '',
                   clientId: data.client_id || '',
                   providerId: data.provider_id || '',
@@ -293,7 +293,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (emailError) return;
-      if (!formData.name || !formData.email || !formData.password) {
+      if (!formData.name || !formData.email || (!id && !formData.password)) {
           showNotification('Erro', 'Preencha todos os campos obrigatórios.', 'error');
           return;
       }
@@ -331,6 +331,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               payload.permissions = permissoesDoPortal(portalCliente.caminho, perfilPortal);
               payload.force_password_change = false;
           }
+          if (id && !formData.password) delete payload.password;
           const vincularComercial = async (userId: string | number) => {
               if (userType !== 'internal') return;
               const profile = profiles.find((p) => String(p.id) === String(formData.profileId));

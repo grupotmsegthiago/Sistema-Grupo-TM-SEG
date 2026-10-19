@@ -193,8 +193,9 @@ test('a rota HTTP recusa com a flag desligada e também com as flags ligadas', a
     delete process.env.GESTOR_FISCAL_PONTE_AUTH_ENABLED;
     delete process.env.GESTOR_FISCAL_PONTE_HTTP_ARMADA;
     const capturado = await chamar(loginHttp, { method: 'POST', body: { email: 'a', senha: 'b', perfil: 'Diretoria' } });
-    assert.equal(capturado.status, 403);
-    assert.equal((capturado.body as { codigo: string }).codigo, 'ponte_desligada');
+    assert.equal(capturado.status, 503);
+    assert.equal((capturado.body as { codigo: string }).codigo, 'sessao_indisponivel');
+    assert.equal(JSON.stringify(capturado.body).includes('Diretoria'), false);
     process.env.GESTOR_FISCAL_PONTE_AUTH_ENABLED = 'true';
     process.env.GESTOR_FISCAL_PONTE_HTTP_ARMADA = 'true';
     const armada = await chamar(gestorHttp, { method: 'GET', query: { cnpj: '99999999000199', perfil: 'Diretoria' } });
@@ -367,7 +368,9 @@ test('escopo, perfis recusados, falha de banco, concorrência e rotas antigas', 
   assert.equal(vigente.status, 200);
 
   const loginAtual = fs.readFileSync('components/Login.tsx', 'utf8');
-  assert.equal(loginAtual.includes('userCheck.password !== cleanPassword'), true);
+  assert.equal(loginAtual.includes('userCheck.password !== cleanPassword'), false);
+  assert.equal(loginAtual.includes('/api/ponte-auth/login'), true);
+  assert.equal(loginAtual.includes('tmseg-token-'), false);
   assert.equal(loginAtual.includes('ponteAuth'), false);
   const vercel = JSON.parse(fs.readFileSync('vercel.json', 'utf8')) as { functions: Record<string, unknown> };
   assert.equal(Object.keys(vercel.functions).length, 50);

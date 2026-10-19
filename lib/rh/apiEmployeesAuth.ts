@@ -1,10 +1,10 @@
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
+import { usuarioIdDoToken } from '../sessao/token';
 
 type ReqHeaders = Record<string, unknown> | undefined;
 
 export function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 export function extractAuthToken(req: { headers?: ReqHeaders }): string {
@@ -13,15 +13,6 @@ export function extractAuthToken(req: { headers?: ReqHeaders }): string {
   const bearer = auth.replace(/^Bearer\s+/i, '').trim();
   if (bearer) return bearer;
   return String(h['x-auth-token'] || h['X-Auth-Token'] || '').trim();
-}
-
-function headerValue(req: { headers?: EnvHeaders } | undefined, name: string): string {
-  if (!req?.headers) return '';
-  const lower = name.toLowerCase();
-  for (const [k, v] of Object.entries(req.headers)) {
-    if (String(k).toLowerCase() === lower) return String(v || '').trim();
-  }
-  return '';
 }
 
 function normalizeRole(role: string): string {
@@ -67,27 +58,12 @@ export async function resolveUserRoleFromToken(token: string): Promise<string | 
  */
 export async function assertEmployeesApiAccess(
   token: string,
-  req?: { headers?: EnvHeaders },
+  _req?: { headers?: ReqHeaders },
 ): Promise<string | null> {
   if (!token) return 'Não autorizado';
   if (!extractUserIdFromToken(token)) return 'Não autorizado';
 
   const roleFromDb = await safeResolveUserRoleFromToken(token);
   if (roleCanAccessEmployees(roleFromDb)) return null;
-
-  const headerRole = normalizeRole(headerValue(req, 'x-tmseg-role'));
-  const headerUserId = headerValue(req, 'x-tmseg-user-id');
-  const tokenUserId = extractUserIdFromToken(token);
-  if (
-    headerUserId
-    && tokenUserId
-    && headerUserId === tokenUserId
-    && roleCanAccessEmployees(headerRole)
-  ) {
-    console.warn('[rh-auth] acesso via headers x-tmseg-* (service_role/DB indisponível)');
-    return null;
-  }
-
-  if (roleFromDb) return 'Permissão negada — apenas Diretoria e RH';
   return 'Permissão negada — apenas Diretoria e RH';
 }

@@ -1,8 +1,8 @@
 /**
  * Auth leve para rotas serverless Asaas (Vercel).
- * 1) Consulta system_users com service_role (várias envs)
- * 2) Fallback: headers do authFetch (userId do token deve bater)
+ * A sessão precisa ser assinada. Cabeçalho de perfil do navegador não autoriza.
  */
+import { usuarioIdDoToken } from './sessao/token';
 
 const DEFAULT_SUPABASE_URL = 'https://ajhmmjuewdsukecaimik.supabase.co';
 const TMSEG_REF = 'ajhmmjuewdsukecaimik';
@@ -11,8 +11,7 @@ const ASAAS_ROLES = new Set(['administrador', 'diretoria', 'financeiro', 'ceo'])
 type ReqHeaders = Record<string, string | string[] | undefined>;
 
 export function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 function cleanEnv(value: unknown): string {
@@ -40,16 +39,6 @@ function normalizeRole(role: string): string {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
-}
-
-function parsePermissions(raw: string): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return raw.split(',').map((p) => p.trim()).filter(Boolean);
-  }
 }
 
 function canAccess(role: string, permissions: string[]): boolean {
@@ -126,25 +115,10 @@ async function resolveAccessFromDatabase(userId: string): Promise<{
   return { found: true, ok: canAccess(role, permissions), role, permissions };
 }
 
-function resolveAccessFromHeaders(
-  token: string,
-  req?: { headers?: ReqHeaders },
-): { ok: boolean; role: string; permissions: string[] } | null {
-  if (!req?.headers) return null;
-
-  const userId = extractUserIdFromToken(token);
-  const headerUserId = headerValue(req, 'x-tmseg-user-id');
-  if (!userId || !headerUserId || userId !== headerUserId) return null;
-
-  const role = normalizeRole(headerValue(req, 'x-tmseg-role'));
-  const permissions = parsePermissions(headerValue(req, 'x-tmseg-permissions'));
-  return { ok: canAccess(role, permissions), role, permissions };
-}
-
 /** Retorna null se autorizado; mensagem de erro se negado. */
 export async function assertAsaasApiAccess(
   token: string,
-  req?: { headers?: ReqHeaders },
+  _req?: { headers?: ReqHeaders },
 ): Promise<string | null> {
   if (!token) return 'Não autorizado';
 
@@ -156,22 +130,13 @@ export async function assertAsaasApiAccess(
     if (fromDb?.ok) return null;
     if (fromDb?.found && !fromDb.ok) return 'Permissão negada';
 
-    const fromHeaders = resolveAccessFromHeaders(token, req);
-    if (fromHeaders?.ok) {
-      console.warn('[asaasApiAuth] acesso via headers (service_role indisponível ou usuário não encontrado no DB)');
-      return null;
-    }
-
     if (!pickServiceRoleKey()) {
-      console.warn('[asaasApiAuth] SUPABASE_SERVICE_ROLE_KEY indisponível');
+      console.warn('[asaasApiAuth] chave administrativa indisponível');
     }
     return 'Permissão negada';
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
     console.warn('[asaasApiAuth]', message);
-
-    const fromHeaders = resolveAccessFromHeaders(token, req);
-    if (fromHeaders?.ok) return null;
     return 'Permissão negada';
   }
 }

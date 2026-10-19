@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { gravarSenhaNoServidor } from './sessao/gravarSenha';
 import { getDhlIntakeSupabase } from './dhl-intake/dhlIntakeSupabase.js';
 import { sendPasswordResetEmail } from './email/passwordResetEmails.js';
 
@@ -83,14 +84,11 @@ export async function handlePasswordResetConfirm(body: { token?: string; newPass
     return { status: 410, body: { error: 'Token expirado' } };
   }
 
-  const { error: updateErr } = await sb.from('system_users').update({
-    password: newPassword,
+  await gravarSenhaNoServidor(sb, data.id, newPassword, {
     password_reset_token: null,
     password_reset_expires: null,
     force_password_change: false,
-  }).eq('id', data.id);
-
-  if (updateErr) throw updateErr;
+  });
 
   return { status: 200, body: { success: true, message: 'Senha alterada com sucesso!' } };
 }

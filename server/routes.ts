@@ -1,4 +1,7 @@
 import type { Express, Request, Response } from "express";
+import { usuarioIdDoToken } from "../lib/sessao/token";
+import { gravarSenhaNoServidor } from "../lib/sessao/gravarSenha";
+import { registrarSessaoExpress } from "../lib/sessao/express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
@@ -323,8 +326,7 @@ const roleCache = new Map<string, { role: string; expiresAt: number }>();
 const ROLE_CACHE_TTL = 5 * 60 * 1000;
 
 function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; permissions: string[] };
@@ -451,6 +453,8 @@ export async function registerRoutes(
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
   });
+
+  registrarSessaoExpress(app);
 
   // Task #87 — Permite enviar um relatório manual para um e-mail de teste sem
   // alterar a configuração persistida. Retorna a lista normalizada como string
@@ -2197,13 +2201,11 @@ export async function registerRoutes(
         return res.status(410).json({ error: 'Token expirado' });
       }
 
-      const { error: updateErr } = await supabase.from('system_users').update({
-        password: newPassword,
+      await gravarSenhaNoServidor(supabase, String(data.id), newPassword, {
         password_reset_token: null,
         password_reset_expires: null,
-        force_password_change: false
-      }).eq('id', data.id);
-      if (updateErr) throw updateErr;
+        force_password_change: false,
+      });
 
       res.json({ success: true, message: 'Senha alterada com sucesso!' });
     } catch (err: any) {

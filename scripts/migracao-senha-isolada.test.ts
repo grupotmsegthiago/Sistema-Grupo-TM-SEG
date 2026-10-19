@@ -204,7 +204,8 @@ test('falha de banco, concorrência, ponte desligada e login atual', async () =>
   assert.equal(JSON.stringify(ponte.body).includes(SENHA), false);
 
   const login = fs.readFileSync('components/Login.tsx', 'utf8');
-  assert.equal(login.includes('userCheck.password !== cleanPassword'), true);
+  assert.equal(login.includes('userCheck.password !== cleanPassword'), false);
+  assert.equal(login.includes('/api/ponte-auth/login'), true);
   assert.equal(login.includes('migracaoSenha'), false);
   for (const arquivo of [
     'components/ChangePasswordModal.tsx',

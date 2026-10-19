@@ -1,4 +1,3 @@
-import { criarHandlerHttp } from '../../lib/gestorFiscal/ponteAuth/vercelPonte';
+import { criarHandlerSessao } from '../../lib/sessao/vercel';
 
-/** Revogação da sessão. Desligada enquanto a integração HTTP não for liberada no código. */
-export default criarHandlerHttp('logout');
+export default criarHandlerSessao('logout');

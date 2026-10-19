@@ -1,4 +1,4 @@
-import { criarHandlerHttp } from '../../lib/gestorFiscal/ponteAuth/vercelPonte';
+import { criarHandlerSessao } from '../../lib/sessao/vercel';
 
-/** Login seguro. Desligado enquanto a integração HTTP não for liberada no código. */
-export default criarHandlerHttp('login');
+/** Login no servidor. Não compara senha no navegador e não emite o token antigo. */
+export default criarHandlerSessao('login');

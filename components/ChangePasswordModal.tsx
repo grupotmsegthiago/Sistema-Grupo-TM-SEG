@@ -1,8 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Lock, ArrowRight, Loader2, AlertCircle, Key } from 'lucide-react';
-import { supabase } from '../lib/supabase';
-
 interface ChangePasswordModalProps {
   onSuccess: () => void;
 }
@@ -12,19 +10,6 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onSuccess }) 
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [userEmail, setUserEmail] = useState('');
-
-  useEffect(() => {
-    const storedUser = localStorage.getItem('userData');
-    if (storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setUserEmail(user.email);
-      } catch (e) {
-        setError('Não foi possível identificar o seu usuário.');
-      }
-    }
-  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,16 +31,16 @@ const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onSuccess }) 
     setIsLoading(true);
 
     try {
-      const { error: updateError } = await supabase
-        .from('system_users')
-        .update({ 
-          password: newPassword,
-          force_password_change: false
-        })
-        .eq('email', userEmail);
-      
-      if (updateError) {
-        throw new Error(updateError.message || 'Falha ao atualizar a senha.');
+      const token = localStorage.getItem('authToken') || '';
+      const resposta = await fetch('/api/ponte-auth/senha', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ senhaNova: newPassword }),
+      });
+      const corpo = await resposta.json().catch(() => ({})) as { motivo?: string };
+      if (!resposta.ok) {
+        throw new Error(corpo.motivo || 'Falha ao atualizar a senha.');
       }
 
       alert('Senha atualizada com sucesso! Você já pode acessar o sistema.');

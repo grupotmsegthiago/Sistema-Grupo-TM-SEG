@@ -209,8 +209,9 @@ test('falha de leitura, sessões concorrentes, logs e rotas atuais intocadas', a
   assert.equal(textoLogs.includes('scrypt'), false);
 
   const login = fs.readFileSync('components/Login.tsx', 'utf8');
-  assert.equal(login.includes('tmseg-token-${userCheck.id}-${Date.now()}'), true);
-  assert.equal(login.includes('userCheck.password !== cleanPassword'), true);
+  assert.equal(login.includes('tmseg-token-${userCheck.id}-${Date.now()}'), false);
+  assert.equal(login.includes('userCheck.password !== cleanPassword'), false);
+  assert.equal(login.includes('/api/ponte-auth/login'), true);
   assert.equal(login.includes('ponteAuth'), false);
   for (const pasta of ['server', 'components']) {
     assert.deepEqual(arquivosCom(pasta, 'ponteAuth'), []);

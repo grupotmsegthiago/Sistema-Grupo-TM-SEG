@@ -3,6 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { authorizeRhApiRequest } from '../lib/rh/rhApiAccess';
+import { emitirSessao } from '../lib/sessao/token';
+
+process.env.SESSION_SECRET = 'segredo-de-teste-rh-exames';
+const tokenRh = emitirSessao(process.env.SESSION_SECRET, 'user-rh-1').token;
 
 const root = process.cwd();
 const TABLE = 'rh_medical_exams';
@@ -38,11 +42,11 @@ const principal = {
 };
 
 const request = {
-  headers: { authorization: 'Bearer tmseg-token-user-rh-1-123456' },
+  headers: { authorization: `Bearer ${tokenRh}` },
 };
 
 describe('Fase 4 RH RLS — preparação rh_medical_exams', () => {
-  it('mantém zero consumidor frontend runtime direto', () => {
+  it('o portal do colaborador continua lendo a tabela e o cadastro passa pela API', () => {
     const direct = [
       ...walkRuntimeFiles('components'),
       ...walkRuntimeFiles('lib'),
@@ -52,7 +56,7 @@ describe('Fase 4 RH RLS — preparação rh_medical_exams', () => {
 
     assert.deepEqual(
       direct.map((file) => file.replaceAll('\\', '/')),
-      ['lib/rh/medicalExamsApiCore.ts'],
+      ['components/MeuPortal.tsx', 'lib/rh/medicalExamsApiCore.ts'],
     );
 
     const workspace = read('components/rh/RhEmployeeWorkspace.tsx');

@@ -145,8 +145,9 @@ describe('Histórico de pedágio só desta OS', () => {
     assert.equal(inserts[1].linha.entity, 'MissionOccurrence');
     assert.equal(inserts[1].linha.entity_id, 'GTM-8418');
 
-    const senha = await senhaDoUsuarioConfere(client as never, { id: 'u1' }, 'segredo');
+    const senha = await senhaDoUsuarioConfere(client as never, { id: 'u1' }, 'segredo', async () => true);
     assert.equal(senha, true);
+    assert.equal(fs.readFileSync('lib/toll/pedagioDaOs.ts', 'utf8').includes(".eq('password'"), false);
     const vazia = await senhaDoUsuarioConfere(client as never, { id: 'u1' }, '  ');
     assert.equal(vazia, false);
   });

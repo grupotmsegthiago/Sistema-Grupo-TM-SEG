@@ -10,6 +10,7 @@
  */
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { usuarioIdDoToken } from '../sessao/token';
 import { canRequestOsAnalysis } from '../osAnalysisAccess.js';
 import {
   createSupabaseAdminClient,
@@ -34,8 +35,7 @@ export type OsAnalysisPrincipal = {
 };
 
 export function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 function cleanEnv(value: unknown): string {
@@ -170,7 +170,7 @@ function readProfile(data: { profiles?: ProfileRow | ProfileRow[] | null }): Pro
 /** Resolve usuário autenticado; null se token inválido. */
 export async function resolveOsAnalysisPrincipal(
   token: string,
-  req?: { headers?: ReqHeaders },
+  _req?: { headers?: ReqHeaders },
 ): Promise<OsAnalysisPrincipal | null> {
   if (!token) return null;
   const userId = extractUserIdFromToken(token);
@@ -194,18 +194,11 @@ export async function resolveOsAnalysisPrincipal(
         };
       }
     } catch {
-      // fallback headers abaixo
+      return null;
     }
   }
 
-  const headerUserId = headerValue(req, 'x-tmseg-user-id');
-  if (!headerUserId || headerUserId !== userId) return null;
-  return {
-    id: userId,
-    name: headerValue(req, 'x-tmseg-user-name') || 'Sistema',
-    role: normalizeRole(headerValue(req, 'x-tmseg-role')),
-    email: headerValue(req, 'x-tmseg-email') || null,
-  };
+  return null;
 }
 
 export function principalCanRequestAnalysis(principal: OsAnalysisPrincipal): boolean {

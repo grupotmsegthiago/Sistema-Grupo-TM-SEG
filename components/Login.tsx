@@ -111,79 +111,72 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     }
 
     try {
-      const { data: userCheck, error: checkError } = await supabase
-        .from('system_users')
-        .select(`
-            id,
-            name,
-            email,
-            password,
-            status,
-            client_id,
-            provider_id,
-            profile_id,
-            force_password_change,
-            permissions,
-            training_required,
-            training_passed_at,
-            training_modules,
-            training_score,
-            profiles:profile_id (
-                name,
-                permissions
-            )
-        `)
-        .ilike('email', cleanEmail)
-        .maybeSingle();
-
-      if (checkError) {
-        console.error("Database Auth Error:", checkError);
-        throw new Error(`Falha de comunicação com o servidor.`);
+      const resposta = await fetch('/api/ponte-auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, senha: cleanPassword }),
+      });
+      const corpo = await resposta.json() as {
+        ok?: boolean;
+        codigo?: string;
+        motivo?: string;
+        token?: string;
+        usuario?: {
+          id: string;
+          name: string;
+          email: string;
+          role: string;
+          permissions: string[];
+          clientId: string | null;
+          providerId: string | null;
+          force_password_change: boolean;
+          trainingRequired?: boolean;
+          trainingPassedAt?: string | null;
+          trainingModules?: unknown;
+          trainingScore?: number | null;
+        };
+      };
+      if (!resposta.ok || !corpo.ok || !corpo.token || !corpo.usuario) {
+        if (corpo.codigo === 'portal_only') {
+          throw new Error(`Este acesso é somente o portal do cliente. Entre em ${window.location.origin}`);
+        }
+        if (corpo.codigo === 'usuario_desativado') {
+          throw new Error('Sua conta está inativa ou bloqueada. Contate a administração.');
+        }
+        if (corpo.codigo === 'credenciais_invalidas') {
+          throw new Error('E-mail ou senha incorretos. Verifique e tente novamente.');
+        }
+        throw new Error(corpo.motivo || 'Falha de comunicação com o servidor.');
       }
 
-      if (!userCheck) {
-        throw new Error('E-mail não localizado no sistema.');
-      }
-
-      if (userCheck.password !== cleanPassword) {
-        throw new Error('Senha incorreta. Verifique e tente novamente.');
-      }
-
-      if (userCheck.status !== 'Ativo') {
-        throw new Error('Sua conta está inativa ou bloqueada. Contate a administração.');
-      }
-
-      const profilePerms = userCheck.profiles?.permissions || [];
-      const userPerms = userCheck.permissions || [];
-      const combinedPermissions = [...new Set([...profilePerms, ...userPerms])];
-      if (usuarioSoPortal(combinedPermissions)) {
-        const caminho = caminhoPortalDasPermissoes(combinedPermissions) || '';
+      const usuario = corpo.usuario;
+      if (usuarioSoPortal(usuario.permissions || [])) {
+        const caminho = caminhoPortalDasPermissoes(usuario.permissions) || '';
         throw new Error(`Este acesso é somente o portal do cliente. Entre em ${window.location.origin}${caminho}`);
       }
 
       let userData = {
-        id: userCheck.id,
-        name: userCheck.name,
-        email: userCheck.email,
-        role: userCheck.profiles?.name || 'Usuário',
-        permissions: combinedPermissions,
-        clientId: userCheck.client_id,
-        providerId: userCheck.provider_id,
-        force_password_change: userCheck.force_password_change
+        id: usuario.id,
+        name: usuario.name,
+        email: usuario.email,
+        role: usuario.role || 'Usuário',
+        permissions: usuario.permissions || [],
+        clientId: usuario.clientId,
+        providerId: usuario.providerId,
+        force_password_change: usuario.force_password_change,
       };
-
       userData = await enrichUserWithCltData(userData);
       const sessionUser = {
         ...userData,
-        trainingRequired: Boolean(userCheck.training_required),
-        trainingPassedAt: userCheck.training_passed_at || null,
-        trainingModules: normalizarModulos(userCheck.training_modules),
-        trainingScore: userCheck.training_score ?? null,
+        trainingRequired: Boolean(usuario.trainingRequired),
+        trainingPassedAt: usuario.trainingPassedAt || null,
+        trainingModules: normalizarModulos(usuario.trainingModules),
+        trainingScore: usuario.trainingScore ?? null,
       };
 
+      localStorage.setItem('authToken', corpo.token);
       if (requiresTimeclockUser(sessionUser)) {
-        // Token pendente: validação facial chama /api/gemini/generate antes do login completo.
-        localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
         setPendingUser(sessionUser);
         setFaceMode(hasFaceRegistered(sessionUser) ? 'verify' : 'register');
         setAuthPhase('face');
@@ -191,11 +184,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         return;
       }
 
-      localStorage.setItem('authToken', `tmseg-token-${userCheck.id}-${Date.now()}`);
       localStorage.setItem('userData', JSON.stringify(sessionUser));
       localStorage.setItem('app_version', APP_VERSION);
-
-      await logAction('LOGIN', 'Auth', userCheck.id, `Login realizado: ${userCheck.name}`);
+      await logAction('LOGIN', 'Auth', usuario.id, `Login realizado: ${usuario.name}`);
       onLogin();
 
     } catch (err: any) {
@@ -207,7 +198,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const completeLogin = async (userData: TimeClockUserContext, userId: string, userName: string) => {
-    localStorage.setItem('authToken', `tmseg-token-${userId}-${Date.now()}`);
     localStorage.setItem('userData', JSON.stringify(userData));
     localStorage.setItem('app_version', APP_VERSION);
     await logAction('LOGIN', 'Auth', userId, `Login realizado: ${userName}`);

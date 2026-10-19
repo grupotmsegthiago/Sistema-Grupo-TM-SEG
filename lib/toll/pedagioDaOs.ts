@@ -196,17 +196,32 @@ export async function gravarOcorrenciaPedagioAprovado(
 }
 
 export async function senhaDoUsuarioConfere(
-  client: GravacaoOcorrencia,
+  _client: GravacaoOcorrencia,
   usuario: { id?: string | number | null; email?: string | null },
   senha: string,
+  confirmar: (usuarioId: string | null, email: string, senha: string) => Promise<boolean> = confirmarSenhaNoServidor,
 ): Promise<boolean> {
   const limpa = String(senha || '').trim();
   if (!limpa) return false;
-  const id = usuario?.id;
+  const id = usuario?.id == null || usuario.id === '' ? null : String(usuario.id);
   const email = String(usuario?.email || '').trim();
-  if ((id == null || id === '') && !email) return false;
-  let consulta = client.from('system_users').select('id').eq('password', limpa);
-  consulta = (id != null && id !== '') ? consulta.eq('id', id) : consulta.ilike('email', email);
-  const { data, error } = await consulta.maybeSingle();
-  return !error && !!data?.id;
+  if (!id && !email) return false;
+  return confirmar(id, email, limpa);
+}
+
+async function confirmarSenhaNoServidor(usuarioId: string | null, email: string, senha: string): Promise<boolean> {
+  try {
+    const token = globalThis.localStorage?.getItem('authToken') || '';
+    const resposta = await fetch('/api/ponte-auth/confirmar-senha', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json', authorization: token ? `Bearer ${token}` : '' },
+      body: JSON.stringify({ senha, usuarioId, email }),
+    });
+    if (!resposta.ok) return false;
+    const corpo = await resposta.json() as { ok?: boolean };
+    return corpo.ok === true;
+  } catch {
+    return false;
+  }
 }

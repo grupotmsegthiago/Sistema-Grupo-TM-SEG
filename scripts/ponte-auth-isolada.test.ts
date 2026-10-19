@@ -149,7 +149,8 @@ test('limite, logs sem segredo e o login atual permanecem', async () => {
   assert.equal(textoLogs.includes(aberta.token), false);
   assert.equal(textoLogs.toLowerCase().includes('senha'), false);
   const login = fs.readFileSync('components/Login.tsx', 'utf8');
-  assert.equal(login.includes('tmseg-token-${userCheck.id}-${Date.now()}'), true);
+  assert.equal(login.includes('tmseg-token-${userCheck.id}-${Date.now()}'), false);
+  assert.equal(login.includes('/api/ponte-auth/login'), true);
   assert.equal(login.includes('ponteAuth'), false);
   const app = fs.readFileSync('App.tsx', 'utf8');
   const centro = fs.readFileSync('components/gestorFiscal/CentroHomologacao.tsx', 'utf8');

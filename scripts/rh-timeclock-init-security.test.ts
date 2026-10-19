@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { describe, it } from 'node:test';
 import { handleRhTimeclockInitRequest } from '../api/rh-timeclock-init.ts';
+import { emitirSessao } from '../lib/sessao/token';
+
+process.env.SESSION_SECRET = 'segredo-de-teste-rh-ponto';
+const tokenRh = emitirSessao(process.env.SESSION_SECRET, 'user-rh-1').token;
 
 const principal = {
   id: 'user-rh-1',
@@ -14,7 +18,7 @@ const principal = {
 
 const validRequest = {
   method: 'POST',
-  headers: { authorization: 'Bearer tmseg-token-user-rh-1-123456' },
+  headers: { authorization: `Bearer ${tokenRh}` },
 };
 
 const successResult = {
