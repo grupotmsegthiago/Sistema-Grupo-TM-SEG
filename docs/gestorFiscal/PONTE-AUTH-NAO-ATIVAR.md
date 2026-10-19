@@ -1,6 +1,6 @@
-# NÃO ATIVAR — ponte de autenticação, fase 1
+# NÃO ATIVAR — ponte de autenticação
 
-A ponte não está ligada ao login, às telas nem ao banco. A SQL de RLS continua sem execução.
+A ponte não está ligada ao login, às telas nem ao banco. A SQL de RLS continua sem execução. A fase 2 prepara a integração isolada e também permanece desligada.
 
 ## Diagnóstico do login atual
 
@@ -35,6 +35,24 @@ O protótipo `criarPonteIsolada` usa identidades fictícias e um livro fictício
 3. Só consultas novas, começando pelo Gestor Fiscal, passam pela ponte.
 4. Quando a ponte cobrir as dez tabelas, a SQL de RLS pode ser reavaliada. Ela não faz parte desta fase.
 5. Rollback: remover `lib/gestorFiscal/ponteAuth/` e `scripts/ponte-auth-isolada.test.ts`. O login atual não depende desses arquivos.
+
+## Fase 2 — integração isolada, ainda desligada
+
+O repositório de teste fica em memória, dentro de `lib/gestorFiscal/ponteAuth/`. Ele guarda o hash da senha fictícia e o hash da sessão. Não abre rede.
+
+`entrarIsolado` confere a senha no servidor e emite `ponte.<id>.<segredo>`. As rotas preparadas estão em `rotasPreparadas.ts`: OS, painel operacional, clientes, fornecedores, faturamento, financeiro, portal e Gestor Fiscal. Nenhuma delas foi registrada no servidor HTTP.
+
+`entrarProducao` e `consultarGestorProducao` recusam sem a flag e, com a flag, recusam por falta de adaptador. A homologação real continua desligada. A tela `components/Login.tsx` não foi alterada.
+
+Nas rotas preparadas, o token `tmseg-token-<id>-<hora>` não é fallback. Perfil, permissão e CNPJ do pedido não autorizam. Se a releitura da ficha falha, o acesso é negado.
+
+### Migração gradual, quando houver ativação
+
+1. Manter a tela de login.
+2. Passar a conferência da senha para `entrarIsolado`, sem apagar o token antigo das telas que ainda não migraram.
+3. Ligar uma rota por vez, começando pelo Gestor Fiscal.
+4. Só então reavaliar a SQL de RLS.
+5. Rollback desta fase: remover os arquivos novos da ponte e o teste `scripts/ponte-auth-integracao.test.ts`. O login atual não depende deles.
 
 ## Veredito
 

@@ -15,7 +15,7 @@ export interface FonteConfiavel {
 }
 
 export interface PonteIsolada {
-  abrirSessao(usuarioId: string): Promise<{ ok: true; token: string } | { ok: false; codigo: string; motivo: string }>;
+  abrirSessao(usuarioId: string): Promise<{ ok: true; token: string; expiraEm: number } | { ok: false; codigo: string; motivo: string }>;
   revogar(token: string): boolean;
   consultar(token: string, pedido: PedidoConsulta): Promise<ResultadoConsulta>;
   logs(): readonly LogPonte[];
@@ -45,7 +45,7 @@ export function criarPonteIsolada(
       if (!usuario) return { ok: false, codigo: 'sessao_invalida', motivo: 'Usuário não encontrado na fonte confiável.' };
       if (usuario.status !== 'Ativo') return { ok: false, codigo: 'usuario_desativado', motivo: 'Usuário desativado. Nenhuma sessão foi aberta.' };
       const emitida = sessoes.emitir(usuario.id, agora(), TTL_MS);
-      return { ok: true, token: emitida.token };
+      return { ok: true, token: emitida.token, expiraEm: emitida.expiraEm };
     },
     revogar(token) {
       return sessoes.revogar(token);
@@ -91,7 +91,11 @@ export function criarPonteIsolada(
       const linhas = LIVRO_FICTICIO
         .filter((linha) => empresas.includes(linha.empresaId))
         .slice(0, pedido.limite);
-      const visiveis = pedido.acao === 'ler_os'
+      const ocultarValor = pedido.acao === 'ler_os'
+        || pedido.acao === 'ler_painel'
+        || pedido.acao === 'ler_clientes'
+        || pedido.acao === 'ler_fornecedores';
+      const visiveis = ocultarValor
         ? linhas.map((linha) => ({ ...linha, financeiroCentavos: 0 }))
         : linhas;
       registros.push({ codigo: 'ok', acao: pedido.acao, usuarioId: usuario.id });

@@ -18,7 +18,14 @@ export interface UsuarioConfiavel {
   clienteId: string | null;
 }
 
-export type AcaoPonte = 'ler_os' | 'ler_financeiro' | 'ler_faturamento' | 'ler_portal';
+export type AcaoPonte =
+  | 'ler_os'
+  | 'ler_painel'
+  | 'ler_clientes'
+  | 'ler_fornecedores'
+  | 'ler_financeiro'
+  | 'ler_faturamento'
+  | 'ler_portal';
 
 export interface PedidoConsulta {
   acao: AcaoPonte;

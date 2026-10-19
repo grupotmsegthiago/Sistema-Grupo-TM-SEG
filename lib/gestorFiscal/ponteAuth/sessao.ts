@@ -43,4 +43,15 @@ export class SessoesMemoria {
     sessao.revogada = true;
     return true;
   }
+
+  /** Só o hash. O segredo do token não volta para o repositório. */
+  resumo(): { id: string; usuarioId: string; expiraEm: number; revogada: boolean; hashHex: string }[] {
+    return this.sessoes.map((sessao) => ({
+      id: sessao.id,
+      usuarioId: sessao.usuarioId,
+      expiraEm: sessao.expiraEm,
+      revogada: sessao.revogada,
+      hashHex: sessao.hash.toString('hex'),
+    }));
+  }
 }

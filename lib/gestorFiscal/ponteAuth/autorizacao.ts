@@ -7,6 +7,12 @@ function tem(usuario: UsuarioConfiavel, permissao: string): boolean {
   return usuario.permissoes.includes(permissao);
 }
 
+function leituraOperacional(usuario: UsuarioConfiavel, permissao: string): boolean {
+  return tem(usuario, permissao) || tem(usuario, '*') || (
+    usuario.perfil === 'Diretoria' && (tem(usuario, 'gestor-fiscal') || tem(usuario, 'diretoria-faturamento'))
+  );
+}
+
 export function avancado(usuario: UsuarioConfiavel): boolean {
   return usuario.perfil === 'Avançado';
 }
@@ -19,11 +25,9 @@ export function pode(usuario: UsuarioConfiavel, acao: AcaoPonte): boolean {
   if (usuario.status !== 'Ativo') return false;
   if (acao === 'ler_portal') return portal(usuario);
   if (portal(usuario)) return false;
-  if (acao === 'ler_os') {
-    return tem(usuario, 'missions') || tem(usuario, '*') || (
-      usuario.perfil === 'Diretoria' && (tem(usuario, 'gestor-fiscal') || tem(usuario, 'diretoria-faturamento'))
-    );
-  }
+  if (acao === 'ler_os' || acao === 'ler_painel') return leituraOperacional(usuario, 'missions');
+  if (acao === 'ler_clientes') return leituraOperacional(usuario, 'clients');
+  if (acao === 'ler_fornecedores') return leituraOperacional(usuario, 'providers');
   if (avancado(usuario)) return false;
   if (acao === 'ler_financeiro') {
     return tem(usuario, 'fin-dashboard')
