@@ -353,7 +353,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               await vincularComercial(id);
               await logAction('UPDATE', 'User', id, `Usuário atualizado: ${payload.name}`);
           } else {
-              const { data, error } = await supabase.from('system_users').insert([payload]).select();
+              const { data, error } = await supabase.from('system_users').insert([payload]).select('id');
               if (error) throw error;
               if (data && data[0]) {
                   usuarioId = String(data[0].id);

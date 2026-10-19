@@ -1,5 +1,7 @@
 # Plano de implantação do P0
 
+O que ainda falta executar está em `docs/gestorFiscal/PACOTE-CORRECAO-P0.md`. Não aplicar `sql/2026_10_19_p0_financeiro_rls.NAO_EXECUTAR.sql`: ela depende de um JWT `app_metadata` que o sistema não emite.
+
 Este plano junta as fases 1 a 4. Não é uma fase nova e não foi executado em produção.
 
 Veredito: **BLOQUEADO**.
