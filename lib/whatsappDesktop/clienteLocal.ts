@@ -2,6 +2,7 @@ import { ORIGEM_LOCAL, origemPermitida } from './fila';
 
 export const CHAVE_TOKEN_DESKTOP = 'tmseg.whatsappDesktop.token';
 export const CHAVE_DISPOSITIVO_DESKTOP = 'tmseg.whatsappDesktop.dispositivo';
+export const LINK_INSTALADOR = '/instalador-grupo-tmseg.zip';
 
 export interface MemoriaDispositivo {
   identificado: boolean;
@@ -87,6 +88,21 @@ export async function identificarComputador(): Promise<MemoriaDispositivo> {
     return corpo;
   } catch {
     return lerMemoriaDispositivo() || { ...vazio, motivo: 'Computador sem o aplicativo TM SEG.' };
+  }
+}
+
+/** Só libera a solicitação com resposta ao vivo do conector já preparado. Memória antiga do navegador não conta. */
+export async function aplicativoLiberado(): Promise<boolean> {
+  try {
+    const resposta = await fetch(`${ORIGEM_LOCAL}/identificar`);
+    if (!resposta.ok) return false;
+    const corpo = await resposta.json() as MemoriaDispositivo;
+    if (corpo.preparado !== true) return false;
+    if (corpo.codigo) guardarTokenDesktop(corpo.codigo);
+    guardarMemoriaDispositivo(corpo);
+    return true;
+  } catch {
+    return false;
   }
 }
 

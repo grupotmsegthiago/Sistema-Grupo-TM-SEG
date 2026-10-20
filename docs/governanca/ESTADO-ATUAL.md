@@ -31,9 +31,9 @@ A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch l
 
 - Gestor Fiscal: coluna de emissão de NF no fornecedor, alíquotas da contabilidade e atribuição de despesa/tributo por CNPJ. Sem migration.
 - WhatsApp Desktop: o computador preparado fica gravado no conector e no navegador. A reabertura do TM SEG identifica o dispositivo. Instalação, QR Code e teste não se repetem, salvo reautenticação do WhatsApp. Ainda não publicado. Migrations da solicitação e do desktop seguem sem aplicação.
-- Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Não publicado.
-- Auditoria de faturamento: o perfil Financeiro, ao clicar em Edição Total, edita os campos da OS aprovada. Prejuízo analisado e fatura paga continuam travados. Não publicado.
-- Instalador: Avançar instala Node.js, Python e WhatsApp quando faltam, e configura o conector. Não publicado.
+- Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Sem o conector preparado, a tela pede o download do instalador e não mostra o formulário. A PR 350 já está na main. A PR 351 entra nesta entrega.
+- Auditoria de faturamento: o perfil Financeiro, ao clicar em Edição Total, edita os campos da OS aprovada. Prejuízo analisado e fatura paga continuam travados. Não publicado. Fica fora da publicação do 351.
+- Instalador: Avançar instala Node.js, Python e WhatsApp quando faltam, e configura o conector. O download é `/instalador-grupo-tmseg.zip`, dentro da Solicitação.
 - Fast-forward da `dev` até a `main`: não foi pedido.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
 - Policies do Postgres da TM SEG: não carregadas.

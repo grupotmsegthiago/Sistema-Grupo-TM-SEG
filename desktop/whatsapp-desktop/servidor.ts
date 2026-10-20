@@ -360,7 +360,7 @@ export function criarServidor(driver: Driver = driverWindows(), inspecionar?: ()
       return;
     }
     if (req.method === 'GET' && url.pathname === '/logo.png') {
-      const logo = [path.resolve(raiz, '../../public/logo.png'), path.resolve(raiz, '../../../public/logo.png')].find((item) => fs.existsSync(item)) || '';
+      const logo = [path.join(raiz, 'logo.png'), path.resolve(raiz, '../../public/logo.png'), path.resolve(raiz, '../../../public/logo.png')].find((item) => fs.existsSync(item)) || '';
       if (!fs.existsSync(logo)) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, { 'Content-Type': 'image/png' });
       res.end(fs.readFileSync(logo));

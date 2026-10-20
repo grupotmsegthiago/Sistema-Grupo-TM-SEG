@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import test from 'node:test';
 import { argumentosWinget, COMPONENTES_INSTALADOR, resumoInstalacao } from '../lib/whatsappDesktop/componentesInstalador.ts';
@@ -24,4 +25,14 @@ test('o assistente instala ao avançar e o atalho instala o Node.js se faltar', 
   assert.doesNotMatch(html, /Python não é instalado/);
   assert.match(vbs, /winget install --id OpenJS\.NodeJS\.LTS/);
   assert.doesNotMatch(vbs, /não instala Python/);
+  assert.match(vbs, /pastaScript & "\\conector\.mjs"/);
+});
+
+test('o zip baixado traz o atalho, o conector e a logo na mesma pasta', () => {
+  const lista = execFileSync('unzip', ['-Z1', 'public/instalador-grupo-tmseg.zip'], { encoding: 'utf8' });
+  for (const nome of ['Abrir instalador.vbs', 'conector.mjs', 'assistente.html', 'driver.ps1', 'logo.png']) {
+    assert.ok(lista.split(/\r?\n/).includes(nome), nome);
+  }
+  const servidor = fs.readFileSync('desktop/whatsapp-desktop/servidor.ts', 'utf8');
+  assert.match(servidor, /path\.join\(raiz, 'logo\.png'\)/);
 });

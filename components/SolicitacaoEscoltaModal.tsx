@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Copy, Image, Loader2, MessageSquare, Send, X } from 'lucide-react';
+import { Check, Copy, Download, Image, Loader2, MessageSquare, Send, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { buildActivationOffers, rankOffers, type RankingProviderInput, type RankingTableInput } from '../lib/providerActivationRanking';
@@ -17,7 +17,7 @@ import {
 import { gravarPrefillSolicitacao, horarioParaOs } from '../lib/solicitacaoEscolta/prefill';
 import { lerPrintSolicitacao } from '../lib/solicitacaoEscolta/lerPrint';
 import { estadoDoAlvo, planejarDespacho, resumirEnvios, ROTULO_ESTADO, envioAposConfirmacao, type AlvoDesktop, type EstadoEnvio } from '../lib/whatsappDesktop/fila';
-import { consultarAplicativo, enviarComandosLocais } from '../lib/whatsappDesktop/clienteLocal';
+import { aplicativoLiberado, consultarAplicativo, enviarComandosLocais, LINK_INSTALADOR } from '../lib/whatsappDesktop/clienteLocal';
 
 interface Props {
   onClose: () => void;
@@ -99,6 +99,13 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
   const [agora, setAgora] = useState(() => Date.now());
   const [acaoId, setAcaoId] = useState('');
   const [lendoPrint, setLendoPrint] = useState(false);
+  const [aplicativo, setAplicativo] = useState<'verificando' | 'liberado' | 'ausente'>('verificando');
+
+  const verificarAplicativo = useCallback(async () => {
+    setAplicativo('verificando');
+    const pronto = await aplicativoLiberado();
+    setAplicativo(pronto ? 'liberado' : 'ausente');
+  }, []);
 
   const recarregar = useCallback(async () => {
     const cabecas = await supabase
@@ -125,6 +132,10 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
       .order('ordem', { ascending: true });
     if (!filhos.error) setAlvos((filhos.data || []) as AlvoRow[]);
   }, []);
+
+  useEffect(() => {
+    void verificarAplicativo();
+  }, [verificarAplicativo]);
 
   useEffect(() => {
     void recarregar();
@@ -524,6 +535,31 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
           <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-gray-200" data-testid="button-fechar-solicitacao-escolta"><X size={18} /></button>
         </div>
 
+        {aplicativo !== 'liberado' && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 px-8 py-16 text-center" data-testid={aplicativo === 'verificando' ? 'painel-aplicativo-verificando' : 'painel-baixar-aplicativo'}>
+            {aplicativo === 'verificando' ? (
+              <>
+                <Loader2 size={28} className="animate-spin text-green-700" />
+                <p className="text-sm font-bold text-gray-700">Verificando os aplicativos neste computador.</p>
+              </>
+            ) : (
+              <>
+                <div className="max-w-md rounded-2xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
+                  <p className="text-base font-black">Você não tem todos os aplicativos.</p>
+                  <p className="mt-2 text-sm font-bold">Baixe para instalar. Depois que a instalação terminar, esta tela libera a solicitação.</p>
+                </div>
+                <a href={LINK_INSTALADOR} download className="inline-flex items-center gap-2 rounded-lg bg-green-700 px-5 py-3 text-xs font-black uppercase text-white" data-testid="link-baixar-instalador">
+                  <Download size={16} /> Baixar para instalar
+                </a>
+                <button type="button" onClick={() => void verificarAplicativo()} className="text-[11px] font-black uppercase text-gray-600 underline" data-testid="button-verificar-aplicativo">
+                  Já instalei, verificar de novo
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {aplicativo === 'liberado' && (
         <div className="grid flex-1 gap-0 overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="space-y-4 border-b border-gray-100 p-5 md:border-b-0 md:border-r">
             <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500">Texto ou print do cliente</label>
@@ -738,6 +774,7 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
             })}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

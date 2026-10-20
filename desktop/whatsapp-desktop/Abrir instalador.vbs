@@ -1,7 +1,14 @@
 ' Duplo clique. Não pede comando ao operador.
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh = CreateObject("Wscript.Shell")
-pasta = fso.GetParentFolderName(fso.GetParentFolderName(fso.GetParentFolderName(WScript.ScriptFullName)))
+pastaScript = fso.GetParentFolderName(WScript.ScriptFullName)
+If fso.FileExists(pastaScript & "\conector.mjs") Then
+  pasta = pastaScript
+  pacote = pastaScript & "\conector.mjs"
+Else
+  pasta = fso.GetParentFolderName(fso.GetParentFolderName(pastaScript))
+  pacote = pasta & "\desktop\whatsapp-desktop\conector.mjs"
+End If
 sh.CurrentDirectory = pasta
 node = ""
 For Each candidato In Array(sh.ExpandEnvironmentStrings("%ProgramFiles%") & "\nodejs\node.exe", sh.ExpandEnvironmentStrings("%LocalAppData%") & "\Programs\nodejs\node.exe")
@@ -18,7 +25,6 @@ If node = "" Then
   sh.Run "https://nodejs.org/en/download"
   WScript.Quit 1
 End If
-pacote = pasta & "\desktop\whatsapp-desktop\conector.mjs"
 If Not fso.FileExists(pacote) Then
   MsgBox "O pacote do conector ainda não foi gerado nesta pasta. Abra o sistema e use Atualizar aplicativo depois que a equipe entregar o pacote.", vbExclamation, "Grupo TM SEG"
   WScript.Quit 1
