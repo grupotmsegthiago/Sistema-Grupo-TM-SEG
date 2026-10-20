@@ -110,3 +110,35 @@ test('o computador preparado é reconhecido sem repetir instalação, QR ou test
   servidor.closeAllConnections();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
 });
+
+test('avançar instala só o que falta e não chama o winget de verdade', async () => {
+  const pedidos: string[] = [];
+  const estado = { node: true, python: false, whatsapp: false };
+  const servidor = criarServidor(async () => ({ id: '', estado: 'falha_envio' }), undefined, {
+    detectar: () => ({ ...estado }),
+    instalar: async (id) => {
+      pedidos.push(id);
+      estado[id] = true;
+      return { ok: true, motivo: `${id} instalado no teste.` };
+    },
+  });
+  await new Promise<void>((resolve) => servidor.listen(0, '127.0.0.1', () => resolve()));
+  const endereco = servidor.address();
+  if (!endereco || typeof endereco === 'string') throw new Error('porta');
+  const base = `http://127.0.0.1:${endereco.port}`;
+  const lista = await fetch(`${base}/install/check`).then((r) => r.json()) as { componentes: Array<{ id: string; nome: string; instalado: boolean }> };
+  assert.deepEqual(lista.componentes.map((item) => item.nome), ['Node.js', 'Python', 'WhatsApp']);
+  assert.equal(lista.componentes.find((item) => item.id === 'python')?.instalado, false);
+  const jaTinha = await fetch(`${base}/install/componente`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'node' }) }).then((r) => r.json()) as { ok: boolean };
+  assert.equal(jaTinha.ok, true);
+  assert.deepEqual(pedidos, []);
+  const python = await fetch(`${base}/install/componente`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'python' }) }).then((r) => r.json()) as { ok: boolean };
+  const whatsapp = await fetch(`${base}/install/componente`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'whatsapp' }) }).then((r) => r.json()) as { ok: boolean };
+  assert.equal(python.ok, true);
+  assert.equal(whatsapp.ok, true);
+  assert.deepEqual(pedidos, ['python', 'whatsapp']);
+  const desconhecido = await fetch(`${base}/install/componente`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: 'java' }) });
+  assert.equal(desconhecido.status, 400);
+  servidor.closeAllConnections();
+  await new Promise<void>((resolve) => servidor.close(() => resolve()));
+});

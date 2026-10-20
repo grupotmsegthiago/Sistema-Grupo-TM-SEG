@@ -63,17 +63,17 @@
   </main>
   <script>
     const etapas = [
-      ['Boas-vindas', 'Segurança em movimento. Este assistente prepara o computador para a integração oficial com o WhatsApp Desktop. Nenhuma senha do WhatsApp é pedida.'],
-      ['Verificação do computador', 'Conferindo Windows e a pasta local do usuário.'],
-      ['Instalação dos componentes', 'O conector TM SEG fica neste computador. Python não é instalado: a automação usa o Windows já presente.'],
-      ['Configuração do WhatsApp', 'O WhatsApp precisa ser o aplicativo oficial. Se a conta ainda não estiver no aparelho, conecte pelo QR Code na tela do próprio WhatsApp.'],
+      ['Boas-vindas', 'Segurança em movimento. Este assistente prepara o computador para a integração oficial com o WhatsApp Desktop. Nenhuma senha do WhatsApp é pedida. Ao avançar, o que faltar é instalado e configurado.'],
+      ['Verificação do computador', 'Conferindo Node.js, Python e WhatsApp. O próximo passo instala o que ainda não estiver neste computador.'],
+      ['Instalação dos componentes', 'Ao avançar, o assistente instala Node.js, Python e WhatsApp, se faltarem, e configura o conector do Grupo TM SEG. Não há comando para digitar.'],
+      ['Configuração do WhatsApp', 'O WhatsApp oficial abre neste computador. Se a conta ainda não estiver conectada, use o QR Code na tela do próprio aplicativo.'],
       ['Conexão com TM SEG', 'Depois desta etapa o TM SEG reconhece o computador sozinho. O código abaixo só é necessário se a identificação automática falhar.'],
       ['Teste de funcionamento', 'O teste envia uma única mensagem para o grupo GRUPO TM SEG - ADM, somente com a sua autorização e se o nome do chat for confirmado.'],
       ['Instalação concluída', 'O computador fica registrado. Nas próximas aberturas a instalação, o QR Code e o teste não se repetem.']
     ];
     let atual = 0;
     let autorizado = false;
-    let inicioAutomatico = false;
+    let inicioAutomatico = true;
     let jaPreparado = false;
     let reauth = false;
     const passos = document.getElementById('passos');
@@ -89,12 +89,23 @@
       voltar.disabled = atual === 0;
       avancar.textContent = atual === etapas.length - 1 ? 'Concluir' : 'Avançar';
       const extra = document.getElementById('extra');
-      if (atual === 1) fetch('/install/check').then(r => r.json()).then(d => { extra.textContent = d.mensagem; });
-      if (atual === 2) extra.innerHTML = '<label class="ok"><input id="inicio" type="checkbox"' + (inicioAutomatico ? ' checked' : '') + '> Autorizo o conector a iniciar junto com o Windows.</label><p id="pasta"></p>';
-      if (atual === 2) extra.querySelector('#inicio').onchange = (e) => { inicioAutomatico = e.target.checked; };
+      if (atual === 1) fetch('/install/check').then(r => r.json()).then(d => {
+        const itens = (d.componentes || []).map(c => '<p>' + c.nome + ': ' + (c.instalado ? 'já instalado' : 'será instalado ao avançar') + '</p>').join('');
+        extra.innerHTML = '<p>' + d.mensagem + '</p>' + itens;
+      });
+      if (atual === 2) {
+        extra.innerHTML = '<label class="ok"><input id="inicio" type="checkbox"' + (inicioAutomatico ? ' checked' : '') + '> O conector inicia junto com o Windows.</label><div id="lista"></div><p id="pasta"></p>';
+        extra.querySelector('#inicio').onchange = (e) => { inicioAutomatico = e.target.checked; };
+        fetch('/install/check').then(r => r.json()).then(d => {
+          const lista = document.getElementById('lista');
+          if (!lista) return;
+          lista.innerHTML = (d.componentes || []).map(c => '<p>' + c.nome + ': ' + (c.instalado ? 'já instalado' : 'será instalado agora') + '</p>').join('');
+        });
+      }
       if (atual === 3) fetch('/install/whatsapp').then(r => r.json()).then(d => {
         const aviso = reauth ? '<p>A instalação e o teste já estão salvos. Só a conta do WhatsApp precisa ser conectada de novo, pelo QR Code.</p>' : '';
         extra.innerHTML = aviso + '<p>' + d.mensagem + '</p>' + (d.instalado ? '' : '<p><a href="' + d.canalOficial + '" style="color:#fecaca">Abrir o canal oficial do WhatsApp</a></p>');
+        if (d.instalado) fetch('/install/whatsapp/abrir', { method: 'POST' });
       });
       if (atual === 4) fetch('/pair/code').then(r => r.json()).then(d => { extra.innerHTML = '<p>Código desta máquina</p><code>' + d.codigo + '</code>'; });
       if (atual === 5) {
@@ -129,9 +140,32 @@
     avancar.onclick = async () => {
       if (reauth && atual === 3) { atual = 6; desenhar(); return; }
       if (atual === 2) {
+        avancar.disabled = true;
+        voltar.disabled = true;
+        const extra = document.getElementById('extra');
+        const lista = await fetch('/install/check').then(r => r.json());
+        const faltam = (lista.componentes || []).filter(c => !c.instalado);
+        const linhas = [];
+        for (const item of faltam) {
+          linhas.push('Instalando ' + item.nome + '…');
+          if (extra) extra.innerHTML = '<p>' + linhas.join('<br>') + '</p><p id="pasta"></p>';
+          const resp = await fetch('/install/componente', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id }) }).then(r => r.json());
+          linhas[linhas.length - 1] = resp.ok ? (item.nome + ' instalado.') : (resp.motivo || ('Não foi possível instalar ' + item.nome + '.'));
+          if (extra) extra.innerHTML = '<p>' + linhas.join('<br>') + '</p><p id="pasta"></p>';
+          if (!resp.ok) {
+            avancar.disabled = false;
+            voltar.disabled = atual === 0;
+            avancar.textContent = 'Avançar';
+            return;
+          }
+        }
+        if (extra) extra.innerHTML = '<p>' + (linhas.join('<br>') || 'Aplicativos já instalados.') + '</p><p>Configurando o conector…</p><p id="pasta"></p>';
         const preparo = await fetch('/install/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autostart: inicioAutomatico }) }).then(r => r.json());
         const pasta = document.getElementById('pasta');
         if (pasta) pasta.textContent = preparo.ok ? ('Pasta local: ' + preparo.pasta + '. ' + ((preparo.inicio && preparo.inicio.motivo) || '')) : 'Não foi possível preparar a pasta local.';
+        avancar.disabled = false;
+        voltar.disabled = false;
+        avancar.textContent = 'Avançar';
         if (!preparo.ok) return;
       }
       if (atual === 5) {

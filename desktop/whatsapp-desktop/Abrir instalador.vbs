@@ -8,7 +8,13 @@ For Each candidato In Array(sh.ExpandEnvironmentStrings("%ProgramFiles%") & "\no
   If fso.FileExists(candidato) Then node = candidato
 Next
 If node = "" Then
-  MsgBox "Este computador ainda não tem o Node.js necessário para o conector. O assistente não instala Python e não pede comando. Instale o Node.js 22 ou superior pelo canal oficial e abra este atalho de novo.", vbExclamation, "Grupo TM SEG"
+  sh.Run "winget install --id OpenJS.NodeJS.LTS -e --scope user --accept-package-agreements --accept-source-agreements --disable-interactivity", 1, True
+  For Each candidato In Array(sh.ExpandEnvironmentStrings("%ProgramFiles%") & "\nodejs\node.exe", sh.ExpandEnvironmentStrings("%LocalAppData%") & "\Programs\nodejs\node.exe")
+    If fso.FileExists(candidato) Then node = candidato
+  Next
+End If
+If node = "" Then
+  MsgBox "O Node.js não foi instalado. O assistente precisa dele para continuar e instalar Python e WhatsApp. Abra o canal oficial e execute este atalho de novo.", vbExclamation, "Grupo TM SEG"
   sh.Run "https://nodejs.org/en/download"
   WScript.Quit 1
 End If
