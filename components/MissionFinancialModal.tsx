@@ -708,9 +708,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     || ['diretoria', 'administrador', 'ceo', 'controller'].includes(userRoleLower);
   const isControllerRole = userRoleLower === 'controller';
   const isProviderTotalLockedByController = !!(mission?.verified_by && mission?.verified_at && !canEditVerifiedProviderTotal);
-  // MODO EDIÇÃO TOTAL: Barbara e Thiago podem destravar TODOS os campos da OS
-  // (operacional, cliente, fornecedor, financeiro), inclusive em OS aprovadas.
-  // O acionamento é registrado em system_logs (MissionEditHistory).
+  // MODO EDIÇÃO TOTAL: Barbara, Thiago e o perfil Financeiro podem destravar
+  // TODOS os campos da OS (operacional, cliente, fornecedor, financeiro),
+  // inclusive em OS aprovadas. O acionamento é registrado em system_logs
+  // (MissionEditHistory). Prejuízo analisado e fatura paga não são suspensos.
   // Controller (cargo) + Plínio: escopo somente fornecedor.
   const isProviderOnlyUser = useMemo(
     () => isProviderOnlyControllerUser({ ...currentUserIdentity, role: userRoleLower }),
@@ -723,6 +724,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (isProviderOnlyUser) return false;
     if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs({ role: userRoleLower, name: userNameLower })) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+      || isFinanceProfileRole(userRoleLower)
       || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
       || userNameLower.includes('simone');
   }, [userRoleLower, userNameLower, isProviderOnlyUser, mission?.negative_margin_locked]);
@@ -770,8 +772,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     return canEditOpsData || ['operacional', 'operador'].includes(userRoleLower) || fullEditMode;
   }, [canEditOpsData, userRoleLower, fullEditMode]);
   // Controller/Plínio: somente fornecedor — bloqueio explícito do lado cliente.
-  // Após aprovação do Financeiro, o valor do cliente só a Diretoria altera.
-  const canEditClientData = !isProviderOnlyUser && !financeApprovedClientLock && ((canEditOpsData && !isController) || fullEditMode);
+  // Após aprovação do Financeiro, o valor do cliente só a Diretoria altera,
+  // salvo com Edição Total ligada na auditoria de faturamento.
+  const canEditClientData = !isProviderOnlyUser && (!financeApprovedClientLock || fullEditMode) && ((canEditOpsData && !isController) || fullEditMode);
   // Controller pode ajustar o valor total do fornecedor mesmo após verificação.
   const canEditProviderCostTotal = canEditOpsData
     && (fullEditMode || !isProviderTotalLockedByController || isControllerRole || isProviderOnlyUser);
@@ -858,7 +861,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const canSaveProviderAdjustments = isProviderOnlyUser;
   // Gate unificado: nenhum input financeiro/comercial do CLIENTE editável sem canEditClientData
   // (inclui OS destravada — unlock não contorna a regra do Plinio).
-  const clientFinanceInputLocked = financeApprovedClientLock || isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
+  const clientFinanceInputLocked = (financeApprovedClientLock && !fullEditMode) || isController || isEffectivelyLocked || !canEditClientData || isPaidInvoiceEffectivelyLocked;
   const registrosAuditoriaPedagio = useMemo<RegistroAuditoriaPedagio[]>(() => ([
     ...approvalLog.map((entry) => ({
       user: entry.user,
@@ -935,9 +938,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const providerTollInputLocked = isPaidInvoiceEffectivelyLocked
     || negativeLockBlocks
     || (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
-    || (financeApprovedClientLock && perfilFinanceiro && !reeditandoPedagio && !corrigirPedagio.fornecedor)
+    || (financeApprovedClientLock && !fullEditMode && perfilFinanceiro && !reeditandoPedagio && !corrigirPedagio.fornecedor)
     || plinioProviderEditBlocked;
-  const canEditOpsEvenIfLocked = !negativeLockBlocks && (isBarbaraFinance || !isEffectivelyLocked) && !isPaidInvoiceEffectivelyLocked;
+  const canEditOpsEvenIfLocked = !negativeLockBlocks && !isPaidInvoiceEffectivelyLocked && (fullEditMode || isBarbaraFinance || !isEffectivelyLocked);
   // Task #143: o número grande (VALOR FINAL cliente/fornecedor) e o breakdown
   // da memória de cálculo devem ACOMPANHAR a tabela escolhida sempre que o
   // usuário tem permissão de trocar a tabela mesmo numa OS travada
@@ -1827,7 +1830,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const uRole = (u.role || '').toLowerCase();
           const uName = (u.name || '').toLowerCase();
           const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || isFinanceSupervisorName(u.name) || uName.includes('thiago');
-          if (!isPrivileged) {
+          if (!isPrivileged && !fullEditMode) {
               showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}`, 'error');
               return;
           }
@@ -1899,7 +1902,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const uRole = (u.role || '').toLowerCase();
           const uName = (u.name || '').toLowerCase();
           const isPrivileged = uRole === 'administrador' || uRole === 'diretoria' || uRole === 'controller' || isFinanceSupervisorName(u.name) || uName.includes('thiago');
-          if (!isPrivileged) {
+          if (!isPrivileged && !fullEditMode) {
               showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro ou Diretoria podem editar.`, 'error');
               return;
           }
@@ -2496,7 +2499,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Tabela nova: refaz só o número grande do cliente (serviço + pedágio + deslocamento).
   // Conferência, motivo e banco permanecem até o Salvar.
   const swapClientTable = (id: string) => {
-      if (financeApprovedClientLock || !canEditClientData) return;
+      if ((financeApprovedClientLock && !fullEditMode) || !canEditClientData) return;
       if (!shouldRecalcOnTableChange(manualClientTableId, id)) return;
       setManualClientTableId(id);
       setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
@@ -2668,11 +2671,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Sem Permissão', 'Perfil controller/fornecedor não pode aprovar OS. Utilize somente Salvar.', 'error');
           return;
       }
-      if (!lockingNegative && isSnapshotFrozen && !isController && !isProviderOnlyUser && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
+      if (!lockingNegative && !fullEditMode && isSnapshotFrozen && !isController && !isProviderOnlyUser && currentApprovalStatus.currentUserStage !== 'diretoria' && currentApprovalStatus.currentUserStage !== 'financeiro' && currentApprovalStatus.currentUserStage !== 'controller') {
           showNotification('Bloqueado', `Dados Congelados — Aprovado por ${mission.snapshot_approved_by}. Somente Financeiro, Controller ou Diretoria podem editar.`, 'error');
           return;
       }
-      if (!lockingNegative && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !isProviderOnlyUser) {
+      if (!lockingNegative && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !fullEditMode && !isProviderOnlyUser) {
           showNotification('Bloqueado', 'Esta OS foi aprovada pela Diretoria. Somente a Diretoria pode editar.', 'error');
           return;
       }
@@ -2689,22 +2692,22 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const originalRevenue = (mission.revenue_value || 0) + (mission.toll_value || 0) + ((mission as any).displacement_value || 0);
       const isSameOs = mission.is_same_os === true;
       const travarPedagioCliente = (travaPedagioClienteFinanceiro && !corrigirPedagio.cliente)
-        || (financeApprovedClientLock && !reeditandoPedagio && !(isControllerRole || isProviderOnlyUser) && !corrigirPedagio.cliente);
+        || (financeApprovedClientLock && !fullEditMode && !reeditandoPedagio && !(isControllerRole || isProviderOnlyUser) && !corrigirPedagio.cliente);
       const travarPedagioFornecedor = (travaPedagioFornecedorFinanceiro && !corrigirPedagio.fornecedor)
-        || (financeApprovedClientLock && perfilFinanceiro && !reeditandoPedagio && !corrigirPedagio.fornecedor);
+        || (financeApprovedClientLock && !fullEditMode && perfilFinanceiro && !reeditandoPedagio && !corrigirPedagio.fornecedor);
       const toll = travarPedagioCliente
         ? Number(mission.toll_value || 0)
         : parseNumber(tollInput);
       const tollProv = travarPedagioFornecedor
         ? providerTollToPersist(Number((mission as any).toll_value_provider || 0), isSameOs)
         : providerTollToPersist(parseNumber(tollProviderInput), isSameOs);
-      const displacement = reeditandoPedagio || isController || financeApprovedClientLock
+      const displacement = (!fullEditMode && (reeditandoPedagio || isController || financeApprovedClientLock))
         ? Number((mission as any).displacement_value || 0)
         : parseNumber(displacementInput);
-      const dispProv = isSameOs ? 0 : (reeditandoPedagio
+      const dispProv = isSameOs ? 0 : ((!fullEditMode && reeditandoPedagio)
         ? Number((mission as any).displacement_value_provider || 0)
         : parseNumber(displacementProviderInput));
-      const keepSavedClient = (isController || financeApprovedClientLock) && !reeditandoPedagio;
+      const keepSavedClient = !fullEditMode && (isController || financeApprovedClientLock) && !reeditandoPedagio;
       const revTotal = reeditandoPedagio
         ? Number(mission.revenue_value || 0) + toll + displacement
         : (keepSavedClient ? originalRevenue : parseNumber(revenueInput));
@@ -4153,7 +4156,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                         details: JSON.stringify({ enabledBy: u.name || u.username, role: u.role || '', at: new Date().toISOString(), missionId: mission.id })
                       }]);
                     } catch (e) { console.warn('Falha ao registrar Modo Edição Total:', e); }
-                    showNotification('Modo Edição Total', 'Todos os campos liberados. Cada alteração será registrada.', 'success');
+                    showNotification(
+                      'Modo Edição Total',
+                      isPaidInvoiceEffectivelyLocked
+                        ? 'A fatura paga continua travada. Desbloqueie com justificativa para editar KM, horas e valores.'
+                        : 'Todos os campos liberados. Cada alteração será registrada.',
+                      isPaidInvoiceEffectivelyLocked ? 'warning' : 'success',
+                    );
                   } else {
                     showNotification('Modo Edição Total Desligado', 'Travas padrão restauradas.', 'info');
                   }
@@ -4163,7 +4172,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     ? 'bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-300'
                     : 'bg-white/10 text-amber-200 hover:bg-white/20 border border-amber-400/40'
                 }`}
-                title={fullEditMode ? 'Modo Edição Total ATIVO — clique para desligar' : 'Liberar edição de TODOS os campos da OS (Barbara/Thiago)'}
+                title={fullEditMode ? 'Modo Edição Total ATIVO — clique para desligar' : 'Liberar edição de TODOS os campos da OS (perfil financeiro, Barbara e Thiago)'}
               >
                 {fullEditMode ? <ShieldCheck size={12}/> : <Lock size={12}/>}
                 {fullEditMode ? 'EDIÇÃO TOTAL ✓' : 'EDIÇÃO TOTAL'}
@@ -6753,9 +6762,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Pedir Análise</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
-                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
-                                    <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !fullEditMode) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !fullEditMode) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
+                                    {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !fullEditMode)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
+                                    <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance && !fullEditMode) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
                                 {currentApprovalStatus.currentUserStage === 'diretoria' && currentApprovalStatus.isFullyApproved && (
                                   <button
