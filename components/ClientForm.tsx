@@ -96,6 +96,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
     medicao_email: '',
     status: 'Ativo',
     whatsapp_group_id: '',
+    whatsapp_group_link: '',
+    whatsapp_desktop_group_name: '',
+    whatsapp_desktop_vinculo: 'nao_vinculado',
+    whatsapp_desktop_ativo: true,
     full_extra_hour_after_16_min: false,
     adjustment_2026_applied: false,
     proposal_2026_sent: false,
@@ -245,6 +249,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     medicao_email: data.medicao_email || '',
                     status: data.status || 'Ativo',
                     whatsapp_group_id: data.whatsapp_group_id || '',
+                    whatsapp_group_link: data.whatsapp_group_link || '',
+                    whatsapp_desktop_group_name: data.whatsapp_desktop_group_name || '',
+                    whatsapp_desktop_vinculo: data.whatsapp_desktop_vinculo || 'nao_vinculado',
+                    whatsapp_desktop_ativo: data.whatsapp_desktop_ativo !== false,
                     full_extra_hour_after_16_min: !!data.full_extra_hour_after_16_min,
                     adjustment_2026_applied: !!data.adjustment_2026_applied,
                     proposal_2026_sent: !!data.proposal_2026_sent,
@@ -747,6 +755,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
         medicao_email: formData.medicao_email?.toLowerCase() || null,
         status: formData.status, 
         whatsapp_group_id: formData.whatsapp_group_id || null,
+        whatsapp_group_link: formData.whatsapp_group_link?.trim() || null,
+        whatsapp_desktop_group_name: formData.whatsapp_desktop_group_name?.trim() || null,
+        whatsapp_desktop_vinculo: formData.whatsapp_desktop_vinculo || 'nao_vinculado',
+        whatsapp_desktop_ativo: formData.whatsapp_desktop_ativo,
         full_extra_hour_after_16_min: formData.full_extra_hour_after_16_min,
         adjustment_2026_applied: formData.adjustment_2026_applied,
         proposal_2026_sent: formData.proposal_2026_sent,
@@ -763,7 +775,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       if (editingId) {
           let { error: updErr } = await supabase.from('clients').update(payload).eq('id', editingId);
           if (updErr && updErr.code === '42703') {
-            const { operational_email, ciclo_faturamento, ...safePayload } = payload;
+            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, ...safePayload } = payload;
             const res2 = await supabase.from('clients').update(safePayload).eq('id', editingId);
             updErr = res2.error;
           }
@@ -773,7 +785,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           payload.created_by = currentUser?.name || 'SISTEMA';
           let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
           if (insErr && insErr.code === '42703') {
-            const { operational_email, ciclo_faturamento, ...safePayload } = payload;
+            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, ...safePayload } = payload;
             safePayload.created_by = currentUser?.name || 'SISTEMA';
             const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
             insErr = res2.error;
@@ -1245,6 +1257,31 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               {' '}<span className="text-gray-400">cadastra este grupo no cliente NOME</span>.
                             </p>
                         )}
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>Link do grupo WhatsApp do cliente</label>
+                        <input className={INPUT_CLASS} value={formData.whatsapp_group_link} onChange={e => setFormData({ ...formData, whatsapp_group_link: e.target.value.trim() })} placeholder="https://chat.whatsapp.com/..." data-testid="input-client-whatsapp-link" />
+                        <p className="text-[10px] text-gray-500">Referência de cadastro. Não envia mensagem por este link.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Nome exato do grupo</label>
+                        <input className={INPUT_CLASS} value={formData.whatsapp_desktop_group_name} onChange={e => setFormData({ ...formData, whatsapp_desktop_group_name: e.target.value })} data-testid="input-client-whatsapp-desktop-name" />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Vinculação</label>
+                        <select className={INPUT_CLASS} value={formData.whatsapp_desktop_vinculo} onChange={e => setFormData({ ...formData, whatsapp_desktop_vinculo: e.target.value })}>
+                            <option value="nao_vinculado">Não vinculado</option>
+                            <option value="supervisionado">Vinculado com supervisão</option>
+                            <option value="incerto">Incerto</option>
+                            <option value="desativado">Desativado</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Integração WhatsApp Desktop</label>
+                        <select className={INPUT_CLASS} value={formData.whatsapp_desktop_ativo ? 'sim' : 'nao'} onChange={e => setFormData({ ...formData, whatsapp_desktop_ativo: e.target.value === 'sim' })} data-testid="select-client-whatsapp-desktop-ativo">
+                            <option value="sim">Ativa</option>
+                            <option value="nao">Desativada</option>
+                        </select>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Empresa Emissora (NF / Asaas)</label>

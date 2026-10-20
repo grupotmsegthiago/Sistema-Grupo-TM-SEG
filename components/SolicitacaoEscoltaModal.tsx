@@ -15,6 +15,8 @@ import {
   type LeituraSolicitacao,
 } from '../lib/solicitacaoEscolta/regras';
 import { gravarPrefillSolicitacao, horarioParaOs } from '../lib/solicitacaoEscolta/prefill';
+import { estadoDoAlvo, planejarDespacho, resumirEnvios, ROTULO_ESTADO, envioAposConfirmacao, type AlvoDesktop, type EstadoEnvio } from '../lib/whatsappDesktop/fila';
+import { consultarAplicativo, enviarComandosLocais } from '../lib/whatsappDesktop/clienteLocal';
 
 interface Props {
   onClose: () => void;
@@ -36,6 +38,7 @@ interface SolicitacaoRow {
   confirmado_por: string | null;
   criado_por: string | null;
   created_at: string;
+  desktop_autorizado_em?: string | null;
 }
 
 interface AlvoRow {
@@ -50,6 +53,10 @@ interface AlvoRow {
   aberto_em: string | null;
   aberto_por: string | null;
   status: 'na_fila' | 'aberto' | 'bloqueado' | 'confirmado';
+  grupo_nome?: string | null;
+  envio_status?: string | null;
+  envio_comando_id?: string | null;
+  envio_erro?: string | null;
 }
 
 interface FornecedorLista {
@@ -57,6 +64,7 @@ interface FornecedorLista {
   nome: string;
   custo: number;
   link: string | null;
+  grupoNome: string | null;
   uf: string;
 }
 
@@ -135,19 +143,20 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
     setAvisoLista('');
     setFornecedores([]);
     try {
-      const selectProvedor = 'id,name,trading_name,city,state,status,phone,contact_name,auto_calc_enabled,auto_base_value,auto_base_km,auto_region,operating_coverage,whatsapp_group_link,whatsapp_group_id';
+      const selectProvedor = 'id,name,trading_name,city,state,status,phone,contact_name,auto_calc_enabled,auto_base_value,auto_base_km,auto_region,operating_coverage,whatsapp_group_link,whatsapp_group_id,whatsapp_desktop_group_name,whatsapp_desktop_vinculo';
       let linkColuna = true;
-      const provedores = await fetchAllPages<RankingProviderInput & { whatsapp_group_link?: string | null; whatsapp_group_id?: string | null }>(
-        (from, size) => supabase.from('providers').select(linkColuna ? selectProvedor : selectProvedor.replace(',whatsapp_group_link', '')).order('id').range(from, from + size - 1) as Promise<{ data: any; error: unknown }>,
+      const provedores = await fetchAllPages<RankingProviderInput & { whatsapp_group_link?: string | null; whatsapp_group_id?: string | null; whatsapp_desktop_group_name?: string | null; whatsapp_desktop_vinculo?: string | null }>(
+        (from, size) => supabase.from('providers').select(linkColuna ? selectProvedor : selectProvedor.replace(',whatsapp_group_link', '').replace(',whatsapp_desktop_group_name', '').replace(',whatsapp_desktop_vinculo', '')).order('id').range(from, from + size - 1) as Promise<{ data: any; error: unknown }>,
         1000,
         20000,
       ).catch(async (falha: unknown) => {
         const msg = falha instanceof Error ? falha.message : String(falha);
-        if (/whatsapp_group_link/i.test(msg)) {
+        if (/whatsapp_group_link|whatsapp_desktop_group_name|whatsapp_desktop_vinculo/i.test(msg)) {
           linkColuna = false;
-          setAvisoLista('O link do grupo ainda não está na tabela de fornecedores. A mensagem será copiada, e o WhatsApp só abre depois que o link for cadastrado.');
+          if (/whatsapp_group_link/i.test(msg)) setAvisoLista('O link do grupo ainda não está na tabela de fornecedores. A mensagem será copiada, e o WhatsApp só abre depois que o link for cadastrado.');
+          const selectSeguro = selectProvedor.replace(',whatsapp_group_link', '').replace(',whatsapp_desktop_group_name', '').replace(',whatsapp_desktop_vinculo', '');
           return fetchAllPages<RankingProviderInput & { whatsapp_group_link?: string | null }>(
-            (from, size) => supabase.from('providers').select(selectProvedor.replace(',whatsapp_group_link', '')).order('id').range(from, from + size - 1) as Promise<{ data: any; error: unknown }>,
+            (from, size) => supabase.from('providers').select(selectSeguro).order('id').range(from, from + size - 1) as Promise<{ data: any; error: unknown }>,
             1000,
             20000,
           );
@@ -177,6 +186,7 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
           nome: oferta.provider,
           custo: oferta.cost,
           link: linkGrupoOperador(cadastro?.whatsapp_group_link || null),
+          grupoNome: cadastro?.whatsapp_desktop_vinculo === 'desativado' ? null : (cadastro?.whatsapp_desktop_group_name || null),
           uf,
         };
       });
@@ -255,10 +265,14 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
       custo_100km: item.custo,
       ordem,
       grupo_link: item.link,
+      grupo_nome: item.grupoNome,
       liberar_em: new Date(horarios[ordem]).toISOString(),
       status: 'na_fila',
     }));
-    const gravados = await supabase.from('escolta_solicitacao_alvos').insert(filhos);
+    let gravados = await supabase.from('escolta_solicitacao_alvos').insert(filhos);
+    if (gravados.error && /grupo_nome/i.test(gravados.error.message || '')) {
+      gravados = await supabase.from('escolta_solicitacao_alvos').insert(filhos.map(({ grupo_nome, ...resto }) => resto));
+    }
     if (gravados.error) {
       await supabase.from('escolta_solicitacoes').delete().eq('id', data.id);
       setSalvando(false);
@@ -305,6 +319,87 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
     await recarregar();
   };
 
+  const paraDesktop = (alvo: AlvoRow): AlvoDesktop => ({
+    id: alvo.id,
+    status: alvo.status,
+    ordem: alvo.ordem,
+    providerNome: alvo.provider_nome,
+    liberarEmMs: new Date(alvo.liberar_em).getTime(),
+    grupoNome: alvo.grupo_nome || null,
+    envioStatus: alvo.envio_status || null,
+    envioComandoId: alvo.envio_comando_id || null,
+  });
+
+  const autorizarDesktop = async (solicitacao: SolicitacaoRow) => {
+    if (solicitacao.status !== 'em_andamento') return;
+    setAcaoId(solicitacao.id);
+    setErro('');
+    const marca = await supabase.from('escolta_solicitacoes').update({
+      desktop_autorizado_em: new Date().toISOString(),
+      desktop_autorizado_por: nomeOperador(),
+      updated_at: new Date().toISOString(),
+    }).eq('id', solicitacao.id).eq('status', 'em_andamento');
+    if (marca.error) {
+      setAcaoId('');
+      setErro(erroTabelaAusente(marca.error)
+        ? 'A fila ainda não existe. Arquivo: migrations/2026_10_20_escolta_solicitacao.sql'
+        : 'A autorização no computador precisa da migration migrations/2026_10_20_whatsapp_desktop.sql. Nenhum envio foi marcado.');
+      return;
+    }
+    const filhos = alvos.filter((alvo) => alvo.solicitacao_id === solicitacao.id);
+    const aplicativo = await consultarAplicativo();
+    const texto = textoSolicitacaoEscolta({
+      origem: solicitacao.origem,
+      destino: solicitacao.destino,
+      imediata: solicitacao.imediata,
+      data: solicitacao.data_servico,
+      hora: solicitacao.hora_servico,
+    });
+    const plano = planejarDespacho({
+      solicitacaoStatus: solicitacao.status,
+      autorizado: true,
+      aplicativoConectado: aplicativo.conectado && aplicativo.pareado && !aplicativo.pausado,
+      agoraMs: Date.now(),
+      texto,
+      alvos: filhos.map(paraDesktop),
+    });
+    if (plano.pendentesSemAplicativo.length > 0) {
+      setErro('O computador está sem o aplicativo. A fila ficou pendente e nenhuma mensagem foi marcada como enviada.');
+    }
+    if (plano.enviar.length === 0) {
+      setAcaoId('');
+      await recarregar();
+      return;
+    }
+    const sonda = await supabase.from('escolta_solicitacao_alvos').update({
+      envio_comando_id: plano.enviar[0].comandoId,
+    }).eq('id', plano.enviar[0].alvoId).select('id');
+    if (sonda.error) {
+      setAcaoId('');
+      setErro('A migration migrations/2026_10_20_whatsapp_desktop.sql ainda não está no banco. Nenhum comando foi enviado.');
+      return;
+    }
+    const resposta = await enviarComandosLocais(plano.enviar.map((item) => ({ id: item.comandoId, groupName: item.grupoNome, text: item.texto })));
+    if (!resposta.ok) {
+      setErro(resposta.motivo || 'O aplicativo não confirmou o lote.');
+      setAcaoId('');
+      await recarregar();
+      return;
+    }
+    for (const resultado of resposta.resultados) {
+      const alvo = plano.enviar.find((item) => item.comandoId === resultado.id);
+      if (!alvo) continue;
+      await supabase.from('escolta_solicitacao_alvos').update({
+        envio_status: resultado.estado,
+        envio_em: new Date().toISOString(),
+        envio_erro: resultado.motivo || null,
+        envio_comando_id: resultado.id,
+      }).eq('id', alvo.alvoId);
+    }
+    setAcaoId('');
+    await recarregar();
+  };
+
   const confirmar = async (solicitacao: SolicitacaoRow, alvo: AlvoRow) => {
     if (solicitacao.status !== 'em_andamento') return;
     setAcaoId(alvo.id);
@@ -330,6 +425,12 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
     await supabase.from('escolta_solicitacao_alvos').update({
       status: statusAposConfirmacao(true),
     }).eq('id', alvo.id);
+    const irmaos = alvos.filter((item) => item.solicitacao_id === solicitacao.id);
+    for (const item of irmaos) {
+      const envio = envioAposConfirmacao(item.envio_status || null, item.id === alvo.id);
+      if (!envio) continue;
+      await supabase.from('escolta_solicitacao_alvos').update({ envio_status: envio }).eq('id', item.id);
+    }
     const horario = horarioParaOs(solicitacao.imediata, solicitacao.data_servico, solicitacao.hora_servico);
     gravarPrefillSolicitacao({
       solicitacaoId: solicitacao.id,
@@ -469,6 +570,48 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
                       <button type="button" onClick={() => void cancelar(solicitacao)} className="text-[10px] font-bold uppercase text-slate-400 hover:text-red-600">Cancelar</button>
                     )}
                   </div>
+                  {solicitacao.status === 'em_andamento' && (
+                    <button type="button" onClick={() => void autorizarDesktop(solicitacao)} disabled={acaoId === solicitacao.id} className="rounded-md bg-red-700 px-2 py-1 text-[10px] font-black uppercase text-white" data-testid={`button-autorizar-desktop-${solicitacao.id}`}>
+                      Autorizar lote no computador
+                    </button>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[10px]">
+                      <thead>
+                        <tr className="text-slate-400">
+                          <th className="py-1 pr-2">Ordem</th>
+                          <th className="py-1 pr-2">Fornecedor</th>
+                          <th className="py-1 pr-2">Região</th>
+                          <th className="py-1 pr-2">Custo</th>
+                          <th className="py-1 pr-2">Grupo WhatsApp</th>
+                          <th className="py-1 pr-2">Liberação</th>
+                          <th className="py-1">Envio</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filhos.map((alvo) => {
+                          const estado: EstadoEnvio = estadoDoAlvo(paraDesktop(alvo), solicitacao.status, agora);
+                          return (
+                            <tr key={`linha-${alvo.id}`} className="border-t border-slate-100">
+                              <td className="py-1 pr-2">{alvo.ordem + 1}</td>
+                              <td className="py-1 pr-2 font-bold">{alvo.provider_nome}</td>
+                              <td className="py-1 pr-2">{solicitacao.uf || '—'}</td>
+                              <td className="py-1 pr-2">{alvo.custo_100km == null ? '—' : moeda(Number(alvo.custo_100km))}</td>
+                              <td className="py-1 pr-2">{alvo.grupo_nome || 'sem nome exato'}</td>
+                              <td className="py-1 pr-2">{estado === 'aguardando_horario' ? textoEspera(new Date(alvo.liberar_em).getTime(), agora) : 'liberado'}</td>
+                              <td className="py-1">{ROTULO_ESTADO[estado]}{alvo.envio_erro ? ` · ${alvo.envio_erro}` : ''}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-500">
+                    {(() => {
+                      const resumo = resumirEnvios(filhos.map((alvo) => estadoDoAlvo(paraDesktop(alvo), solicitacao.status, agora)));
+                      return `${resumo.selecionados} fornecedores · ${resumo.executados} comandos executados · ${resumo.pendencias} pendências · ${resumo.erros} erros`;
+                    })()}
+                  </p>
                   <ul className="space-y-1">
                     {filhos.map((alvo) => {
                       const liberado = podeAbrirWhatsapp(alvo.status, new Date(alvo.liberar_em).getTime(), agora, solicitacao.status);

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Instalador TM SEG</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Segoe UI, sans-serif; background: #0b0d12; color: #f5f5f5; }
+    main { max-width: 720px; margin: 32px auto; background: #141820; border: 1px solid #2a3140; border-radius: 20px; overflow: hidden; }
+    header { display: flex; gap: 16px; align-items: center; padding: 24px; background: linear-gradient(120deg, #1a0b0d, #141820 55%); }
+    header img { width: 56px; height: 56px; object-fit: contain; background: #fff; border-radius: 12px; }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 0.04em; }
+    h1 span { color: #e11d2e; }
+    p.lead { margin: 4px 0 0; color: #a3acb9; font-size: 13px; }
+    .passos { display: flex; gap: 6px; padding: 0 24px 16px; }
+    .passos i { flex: 1; height: 4px; border-radius: 99px; background: #2a3140; }
+    .passos i.feita { background: #e11d2e; }
+    section { padding: 8px 24px 24px; min-height: 180px; }
+    h2 { margin: 0 0 8px; font-size: 18px; }
+    p { color: #c5ccd6; line-height: 1.45; }
+    footer { display: flex; justify-content: space-between; padding: 16px 24px 24px; }
+    button { border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+    button.sec { background: #222836; color: #fff; }
+    button.pri { background: #e11d2e; color: #fff; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    code { color: #fecaca; }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <img src="/logo.png" alt="Grupo TM SEG" />
+      <div>
+        <h1>GRUPO <span>TM SEG</span></h1>
+        <p class="lead">Instalador do aplicativo local para o WhatsApp Desktop</p>
+      </div>
+    </header>
+    <div class="passos" id="passos"></div>
+    <section id="painel"></section>
+    <footer>
+      <button class="sec" id="voltar" type="button">Voltar</button>
+      <button class="pri" id="avancar" type="button">Avançar</button>
+    </footer>
+  </main>
+  <script>
+    const etapas = [
+      ['Boas-vindas', 'Este assistente instala o aplicativo TM SEG neste computador. Ele usa o WhatsApp Desktop que já está autenticado. Não abre outra sessão na web.'],
+      ['Windows', 'O aplicativo confere se este computador é Windows e se a pasta local do usuário pode ser gravada.'],
+      ['WhatsApp Desktop', 'A próxima etapa procura o WhatsApp já aberto. Se estiver fechado, abra-o e avance de novo.'],
+      ['Instalação', 'Os arquivos ficam em AppData\\Local\\TM SEG\\WhatsApp Desktop, com atalho no Menu Iniciar. Não altera outras instalações.'],
+      ['Vinculação', 'O código desta máquina deve ser colado em Configurações → Integração WhatsApp Desktop, no sistema TM SEG.'],
+      ['Teste', 'O sistema e o aplicativo trocam um teste autenticado, só neste computador.'],
+      ['Conclusão', 'Computador conectado. Os envios só acontecem depois que um operador autorizar o lote na tela Solicitação.']
+    ];
+    let atual = 0;
+    const passos = document.getElementById('passos');
+    const painel = document.getElementById('painel');
+    const voltar = document.getElementById('voltar');
+    const avancar = document.getElementById('avancar');
+    etapas.forEach(() => { const i = document.createElement('i'); passos.appendChild(i); });
+    function desenhar() {
+      [...passos.children].forEach((el, i) => el.className = i <= atual ? 'feita' : '');
+      painel.innerHTML = '<h2>' + etapas[atual][0] + '</h2><p>' + etapas[atual][1] + '</p><p id="extra"></p>';
+      voltar.disabled = atual === 0;
+      avancar.textContent = atual === etapas.length - 1 ? 'Concluir' : (atual === 3 ? 'Instalar' : 'Avançar');
+      if (atual === 1) fetch('/install/check').then(r => r.json()).then(d => { document.getElementById('extra').textContent = d.mensagem; });
+      if (atual === 2) fetch('/install/whatsapp').then(r => r.json()).then(d => { document.getElementById('extra').textContent = d.mensagem; });
+      if (atual === 4) fetch('/pair/code').then(r => r.json()).then(d => { document.getElementById('extra').innerHTML = 'Código desta máquina: <code>' + d.codigo + '</code>'; });
+      if (atual === 5) fetch('/install/ping').then(r => r.json()).then(d => { document.getElementById('extra').textContent = d.mensagem; });
+      if (atual === 6) document.getElementById('extra').textContent = 'Computador conectado.';
+    }
+    voltar.onclick = () => { if (atual > 0) { atual--; desenhar(); } };
+    avancar.onclick = async () => {
+      if (atual === 3) await fetch('/install/apply', { method: 'POST' });
+      if (atual === etapas.length - 1) { window.close(); return; }
+      atual++;
+      desenhar();
+    };
+    desenhar();
+  </script>
+</body>
+</html>

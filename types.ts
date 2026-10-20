@@ -200,7 +200,12 @@ export interface Client {
   state?: string;
   zip_code?: string;
   address: string;
-  whatsapp_group_id?: string; 
+  whatsapp_group_id?: string;
+  /** Link de convite. Referência de cadastro, não identificador de envio. */
+  whatsapp_group_link?: string | null;
+  whatsapp_desktop_group_name?: string | null;
+  whatsapp_desktop_vinculo?: string | null;
+  whatsapp_desktop_ativo?: boolean | null;
   full_extra_hour_after_16_min?: boolean;
   adjustment_2026_applied?: boolean;
   proposal_2026_sent?: boolean;
@@ -230,6 +235,11 @@ export interface ProviderData {
   whatsapp_group_id?: string;
   /** Link chat.whatsapp.com que abre o grupo no WhatsApp do operador. */
   whatsapp_group_link?: string | null;
+  /** Nome exato do grupo no WhatsApp Desktop. */
+  whatsapp_desktop_group_name?: string | null;
+  whatsapp_desktop_vinculo?: string | null;
+  whatsapp_desktop_verificado_em?: string | null;
+  whatsapp_desktop_local_id?: string | null;
   dhl_channel_preference?: 'email' | 'whatsapp' | 'both' | null;
   dhl_solicitation_email?: string | null;
   /** Estados de atuação (sede + filiais) e valor 100 km por UF. */
