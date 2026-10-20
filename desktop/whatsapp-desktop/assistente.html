@@ -4,76 +4,123 @@
   <meta charset="utf-8" />
   <title>Instalador TM SEG</title>
   <style>
-    :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Segoe UI, sans-serif; background: #0b0d12; color: #f5f5f5; }
-    main { max-width: 720px; margin: 32px auto; background: #141820; border: 1px solid #2a3140; border-radius: 20px; overflow: hidden; }
-    header { display: flex; gap: 16px; align-items: center; padding: 24px; background: linear-gradient(120deg, #1a0b0d, #141820 55%); }
-    header img { width: 56px; height: 56px; object-fit: contain; background: #fff; border-radius: 12px; }
-    h1 { margin: 0; font-size: 20px; letter-spacing: 0.04em; }
-    h1 span { color: #e11d2e; }
-    p.lead { margin: 4px 0 0; color: #a3acb9; font-size: 13px; }
-    .passos { display: flex; gap: 6px; padding: 0 24px 16px; }
-    .passos i { flex: 1; height: 4px; border-radius: 99px; background: #2a3140; }
-    .passos i.feita { background: #e11d2e; }
-    section { padding: 8px 24px 24px; min-height: 180px; }
-    h2 { margin: 0 0 8px; font-size: 18px; }
-    p { color: #c5ccd6; line-height: 1.45; }
-    footer { display: flex; justify-content: space-between; padding: 16px 24px 24px; }
-    button { border: 0; border-radius: 10px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
-    button.sec { background: #222836; color: #fff; }
-    button.pri { background: #e11d2e; color: #fff; }
-    button:disabled { opacity: 0.4; cursor: default; }
+    body {
+      margin: 0; min-height: 100vh; color: #fff; font-family: "Segoe UI", sans-serif;
+      background:
+        radial-gradient(900px 520px at 18% 18%, rgba(196, 0, 24, .28), transparent 60%),
+        radial-gradient(700px 420px at 80% 80%, rgba(255, 45, 45, .08), transparent 55%),
+        #050507;
+    }
+    main { width: min(520px, calc(100% - 32px)); margin: 28px auto; }
+    .card {
+      padding: 28px 26px 22px; border-radius: 28px;
+      background: linear-gradient(180deg, rgba(16,16,20,.86), rgba(8,8,10,.92));
+      border: 1px solid rgba(255,255,255,.12);
+      box-shadow: 0 30px 80px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.12);
+    }
+    .marca { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
+    .marca img { height: 64px; width: auto; }
+    h1 { margin: 0; font-size: 24px; letter-spacing: .04em; }
+    h1 span { color: #ef4444; }
+    .sub { margin: 2px 0 0; color: #6b7280; font-size: 10px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase; }
+    h2 { margin: 0 0 8px; font-size: 22px; }
+    p { color: rgba(255,255,255,.78); line-height: 1.5; }
+    .selos { display: flex; gap: 8px; margin: 14px 0; }
+    .selo { border: 1px solid rgba(255,255,255,.1); background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; color: #9ca3af; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .barra { display: flex; gap: 6px; margin: 8px 0 18px; }
+    .barra i { flex: 1; height: 4px; border-radius: 99px; background: rgba(255,255,255,.12); }
+    .barra i.feita { background: #dc2626; }
+    label.ok { display: flex; gap: 8px; align-items: flex-start; color: #e5e7eb; font-size: 13px; }
+    footer { display: flex; justify-content: space-between; margin-top: 18px; }
+    button { border: 0; border-radius: 12px; padding: 12px 16px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+    button.sec { background: rgba(255,255,255,.06); color: #fff; border: 1px solid rgba(255,255,255,.12); }
+    button.pri { color: #fff; background: linear-gradient(90deg, #b91c1c, #dc2626, #b91c1c); box-shadow: 0 10px 24px rgba(127, 29, 29, .35); }
+    button:disabled { opacity: .4; cursor: default; }
     code { color: #fecaca; }
+    .aviso { color: #fecaca; font-size: 13px; }
   </style>
 </head>
 <body>
   <main>
-    <header>
-      <img src="/logo.png" alt="Grupo TM SEG" />
-      <div>
-        <h1>GRUPO <span>TM SEG</span></h1>
-        <p class="lead">Instalador do aplicativo local para o WhatsApp Desktop</p>
+    <section class="card">
+      <div class="marca">
+        <img src="/logo.png" alt="Grupo TM SEG" />
+        <div>
+          <h1>GRUPO TM<span>SEG</span></h1>
+          <p class="sub">Intermediadora de Escolta Armada &amp; Seg. Patrimonial</p>
+        </div>
       </div>
-    </header>
-    <div class="passos" id="passos"></div>
-    <section id="painel"></section>
-    <footer>
-      <button class="sec" id="voltar" type="button">Voltar</button>
-      <button class="pri" id="avancar" type="button">Avançar</button>
-    </footer>
+      <div class="selos"><span class="selo">Conexão segura</span><span class="selo">Criptografado</span></div>
+      <div class="barra" id="passos"></div>
+      <h2 id="titulo"></h2>
+      <div id="painel"></div>
+      <footer>
+        <button class="sec" id="voltar" type="button">Voltar</button>
+        <button class="pri" id="avancar" type="button">Avançar</button>
+      </footer>
+    </section>
   </main>
   <script>
     const etapas = [
-      ['Boas-vindas', 'Este assistente instala o aplicativo TM SEG neste computador. Ele usa o WhatsApp Desktop que já está autenticado. Não abre outra sessão na web.'],
-      ['Windows', 'O aplicativo confere se este computador é Windows e se a pasta local do usuário pode ser gravada.'],
-      ['WhatsApp Desktop', 'A próxima etapa procura o WhatsApp já aberto. Se estiver fechado, abra-o e avance de novo.'],
-      ['Instalação', 'Os arquivos ficam em AppData\\Local\\TM SEG\\WhatsApp Desktop, com atalho no Menu Iniciar. Não altera outras instalações.'],
-      ['Vinculação', 'O código desta máquina deve ser colado em Configurações → Integração WhatsApp Desktop, no sistema TM SEG.'],
-      ['Teste', 'O sistema e o aplicativo trocam um teste autenticado, só neste computador.'],
-      ['Conclusão', 'Computador conectado. Os envios só acontecem depois que um operador autorizar o lote na tela Solicitação.']
+      ['Boas-vindas', 'Segurança em movimento. Este assistente prepara o computador para a integração oficial com o WhatsApp Desktop. Nenhuma senha do WhatsApp é pedida.'],
+      ['Verificação do computador', 'Conferindo Windows e a pasta local do usuário.'],
+      ['Instalação dos componentes', 'O conector TM SEG fica neste computador. Python não é instalado: a automação usa o Windows já presente.'],
+      ['Configuração do WhatsApp', 'O WhatsApp precisa ser o aplicativo oficial. Se a conta ainda não estiver no aparelho, conecte pelo QR Code na tela do próprio WhatsApp.'],
+      ['Conexão com TM SEG', 'Cole o código abaixo em Configurações → Integração WhatsApp Desktop.'],
+      ['Teste de funcionamento', 'O teste envia uma única mensagem para o grupo GRUPO TM SEG - ADM, somente com a sua autorização e se o nome do chat for confirmado.'],
+      ['Instalação concluída', 'O computador fica registrado. Entrega e leitura da mensagem não são afirmadas sem comprovação.']
     ];
     let atual = 0;
+    let autorizado = false;
+    let inicioAutomatico = false;
     const passos = document.getElementById('passos');
+    etapas.forEach(() => passos.appendChild(document.createElement('i')));
+    const titulo = document.getElementById('titulo');
     const painel = document.getElementById('painel');
     const voltar = document.getElementById('voltar');
     const avancar = document.getElementById('avancar');
-    etapas.forEach(() => { const i = document.createElement('i'); passos.appendChild(i); });
     function desenhar() {
-      [...passos.children].forEach((el, i) => el.className = i <= atual ? 'feita' : '');
-      painel.innerHTML = '<h2>' + etapas[atual][0] + '</h2><p>' + etapas[atual][1] + '</p><p id="extra"></p>';
+      [...passos.children].forEach((el, i) => { el.className = i <= atual ? 'feita' : ''; });
+      titulo.textContent = etapas[atual][0];
+      painel.innerHTML = '<p>' + etapas[atual][1] + '</p><div id="extra"></div>';
       voltar.disabled = atual === 0;
-      avancar.textContent = atual === etapas.length - 1 ? 'Concluir' : (atual === 3 ? 'Instalar' : 'Avançar');
-      if (atual === 1) fetch('/install/check').then(r => r.json()).then(d => { document.getElementById('extra').textContent = d.mensagem; });
-      if (atual === 2) fetch('/install/whatsapp').then(r => r.json()).then(d => { document.getElementById('extra').textContent = d.mensagem; });
-      if (atual === 4) fetch('/pair/code').then(r => r.json()).then(d => { document.getElementById('extra').innerHTML = 'Código desta máquina: <code>' + d.codigo + '</code>'; });
-      if (atual === 5) fetch('/install/ping').then(r => r.json()).then(d => { document.getElementById('extra').textContent = d.mensagem; });
-      if (atual === 6) document.getElementById('extra').textContent = 'Computador conectado.';
+      avancar.textContent = atual === etapas.length - 1 ? 'Concluir' : 'Avançar';
+      const extra = document.getElementById('extra');
+      if (atual === 1) fetch('/install/check').then(r => r.json()).then(d => { extra.textContent = d.mensagem; });
+      if (atual === 2) extra.innerHTML = '<label class="ok"><input id="inicio" type="checkbox"' + (inicioAutomatico ? ' checked' : '') + '> Autorizo o conector a iniciar junto com o Windows.</label><p id="pasta"></p>';
+      if (atual === 2) extra.querySelector('#inicio').onchange = (e) => { inicioAutomatico = e.target.checked; };
+      if (atual === 3) fetch('/install/whatsapp').then(r => r.json()).then(d => {
+        extra.innerHTML = '<p>' + d.mensagem + '</p>' + (d.instalado ? '' : '<p><a href="' + d.canalOficial + '" style="color:#fecaca">Abrir o canal oficial do WhatsApp</a></p>');
+      });
+      if (atual === 4) fetch('/pair/code').then(r => r.json()).then(d => { extra.innerHTML = '<p>Código desta máquina</p><code>' + d.codigo + '</code>'; });
+      if (atual === 5) {
+        extra.innerHTML = '<label class="ok"><input id="autorizo" type="checkbox"> Autorizo o envio único da mensagem de ativação para GRUPO TM SEG - ADM.</label><pre id="previa" style="white-space:pre-wrap;color:#e5e7eb;font-size:12px"></pre><p class="aviso" id="resultado"></p>';
+        document.getElementById('autorizo').onchange = (e) => { autorizado = e.target.checked; };
+        fetch('/install/mensagem').then(r => r.json()).then(d => { document.getElementById('previa').textContent = d.mensagem; });
+      }
+      if (atual === 6) fetch('/status', { headers: {} }).then(r => r.json()).then(d => {
+        extra.textContent = d.instalacaoId ? 'Identificador da instalação: ' + d.instalacaoId : 'Abra o sistema e vincule este computador.';
+      }).catch(() => {});
     }
     voltar.onclick = () => { if (atual > 0) { atual--; desenhar(); } };
     avancar.onclick = async () => {
-      if (atual === 3) await fetch('/install/apply', { method: 'POST' });
-      if (atual === etapas.length - 1) { window.close(); return; }
+      if (atual === 2) {
+        const preparo = await fetch('/install/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autostart: inicioAutomatico }) }).then(r => r.json());
+        const pasta = document.getElementById('pasta');
+        if (pasta) pasta.textContent = preparo.ok ? ('Pasta local: ' + preparo.pasta + '. ' + ((preparo.inicio && preparo.inicio.motivo) || '')) : 'Não foi possível preparar a pasta local.';
+        if (!preparo.ok) return;
+      }
+      if (atual === 5) {
+        const resultado = document.getElementById('resultado');
+        if (!autorizado) { resultado.textContent = 'Marque a autorização para seguir. Nada foi enviado.'; return; }
+        const codigo = await fetch('/pair/code').then(r => r.json());
+        const resposta = await fetch('/homologacao', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + codigo.codigo }, body: JSON.stringify({ autorizar: true }) });
+        const corpo = await resposta.json();
+        resultado.textContent = corpo.motivo || (corpo.ok ? 'Comando executado. Entrega não comprovada.' : 'O teste não foi enviado.');
+        if (!corpo.ok && !corpo.registrado) return;
+      }
+      if (atual === etapas.length - 1) return;
       atual++;
       desenhar();
     };

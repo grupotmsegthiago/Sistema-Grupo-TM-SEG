@@ -35,6 +35,115 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// lib/missionSnapshot.ts
+function carimboRecalculoAutomatico(valor) {
+  return String(valor ?? "").trim() === CARIMBO_RECALCULO_AUTOMATICO;
+}
+function carimboAprovacaoHumana(valor) {
+  const texto3 = String(valor ?? "").trim();
+  if (!texto3 || carimboRecalculoAutomatico(texto3)) return null;
+  return texto3;
+}
+function textoMotivo(valor) {
+  return String(valor ?? "").trim().toLowerCase();
+}
+function temMotivoRegistrado(texto3) {
+  return FRASES_MOTIVO_REGISTRADO.some((frase) => texto3.includes(frase));
+}
+function classificarAlteracaoPosterior(opts) {
+  const receita = textoMotivo(opts.motivoReceita);
+  const custo = textoMotivo(opts.motivoCusto);
+  if (temMotivoRegistrado(receita) || temMotivoRegistrado(custo)) return "com_motivo";
+  const semTexto = !receita && !custo;
+  const soRecalculoSistema = [receita, custo].every((texto3) => !texto3 || texto3.includes("recalculado pelo sistema"));
+  if (semTexto || soRecalculoSistema) return "sem_motivo";
+  return "indeterminada";
+}
+function textoAlteracaoPosterior(classe) {
+  if (classe === "com_motivo") return DIVERGENCIA_ALTERACAO_COM_MOTIVO;
+  if (classe === "indeterminada") return DIVERGENCIA_ALTERACAO_INDETERMINADA;
+  return DIVERGENCIA_ALTERACAO_REAL;
+}
+function objetoSnapshot(snapshot) {
+  if (snapshot == null) return null;
+  if (typeof snapshot === "string") {
+    const texto3 = snapshot.trim();
+    if (!texto3 || texto3 === "null" || texto3 === "{}" || texto3 === '""') return null;
+    try {
+      return objetoSnapshot(JSON.parse(texto3));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+  if (Object.keys(snapshot).length === 0) return null;
+  return snapshot;
+}
+function approvedByDoSnapshot(snapshot) {
+  return objetoSnapshot(snapshot)?.approved_by ?? null;
+}
+function origemSnapshotFinanceiro(carimbo, snapshot) {
+  if (carimboAprovacaoHumana(carimbo)) return "humana";
+  if (carimboRecalculoAutomatico(carimbo)) return "automatica";
+  if (String(carimbo ?? "").trim()) return "indeterminada";
+  const interno = approvedByDoSnapshot(snapshot);
+  if (carimboAprovacaoHumana(interno)) return "humana";
+  if (carimboRecalculoAutomatico(interno)) return "automatica";
+  return "indeterminada";
+}
+function estadoDetalhamentoSnapshot(snapshot) {
+  const obj = objetoSnapshot(snapshot);
+  if (!obj) return "invalido";
+  const presentes = CAMPOS_DETALHE_SNAPSHOT.filter((campo) => {
+    const valor = obj[campo];
+    if (valor == null || valor === "") return false;
+    return Number.isFinite(Number(valor));
+  });
+  if (presentes.length === 0) return "incompleto";
+  const algumInformado = presentes.some((campo) => Math.abs(Number(obj[campo])) > 0);
+  return algumInformado ? "valido" : "zerado";
+}
+function devePreservarDetalhamentoRegistrado(opts) {
+  const estado = estadoDetalhamentoSnapshot(opts.snapshot);
+  if (estado === "invalido") return false;
+  const origem = origemSnapshotFinanceiro(opts.carimbo, opts.snapshot);
+  if (origem === "humana") return true;
+  return opts.billingApproved === true && (origem === "automatica" || origem === "indeterminada");
+}
+var CARIMBO_RECALCULO_AUTOMATICO, DIVERGENCIA_DETALHAMENTO_ZERADO, DIVERGENCIA_DETALHAMENTO_INCOMPLETO, DIVERGENCIA_SNAPSHOT_INVALIDO, DIVERGENCIA_ALTERACAO_REAL, DIVERGENCIA_ALTERACAO_COM_MOTIVO, DIVERGENCIA_ALTERACAO_INDETERMINADA, FRASES_MOTIVO_REGISTRADO, CAMPOS_DETALHE_SNAPSHOT;
+var init_missionSnapshot = __esm({
+  "lib/missionSnapshot.ts"() {
+    "use strict";
+    CARIMBO_RECALCULO_AUTOMATICO = "Sistema (Recalcular e Comparar)";
+    DIVERGENCIA_DETALHAMENTO_ZERADO = "Snapshot sem franquia, hora e tarifa gravadas. A tabela atual n\xE3o preencheu esses campos.";
+    DIVERGENCIA_DETALHAMENTO_INCOMPLETO = "Snapshot sem o detalhamento de franquia, hora e tarifa. A tabela atual n\xE3o o substituiu.";
+    DIVERGENCIA_SNAPSHOT_INVALIDO = "Snapshot ausente ou inv\xE1lido. Franquia, hora e tarifa n\xE3o foram preenchidas pela tabela atual. O total oficial permanece.";
+    DIVERGENCIA_ALTERACAO_REAL = "Diverg\xEAncia posterior sem motivo de edi\xE7\xE3o identificado. Franquia, horas e tarifas gravadas foram mantidas. O total oficial permanece.";
+    DIVERGENCIA_ALTERACAO_COM_MOTIVO = "Altera\xE7\xE3o posterior com motivo de edi\xE7\xE3o registrado. Franquia, horas e tarifas gravadas foram mantidas. O total oficial permanece.";
+    DIVERGENCIA_ALTERACAO_INDETERMINADA = "Altera\xE7\xE3o posterior com origem indeterminada. O texto gravado n\xE3o comprova autoriza\xE7\xE3o. Franquia, horas e tarifas gravadas foram mantidas. O total oficial permanece.";
+    FRASES_MOTIVO_REGISTRADO = [
+      "salvamento manual confirmado",
+      "tabela oficial aplicada",
+      "edi\xE7\xE3o manual",
+      "edicao manual",
+      "ajuste manual",
+      "valor zero confirmado"
+    ];
+    CAMPOS_DETALHE_SNAPSHOT = [
+      "franchiseKm",
+      "franchiseHours",
+      "unitKm",
+      "unitHr",
+      "activationFee",
+      "kmExtraTotal",
+      "hrExtraTotal",
+      "kmExtraQtd",
+      "hrExtraQtd",
+      "durationHours"
+    ];
+  }
+});
+
 // lib/cevaPortal/camposCliente.ts
 var camposCliente_exports = {};
 __export(camposCliente_exports, {
@@ -575,9 +684,14 @@ function isSameClientName(a, b) {
   }
   return true;
 }
-function dhlDefaultUnitKmExcess(originUF) {
-  const uf = String(originUF || "").toUpperCase().trim();
-  return uf === "SC" || uf === "RS" ? 7.35 : 6.9;
+function classificarTarifaKm(valor, excepcional) {
+  if (excepcional != null && Number.isFinite(Number(excepcional)) && Number(excepcional) > 0) {
+    return { origem: "excepcional", tarifa: Math.round(Number(excepcional) * 100) / 100 };
+  }
+  if (valor == null || !Number.isFinite(Number(valor))) return { origem: "ausente", tarifa: 0 };
+  if (Number(valor) < 0) return { origem: "ausente", tarifa: 0 };
+  if (Number(valor) === 0) return { origem: "zero_contratual", tarifa: 0 };
+  return { origem: "tabela", tarifa: Math.round(Number(valor) * 100) / 100 };
 }
 function isUndefinedDestinationPlaceholder(dest) {
   const n = String(dest || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
@@ -592,10 +706,8 @@ function resolveDisplacementFromAuthorizedKm(opts) {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
   const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
   const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
-  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
-  if (km > 0 && clientRate <= 0) {
-    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ""));
-  }
+  const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
+  const clientRate = tarifaCliente.tarifa;
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
   const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
   const derivedProvider = km > 0 && providerRate > 0 ? Math.round(km * providerRate * 100) / 100 : 0;
@@ -603,6 +715,7 @@ function resolveDisplacementFromAuthorizedKm(opts) {
     km,
     clientRate,
     providerRate,
+    origemTarifaCliente: tarifaCliente.origem,
     client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
     provider: opts.isSameOs ? 0 : storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider
   };
@@ -617,6 +730,24 @@ function clientTableMatchesMission(tableClient, missionClientName) {
   const tableDhl = findDhlAutoClient(tc);
   return !!(missionDhl && tableDhl && missionDhl === tableDhl);
 }
+function isNamedCityRoute(tableOp, cities) {
+  if (cities.length < 2) return false;
+  const positions = cities.map((city) => ({ city, index: tableOp.indexOf(city) })).filter((hit) => hit.index >= 0).sort((a, b) => a.index - b.index);
+  const distinct = [];
+  for (const hit of positions) {
+    const insideLonger = distinct.some(
+      (kept) => hit.index >= kept.index && hit.index + hit.city.length <= kept.index + kept.city.length
+    );
+    if (!insideLonger) distinct.push(hit);
+  }
+  if (distinct.length < 2) return false;
+  for (let i = 0; i < distinct.length - 1; i++) {
+    const start = distinct[i].index + distinct[i].city.length;
+    const between = tableOp.slice(start, distinct[i + 1].index);
+    if (/\bX\b/.test(between) || /^[\s\-–—]+$/.test(between)) return true;
+  }
+  return false;
+}
 function evaluateRegionalTableConstraint(operationType, opts) {
   const tableOp = normalize2(operationType || "");
   if (!tableOp) return { blocked: false, reason: "" };
@@ -627,6 +758,17 @@ function evaluateRegionalTableConstraint(operationType, opts) {
   const missionText = `${originCity} ${destCity} ${originAddr}`;
   const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
   if (citiesInTable.length > 0) {
+    if (isNamedCityRoute(tableOp, citiesInTable)) {
+      const originText = `${originCity} ${originAddr}`;
+      const onOrigin = citiesInTable.filter((city) => originText.includes(city));
+      const onDest = citiesInTable.filter((city) => destCity.includes(city));
+      const leftover = citiesInTable.filter((city) => !originText.includes(city) && !destCity.includes(city));
+      if (leftover.length > 0 || onOrigin.length === 0 || onDest.length === 0) {
+        const missing = leftover[0] || citiesInTable.find((city) => !onDest.includes(city)) || citiesInTable[0];
+        return { blocked: true, reason: `BLOQUEIO ROTA (${missing})` };
+      }
+      return { blocked: false, reason: "", matchedCity: onOrigin[0] };
+    }
     const matchedCity = citiesInTable.find((c) => missionText.includes(c));
     if (!matchedCity) {
       return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
@@ -661,6 +803,7 @@ var init_financialUtils = __esm({
     init_providerAutoPricing();
     init_dhlAutoTableSelector();
     init_clientTollBilling();
+    init_missionSnapshot();
     STOP_WORDS = ["LTDA", "LTDA.", "S.A.", "S.A", "SA", "S/A", "S/A.", "DO", "DE", "DA", "E", "DAS", "DOS"];
     safeNumber = (val) => {
       if (val === null || val === void 0 || val === "") return 0;
@@ -1678,10 +1821,11 @@ var init_financialUtils = __esm({
       const cFranchiseHr = appliedClientTable?.franchise_hours || 3;
       let cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
       let cExcessHr = Math.max(0, durationHours - cFranchiseHr);
-      let cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== void 0 ? manualTableOverrides.customClientUnitKm : appliedClientTable?.price_per_extra_km || 0;
-      if (cUnitPriceKm <= 0 && findDhlAutoClient(missionClientRaw) && manualTableOverrides?.customClientUnitKm === void 0) {
-        cUnitPriceKm = dhlDefaultUnitKmExcess(originUF);
-      }
+      const tarifaKmTabela = classificarTarifaKm(
+        manualTableOverrides?.customClientUnitKm !== void 0 ? manualTableOverrides.customClientUnitKm : appliedClientTable?.price_per_extra_km,
+        manualTableOverrides?.tarifaExcepcionalKm
+      );
+      let cUnitPriceKm = tarifaKmTabela.tarifa;
       const cUnitPriceHour = manualTableOverrides?.customClientUnitHour !== void 0 ? manualTableOverrides.customClientUnitHour : appliedClientTable?.price_per_extra_hour || 0;
       const appliedTableName = (appliedClientTable?.operation_type || "").toUpperCase();
       const missionDest = (mission.destination || "").toUpperCase();
@@ -1848,6 +1992,7 @@ var init_financialUtils = __esm({
           excessHours: cExcessHr,
           excessHoursReal: cExcessHrReal,
           unitPriceKm: cUnitPriceKm,
+          tarifaKmOrigem: tarifaKmTabela.origem,
           unitPriceHour: cUnitPriceHour,
           franchiseKm: cFranchiseKm,
           franchiseHours: cFranchiseHr,
@@ -1878,6 +2023,22 @@ var init_financialUtils = __esm({
         marginPercent: totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue * 100 : 0
       };
     };
+  }
+});
+
+// lib/billing/boletimLineTotal.ts
+function resolveBoletimClientLineTotal(input) {
+  if (input.wasManuallyEdited) return input.dbTotal;
+  const snap = input.snapTotalWithDisp > 0 ? input.snapTotalWithDisp : 0;
+  if (snap > 0 && (input.dbTotal <= 0 || Math.abs(input.dbTotal - snap) < 0.01)) {
+    return snap;
+  }
+  if (input.dbTotal > 0) return input.dbTotal;
+  return input.componentTotal;
+}
+var init_boletimLineTotal = __esm({
+  "lib/billing/boletimLineTotal.ts"() {
+    "use strict";
   }
 });
 
@@ -1927,13 +2088,22 @@ function kmGravado(value) {
 function centavos(value) {
   return Math.round(value * 100);
 }
+function pedagioSoFaixaLegada(mission, snap) {
+  if (snap.tollVal == null) return false;
+  const oficial = resolveStoredClientToll(mission.toll_value ?? 0, mission.toll_value_provider, mission.client);
+  const congelado = numeroEntregue(snap.tollVal);
+  if (centavos(oficial) === centavos(congelado)) return false;
+  const bruto = numeroEntregue(mission.toll_value);
+  const faixa = billableClientToll(bruto, mission.client);
+  return centavos(congelado) === centavos(bruto) && centavos(oficial) === centavos(faixa);
+}
 function osMudouDepoisDoSnapshot(mission, snap) {
   const receita = numeroEntregue(mission.revenue_value);
   const servicoSnap = numeroOuNulo(snap.revenueServiceOnly);
   const baseSnap = servicoSnap != null ? servicoSnap : Math.max(0, numeroEntregue(snap.totalGeral) - numeroEntregue(snap.tollVal) - Math.max(0, numeroEntregue(snap.displacementVal)));
   if (centavos(receita) !== centavos(baseSnap)) return true;
   const pedagio = resolveStoredClientToll(mission.toll_value ?? 0, mission.toll_value_provider, mission.client);
-  if (snap.tollVal != null && centavos(pedagio) !== centavos(numeroEntregue(snap.tollVal))) return true;
+  if (snap.tollVal != null && centavos(pedagio) !== centavos(numeroEntregue(snap.tollVal)) && !pedagioSoFaixaLegada(mission, snap)) return true;
   const inicio = kmGravado(mission.start_km);
   const fim = kmGravado(mission.end_km);
   const kmSnap = numeroOuNulo(snap.kmTotal);
@@ -2038,9 +2208,16 @@ function linhaDoBoletimCeva(mission, ctx) {
   const providerTables = ctx.providerTables || [];
   const clientData = ctx.clientData;
   const snap = mission.snapshot_data && typeof mission.snapshot_data === "object" ? mission.snapshot_data : null;
-  const hasValidSnapshot = !!(mission.snapshot_approved_by && snap);
+  const estado = estadoDetalhamentoSnapshot(mission.snapshot_data);
+  const origem = origemSnapshotFinanceiro(mission.snapshot_approved_by, mission.snapshot_data);
+  const preservar = devePreservarDetalhamentoRegistrado({
+    billingApproved: mission.billing_approved === true,
+    carimbo: mission.snapshot_approved_by,
+    snapshot: mission.snapshot_data
+  });
+  const exibirRegistrado = !!(preservar && snap && (estado === "valido" || estado === "zerado"));
   const base = baseDaLinha(mission, os);
-  if (hasValidSnapshot && snap) {
+  if (exibirRegistrado && snap) {
     const useBase = numeroEntregue(snap.activationFee);
     const useKmEx = numeroEntregue(snap.kmExtraTotal);
     const useHrEx = numeroEntregue(snap.hrExtraTotal);
@@ -2069,30 +2246,21 @@ function linhaDoBoletimCeva(mission, ctx) {
     const snapTotal = numeroEntregue(snap.totalGeral);
     const snapDispStored = Math.max(0, numeroEntregue(snap.displacementVal));
     const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0 ? snapTotal + useDisp : snapTotal;
-    const useTotal = wasManuallyEdited ? dbTotal : snapTotalWithDisp > 0 ? snapTotalWithDisp : useBase + useKmEx + useHrEx + useToll + useDisp;
-    let snapFranchiseHours = numeroEntregue(snap.franchiseHours);
-    let snapFranchiseKm = numeroEntregue(snap.franchiseKm);
-    let snapUnitHr = numeroEntregue(snap.unitHr);
-    let snapUnitKm = numeroEntregue(snap.unitKm);
-    let snapHrExtraQtd = numeroEntregue(snap.hrExtraQtd);
-    let snapKmExtraQtd = numeroEntregue(snap.kmExtraQtd);
-    let snapDurationHours = numeroEntregue(snap.durationHours);
-    if (snapFranchiseHours === 0 && snapFranchiseKm === 0 && snapUnitHr === 0 && snapUnitKm === 0) {
-      try {
-        const finFallback = calculateMissionFinancials(mission, priceTables, providerTables, clientData, /* @__PURE__ */ new Date());
-        const tblFallback = priceTables.find((t) => t.id.toString() === finFallback.client.tableId);
-        if (tblFallback) {
-          snapFranchiseHours = tblFallback.franchise_hours ?? 0;
-          snapFranchiseKm = tblFallback.franchise_km ?? 0;
-          snapUnitHr = tblFallback.price_per_extra_hour ?? 0;
-          snapUnitKm = tblFallback.price_per_extra_km ?? 0;
-          snapHrExtraQtd = finFallback.client.excessHours ?? 0;
-          snapKmExtraQtd = finFallback.client.excessKm ?? 0;
-          snapDurationHours = finFallback.durationHours ?? 0;
-        }
-      } catch {
-      }
-    }
+    const componentes = useBase + useKmEx + useHrEx + useToll + useDisp;
+    const totalDoBoletim = resolveBoletimClientLineTotal({
+      dbTotal,
+      snapTotalWithDisp,
+      componentTotal: componentes,
+      wasManuallyEdited
+    });
+    const useTotal = mission.billing_approved === true ? totalDoBoletim : wasManuallyEdited ? dbTotal : snapTotalWithDisp > 0 ? snapTotalWithDisp : componentes;
+    const snapFranchiseHours = numeroEntregue(snap.franchiseHours);
+    const snapFranchiseKm = numeroEntregue(snap.franchiseKm);
+    const snapUnitHr = numeroEntregue(snap.unitHr);
+    const snapUnitKm = numeroEntregue(snap.unitKm);
+    const snapHrExtraQtd = numeroEntregue(snap.hrExtraQtd);
+    const snapKmExtraQtd = numeroEntregue(snap.kmExtraQtd);
+    const snapDurationHours = numeroEntregue(snap.durationHours);
     const isCancelledSnap = (mission.status || "").toString().toLowerCase().includes("cancel");
     const wasExecutedSnap = isCancelledSnap && !!mission.end_time && !!mission.start_time && new Date(mission.end_time).getTime() > new Date(mission.start_time).getTime();
     const cancelledBeforeSnap = isCancelledSnap && !wasExecutedSnap;
@@ -2119,35 +2287,57 @@ function linhaDoBoletimCeva(mission, ctx) {
       pedagio: useToll,
       tarifaKm: snapUnitKm,
       tarifaHora: snapUnitHr,
-      local: localOrigemDestino(mission.origin, mission.destination)
+      local: localOrigemDestino(mission.origin, mission.destination),
+      origemSnapshot: origem,
+      homologadoPorPessoa: origem === "humana",
+      divergenciaDetalhamento: estado === "zerado" ? DIVERGENCIA_DETALHAMENTO_ZERADO : null
     };
     if (osMudouDepoisDoSnapshot(mission, snap)) {
-      linha.valorTotal = dbTotal;
-      linha.pedagio = useToll;
-      if (!cancelledBeforeSnap && kmPeloHodometro2 != null && Math.abs(kmPeloHodometro2 - kmDoSnapshot) > 0.5) {
-        linha.kmInicio = kmInicio2;
-        linha.kmFim = kmFim2;
-        linha.kmRodado = kmPeloHodometro2;
-      }
-      try {
-        const finVivo = calculateMissionFinancials(mission, priceTables, providerTables, clientData, /* @__PURE__ */ new Date());
-        const tabelaViva = priceTables.find((t) => t.id.toString() === finVivo.client.tableId);
-        if (tabelaViva) {
-          linha.franquiaHora = horaDoBoletim(tabelaViva.franchise_hours ?? 0);
-          linha.franquiaKm = tabelaViva.franchise_km ?? 0;
-          linha.kmExcedente = finVivo.client.excessKm ?? 0;
-          linha.hrsTrabalhada = horaDoBoletim(finVivo.durationHours);
-          linha.hrsExcedente = horaDoBoletim(finVivo.client.excessHours);
-          linha.valorHrsExcedente = finVivo.client.extraHrVal ?? 0;
-          linha.valorKmExcedente = finVivo.client.extraKmVal ?? 0;
-          linha.valorAcionamento = tabelaViva.activation_fee ?? 0;
-          linha.tarifaKm = tabelaViva.price_per_extra_km ?? 0;
-          linha.tarifaHora = tabelaViva.price_per_extra_hour ?? 0;
-        }
-      } catch {
-      }
+      linha.divergenciaDetalhamento = textoAlteracaoPosterior(classificarAlteracaoPosterior({
+        motivoReceita: mission.revenue_edit_reason,
+        motivoCusto: mission.cost_edit_reason
+      }));
     }
     return fecharLinha(linha, mission);
+  }
+  if (mission.billing_approved === true || origem === "humana") {
+    const tollOficial = resolveStoredClientToll(mission.toll_value || 0, mission.toll_value_provider, mission.client);
+    const receitaOficial = numeroEntregue(mission.revenue_value);
+    let deslocamentoOficial = 0;
+    try {
+      const finOficial = calculateMissionFinancials(mission, priceTables, providerTables, clientData, /* @__PURE__ */ new Date());
+      deslocamentoOficial = resolveMissionDisplacement(mission, {
+        clientUnitPriceKm: finOficial.client.unitPriceKm,
+        providerUnitPriceKm: finOficial.provider.unitCostKm
+      }).client;
+    } catch {
+    }
+    const kmInicio2 = kmGravado(mission.start_km);
+    const kmFim2 = kmGravado(mission.end_km);
+    const kmRodado = kmInicio2 != null && kmFim2 != null && kmFim2 >= kmInicio2 ? kmFim2 - kmInicio2 : null;
+    const divergencia = estado === "incompleto" ? DIVERGENCIA_DETALHAMENTO_INCOMPLETO : DIVERGENCIA_SNAPSHOT_INVALIDO;
+    return fecharLinha({
+      ...base,
+      franquiaHora: null,
+      franquiaKm: null,
+      kmInicio: kmInicio2,
+      kmFim: kmFim2,
+      kmRodado,
+      kmExcedente: null,
+      hrsTrabalhada: null,
+      hrsExcedente: null,
+      valorHrsExcedente: null,
+      valorKmExcedente: null,
+      valorAcionamento: null,
+      valorTotal: receitaOficial + tollOficial + deslocamentoOficial,
+      pedagio: tollOficial,
+      tarifaKm: null,
+      tarifaHora: null,
+      local: localOrigemDestino(mission.origin, mission.destination),
+      origemSnapshot: origem,
+      homologadoPorPessoa: false,
+      divergenciaDetalhamento: divergencia
+    }, mission);
   }
   const tollVal = resolveStoredClientToll(mission.toll_value || 0, mission.toll_value_provider, mission.client);
   const savedRevenue = numeroEntregue(mission.revenue_value);
@@ -2200,7 +2390,10 @@ function linhaDoBoletimCeva(mission, ctx) {
     pedagio: tollVal,
     tarifaKm: unitKm,
     tarifaHora: unitHr,
-    local: localOrigemDestino(mission.origin, mission.destination)
+    local: localOrigemDestino(mission.origin, mission.destination),
+    origemSnapshot: origem,
+    homologadoPorPessoa: false,
+    divergenciaDetalhamento: null
   }, mission);
 }
 var UF_VALIDA, LIGACAO;
@@ -2208,8 +2401,10 @@ var init_report = __esm({
   "lib/cevaPortal/report.ts"() {
     "use strict";
     init_financialUtils();
+    init_boletimLineTotal();
     init_resolveMissionDisplacement();
     init_clientTollBilling();
+    init_missionSnapshot();
     UF_VALIDA = /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)$/;
     LIGACAO = /* @__PURE__ */ new Set(["de", "da", "do", "das", "dos", "e"]);
   }
@@ -2478,6 +2673,7 @@ __export(httpHandler_exports, {
 });
 module.exports = __toCommonJS(httpHandler_exports);
 var import_node_async_hooks = require("node:async_hooks");
+init_missionSnapshot();
 
 // lib/supabaseAdmin.ts
 var import_supabase_js = require("@supabase/supabase-js");
@@ -2781,6 +2977,97 @@ function gerarSenhaTemporaria() {
   return [...bytes].map((byte) => ALFABETO_SENHA[byte % ALFABETO_SENHA.length]).join("");
 }
 
+// lib/gestorFiscal/ponteAuth/hashSenha.ts
+var import_node_crypto = require("node:crypto");
+var PARAMETROS_SCRYPT_V1 = { versao: 1, N: 16384, r: 8, p: 1, keylen: 32 };
+function identificarFormatoHash(gravada) {
+  const salva = gravada == null ? "" : String(gravada);
+  if (!salva) return null;
+  if (salva.startsWith("$2a$") || salva.startsWith("$2b$") || salva.startsWith("$2y$") || salva.startsWith("$argon2")) {
+    return "outro";
+  }
+  const partes = salva.split("$");
+  if (partes[0] !== "scrypt") return salva.includes("$") ? "outro" : null;
+  if (partes.length === 3 && hex(partes[1]) && hex(partes[2])) return "scrypt_portal";
+  if (partes.length === 8 && partes[1] === "v1" && parametrosConhecidos(partes) && hex(partes[6]) && hex(partes[7])) {
+    return "scrypt_v1";
+  }
+  return "outro";
+}
+function gerarHashVersionado(senha) {
+  const sal = (0, import_node_crypto.randomBytes)(16).toString("hex");
+  const hash = (0, import_node_crypto.scryptSync)(senha, sal, PARAMETROS_SCRYPT_V1.keylen, {
+    N: PARAMETROS_SCRYPT_V1.N,
+    r: PARAMETROS_SCRYPT_V1.r,
+    p: PARAMETROS_SCRYPT_V1.p
+  }).toString("hex");
+  return `scrypt$v1$${PARAMETROS_SCRYPT_V1.N}$${PARAMETROS_SCRYPT_V1.r}$${PARAMETROS_SCRYPT_V1.p}$${PARAMETROS_SCRYPT_V1.keylen}$${sal}$${hash}`;
+}
+function verificarSenhaArmazenada(senha, armazenada) {
+  const limpa = String(senha ?? "").trim();
+  if (!limpa) return false;
+  const formato = identificarFormatoHash(armazenada);
+  if (formato === "scrypt_portal") return portalConfere(limpa, String(armazenada));
+  if (formato === "scrypt_v1") return v1Confere(limpa, String(armazenada));
+  return false;
+}
+function portalConfere(senha, armazenada) {
+  const partes = armazenada.split("$");
+  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[1], 32);
+  const salvo = Buffer.from(partes[2], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
+}
+function v1Confere(senha, armazenada) {
+  const partes = armazenada.split("$");
+  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[6], PARAMETROS_SCRYPT_V1.keylen, {
+    N: PARAMETROS_SCRYPT_V1.N,
+    r: PARAMETROS_SCRYPT_V1.r,
+    p: PARAMETROS_SCRYPT_V1.p
+  });
+  const salvo = Buffer.from(partes[7], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
+}
+function parametrosConhecidos(partes) {
+  return Number(partes[2]) === PARAMETROS_SCRYPT_V1.N && Number(partes[3]) === PARAMETROS_SCRYPT_V1.r && Number(partes[4]) === PARAMETROS_SCRYPT_V1.p && Number(partes[5]) === PARAMETROS_SCRYPT_V1.keylen;
+}
+function hex(valor) {
+  return valor.length > 0 && valor.length % 2 === 0 && /^[0-9a-f]+$/i.test(valor);
+}
+
+// lib/sessao/gravarSenha.ts
+function colunaAusente(mensagem, coluna) {
+  return new RegExp(coluna, "i").test(mensagem) && /does not exist|n[aã]o existe|schema cache|could not find/i.test(mensagem);
+}
+async function gravarSenhaNoServidor(cliente, usuarioId, senha, extras = {}) {
+  const hash = gerarHashVersionado(senha);
+  const base = {
+    password_hash: hash,
+    password: null,
+    ...extras
+  };
+  let resultado = await cliente.from("system_users").update(base).eq("id", usuarioId);
+  if (resultado.error && colunaAusente(resultado.error.message || "", "session_epoch")) {
+    const semEpoch = { ...base };
+    delete semEpoch.session_epoch;
+    resultado = await cliente.from("system_users").update(semEpoch).eq("id", usuarioId);
+  }
+  if (!resultado.error) return "hash";
+  const mensagem = resultado.error.message || "";
+  if (!colunaAusente(mensagem, "password_hash")) {
+    throw new Error("Falha ao gravar a senha.");
+  }
+  const legado = { password: senha };
+  for (const [chave, valor] of Object.entries(extras)) {
+    if (chave === "session_epoch" || chave === "force_password_change") continue;
+    legado[chave] = valor;
+  }
+  const texto3 = await cliente.from("system_users").update(legado).eq("id", usuarioId);
+  if (texto3.error) throw new Error("Falha ao gravar a senha.");
+  return "texto";
+}
+
 // lib/cevaPortal/cadastroSistema.ts
 function colunaSenhaAlteradaAusente(error) {
   if (!error) return false;
@@ -2823,9 +3110,11 @@ async function vincularCadastroCliente(sb, input) {
     force_password_change: false,
     permissions: permissoes
   };
-  if (input.senhaTemporaria) payload.password = input.senhaTemporaria;
   const { data, error } = await sb.from("system_users").insert(payload).select("id").single();
   if (error || !data?.id) return { ok: false, error: "N\xE3o foi poss\xEDvel criar o usu\xE1rio no cadastro do cliente." };
+  if (input.senhaTemporaria) {
+    await gravarSenhaNoServidor(sb, String(data.id), input.senhaTemporaria, { force_password_change: false });
+  }
   return { ok: true, id: String(data.id) };
 }
 async function alinharStatusCadastroPortal(sb, email, ativo) {
@@ -2834,8 +3123,36 @@ async function alinharStatusCadastroPortal(sb, email, ativo) {
   await sb.from("system_users").update({ status: ativo ? "Ativo" : "Inativo" }).eq("id", data.id);
 }
 
+// lib/gestorFiscal/ponteAuth/formatoSenha.ts
+var import_node_crypto2 = require("node:crypto");
+function classificarSenhaGravada(gravada) {
+  const salva = gravada == null ? "" : String(gravada);
+  if (!salva) return "vazia";
+  if (salva.startsWith("$2a$") || salva.startsWith("$2b$") || salva.startsWith("$2y$") || salva.startsWith("$argon2")) {
+    return "nao_reconhecido";
+  }
+  const formato = identificarFormatoHash(salva);
+  if (formato === "scrypt_portal" || formato === "scrypt_v1") return "scrypt";
+  if (formato === "outro" || salva.includes("$")) return "nao_reconhecido";
+  return "texto";
+}
+function conferirSenhaDaFicha(informada, ficha) {
+  if (ficha.password_hash && verificarSenhaArmazenada(informada, ficha.password_hash)) return "hash";
+  if (conferirSenhaExistente(informada, ficha.password)) return "texto";
+  return "nao";
+}
+function conferirSenhaExistente(informada, gravada) {
+  const formato = classificarSenhaGravada(gravada);
+  const limpa = String(informada ?? "").trim();
+  if (!limpa || formato === "vazia" || formato === "nao_reconhecido") return false;
+  if (formato === "scrypt") return verificarSenhaArmazenada(limpa, gravada);
+  const digitada = Buffer.from(limpa);
+  const armazenada = Buffer.from(String(gravada));
+  if (digitada.length !== armazenada.length) return false;
+  return (0, import_node_crypto2.timingSafeEqual)(digitada, armazenada);
+}
+
 // lib/cevaPortal/equipeInterna.ts
-var import_crypto2 = require("crypto");
 function ehEquipeInterna(usuario) {
   if (!usuario || usuario.id == null || String(usuario.id) === "") return false;
   if (String(usuario.status || "") !== "Ativo") return false;
@@ -2845,14 +3162,8 @@ function ehEquipeInterna(usuario) {
   if (tipo === "internal") return true;
   return !tipo && !usuario.client_id && !usuario.provider_id;
 }
-function senhaEquipeConfere(informada, gravada) {
-  const limpa = String(informada ?? "").trim();
-  const salva = gravada == null ? "" : String(gravada);
-  if (!limpa || !salva) return false;
-  const digitada = Buffer.from(limpa);
-  const armazenada = Buffer.from(salva);
-  if (digitada.length !== armazenada.length) return false;
-  return (0, import_crypto2.timingSafeEqual)(digitada, armazenada);
+function senhaEquipeConfere(informada, gravada, hash) {
+  return conferirSenhaDaFicha(informada, { password: gravada, password_hash: hash }) !== "nao";
 }
 function tokenDaEquipeInterna(prefixo, userId, agora = Date.now()) {
   return `${prefixo}-interno-${userId}-${agora}`;
@@ -3324,6 +3635,7 @@ async function gravarColuna(sb, missionId, campo, valor) {
 }
 function hydrateSnapshot(mission, logSnapshot) {
   if (!logSnapshot || mission.snapshot_approved_by) return mission;
+  if (carimboRecalculoAutomatico(logSnapshot.approved_by)) return mission;
   return {
     ...mission,
     snapshot_data: logSnapshot,
@@ -3404,10 +3716,16 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data: sistema, error: erroSistema } = await sb.from("system_users").select("id, name, email, password, status, client_id, provider_id, user_type, permissions").ilike("email", email).maybeSingle();
+      const colunasEquipe = "id, name, email, password, password_hash, status, client_id, provider_id, user_type, permissions";
+      let consultaEquipe = await sb.from("system_users").select(colunasEquipe).ilike("email", email).maybeSingle();
+      if (consultaEquipe.error && /password_hash/i.test(consultaEquipe.error.message || "")) {
+        consultaEquipe = await sb.from("system_users").select("id, name, email, password, status, client_id, provider_id, user_type, permissions").ilike("email", email).maybeSingle();
+      }
+      const sistema = consultaEquipe.data;
+      const erroSistema = consultaEquipe.error;
       if (erroSistema) {
         console.error(`[${cfg().logPrefix}] login equipe`, erroSistema.message || erroSistema);
-      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password)) {
+      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password, sistema.password_hash)) {
         clearFailures(key);
         const session2 = sessaoDaEquipe(sistema);
         res.status(200).json({ token: tokenDaEquipeInterna(cfg().tokenPrefix, sistema.id), user: session2 });

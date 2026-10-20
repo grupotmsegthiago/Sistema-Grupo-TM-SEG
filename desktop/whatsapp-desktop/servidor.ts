@@ -7,9 +7,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { validarDestinatario, origemPermitida, PORTA_LOCAL, limparPesquisaEntreEnvios } from '../../lib/whatsappDesktop/fila.ts';
+import { validarDestinatario, origemPermitida, PORTA_LOCAL, limparPesquisaEntreEnvios, decidirTesteHomologacao, VERSAO_CONECTOR, GRUPO_HOMOLOGACAO, MENSAGEM_TESTE_HOMOLOGACAO, dobrar } from '../../lib/whatsappDesktop/fila.ts';
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +25,8 @@ function pastaDados(): string {
 function arquivoToken() { return path.join(pastaDados(), 'dispositivo.json'); }
 function arquivoFeitos() { return path.join(pastaDados(), 'comandos.json'); }
 function arquivoFila() { return path.join(pastaDados(), 'fila.lock'); }
+function arquivoInstalacao() { return path.join(pastaDados(), 'instalacao.json'); }
+function arquivoTeste() { return path.join(pastaDados(), 'teste-homologacao.json'); }
 
 type EstadoComando = 'comando_executado' | 'falha_envio' | 'destinatario_nao_validado';
 type Resultado = { id: string; estado: EstadoComando; motivo?: string };
@@ -106,25 +108,77 @@ export function driverSimulado(cenario: { titulo: string; candidatos: string[]; 
   };
 }
 
-function driverWindows(): Driver {
-  return (grupo, texto) => new Promise((resolve) => {
-    const script = acharArquivo('driver.ps1');
-    const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-Acao', 'enviar', '-Grupo', grupo, '-Mensagem', texto], { windowsHide: true });
+function lerJson(arquivo: string): any {
+  try { return JSON.parse(fs.readFileSync(arquivo, 'utf8')); } catch { return null; }
+}
+
+function garantirInstalacao(): { id: string; versao: string } {
+  const atual = lerJson(arquivoInstalacao());
+  if (atual?.id) return atual;
+  const criada = { id: crypto.randomUUID(), versao: VERSAO_CONECTOR, criadaEm: new Date().toISOString() };
+  garantirPasta();
+  fs.writeFileSync(arquivoInstalacao(), JSON.stringify(criada));
+  return criada;
+}
+
+type InspecaoJanela = { candidatos?: string[]; titulo?: string; autenticado?: boolean | null; aberto?: boolean; motivo?: string };
+
+function whatsappInstalado(): boolean {
+  if (process.platform !== 'win32') return false;
+  try {
+    const saida = execFileSync('powershell.exe', ['-NoProfile', '-Command', "(Get-AppxPackage -Name '*WhatsApp*' | Measure-Object).Count"], { windowsHide: true, encoding: 'utf8', timeout: 15000 });
+    return Number(String(saida).trim()) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function prepararInicioAutomatico(): { criado: boolean; motivo: string } {
+  const pasta = path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup');
+  const destino = path.join(pasta, 'TM SEG WhatsApp.lnk');
+  if (fs.existsSync(destino)) return { criado: false, motivo: 'A inicialização automática já estava configurada e foi preservada.' };
+  const vbs = acharArquivo('Abrir instalador.vbs');
+  const script = [
+    '$atalho = New-Object -ComObject WScript.Shell',
+    `$link = $atalho.CreateShortcut(${JSON.stringify(destino)})`,
+    "$link.TargetPath = 'wscript.exe'",
+    `$link.Arguments = '//B ${JSON.stringify(vbs)}'`,
+    '$link.Save()',
+  ].join('; ');
+  execFileSync('powershell.exe', ['-NoProfile', '-Command', script], { windowsHide: true, timeout: 15000 });
+  return { criado: fs.existsSync(destino), motivo: 'O conector foi autorizado a iniciar com o Windows.' };
+}
+
+function whatsappAberto(): boolean {
+  if (process.platform !== 'win32') return false;
+  try {
+    const saida = execFileSync('powershell.exe', ['-NoProfile', '-Command', "@(Get-Process | Where-Object { $_.ProcessName -match 'WhatsApp' -and $_.MainWindowHandle -ne 0 }).Count"], { windowsHide: true, encoding: 'utf8' });
+    return Number(String(saida).trim()) > 0;
+  } catch {
+    return false;
+  }
+}
+
+function rodarPowerShell(acao: string, grupo = '', mensagem = ''): Promise<any> {
+  return new Promise((resolve) => {
+    const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', acharArquivo('driver.ps1'), '-Acao', acao, '-Grupo', grupo, '-Mensagem', mensagem], { windowsHide: true });
     let saida = '';
     proc.stdout.on('data', (parte) => { saida += parte.toString(); });
     proc.on('close', () => {
-      try {
-        const json = JSON.parse(saida || '{}');
-        if (json.estado === 'comando_executado' || json.estado === 'destinatario_nao_validado' || json.estado === 'falha_envio') {
-          resolve({ id: '', estado: json.estado, motivo: json.motivo });
-          return;
-        }
-        resolve({ id: '', estado: json.aberto === false ? 'falha_envio' : 'destinatario_nao_validado', motivo: json.motivo || 'Resposta inesperada do WhatsApp.' });
-      } catch {
-        resolve({ id: '', estado: 'falha_envio', motivo: 'O Windows não devolveu o resultado do WhatsApp.' });
-      }
+      try { resolve(JSON.parse(saida || '{}')); }
+      catch { resolve({ ok: false, motivo: 'O Windows não devolveu o resultado do WhatsApp.' }); }
     });
   });
+}
+
+function driverWindows(): Driver {
+  return async (grupo, texto) => {
+    const json = await rodarPowerShell('enviar', grupo, texto);
+    if (json.estado === 'comando_executado' || json.estado === 'destinatario_nao_validado' || json.estado === 'falha_envio') {
+      return { id: '', estado: json.estado, motivo: json.motivo };
+    }
+    return { id: '', estado: json.aberto === false ? 'falha_envio' : 'destinatario_nao_validado', motivo: json.motivo || 'Resposta inesperada do WhatsApp.' };
+  };
 }
 
 async function executarFila(comandos: Array<{ id: string; groupName: string; text: string }>, driver: Driver): Promise<Resultado[]> {
@@ -160,7 +214,8 @@ async function executarFila(comandos: Array<{ id: string; groupName: string; tex
   return resultados;
 }
 
-export function criarServidor(driver: Driver = driverWindows()) {
+export function criarServidor(driver: Driver = driverWindows(), inspecionar?: () => Promise<InspecaoJanela>) {
+  const lerJanela = inspecionar || (() => rodarPowerShell('inspecionar'));
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     if (req.method === 'OPTIONS') {
@@ -202,7 +257,18 @@ export function criarServidor(driver: Driver = driverWindows()) {
       return;
     }
     if (req.method === 'GET' && url.pathname === '/install/whatsapp') {
-      enviar(200, { mensagem: 'A detecção definitiva acontece no envio. Se o WhatsApp estiver fechado, o lote fica pendente e nada é marcado como enviado.' });
+      const instalado = whatsappInstalado() || whatsappAberto();
+      enviar(200, {
+        instalado,
+        canalOficial: 'https://www.whatsapp.com/download',
+        mensagem: instalado
+          ? 'O WhatsApp Desktop oficial está neste computador. Se a conta ainda não estiver conectada, use o QR Code na tela do próprio WhatsApp. Nenhuma senha é pedida aqui.'
+          : 'O WhatsApp Desktop oficial ainda não foi encontrado. Abra o canal oficial, instale o aplicativo e conecte a conta pelo QR Code.',
+      });
+      return;
+    }
+    if (req.method === 'GET' && url.pathname === '/install/mensagem') {
+      enviar(200, { grupo: GRUPO_HOMOLOGACAO, mensagem: MENSAGEM_TESTE_HOMOLOGACAO });
       return;
     }
     if (req.method === 'GET' && url.pathname === '/install/ping') {
@@ -211,12 +277,86 @@ export function criarServidor(driver: Driver = driverWindows()) {
     }
     if (req.method === 'POST' && url.pathname === '/install/apply') {
       garantirPasta();
-      enviar(200, { ok: true, pasta: pastaDados() });
+      const corpo = await lerCorpo(req);
+      let inicio = { criado: false, motivo: 'A inicialização automática não foi autorizada.' };
+      if (corpo?.autostart === true && process.platform === 'win32') inicio = prepararInicioAutomatico();
+      enviar(200, { ok: true, pasta: pastaDados(), inicio });
       return;
     }
     if (req.method === 'GET' && url.pathname === '/status') {
-      if (!autorizado(req)) { enviar(401, { conectado: true, pareado: false, pausado, whatsappAberto: false }); return; }
-      enviar(200, { conectado: true, pareado: true, pausado, whatsappAberto: true });
+      const instalacao = garantirInstalacao();
+      const teste = lerJson(arquivoTeste());
+      const aberto = whatsappAberto();
+      if (!autorizado(req)) {
+        enviar(401, { conectado: true, pareado: false, pausado, whatsappAberto: aberto, whatsappAutenticado: null, versao: instalacao.versao, instalacaoId: instalacao.id, ultimoTeste: teste, resultadoComunicacao: 'Pareamento necessário.' });
+        return;
+      }
+      enviar(200, {
+        conectado: true,
+        pareado: true,
+        pausado,
+        whatsappAberto: aberto,
+        whatsappAutenticado: null,
+        versao: VERSAO_CONECTOR,
+        instalacaoId: instalacao.id,
+        ultimoTeste: teste,
+        resultadoComunicacao: 'Conector local autenticado neste computador.',
+      });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/unlink') {
+      if (!autorizado(req)) { enviar(401, { motivo: 'Pareie este computador antes de desvincular.' }); return; }
+      try { fs.unlinkSync(arquivoToken()); } catch { /* já desvinculado */ }
+      enviar(200, { ok: true, pareado: false });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/update') {
+      if (!autorizado(req)) { enviar(401, { motivo: 'Pareie este computador antes de atualizar.' }); return; }
+      const instalacao = garantirInstalacao();
+      instalacao.versao = VERSAO_CONECTOR;
+      fs.writeFileSync(arquivoInstalacao(), JSON.stringify({ ...instalacao, atualizadoEm: new Date().toISOString() }));
+      enviar(200, { ok: true, versao: VERSAO_CONECTOR, instalacaoId: instalacao.id });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/homologacao') {
+      if (!autorizado(req)) { enviar(401, { motivo: 'Pareie este computador antes do teste.' }); return; }
+      const corpo = await lerCorpo(req);
+      const instalacao = garantirInstalacao();
+      const teste = lerJson(arquivoTeste());
+      const inspecao = await lerJanela();
+      if (inspecao.campoMensagem === false || inspecao.aberto === false) {
+        enviar(200, {
+          ok: false,
+          motivo: 'O WhatsApp Desktop não mostrou o chat GRUPO TM SEG - ADM nem o campo de mensagem. Abra esse grupo no aplicativo oficial e autorize o teste outra vez. Nada foi enviado.',
+          instalacaoId: instalacao.id,
+          entrega: null,
+          whatsappAutenticado: false,
+        });
+        return;
+      }
+      const candidatos = Array.isArray(inspecao.candidatos) ? inspecao.candidatos.map(String) : [];
+      const titulo = dobrar(inspecao.titulo) === dobrar(GRUPO_HOMOLOGACAO) ? GRUPO_HOMOLOGACAO : '';
+      const decisao = decidirTesteHomologacao({
+        autorizar: corpo?.autorizar === true,
+        tituloAberto: titulo,
+        candidatos,
+        testeJaRegistrado: !!teste?.registrado,
+      });
+      if (!decisao.enviar) {
+        enviar(200, { ok: false, motivo: decisao.motivo, instalacaoId: instalacao.id, entrega: null, whatsappAutenticado: inspecao.autenticado ?? null });
+        return;
+      }
+      const resultado = await driver(GRUPO_HOMOLOGACAO, MENSAGEM_TESTE_HOMOLOGACAO);
+      const registro = {
+        registrado: resultado.estado === 'comando_executado',
+        instalacaoId: instalacao.id,
+        em: new Date().toISOString(),
+        estado: resultado.estado,
+        motivo: resultado.motivo || decisao.motivo,
+        entrega: null,
+      };
+      if (registro.registrado) fs.writeFileSync(arquivoTeste(), JSON.stringify(registro));
+      enviar(200, { ok: registro.registrado, ...registro });
       return;
     }
     if (!autorizado(req)) { enviar(401, { motivo: 'Pareie este computador antes de enviar comandos.' }); return; }

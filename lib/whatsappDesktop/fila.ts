@@ -7,6 +7,25 @@ import { podeAbrirWhatsapp, type AlvoFila } from '../solicitacaoEscolta/regras';
 
 export const PORTA_LOCAL = 47321;
 export const ORIGEM_LOCAL = `http://127.0.0.1:${PORTA_LOCAL}`;
+export const VERSAO_CONECTOR = '1.1.0';
+export const GRUPO_HOMOLOGACAO = 'GRUPO TM SEG - ADM';
+export const MENSAGEM_TESTE_HOMOLOGACAO = [
+  '🛡️ GRUPO TM SEG | ATIVAÇÃO CONCLUÍDA',
+  '',
+  '✅ Instalação e configuração realizadas com sucesso!',
+  '',
+  'Meu computador foi preparado para utilizar a integração oficial do Sistema Grupo TM SEG com o WhatsApp Desktop.',
+  '',
+  '🔹 Aplicativo TM SEG instalado',
+  '🔹 WhatsApp Desktop configurado',
+  '🔹 Comunicação com o sistema estabelecida',
+  '🔹 Teste de envio automático realizado',
+  '',
+  '🚀 Estou apto(a) para iniciar as atividades automatizadas do Grupo TM SEG!',
+  '',
+  '💻 Sistema Grupo TM SEG',
+  'Tecnologia, integração e eficiência operacional.',
+].join('\n');
 
 export const ESTADOS_ENVIO = [
   'aguardando_horario',
@@ -187,6 +206,29 @@ export function origemPermitida(origem: string | null | undefined): boolean {
   } catch {
     return false;
   }
+}
+
+/** Um teste de homologação por instalação. Sem autorização ou sem o nome exato, não envia. */
+export function decidirTesteHomologacao(entrada: {
+  autorizar: boolean;
+  tituloAberto: string;
+  candidatos: string[];
+  testeJaRegistrado: boolean;
+}): { enviar: boolean; motivo: string; mensagem: string; grupo: string } {
+  const base = { mensagem: MENSAGEM_TESTE_HOMOLOGACAO, grupo: GRUPO_HOMOLOGACAO };
+  if (entrada.testeJaRegistrado) {
+    return { ...base, enviar: false, motivo: 'Este computador já registrou o teste de ativação. O reenvio foi bloqueado.' };
+  }
+  if (!entrada.autorizar) {
+    return { ...base, enviar: false, motivo: 'O teste só segue depois de uma autorização explícita.' };
+  }
+  const conferencia = validarDestinatario({
+    esperado: GRUPO_HOMOLOGACAO,
+    tituloAberto: entrada.tituloAberto,
+    candidatos: entrada.candidatos,
+  });
+  if (!conferencia.ok) return { ...base, enviar: false, motivo: conferencia.motivo };
+  return { ...base, enviar: true, motivo: 'Destinatário confirmado. O comando pode ser executado uma vez.' };
 }
 
 export function limparPesquisaEntreEnvios(passos: string[]): string[] {

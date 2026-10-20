@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { montarLiberacoes } from '../lib/solicitacaoEscolta/regras.ts';
 import { buildActivationOffers, rankOffers } from '../lib/providerActivationRanking.ts';
 import {
+  decidirTesteHomologacao,
+  GRUPO_HOMOLOGACAO,
+  MENSAGEM_TESTE_HOMOLOGACAO,
   envioAposConfirmacao,
   estadoDoAlvo,
   limparPesquisaEntreEnvios,
@@ -152,6 +155,39 @@ test('resumo separa executado, pendência e erro', () => {
   assert.equal(resumo.executados, 1);
   assert.equal(resumo.pendencias, 1);
   assert.equal(resumo.erros, 2);
+});
+
+test('o teste de homologação exige autorização, o grupo exato e não repete', () => {
+  const pronto = decidirTesteHomologacao({
+    autorizar: true,
+    tituloAberto: 'GRUPO TM SEG - ADM',
+    candidatos: ['GRUPO TM SEG - ADM'],
+    testeJaRegistrado: false,
+  });
+  assert.equal(pronto.enviar, true);
+  assert.equal(pronto.grupo, GRUPO_HOMOLOGACAO);
+  assert.match(MENSAGEM_TESTE_HOMOLOGACAO, /ATIVAÇÃO CONCLUÍDA/);
+  const semAutorizacao = decidirTesteHomologacao({
+    autorizar: false,
+    tituloAberto: GRUPO_HOMOLOGACAO,
+    candidatos: [GRUPO_HOMOLOGACAO],
+    testeJaRegistrado: false,
+  });
+  assert.equal(semAutorizacao.enviar, false);
+  const grupoErrado = decidirTesteHomologacao({
+    autorizar: true,
+    tituloAberto: 'OUTRO GRUPO',
+    candidatos: ['OUTRO GRUPO'],
+    testeJaRegistrado: false,
+  });
+  assert.equal(grupoErrado.enviar, false);
+  const repetido = decidirTesteHomologacao({
+    autorizar: true,
+    tituloAberto: GRUPO_HOMOLOGACAO,
+    candidatos: [GRUPO_HOMOLOGACAO],
+    testeJaRegistrado: true,
+  });
+  assert.equal(repetido.enviar, false);
 });
 
 test('a API local só aceita a máquina e o sistema oficial', () => {

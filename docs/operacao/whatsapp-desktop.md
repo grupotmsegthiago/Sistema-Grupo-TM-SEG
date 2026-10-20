@@ -4,13 +4,13 @@ O aplicativo fica só neste computador. Ele usa o WhatsApp Desktop já autentica
 
 ## Instalar
 
-1. Em Configurações, abra **Integração WhatsApp Desktop**.
-2. Clique em **Instalar aplicativo TM SEG**.
-3. Se o arquivo ainda não foi gerado neste ambiente, na pasta do sistema execute `npx tsx desktop/whatsapp-desktop/servidor.ts` e abra `http://127.0.0.1:47321/`.
-4. Siga o assistente: Boas-vindas, Windows, WhatsApp, Instalar, Vincular, Teste e Concluir.
-5. Cole o código no sistema e clique em **Vincular este computador**. O indicador fica **Computador conectado**.
+1. Dê duplo clique em `desktop/whatsapp-desktop/Abrir instalador.vbs`. O atalho sobe o conector e abre o assistente. Não há comando para digitar.
+2. Siga as telas: Boas-vindas, Verificação do computador, Instalação dos componentes, Configuração do WhatsApp, Conexão com TM SEG, Teste de funcionamento e Instalação concluída.
+3. Se o WhatsApp Desktop oficial não estiver instalado, o assistente abre o canal `https://www.whatsapp.com/download`. A conta entra pelo QR Code do próprio WhatsApp.
+4. No teste, marque a autorização. O envio só ocorre se o chat aberto for exatamente **GRUPO TM SEG - ADM**. Se a janela não mostrar esse nome, nada é enviado.
+5. Em Configurações, cole o código e clique em **Vincular este computador**.
 
-O assistente não é um arquivo BAT. A assinatura digital só entra quando houver certificado.
+O assistente não é um arquivo BAT. A assinatura digital só entra quando houver certificado. Neste computador, a inspeção de 19/10/2026 viu o WhatsApp aberto, mas a árvore de acessibilidade não expôs o nome do grupo. O teste real não foi enviado.
 
 ## Operar a solicitação
 

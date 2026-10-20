@@ -39,3 +39,34 @@ test('o aplicativo local autentica, envia em sequência e não duplica', async (
   servidor.closeAllConnections();
   await new Promise<void>((resolve) => servidor.close(() => resolve()));
 });
+
+test('o teste de homologação só envia com o chat aberto e não repete', async () => {
+  let envios = 0;
+  const servidor = criarServidor(async () => {
+    envios += 1;
+    return { id: '', estado: 'comando_executado' };
+  }, async () => ({
+    titulo: 'GRUPO TM SEG - ADM',
+    candidatos: ['GRUPO TM SEG - ADM'],
+    autenticado: true,
+    aberto: true,
+  }));
+  await new Promise<void>((resolve) => servidor.listen(0, '127.0.0.1', () => resolve()));
+  const endereco = servidor.address();
+  if (!endereco || typeof endereco === 'string') throw new Error('porta');
+  const base = `http://127.0.0.1:${endereco.port}`;
+  const codigo = await fetch(`${base}/pair/code`).then((r) => r.json()) as { codigo: string };
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${codigo.codigo}`, Origin: 'https://sistema.grupotmseg.com.br' };
+  const recusado = await fetch(`${base}/homologacao`, { method: 'POST', headers, body: JSON.stringify({ autorizar: false }) }).then((r) => r.json()) as { ok: boolean };
+  assert.equal(recusado.ok, false);
+  assert.equal(envios, 0);
+  const enviado = await fetch(`${base}/homologacao`, { method: 'POST', headers, body: JSON.stringify({ autorizar: true }) }).then((r) => r.json()) as { ok: boolean; entrega: null };
+  assert.equal(enviado.ok, true);
+  assert.equal(enviado.entrega, null);
+  assert.equal(envios, 1);
+  const repetido = await fetch(`${base}/homologacao`, { method: 'POST', headers, body: JSON.stringify({ autorizar: true }) }).then((r) => r.json()) as { ok: boolean };
+  assert.equal(repetido.ok, false);
+  assert.equal(envios, 1);
+  servidor.closeAllConnections();
+  await new Promise<void>((resolve) => servidor.close(() => resolve()));
+});
