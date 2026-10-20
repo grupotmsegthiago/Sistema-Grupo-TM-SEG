@@ -10,8 +10,10 @@ import {
   montarLiberacoes,
   podeAbrirWhatsapp,
   statusAposConfirmacao,
+  textoEsperaPorExtenso,
   textoSolicitacaoEscolta,
 } from '../lib/solicitacaoEscolta/regras.ts';
+import { interpretarRespostaPrint } from '../lib/solicitacaoEscolta/lerPrint.ts';
 import { consumirPrefillSolicitacao, gravarPrefillSolicitacao, horarioParaOs } from '../lib/solicitacaoEscolta/prefill.ts';
 
 function oferta(provider: string, cost: number, uf = 'RJ'): ActivationOffer {
@@ -56,7 +58,7 @@ test('mensagem sem prazo deixa a escolha com o operador', () => {
   assert.equal(lida.uf, 'SP');
 });
 
-test('fila agendada libera os dois mais baratos e o próximo em 10 minutos', () => {
+test('fila agendada libera os dois mais baratos e os dois próximos em 5 minutos', () => {
   const ordem = rankOffers([
     oferta('CARO', 900),
     oferta('BARATO', 100),
@@ -65,7 +67,8 @@ test('fila agendada libera os dois mais baratos e o próximo em 10 minutos', () 
   ], 'RJ').map((item) => item.provider);
   assert.deepEqual(ordem, ['BARATO', 'MEIO', 'QUARTO', 'CARO']);
   const horarios = montarLiberacoes(ordem.length, false, 1_000);
-  assert.deepEqual(horarios, [1_000, 1_000, 1_000 + INTERVALO_FILA_MS, 1_000 + INTERVALO_FILA_MS * 2]);
+  assert.deepEqual(horarios, [1_000, 1_000, 1_000 + INTERVALO_FILA_MS, 1_000 + INTERVALO_FILA_MS]);
+  assert.equal(textoEsperaPorExtenso(1_000 + 4 * 60 * 1000 + 30 * 1000, 1_000), '04 minutos e 30 segundos para liberação');
 });
 
 test('fila imediata libera todos no mesmo instante', () => {
@@ -141,6 +144,17 @@ test('OS nasce sem cliente, com fornecedor e horário da solicitação', () => {
   assert.equal(lido?.provider, 'BARATO');
   assert.equal(lido?.origin, 'Rio de Janeiro - RJ');
   assert.equal(consumirPrefillSolicitacao(), null);
+});
+
+test('o print vira origem, destino e horário no texto padrão', () => {
+  const texto = interpretarRespostaPrint('```json\n{"origem":"Rio de Janeiro - RJ","destino":"São Paulo - SP","imediata":false,"data":"21/10/2026","hora":"08:00"}\n```');
+  const lida = lerSolicitacao(texto);
+  assert.equal(lida.origem, 'Rio de Janeiro - RJ');
+  assert.equal(lida.destino, 'São Paulo - SP');
+  assert.equal(lida.imediata, false);
+  assert.equal(lida.hora, '08:00');
+  assert.match(textoSolicitacaoEscolta({ origem: lida.origem, destino: lida.destino, imediata: false, data: lida.data, hora: lida.hora }), /21\/10\/2026 às 08:00/);
+  assert.equal(interpretarRespostaPrint('sem json'), '');
 });
 
 test('tabela ausente é reconhecida e o painel não dispara a Z-API', () => {

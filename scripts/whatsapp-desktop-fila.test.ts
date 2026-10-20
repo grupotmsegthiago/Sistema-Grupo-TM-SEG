@@ -31,14 +31,14 @@ function alvo(parcial: Partial<AlvoDesktop> & Pick<AlvoDesktop, 'id' | 'ordem'>)
   };
 }
 
-test('imediata libera todos juntos e agendada libera dois agora e o resto de 10 em 10', () => {
+test('imediata libera todos juntos e agendada libera dois agora e os dois próximos em 5 minutos', () => {
   const imediata = montarLiberacoes(4, true, inicio);
   assert.deepEqual(imediata, [inicio, inicio, inicio, inicio]);
   const agendada = montarLiberacoes(4, false, inicio);
   assert.equal(agendada[0], inicio);
   assert.equal(agendada[1], inicio);
-  assert.equal(agendada[2] - agendada[1], 10 * 60 * 1000);
-  assert.equal(agendada[3] - agendada[2], 10 * 60 * 1000);
+  assert.equal(agendada[2] - agendada[1], 5 * 60 * 1000);
+  assert.equal(agendada[3], agendada[2]);
 });
 
 test('TORRES permanece na frente em São Paulo e o custo ordena o restante', () => {

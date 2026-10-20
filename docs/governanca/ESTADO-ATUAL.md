@@ -31,6 +31,7 @@ A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch l
 
 - Gestor Fiscal: coluna de emissão de NF no fornecedor, alíquotas da contabilidade e atribuição de despesa/tributo por CNPJ. Sem migration.
 - WhatsApp Desktop: o computador preparado fica gravado no conector e no navegador. A reabertura do TM SEG identifica o dispositivo. Instalação, QR Code e teste não se repetem, salvo reautenticação do WhatsApp. Ainda não publicado. Migrations da solicitação e do desktop seguem sem aplicação.
+- Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Não publicado.
 - Fast-forward da `dev` até a `main`: não foi pedido.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
 - Policies do Postgres da TM SEG: não carregadas.

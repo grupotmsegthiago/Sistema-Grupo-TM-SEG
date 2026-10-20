@@ -212,6 +212,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const [isCommercialUser, setIsCommercialUser] = useState(false);
   const [providerPending, setProviderPending] = useState(false);
+  const [pendenciaSolicitacao, setPendenciaSolicitacao] = useState(false);
   const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
   const [operatorConfirmedCalc, setOperatorConfirmedCalc] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
@@ -594,6 +595,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       scheduledTime: prefill.scheduledTime || prev.scheduledTime,
     }));
     setScheduleMode(prefill.imediata ? 'immediate' : 'scheduled');
+    setPendenciaSolicitacao(true);
   }, []);
 
   useEffect(() => {
@@ -1957,6 +1959,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200" ref={dropdownRef}>
           <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
+              {pendenciaSolicitacao && (
+                <p className="bg-amber-50 px-4 py-3 text-[11px] font-bold text-amber-800" data-testid="text-os-solicitada-pendencia">
+                  A contagem dos outros fornecedores parou. Esta OS fica como Solicitada, com pendência até o cliente e os dados obrigatórios serem preenchidos.
+                </p>
+              )}
 
               {/* ETAPA 1 - TIPO DE OPERAÇÃO */}
               <div className="p-4 space-y-3">

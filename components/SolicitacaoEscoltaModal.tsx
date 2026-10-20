@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, Clock, Copy, Loader2, MessageSquare, Send, X } from 'lucide-react';
+import { Check, Copy, Image, Loader2, MessageSquare, Send, X } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { buildActivationOffers, rankOffers, type RankingProviderInput, type RankingTableInput } from '../lib/providerActivationRanking';
@@ -10,11 +10,12 @@ import {
   montarLiberacoes,
   podeAbrirWhatsapp,
   statusAposConfirmacao,
-  textoEspera,
+  textoEsperaPorExtenso,
   textoSolicitacaoEscolta,
   type LeituraSolicitacao,
 } from '../lib/solicitacaoEscolta/regras';
 import { gravarPrefillSolicitacao, horarioParaOs } from '../lib/solicitacaoEscolta/prefill';
+import { lerPrintSolicitacao } from '../lib/solicitacaoEscolta/lerPrint';
 import { estadoDoAlvo, planejarDespacho, resumirEnvios, ROTULO_ESTADO, envioAposConfirmacao, type AlvoDesktop, type EstadoEnvio } from '../lib/whatsappDesktop/fila';
 import { consultarAplicativo, enviarComandosLocais } from '../lib/whatsappDesktop/clienteLocal';
 
@@ -66,6 +67,7 @@ interface FornecedorLista {
   link: string | null;
   grupoNome: string | null;
   uf: string;
+  cidade: string;
 }
 
 function nomeOperador(): string {
@@ -96,6 +98,7 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
   const [alvos, setAlvos] = useState<AlvoRow[]>([]);
   const [agora, setAgora] = useState(() => Date.now());
   const [acaoId, setAcaoId] = useState('');
+  const [lendoPrint, setLendoPrint] = useState(false);
 
   const recarregar = useCallback(async () => {
     const cabecas = await supabase
@@ -188,6 +191,7 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
           link: linkGrupoOperador(cadastro?.whatsapp_group_link || null),
           grupoNome: cadastro?.whatsapp_desktop_vinculo === 'desativado' ? null : (cadastro?.whatsapp_desktop_group_name || null),
           uf,
+          cidade: oferta.city || '',
         };
       });
       setFornecedores(lista);
@@ -200,8 +204,9 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
     }
   };
 
-  const ler = () => {
-    const lida = lerSolicitacao(mensagem);
+  const aplicarLeitura = (texto: string) => {
+    const lida = lerSolicitacao(texto);
+    setMensagem(texto);
     setLeitura(lida);
     setImediata(lida.imediata);
     setFornecedores([]);
@@ -212,6 +217,39 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
     }
     setErro('');
     void buscarFornecedores(lida.uf);
+  };
+
+  const ler = () => aplicarLeitura(mensagem);
+
+  const lerArquivo = async (arquivo: File) => {
+    if (!arquivo.type.startsWith('image/')) {
+      setErro('O print precisa ser uma imagem.');
+      return;
+    }
+    if (arquivo.size > 4_000_000) {
+      setErro('O print passou de 4 MB. Envie uma imagem menor.');
+      return;
+    }
+    setLendoPrint(true);
+    setErro('');
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const leitor = new FileReader();
+        leitor.onload = () => resolve(String(leitor.result || '').split(',')[1] || '');
+        leitor.onerror = () => reject(new Error('Não foi possível ler o print.'));
+        leitor.readAsDataURL(arquivo);
+      });
+      const texto = await lerPrintSolicitacao(base64, arquivo.type);
+      if (!texto.trim()) {
+        setErro('Não consegui ler origem e destino nesse print. Escreva ou cole o texto.');
+        return;
+      }
+      aplicarLeitura(texto);
+    } catch (falha: any) {
+      setErro(falha?.message || 'Não foi possível ler o print.');
+    } finally {
+      setLendoPrint(false);
+    }
   };
 
   const selecionados = useMemo(
@@ -488,25 +526,67 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
 
         <div className="grid flex-1 gap-0 overflow-y-auto md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="space-y-4 border-b border-gray-100 p-5 md:border-b-0 md:border-r">
-            <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500">Mensagem do cliente</label>
+            <label className="block text-[10px] font-black uppercase tracking-wider text-gray-500">Texto ou print do cliente</label>
             <textarea
               className="h-36 w-full rounded-xl border border-gray-200 p-3 text-sm text-gray-800 outline-none focus:border-green-600"
-              placeholder={'Origem: Rio de Janeiro - RJ\nDestino: São Paulo - SP\nData: 21/10/2026\nHorário: 08:00\nAgendada'}
+              placeholder={'Escreva, cole o texto ou cole o print.\nOrigem: Rio de Janeiro - RJ\nDestino: São Paulo - SP\nData: 21/10/2026\nHorário: 08:00\nAgendada'}
               value={mensagem}
               onChange={(evento) => setMensagem(evento.target.value)}
+              onPaste={(evento) => {
+                const item = Array.from(evento.clipboardData.items).find((parte) => parte.type.startsWith('image/'));
+                const arquivo = item?.getAsFile();
+                if (!arquivo) return;
+                evento.preventDefault();
+                void lerArquivo(arquivo);
+              }}
               data-testid="input-mensagem-solicitacao"
             />
-            <button type="button" onClick={ler} disabled={!mensagem.trim() || carregandoLista} className="flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-[11px] font-black uppercase text-white disabled:opacity-40" data-testid="button-ler-solicitacao">
-              {carregandoLista ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Ler solicitação
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={ler} disabled={!mensagem.trim() || carregandoLista || lendoPrint} className="flex items-center gap-2 rounded-lg bg-gray-900 px-4 py-2 text-[11px] font-black uppercase text-white disabled:opacity-40" data-testid="button-ler-solicitacao">
+                {carregandoLista || lendoPrint ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Ler solicitação
+              </button>
+              <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-[11px] font-black uppercase text-gray-700">
+                <Image size={14} /> Colar print
+                <input type="file" accept="image/*" className="hidden" data-testid="input-print-solicitacao" onChange={(evento) => {
+                  const arquivo = evento.target.files?.[0];
+                  if (arquivo) void lerArquivo(arquivo);
+                  evento.target.value = '';
+                }} />
+              </label>
+            </div>
 
             {leitura && (
               <div className="space-y-3 rounded-xl border border-gray-200 p-3">
                 <label className="block text-[10px] font-black uppercase text-gray-500">Origem</label>
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" value={leitura.origem} onChange={(evento) => setLeitura({ ...leitura, origem: evento.target.value })} data-testid="input-origem-solicitacao" />
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" value={leitura.origem} onChange={(evento) => setLeitura({ ...leitura, origem: evento.target.value })} onBlur={(evento) => {
+                  const lida = lerSolicitacao(`Origem: ${evento.target.value}\nDestino: ${leitura.destino}`);
+                  if (lida.uf && lida.uf !== leitura.uf) {
+                    setLeitura({ ...leitura, origem: evento.target.value, cidade: lida.cidade, uf: lida.uf });
+                    void buscarFornecedores(lida.uf);
+                  }
+                }} data-testid="input-origem-solicitacao" />
                 <label className="block text-[10px] font-black uppercase text-gray-500">Destino</label>
                 <input className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" value={leitura.destino} onChange={(evento) => setLeitura({ ...leitura, destino: evento.target.value })} data-testid="input-destino-solicitacao" />
-                <p className="text-[11px] font-bold text-gray-600">UF da fila: {leitura.uf || 'não lida'}{leitura.cidade ? ` · ${leitura.cidade}` : ''}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500">Data</label>
+                    <input className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" value={leitura.data || ''} onChange={(evento) => setLeitura({ ...leitura, data: evento.target.value || null })} data-testid="input-data-solicitacao" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-gray-500">Horário</label>
+                    <input className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" value={leitura.hora || ''} onChange={(evento) => setLeitura({ ...leitura, hora: evento.target.value || null })} data-testid="input-hora-solicitacao" />
+                  </div>
+                </div>
+                <p className="text-[11px] font-bold text-gray-600">Região da fila: {leitura.cidade || 'cidade não lida'} / {leitura.uf || 'UF não lida'}</p>
+                {imediata != null && (
+                  <pre className="whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-[11px] text-gray-700" data-testid="text-padrao-solicitacao">{textoSolicitacaoEscolta({
+                    origem: leitura.origem,
+                    destino: leitura.destino,
+                    imediata,
+                    data: leitura.data,
+                    hora: leitura.hora,
+                  })}</pre>
+                )}
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => setImediata(true)} className={`rounded-lg border px-3 py-2 text-[11px] font-black uppercase ${imediata === true ? 'border-red-700 bg-red-700 text-white' : 'border-gray-200 text-gray-600'}`} data-testid="button-tipo-imediata">Imediata</button>
                   <button type="button" onClick={() => setImediata(false)} className={`rounded-lg border px-3 py-2 text-[11px] font-black uppercase ${imediata === false ? 'border-blue-700 bg-blue-700 text-white' : 'border-gray-200 text-gray-600'}`} data-testid="button-tipo-agendada">Agendada</button>
@@ -516,39 +596,50 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
             )}
 
             {fornecedores.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase text-gray-500">Fornecedores, do mais barato ao mais caro</p>
-                  <button type="button" className="text-[10px] font-black uppercase text-green-700" onClick={() => setMarcados(marcados.length === fornecedores.length ? [] : fornecedores.map((item) => item.id))} data-testid="button-selecionar-todos-fornecedores">
-                    {marcados.length === fornecedores.length ? 'Limpar' : 'Selecionar todos'}
-                  </button>
-                </div>
-                <ul className="max-h-64 space-y-1 overflow-y-auto">
-                  {fornecedores.map((item, indice) => {
-                    const previsto = liberacoesPrevistas[selecionados.findIndex((sel) => sel.id === item.id)];
-                    return (
-                      <li key={item.id} className="flex items-center gap-2 rounded-lg border border-gray-100 px-2 py-2 text-xs">
-                        <input type="checkbox" checked={marcados.includes(item.id)} onChange={() => setMarcados((atual) => atual.includes(item.id) ? atual.filter((id) => id !== item.id) : [...atual, item.id])} data-testid={`check-fornecedor-${indice}`} />
-                        <span className="flex-1 font-bold text-gray-800">{item.nome}</span>
-                        <span className="font-mono text-[10px] text-gray-500">{moeda(item.custo)}</span>
-                        <span className="text-[10px] font-bold text-gray-400">{item.link ? 'link ok' : 'sem link'}</span>
-                        {imediata === false && previsto != null && marcados.includes(item.id) && (
-                          <span className="text-[10px] font-bold text-blue-700">{textoEspera(previsto, 0) === '00:00' ? 'agora' : textoEspera(previsto, 0)}</span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-                <button type="button" onClick={() => void preparar()} disabled={salvando || imediata == null} className="flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-[11px] font-black uppercase text-white disabled:opacity-40" data-testid="button-preparar-encaminhamento">
-                  {salvando ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />} Preparar encaminhamento
-                </button>
-              </div>
+              <button type="button" onClick={() => void preparar()} disabled={salvando || imediata == null || selecionados.length === 0} className="flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-[11px] font-black uppercase text-white disabled:opacity-40" data-testid="button-preparar-encaminhamento">
+                {salvando ? <Loader2 size={14} className="animate-spin" /> : <Copy size={14} />} Preparar encaminhamento
+              </button>
             )}
             {avisoLista && <p className="text-[11px] font-bold text-amber-700">{avisoLista}</p>}
             {erro && <p className="text-[11px] font-bold text-red-600" data-testid="text-erro-solicitacao">{erro}</p>}
           </div>
 
           <div className="space-y-3 bg-slate-50 p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Fornecedores da região</p>
+              {fornecedores.length > 0 && (
+                <button type="button" className="text-[10px] font-black uppercase text-green-700" onClick={() => setMarcados(marcados.length === fornecedores.length ? [] : fornecedores.map((item) => item.id))} data-testid="button-selecionar-todos-fornecedores">
+                  {marcados.length === fornecedores.length ? 'Limpar' : 'Selecionar mais de um'}
+                </button>
+              )}
+            </div>
+            {leitura && <p className="text-[11px] font-bold text-slate-600">{leitura.cidade || 'Cidade'} / {leitura.uf || 'UF'} · {imediata === true ? 'Imediata: todos os marcados juntos' : imediata === false ? 'Agendada: 2 agora e os 2 próximos a cada 5 minutos' : 'Escolha imediata ou agendada'}</p>}
+            {fornecedores.length === 0 && <p className="text-xs text-slate-500">Os fornecedores da cidade e da UF aparecem aqui depois da leitura.</p>}
+            <ul className="max-h-72 space-y-1 overflow-y-auto">
+              {fornecedores.map((item, indice) => {
+                const posicao = selecionados.findIndex((sel) => sel.id === item.id);
+                const previsto = posicao >= 0 ? liberacoesPrevistas[posicao] : undefined;
+                const espera = previsto == null ? '' : textoEsperaPorExtenso(previsto, 0);
+                const marcado = marcados.includes(item.id);
+                return (
+                  <li key={item.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs">
+                    <button type="button" onClick={() => setMarcados((atual) => atual.includes(item.id) ? atual.filter((id) => id !== item.id) : [...atual, item.id])} className={`rounded-md px-2 py-1 text-[10px] font-black uppercase ${marcado ? 'bg-gray-900 text-white' : 'bg-gray-200 text-gray-600'}`} data-testid={`check-fornecedor-${indice}`}>
+                      {marcado ? 'Selecionado' : 'Selecionar'}
+                    </button>
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-bold text-gray-800">{item.nome}</span>
+                      <span className="text-[10px] font-bold text-gray-500">{item.cidade || 'Cidade'} / {item.uf} · {moeda(item.custo)}</span>
+                    </span>
+                    {marcado && espera && espera !== 'Liberado' && (
+                      <span className="rounded-md bg-gray-300 px-2 py-1 text-[10px] font-bold text-gray-600">{espera}</span>
+                    )}
+                    {marcado && espera === 'Liberado' && (
+                      <span className="rounded-md bg-green-700 px-2 py-1 text-[10px] font-black uppercase text-white">Liberado</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">Ao vivo para todos os operadores</p>
             {tabelaAusente && (
               <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-[11px] font-bold text-amber-800" data-testid="text-tabela-ausente">
@@ -598,7 +689,7 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
                               <td className="py-1 pr-2">{solicitacao.uf || '—'}</td>
                               <td className="py-1 pr-2">{alvo.custo_100km == null ? '—' : moeda(Number(alvo.custo_100km))}</td>
                               <td className="py-1 pr-2">{alvo.grupo_nome || 'sem nome exato'}</td>
-                              <td className="py-1 pr-2">{estado === 'aguardando_horario' ? textoEspera(new Date(alvo.liberar_em).getTime(), agora) : 'liberado'}</td>
+                              <td className="py-1 pr-2">{estado === 'aguardando_horario' ? textoEsperaPorExtenso(new Date(alvo.liberar_em).getTime(), agora) : 'liberado'}</td>
                               <td className="py-1">{ROTULO_ESTADO[estado]}{alvo.envio_erro ? ` · ${alvo.envio_erro}` : ''}</td>
                             </tr>
                           );
@@ -621,7 +712,9 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
                           {alvo.status === 'bloqueado' && <span className="font-bold text-slate-400">não recebe</span>}
                           {alvo.status === 'confirmado' && <span className="font-bold text-green-700">confirmado</span>}
                           {alvo.status !== 'bloqueado' && alvo.status !== 'confirmado' && !liberado && (
-                            <span className="flex items-center gap-1 font-bold text-blue-700"><Clock size={12} /> {textoEspera(new Date(alvo.liberar_em).getTime(), agora)}</span>
+                            <button type="button" disabled className="rounded-md bg-gray-300 px-2 py-1 font-bold text-gray-600" data-testid={`button-espera-${alvo.id}`}>
+                              {textoEsperaPorExtenso(new Date(alvo.liberar_em).getTime(), agora)}
+                            </button>
                           )}
                           {liberado && (
                             <button type="button" disabled={acaoId === alvo.id} onClick={() => void abrirWhatsapp(solicitacao, alvo)} className="rounded-md bg-green-700 px-2 py-1 font-black uppercase text-white" data-testid={`button-abrir-whatsapp-${alvo.id}`}>
@@ -630,7 +723,7 @@ const SolicitacaoEscoltaModal: React.FC<Props> = ({ onClose, onAbrirOs }) => {
                           )}
                           {liberado && (
                             <button type="button" disabled={acaoId === alvo.id} onClick={() => void confirmar(solicitacao, alvo)} className="inline-flex items-center gap-1 rounded-md bg-gray-900 px-2 py-1 font-black uppercase text-white" data-testid={`button-fornecedor-confirmado-${alvo.id}`}>
-                              <Check size={12} /> Fornecedor confirmado
+                              <Check size={12} /> Confirmado
                             </button>
                           )}
                         </li>

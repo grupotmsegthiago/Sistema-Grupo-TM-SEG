@@ -4,7 +4,8 @@
 import { UF_LABEL, normKey } from '../providerActivationRanking';
 
 export const ONDA_INICIAL = 2;
-export const INTERVALO_FILA_MS = 10 * 60 * 1000;
+export const TAMANHO_ONDA = 2;
+export const INTERVALO_FILA_MS = 5 * 60 * 1000;
 
 const UFS = Object.keys(UF_LABEL);
 
@@ -137,11 +138,12 @@ export function lerSolicitacao(texto: string): LeituraSolicitacao {
   };
 }
 
-/** Horário em que cada fornecedor da fila pode ser aberto. A ordem já vem do mais barato ao mais caro. */
+/** Horário em que cada fornecedor da fila pode ser aberto. A ordem já vem do mais barato ao mais caro. Imediata libera todos juntos. Agendada libera dois e, a cada 5 minutos, os dois próximos. */
 export function montarLiberacoes(quantidade: number, imediata: boolean, inicioMs: number): number[] {
   return Array.from({ length: Math.max(0, quantidade) }, (_, ordem) => {
     if (imediata) return inicioMs;
-    return inicioMs + Math.max(0, ordem - (ONDA_INICIAL - 1)) * INTERVALO_FILA_MS;
+    const onda = Math.floor(ordem / TAMANHO_ONDA);
+    return inicioMs + onda * INTERVALO_FILA_MS;
   });
 }
 
@@ -167,6 +169,14 @@ export function textoEspera(liberarEmMs: number, agoraMs: number): string {
   return `${String(min).padStart(2, '0')}:${String(seg).padStart(2, '0')}`;
 }
 
+export function textoEsperaPorExtenso(liberarEmMs: number, agoraMs: number): string {
+  const falta = Math.max(0, liberarEmMs - agoraMs);
+  if (falta <= 0) return 'Liberado';
+  const min = Math.floor(falta / 60000);
+  const seg = Math.floor((falta % 60000) / 1000);
+  return `${String(min).padStart(2, '0')} minutos e ${String(seg).padStart(2, '0')} segundos para liberação`;
+}
+
 export function textoSolicitacaoEscolta(dados: {
   origem: string;
   destino: string;
@@ -174,9 +184,12 @@ export function textoSolicitacaoEscolta(dados: {
   data: string | null;
   hora: string | null;
 }): string {
+  const dataTexto = dados.data
+    ? (dados.data.includes('-') ? dados.data.split('-').reverse().join('/') : dados.data)
+    : '';
   const quando = dados.imediata
     ? 'Imediata'
-    : [dados.data ? dados.data.split('-').reverse().join('/') : '', dados.hora || ''].filter(Boolean).join(' às ') || 'Agendada';
+    : [dataTexto, dados.hora || ''].filter(Boolean).join(' às ') || 'Agendada';
   return [
     '*SOLICITAÇÃO DE ESCOLTA*',
     `Origem: ${dados.origem || '—'}`,

@@ -18,7 +18,7 @@ O assistente não é um arquivo BAT. A assinatura digital só entra quando houve
 2. Cole a mensagem do cliente e leia a fila. A ordem e a TORRES em São Paulo continuam as do PR 350.
 3. Confira o nome exato do grupo no cadastro do fornecedor. Sem esse nome, o aplicativo não envia.
 4. Clique em **Autorizar lote no computador**.
-5. Imediata: todos os selecionados já liberados entram juntos. Agendada: os dois primeiros agora e o próximo a cada 10 minutos.
+5. Imediata: todos os selecionados já liberados entram juntos. Agendada: os dois mais baratos agora e os dois próximos a cada 5 minutos.
 6. **Fornecedor confirmado** trava o restante e abre a OS como **Solicitada**. Uma mensagem que o WhatsApp já recebeu o comando não é descrita como cancelada.
 
 Se o aplicativo estiver fechado, a fila fica pendente. O sistema não marca a mensagem como enviada.
