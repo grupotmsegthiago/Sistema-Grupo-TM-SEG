@@ -48,4 +48,4 @@ O instalador não foi clicado num Windows limpo. A conta do WhatsApp não foi co
 O pedido “pode publicar” o 350 e o 351 autoriza a ida para a main. A Edição Total do financeiro permanece só na branch do agente.
 
 10. Continuidade
-A PR 350 já estava mergeada. A publicação leva `feat/whatsapp-desktop-instalador` por fast-forward até a main, no projeto Vercel `sistema-grupo-tm-seg`. `publicar.ps1` não entra, porque ele publica a `dev`.
+A PR 350 já estava mergeada (`cea83883`). A PR 351 foi para a main por fast-forward, commit `a24b1254`. `/api/version` em `sistema.grupotmseg.com.br` confirma esse build no projeto `sistema-grupo-tm-seg`. Health 200. O zip `/instalador-grupo-tmseg.zip` respondeu 200, application/zip, com o atalho, o conector, o assistente, o driver e a logo. `publicar.ps1` não foi usado, porque ele publica a `dev`.

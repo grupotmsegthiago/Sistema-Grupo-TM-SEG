@@ -4,9 +4,9 @@ Atualizado em 2026-10-19, na etapa 1 do Gestor Fiscal. Este arquivo é a memóri
 
 | Campo | Valor |
 | --- | --- |
-| Última fase concluída | Fase 1 — na `main` `7676ea63` e no ar (`/api/version` 3.7.65) |
-| Próxima etapa | Gestor Fiscal, etapa 1, nesta branch. Correção da Fase 2 não autorizada |
-| Produção agora | `7676ea63edcff02292c2374472f51fff4d138758`, health 200. Esta etapa não publicou |
+| Última fase concluída | Instalador na Solicitação, na `main` `a24b1254` e no ar (`/api/version` 3.7.65) |
+| Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
+| Produção agora | `a24b1254a66b657d89bb6e11dad7ea0028b185f4`, health 200, zip do instalador 200. Projeto `sistema-grupo-tm-seg` |
 | `origin/dev` | `766c9895079fd93342ad50ad28d52d13c0cfdddf`, 35 commits atrás da `main`, zero commits exclusivos |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
@@ -30,10 +30,10 @@ A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch l
 ## Pendências
 
 - Gestor Fiscal: coluna de emissão de NF no fornecedor, alíquotas da contabilidade e atribuição de despesa/tributo por CNPJ. Sem migration.
-- WhatsApp Desktop: o computador preparado fica gravado no conector e no navegador. A reabertura do TM SEG identifica o dispositivo. Instalação, QR Code e teste não se repetem, salvo reautenticação do WhatsApp. Ainda não publicado. Migrations da solicitação e do desktop seguem sem aplicação.
-- Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Sem o conector preparado, a tela pede o download do instalador e não mostra o formulário. A PR 350 já está na main. A PR 351 entra nesta entrega.
-- Auditoria de faturamento: o perfil Financeiro, ao clicar em Edição Total, edita os campos da OS aprovada. Prejuízo analisado e fatura paga continuam travados. Não publicado. Fica fora da publicação do 351.
-- Instalador: Avançar instala Node.js, Python e WhatsApp quando faltam, e configura o conector. O download é `/instalador-grupo-tmseg.zip`, dentro da Solicitação.
+- WhatsApp Desktop: o computador preparado fica gravado no conector e no navegador. A reabertura do TM SEG identifica o dispositivo. Instalação, QR Code e teste não se repetem, salvo reautenticação do WhatsApp. Publicado na main `a24b1254`. Migrations da solicitação e do desktop seguem sem aplicação.
+- Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Sem o conector preparado, a tela pede o download do instalador e não mostra o formulário. Publicado na main `a24b1254` (PRs 350 e 351). A migration da solicitação segue sem aplicação.
+- Auditoria de faturamento: o perfil Financeiro, ao clicar em Edição Total, edita os campos da OS aprovada. Prejuízo analisado e fatura paga continuam travados. Não publicado. Ficou fora da publicação do 351.
+- Instalador: Avançar instala Node.js, Python e WhatsApp quando faltam, e configura o conector. O download é `/instalador-grupo-tmseg.zip`, dentro da Solicitação. Publicado.
 - Fast-forward da `dev` até a `main`: não foi pedido.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
 - Policies do Postgres da TM SEG: não carregadas.
