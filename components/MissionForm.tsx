@@ -20,7 +20,7 @@ import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
 import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint, TABLE_SPECIFIC_CITY_KEYWORDS } from '../lib/financialUtils';
-import { exclusiveCitiesInAddress, questionTableAgainstRoute } from '../lib/tableRouteQuestion';
+import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
@@ -905,7 +905,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const originRegion = UF_TO_REGION[originUF] || locationKeywords[2] || '';
       const originExclusive = exclusiveCitiesInAddress(originAddress || '');
       const originCity = originExclusive[0] || locationKeywords[0] || '';
-      const destCity = exclusiveCitiesInAddress(destAddress || '')[0] || '';
+      // Serra, ES não está na lista de cidades exclusivas. Sem este fallback
+      // a tabela GUARULHOS-GOIANIA passava só porque a origem é Guarulhos.
+      const destCity = exclusiveCitiesInAddress(destAddress || '')[0]
+          || normalizeStr(extractCityFromAddress(destAddress || ''));
 
       const scored = normalizedTables.map(t => {
           let score = 0;
@@ -1674,11 +1677,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               candidates.push(clean);
       }
       if (candidates.length === 0) return clientRoutes;
-      const matched = clientRoutes.filter(r => {
+      const byOrigin = clientRoutes.filter(r => {
           const rOrigin = normalizeStr(r.origin);
           return candidates.some(c => rOrigin.includes(c));
       });
-      return matched.length > 0 ? matched : clientRoutes;
+      const originPool = byOrigin.length > 0 ? byOrigin : clientRoutes;
+      const destCity = normalizeStr(extractCityFromAddress(formData.destination || ''));
+      if (destCity.length < 4) return originPool;
+      return originPool.filter((route) => registeredRouteFitsOs(route, formData.destination));
   })();
 
   const filteredRoutes = routesFilteredByOrigin.filter(r => 
@@ -2907,7 +2913,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
                   {formData.origin && routesFilteredByOrigin.length < clientRoutes.length && (
                       <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-700 uppercase tracking-wider">
-                          <Search size={12} /> Rotas filtradas pela origem: {formData.origin.split(',')[0]} ({routesFilteredByOrigin.length} de {clientRoutes.length})
+                          <Search size={12} /> Rotas filtradas pela origem{formData.destination ? ' e pelo destino' : ''}: {formData.origin.split(',')[0]}{formData.destination ? ` → ${formData.destination.split(',')[0]}` : ''} ({routesFilteredByOrigin.length} de {clientRoutes.length})
                       </div>
                   )}
 

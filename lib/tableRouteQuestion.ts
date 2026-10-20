@@ -56,18 +56,47 @@ function placeLabel(address: string, city: string): string {
   return city || address || 'não informada';
 }
 
+/**
+ * Rota cadastrada só entra na lista quando o destino dela é o destino da OS.
+ * Guarulhos → Goiânia não aparece numa OS Guarulhos → Serra.
+ * Rota sem cidade específica no destino continua disponível.
+ */
+export function registeredRouteFitsOs(
+  route: { origin?: string | null; destination?: string | null; name?: string | null },
+  osDestination: string | null | undefined,
+): boolean {
+  const destCity = fold(extractCityFromAddress(osDestination || ''));
+  if (destCity.length < 4) return true;
+  const routeText = fold(`${route.destination || ''} ${route.name || ''}`);
+  if (routeText.includes(destCity)) return true;
+  const originCities = new Set(exclusiveCitiesInAddress(route.origin || ''));
+  const namedElsewhere = exclusiveCitiesInAddress(`${route.destination || ''} ${route.name || ''}`)
+    .filter((city) => !originCities.has(city));
+  if (namedElsewhere.length === 0) return true;
+  return namedElsewhere.some((city) => destCity.includes(city));
+}
+
 /** Entre as tabelas exclusivas da origem, a menor franquia que cobre o KM. */
 export function suggestExclusiveOriginTable(
   candidates: TableRouteCandidate[] | undefined,
   origin: string,
   distanceKm?: number,
+  destination?: string,
 ): { id: string; name: string } | null {
   const originCities = exclusiveCitiesInAddress(origin);
   if (!originCities.length || !candidates?.length) return null;
   const dist = Number(distanceKm) || 0;
+  const originCity = fold(extractCityFromAddress(origin));
+  const destCity = fold(extractCityFromAddress(destination || ''));
   const matches = candidates.filter((table) => {
     const name = fold(table.operation_type);
-    return originCities.some((city) => name.includes(city));
+    if (!originCities.some((city) => name.includes(city))) return false;
+    const gate = evaluateRegionalTableConstraint(name, {
+      originCity,
+      destCity,
+      originAddress: origin,
+    });
+    return !gate.blocked;
   });
   if (!matches.length) return null;
   const ranked = [...matches].sort((a, b) => {
@@ -97,7 +126,7 @@ export function questionTableAgainstRoute(input: {
   const destCity = fold(extractCityFromAddress(destination));
   const originCities = exclusiveCitiesInAddress(`${origin} ${originCity}`);
   const destCities = exclusiveCitiesInAddress(`${destination} ${destCity}`);
-  const suggestion = suggestExclusiveOriginTable(input.candidates, `${origin} ${originCity}`, input.distanceKm);
+  const suggestion = suggestExclusiveOriginTable(input.candidates, `${origin} ${originCity}`, input.distanceKm, destination);
   const named = citiesNamedByTable(tableName);
   const originPlace = placeLabel(origin, originCity);
   const destPlace = placeLabel(destination, destCity);

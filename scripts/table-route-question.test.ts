@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { questionTableAgainstRoute } from '../lib/tableRouteQuestion';
+import { questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 
 const palhoca = { id: 'p1', operation_type: 'PALHOCA - ATE 100KM', franchise_km: 100 };
 const generica = { id: 'g1', operation_type: 'ATE 100KM', franchise_km: 100 };
@@ -41,6 +41,35 @@ test('tabela de Palhoça não serve para origem em São Paulo, mesmo com destino
   assert.equal(q.fits, false);
   assert.match(q.answer, /exclusiva de PALHOCA/i);
   assert.equal(q.suggestedTableId, undefined);
+});
+
+test('Guarulhos x Serra recusa a tabela Guarulhos-Goiânia', () => {
+  const q = questionTableAgainstRoute({
+    tableName: 'SUDESTE - GUARULHOS-GOIANIA 951KM',
+    origin: 'GUARULHOS, SP',
+    destination: 'SERRA, ES',
+    candidates: [
+      { id: 'rota', operation_type: 'SUDESTE - GUARULHOS-GOIANIA 951KM', franchise_km: 951 },
+      { id: 'km', operation_type: '1000KM', franchise_km: 1000 },
+    ],
+    distanceKm: 945,
+  });
+  assert.equal(q.fits, false);
+  assert.match(q.answer, /BLOQUEIO ROTA \(GOIANIA\)/);
+  assert.notEqual(q.suggestedTableId, 'rota');
+});
+
+test('rota cadastrada de Goiânia não serve para destino Serra', () => {
+  assert.equal(registeredRouteFitsOs({
+    origin: 'GUARULHOS, SP',
+    destination: 'GOIANIA, GO',
+    name: 'GUARULHOS → GOIANIA',
+  }, 'SERRA, ES'), false);
+  assert.equal(registeredRouteFitsOs({
+    origin: 'GUARULHOS, SP',
+    destination: 'SERRA, ES',
+    name: 'GUARULHOS → SERRA',
+  }, 'SERRA, ES'), true);
 });
 
 test('rota sem cidade exclusiva aceita a faixa de KM', () => {

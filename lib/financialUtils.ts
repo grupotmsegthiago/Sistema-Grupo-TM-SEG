@@ -579,8 +579,36 @@ export type RegionalTableConstraint = {
 };
 
 /**
+ * Duas cidades coladas por hífen ou por "X" são uma rota nomeada
+ * (GUARULHOS-GOIANIA, GUARULHOS/SP X GOIANIA/GO). Barra ou "OU" continuam
+ * alternativas de origem (PALHOÇA / FLORIANÓPOLIS), não uma rota.
+ */
+function isNamedCityRoute(tableOp: string, cities: string[]): boolean {
+    if (cities.length < 2) return false;
+    const positions = cities
+        .map((city) => ({ city, index: tableOp.indexOf(city) }))
+        .filter((hit) => hit.index >= 0)
+        .sort((a, b) => a.index - b.index);
+    const distinct: { city: string; index: number }[] = [];
+    for (const hit of positions) {
+        const insideLonger = distinct.some((kept) =>
+            hit.index >= kept.index && hit.index + hit.city.length <= kept.index + kept.city.length
+        );
+        if (!insideLonger) distinct.push(hit);
+    }
+    if (distinct.length < 2) return false;
+    for (let i = 0; i < distinct.length - 1; i++) {
+        const start = distinct[i].index + distinct[i].city.length;
+        const between = tableOp.slice(start, distinct[i + 1].index);
+        if (/\bX\b/.test(between) || /^[\s\-–—]+$/.test(between)) return true;
+    }
+    return false;
+}
+
+/**
  * Fail-closed: tabela com cidade/região específica só vale se a origem da OS
- * corresponder. Tabelas genéricas (só faixa KM / sem cidade-região) passam.
+ * corresponder. Tabela de rota nomeada só vale se origem e destino baterem.
+ * Tabelas genéricas (só faixa KM / sem cidade-região) passam.
  */
 export function evaluateRegionalTableConstraint(
     operationType: string,
@@ -603,6 +631,19 @@ export function evaluateRegionalTableConstraint(
 
     const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
     if (citiesInTable.length > 0) {
+        if (isNamedCityRoute(tableOp, citiesInTable)) {
+            const originText = `${originCity} ${originAddr}`;
+            const onOrigin = citiesInTable.filter((city) => originText.includes(city));
+            const onDest = citiesInTable.filter((city) => destCity.includes(city));
+            const leftover = citiesInTable.filter((city) => !originText.includes(city) && !destCity.includes(city));
+            if (leftover.length > 0 || onOrigin.length === 0 || onDest.length === 0) {
+                const missing = leftover[0]
+                    || citiesInTable.find((city) => !onDest.includes(city))
+                    || citiesInTable[0];
+                return { blocked: true, reason: `BLOQUEIO ROTA (${missing})` };
+            }
+            return { blocked: false, reason: '', matchedCity: onOrigin[0] };
+        }
         const matchedCity = citiesInTable.find((c) => missionText.includes(c));
         if (!matchedCity) {
             return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
