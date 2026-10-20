@@ -763,7 +763,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
       if (userNameLower.includes('plinio') || userNameLower.includes('plínio')) return true;
-      return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller'].includes(userRoleLower) || u.permissions?.includes('*');
+      return ['diretoria', 'administrador', 'avançado', 'avancado', 'controller', 'financeiro'].includes(userRoleLower) || u.permissions?.includes('*');
     } catch { return false; }
   }, [userRoleLower, userNameLower, fullEditMode, isBarbaraFinance]);
   const canEditEndTimeOnly = useMemo(() => {
@@ -827,7 +827,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     });
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
-  const isEffectivelyLocked = negativeLockBlocks || (isBillingLocked && !unlockOverride && !isAdminFullAccess);
+  const isEffectivelyLocked = negativeLockBlocks || (isBillingLocked && !unlockOverride && !isAdminFullAccess && !isFinanceProfileRole(userRoleLower));
   const isPaidInvoiceEffectivelyLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
   const canUnlockPaidLock = canUnlockPaidInvoiceLock({ role: userRoleLower, name: userNameLower });
 
@@ -2515,7 +2515,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const nameLower = (userName || '').toLowerCase();
       const roleLower = (userRole || '').toLowerCase();
       if (nameLower.includes('daniel') || nameLower.includes('michelle')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
-      if (roleLower === 'administrador' || isFinanceSupervisorName(userName)) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
+      if (roleLower === 'administrador' || isFinanceProfileRole(userRole) || isFinanceSupervisorName(userName)) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
       if (roleLower === 'diretoria' || nameLower.includes('thiago')) return { stage: 'diretoria', label: 'Aprovado pela Diretoria' };
       if (roleLower === 'controller') return { stage: 'controller', label: 'Aprovado pelo Controller' };
       return { stage: 'operacional', label: `Aprovado por ${userName}` };
@@ -2558,9 +2558,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // Usuários com poder permanente de editar e re-aprovar a qualquer momento.
           isPrivilegedReapprover = uName.includes('daniel') || uName.includes('michelle')
               || isFinanceSupervisorName(u.name)
+              || isFinanceProfileRole(u.role)
               || uName.includes('thiago');
           if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
-          else if (uRole === 'administrador' || isFinanceSupervisorName(u.name)) currentUserStage = 'financeiro';
+          else if (uRole === 'administrador' || isFinanceProfileRole(u.role) || isFinanceSupervisorName(u.name)) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
           else if (uRole === 'controller') currentUserStage = 'controller';
       } catch {}
@@ -2569,7 +2570,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       let blockedMessage = '';
       // Financeiro (Bárbara/administrador) pode aprovar qualquer OS independente da aprovação prévia do Auditor.
 
-      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && !isPrivilegedReapprover && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador'; } catch { return true; } })();
+      const lockedByDiretoria = hasDiretoria && currentUserStage !== 'diretoria' && !isPrivilegedReapprover && (() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); return r !== 'controller' && r !== 'administrador' && !isFinanceProfileRole(r); } catch { return true; } })();
 
       return { hasAuditor, hasFinanceiro, hasDiretoria, hasController, isFullyApproved, isApprovedForBilling, missing, waitingDays, hasPartial, blockedForCurrentUser, blockedMessage, currentUserStage, lockedByDiretoria, isPrivilegedReapprover };
   }, [approvalLog, mission?.endTime]);
@@ -2790,6 +2791,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           showNotification('Observação Obrigatória', 'OS já aprovada. Descreva brevemente o motivo da alteração para registrar no histórico.', 'error');
           return;
       }
+      if (approve && perfilFinanceiro && wasAlreadyApproved && detectedChanges.length > 0 && !editObservation.trim()) {
+          showNotification('Motivo obrigatório', 'Escreva um motivo breve. O que mudou entra no histórico junto com esse texto, e a Diretoria recebe um aviso.', 'error');
+          return;
+      }
       // Pedido de análise da Diretoria pendente: exige motivo do ajuste (Bárbara/Giovanna)
       if (openAnalysisRequest && detectedChanges.length > 0 && !analysisReason.trim() && !providerSaveObservation.observation) {
           showNotification(
@@ -2860,6 +2865,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               // atualiza o carimbo do estágio com o nome e a data mais recente.
               const uNameLow = (userName || '').toLowerCase();
               const allowReapprove = isFinanceSupervisorName(userName)
+                  || isFinanceProfileRole(userRole)
                   || uNameLow.includes('daniel') || uNameLow.includes('michelle')
                   || uNameLow.includes('thiago');
               const existingIdx = newLog.findIndex(l => l.stage === stage);
@@ -3484,6 +3490,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   console.error('[MissionEditHistory Insert] Falha ao registrar histórico:', histRes.error);
               } else {
                   setEditHistory(prev => [{ user: userName, role: userRole, date: nowIso, changes: detectedChanges, note: histPayload.note }, ...prev]);
+                  if (approve && perfilFinanceiro && wasAlreadyApproved && detectedChanges.length > 0 && editObservation.trim()) {
+                      const motivoAviso = editObservation.trim();
+                      const alteracoesAviso = [...detectedChanges];
+                      void authFetch('/api/os-analysis?op=finance-reapproval', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              missionId: mission.id,
+                              motivo: motivoAviso,
+                              alteracoes: alteracoesAviso,
+                              client: mission.client,
+                              provider: mission.provider,
+                          }),
+                      }).then(async (res) => {
+                          if (res.ok) return;
+                          const data = await res.json().catch(() => ({}));
+                          showNotification('Aviso', data.error || 'A OS foi reaprovada. O aviso para a Diretoria não saiu.', 'warning');
+                      }).catch(() => {
+                          showNotification('Aviso', 'A OS foi reaprovada. O aviso para a Diretoria não saiu.', 'warning');
+                      });
+                  }
                   setEditObservation('');
                   openedTablesRef.current = {
                       clientId: String(manualClientTableId || financialData?.client.tableId || ''),
@@ -6640,12 +6667,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     {isBillingLocked && (!isEffectivelyLocked || canSaveProviderAdjustments) && (
                         <div className="mx-4 mb-4 p-3 bg-amber-50 rounded-xl border-2 border-amber-300" data-testid="panel-edit-observation">
                             <label className="text-[10px] font-black text-amber-800 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                                <AlertCircle size={12} /> Observação da Alteração (obrigatória ao salvar mudança em OS aprovada)
+                                <AlertCircle size={12} /> {perfilFinanceiro ? 'Motivo breve da reaprovação' : 'Observação da Alteração (obrigatória ao salvar mudança em OS aprovada)'}
                             </label>
+                            {perfilFinanceiro && (
+                                <p className="text-[10px] font-semibold text-amber-900 mb-1.5">
+                                    O sistema grava o que mudou. Escreva só o motivo. Ao aprovar de novo, Thiago Moreira e a Diretoria recebem um aviso.
+                                </p>
+                            )}
                             <textarea
                                 className="w-full text-xs font-bold text-gray-800 border border-amber-300 rounded-lg px-2 py-1.5 focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 outline-none bg-white resize-none"
                                 rows={2}
-                                placeholder="Descreva o motivo da alteração (será salvo no histórico permanente da OS)..."
+                                placeholder={perfilFinanceiro ? 'Motivo breve. Ex.: tabela da rota corrigida depois da conferência.' : 'Descreva o motivo da alteração (será salvo no histórico permanente da OS)...'}
                                 value={editObservation}
                                 onChange={e => setEditObservation(e.target.value)}
                                 data-testid="input-edit-observation"

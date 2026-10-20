@@ -6,6 +6,8 @@
 import { anonSupabaseFallback, requireOsAnalysisAdmin, type OsAnalysisPrincipal } from './apiAuth.js';
 import { sendOsAnalysisAlertEmail } from './sendAlertEmail.js';
 import type { OsAnalysisRecipient } from '../osAnalysisTypes.js';
+import { usuarioRecebeAvisoReaprovacao } from '../billing/avisoReaprovacaoFinanceira.js';
+import { isFinanceProfileRole } from '../financeSupervisorAccess.js';
 
 const SYSTEM_URL = (process.env.SYSTEM_URL || 'https://sistema.grupotmseg.com.br').replace(/\/$/, '');
 
@@ -399,4 +401,95 @@ export async function reviewOsAnalysis(principal: OsAnalysisPrincipal, id: strin
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+function textoSeguro(value: string): string {
+  return String(value || '').replace(/</g, '&lt;').replace(/\n/g, '<br/>');
+}
+
+/** Um aviso para Thiago Moreira e para o perfil Diretoria. Não abre novo fluxo de aprovação. */
+export async function avisarReaprovacaoFinanceira(
+  principal: OsAnalysisPrincipal,
+  input: {
+    missionId: string;
+    motivo: string;
+    alteracoes: string[];
+    client?: string | null;
+    provider?: string | null;
+  },
+) {
+  if (!isFinanceProfileRole(principal.role)) {
+    throw new Error('Somente o perfil financeiro gera este aviso.');
+  }
+  await ensureOsAnalysisSchema();
+  const sb = requireOsAnalysisAdmin();
+  const missionId = String(input.missionId || '').trim();
+  const motivo = String(input.motivo || '').trim();
+  const alteracoes = (input.alteracoes || []).map((item) => String(item || '').trim()).filter(Boolean);
+  if (!missionId || !motivo) throw new Error('Informe a OS e o motivo.');
+  if (!alteracoes.length) throw new Error('Não há alteração para avisar.');
+
+  const { data: usuarios, error: usuariosErro } = await sb
+    .from('system_users')
+    .select('id, name, email, status, profiles:profile_id ( name )')
+    .eq('status', 'Ativo');
+  if (usuariosErro) throw new Error(usuariosErro.message);
+
+  const recipients: OsAnalysisRecipient[] = [];
+  const vistos = new Set<string>();
+  for (const row of usuarios || []) {
+    const profile = Array.isArray((row as any).profiles) ? (row as any).profiles[0] : (row as any).profiles;
+    const role = String(profile?.name || '');
+    const name = String((row as any).name || '');
+    const id = String((row as any).id || '').trim();
+    if (!id || vistos.has(id) || !usuarioRecebeAvisoReaprovacao({ name, role })) continue;
+    vistos.add(id);
+    recipients.push({
+      id,
+      name: name || 'Diretoria',
+      email: String((row as any).email || '').trim().toLowerCase(),
+    });
+  }
+  if (!recipients.length) throw new Error('Nenhum destinatário da Diretoria encontrado.');
+
+  const nota = [`Motivo: ${motivo}`, ...alteracoes].join('\n');
+  const { data, error } = await sb
+    .from('os_analysis_requests')
+    .insert([{
+      mission_id: missionId,
+      client_name: input.client || null,
+      provider_name: input.provider || null,
+      requested_by: principal.name,
+      request_note: nota,
+      source: 'finance_reapproval',
+      status: 'pending',
+      revenue_before: 0,
+      cost_before: 0,
+      result_before: 0,
+      changes_summary: alteracoes.join(' | '),
+      adjustment_reason: motivo,
+      recipient_ids: recipients.map((item) => item.id),
+      recipients,
+    }])
+    .select('*')
+    .single();
+  if (error) throw new Error(error.message);
+
+  const link = buildAuditLink(missionId);
+  const html = `
+    <p><strong>${textoSeguro(principal.name)}</strong> alterou e reaprovou a OS <strong>${textoSeguro(missionId)}</strong>.</p>
+    <p style="margin:16px 0;padding:12px 16px;background:#eff6ff;border-left:4px solid #1d4ed8;border-radius:6px;">
+      <strong>Motivo:</strong><br/>${textoSeguro(motivo)}
+    </p>
+    <p><strong>O que mudou</strong></p>
+    <ul>${alteracoes.map((item) => `<li>${textoSeguro(item)}</li>`).join('')}</ul>
+    <p style="text-align:center;margin:24px 0;">
+      <a href="${link}" style="display:inline-block;background:#1e3a5f;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:700;">Abrir a OS</a>
+    </p>
+  `;
+  const emails = [...new Set(recipients.map((item) => item.email).filter((email) => email.includes('@')))];
+  const emailSent = emails.length
+    ? await sendAlert(emails, `Financeiro reaprovou a OS ${missionId}`, html)
+    : false;
+  return { request: data, emailSent, recipients: recipients.map((item) => item.name) };
 }

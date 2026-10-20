@@ -1,6 +1,8 @@
 /**
- * Depois que o Financeiro aprova, o valor do cliente fica travado.
- * Só o perfil Diretoria pode alterar receita, pedágio e deslocamento do cliente.
+ * Depois que o Financeiro aprova, o valor do cliente fica travado
+ * para os demais perfis. Diretoria e o próprio perfil Financeiro
+ * continuam podendo editar. A reaprovação do financeiro exige motivo
+ * e avisa a Diretoria.
  */
 export function isClientValueLockedAfterFinanceApproval(
   hasFinanceApproval: boolean,
@@ -12,5 +14,5 @@ export function isClientValueLockedAfterFinanceApproval(
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .trim();
-  return roleKey !== 'diretoria';
+  return roleKey !== 'diretoria' && roleKey !== 'financeiro';
 }

@@ -38,9 +38,10 @@ describe('Sem aprovação no Controle Diário', () => {
     assert.equal(canViewAprovacoesPendentes({ role: 'Controller', name: 'Giovanna Marsili' }), false);
   });
 
-  it('valor do cliente trava depois do financeiro, exceto Diretoria', () => {
+  it('valor do cliente trava depois do financeiro, exceto Diretoria e o perfil Financeiro', () => {
     assert.equal(isClientValueLockedAfterFinanceApproval(false, 'financeiro'), false);
-    assert.equal(isClientValueLockedAfterFinanceApproval(true, 'financeiro'), true);
+    assert.equal(isClientValueLockedAfterFinanceApproval(true, 'financeiro'), false);
+    assert.equal(isClientValueLockedAfterFinanceApproval(true, 'Financeiro'), false);
     assert.equal(isClientValueLockedAfterFinanceApproval(true, 'administrador'), true);
     assert.equal(isClientValueLockedAfterFinanceApproval(true, 'controller'), true);
     assert.equal(isClientValueLockedAfterFinanceApproval(true, 'Diretoria'), false);
