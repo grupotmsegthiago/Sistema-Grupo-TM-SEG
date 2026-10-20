@@ -1,49 +1,54 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
-Fase: correção da Edição Total na auditoria de faturamento
+Fase: instalador instala Python, WhatsApp e o que falta ao avançar
 Data: 2026-10-20
-SHA da sessão: em cima de `634821c4` (branch `cursor/cloud-agent-1792463640605-0pnwx`)
-SHA de produção (/api/version): não consultado nesta etapa. Nada foi publicado.
+SHA da sessão: em cima de `fbb21b57` (branch `cursor/cloud-agent-1792463640605-0pnwx`)
+SHA de produção: não consultado. Nada foi publicado.
 
 1. Objetivo e escopo
-O perfil Financeiro clica em Edição Total na Auditoria de Faturamento e os campos continuavam travados. O clique agora libera a edição e o Salvar. O cálculo da OS não mudou.
+O operador só clica em Avançar. O instalador do Grupo TM SEG instala Node.js, Python e WhatsApp quando faltam e configura o conector neste computador.
 
-2. Baseline (git, branch, dev, main, working tree, Supabase ref conferido)
-Branch de trabalho `cursor/cloud-agent-1792463640605-0pnwx`, base da PR do WhatsApp Desktop `feat/whatsapp-desktop-instalador`. Working tree tinha só esta correção. Supabase do app continua `ajhmmjuewdsukecaimik`. Nenhum SQL.
+2. Baseline
+Branch `cursor/cloud-agent-1792463640605-0pnwx`, que já contém a Edição Total do perfil financeiro. Sem SQL. Supabase do app continua `ajhmmjuewdsukecaimik`.
 
 3. Arquivos alterados
-- `components/MissionFinancialModal.tsx`
-- `scripts/edicao-total-auditoria.test.ts`
+- `lib/whatsappDesktop/componentesInstalador.ts`
+- `desktop/whatsapp-desktop/servidor.ts`
+- `desktop/whatsapp-desktop/conector.mjs`
+- `desktop/whatsapp-desktop/assistente.html`
+- `desktop/whatsapp-desktop/Abrir instalador.vbs`
+- `scripts/whatsapp-desktop-instalador.test.ts`
+- `scripts/whatsapp-desktop-servidor.test.ts`
+- `docs/operacao/whatsapp-desktop.md`
 - `docs/governanca/ESTADO-ATUAL.md`
 - `RELATORIO_ULTIMA_EXECUCAO.md`
 
 4. Regras preservadas
-Motor `calculateMissionFinancials` intacto. Pedágio, comissão, Asaas e NF sem fórmula nova. Prejuízo analisado segue só com a Diretoria. Fatura paga segue com o desbloqueio justificado. Plínio/controller continua sem editar o cliente. O botão Aprovar não usa a Edição Total para furar a trava da Diretoria.
+O conector segue em Node. A conta do WhatsApp continua pelo QR Code do aplicativo oficial, sem senha. O cálculo de OS, Asaas, NF e a fila da solicitação não mudaram. Computador já preparado não reinstala.
 
-5. Banco (nenhum / leitura / escrita). Projeto e ref.
-Nenhum. Sem migration. Sem escrita. Ref `ajhmmjuewdsukecaimik` só citado. TORRES não foi tocado.
+5. Banco
+Nenhum. Sem migration. TORRES não foi tocado.
 
 6. Riscos e rollback
-Com a Edição Total ligada, o Financeiro grava valor de cliente, pedágio, deslocamento e dados operacionais mesmo em OS já aprovada. A ação continua no `system_logs`. Rollback: reverter o commit deste arquivo. Sem rollback de banco.
+No Windows, Avançar chama o winget no escopo do usuário. Se o winget não existir ou o pacote falhar, a tela para e mostra o motivo. Rollback: reverter o commit. Sem rollback de banco.
 
-7. Testes executados (comando e resultado). O que não rodou.
-`npx tsx --test scripts/edicao-total-auditoria.test.ts scripts/sem-aprovacao-controle.test.ts scripts/os-negative-margin-lock.test.ts scripts/finance-supervisor-access.test.ts`: 21 testes, 0 falhas.
-`npm run build`: concluído. O bundle `dist/public/assets/index-DLSNIXU9.js` contém o aviso de fatura paga e o título do botão para o perfil financeiro. `dist/public/index.html` injeta `__TMSEG_SUPABASE__` de `ajhmmjuewdsukecaimik`.
-`scripts/fase3-p3-limpeza-seguranca.test.ts` e `scripts/plinio-email-restrictions.test.ts` já falhavam no baseline: procuram `isPlinio` e a ausência de `tollValue:` no payload do fornecedor, e o modal atual usa `isProviderOnlyUser` e grava `tollValue`. Não foram alterados aqui.
+7. Testes
+`npx tsx --test scripts/whatsapp-desktop-instalador.test.ts scripts/whatsapp-desktop-servidor.test.ts`: 6 passaram, incluindo o caso em que só Python e WhatsApp faltam e o winget real não é chamado.
+O conector empacotado respondeu `GET /install/check` com Node.js, Python e WhatsApp. Neste Linux o WhatsApp ficou como não instalado e a mensagem avisou que a instalação automática é no Windows. Python e Node.js já existiam aqui, então não houve instalação real.
 
-8. Homologação (localhost ou motivo de não haver tela)
-`GET http://localhost:5000/api/health` retornou `{"status":"ok"}`. A Auditoria de Faturamento exige usuário logado no perfil Financeiro e uma OS. Não há sessão neste ambiente. O clique não foi exercido no navegador. A trava foi conferida no código, no teste e no bundle.
+8. Homologação
+O assistente não foi clicado num Windows limpo. O winget não existe neste ambiente. A conta do WhatsApp não foi conectada.
 
-9. Autorização recebida (citação do pedido)
-“o perfil financeiro, mesmo clicando no Edição Total da tela auditoria de faturamento, continua bloqueado para ele editar.”
+9. Autorização
+“Importante no instalador Grupo TM SEG ter o phyton, WhatsApp, e o que mais for preciso para o usuário só clicar em avançar e ir instalando os aplicativos e já configurando.”
 
 10. Pendências
-Publicar só quando o Thiago pedir, depois de ver em `http://localhost:5000/`. Fatura paga e prejuízo analisado continuam fora deste botão.
+Provar num Windows limpo: duplo clique, Avançar, Node.js, Python e WhatsApp instalados, QR Code da conta. Não publicado.
 
-11. Próxima fase autorizada (ou nenhuma)
+11. Próxima fase autorizada
 Nenhuma.
 
 12. BLOCO PARA CONTINUAÇÃO
-A Edição Total do perfil Financeiro está na auditoria (`MissionFinancialModal`). Sem Edição Total, a aprovação do Financeiro continua travando o valor do cliente para quem não é Diretoria. Relatório anterior desta árvore descrevia o Gestor Fiscal, etapa 1, na branch `cursor/gestor-fiscal-9d36`, sem publicação.
+A Edição Total do perfil financeiro continua no commit `fbb21b57` desta branch. O instalador agora instala ao avançar. Publicar só com pedido explícito.
 
-VEREDITO: a trava do clique foi corrigida no código e no bundle. 21 testes do escopo passaram e o build terminou. A tela logada não foi clicada aqui. Não publicado.
+VEREDITO: o fluxo de Avançar instala e configura no código e nos testes. A instalação real pelo winget não rodou neste Linux. Não publicado.

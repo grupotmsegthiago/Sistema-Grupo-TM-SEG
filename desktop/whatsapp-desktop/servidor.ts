@@ -10,6 +10,7 @@ import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { validarDestinatario, origemPermitida, PORTA_LOCAL, limparPesquisaEntreEnvios, decidirTesteHomologacao, lembrarDispositivo, VERSAO_CONECTOR, GRUPO_HOMOLOGACAO, MENSAGEM_TESTE_HOMOLOGACAO, dobrar } from '../../lib/whatsappDesktop/fila.ts';
+import { COMPONENTES_INSTALADOR, argumentosWinget, componentePorId, resumoInstalacao, type EstadoComponentes, type IdComponente } from '../../lib/whatsappDesktop/componentesInstalador.ts';
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
 
@@ -179,6 +180,97 @@ function prepararInicioAutomatico(): { criado: boolean; motivo: string } {
   return { criado: fs.existsSync(destino), motivo: 'O conector foi autorizado a iniciar com o Windows.' };
 }
 
+function programaExiste(comando: string): boolean {
+  try {
+    execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', [comando], { stdio: 'ignore', timeout: 8000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function arquivoEm(candidatos: string[]): boolean {
+  return candidatos.some((item) => item && fs.existsSync(item));
+}
+
+export function detectarComponentes(): EstadoComponentes {
+  const local = process.env.LOCALAPPDATA || '';
+  const programas = process.env.ProgramFiles || '';
+  const node = process.platform === 'win32'
+    ? arquivoEm([path.join(programas, 'nodejs', 'node.exe'), path.join(local, 'Programs', 'nodejs', 'node.exe')]) || programaExiste('node')
+    : true;
+  const pythonNoDisco = arquivoEm([
+    path.join(local, 'Programs', 'Python', 'Python312', 'python.exe'),
+    path.join(local, 'Programs', 'Python', 'Python313', 'python.exe'),
+    path.join(programas, 'Python312', 'python.exe'),
+  ]);
+  let python = pythonNoDisco;
+  if (!python && process.platform === 'win32') {
+    try {
+      const saida = execFileSync('py', ['-3', '-c', 'import sys; print(sys.executable)'], { encoding: 'utf8', timeout: 8000, windowsHide: true });
+      const exe = String(saida).toLowerCase();
+      python = exe.includes('python') && !exe.includes('windowsapps');
+    } catch {
+      python = false;
+    }
+  }
+  if (!python && process.platform !== 'win32') python = programaExiste('python3') || programaExiste('python');
+  return { node, python, whatsapp: whatsappInstalado() || whatsappAberto() };
+}
+
+function instalarComWinget(id: IdComponente): Promise<{ ok: boolean; motivo: string }> {
+  const item = componentePorId(id);
+  if (!item) return Promise.resolve({ ok: false, motivo: 'Componente desconhecido.' });
+  if (process.platform !== 'win32') {
+    return Promise.resolve({ ok: false, motivo: 'A instalação automática dos aplicativos é feita no Windows.' });
+  }
+  return new Promise((resolve) => {
+    const proc = spawn('winget', argumentosWinget(item.pacote), { windowsHide: false });
+    let saida = '';
+    let resolvido = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const terminar = (valor: { ok: boolean; motivo: string }) => {
+      if (resolvido) return;
+      resolvido = true;
+      clearTimeout(timer);
+      resolve(valor);
+    };
+    timer = setTimeout(() => {
+      proc.kill();
+      terminar({ ok: false, motivo: `${item.nome} demorou demais para instalar.` });
+    }, 10 * 60 * 1000);
+    proc.stdout.on('data', (parte) => { saida += parte.toString(); });
+    proc.stderr.on('data', (parte) => { saida += parte.toString(); });
+    proc.on('error', () => {
+      terminar({ ok: false, motivo: `O Windows não encontrou o winget para instalar ${item.nome}.` });
+    });
+    proc.on('close', (code) => {
+      const texto = saida.toLowerCase();
+      const jaEstava = texto.includes('already installed') || texto.includes('já instalado') || texto.includes('no available upgrade');
+      if (code === 0 || jaEstava || detectarComponentes()[id]) {
+        terminar({ ok: true, motivo: `${item.nome} instalado.` });
+        return;
+      }
+      terminar({ ok: false, motivo: `${item.nome} não foi instalado. ${saida}`.trim().slice(0, 400) });
+    });
+  });
+}
+
+function abrirWhatsApp(): { ok: boolean; motivo: string } {
+  if (process.platform !== 'win32') return { ok: false, motivo: 'O WhatsApp abre no Windows.' };
+  try {
+    spawn('cmd.exe', ['/c', 'start', '', 'whatsapp:'], { windowsHide: true, detached: true, stdio: 'ignore' }).unref();
+    return { ok: true, motivo: 'O WhatsApp foi aberto para a conta ser conectada pelo QR Code, se ainda não estiver.' };
+  } catch {
+    return { ok: false, motivo: 'Não foi possível abrir o WhatsApp.' };
+  }
+}
+
+export type InstaladorLocal = {
+  detectar?: () => EstadoComponentes;
+  instalar?: (id: IdComponente) => Promise<{ ok: boolean; motivo: string }>;
+};
+
 function whatsappAberto(): boolean {
   if (process.platform !== 'win32') return false;
   try {
@@ -247,8 +339,10 @@ async function executarFila(comandos: Array<{ id: string; groupName: string; tex
   return resultados;
 }
 
-export function criarServidor(driver: Driver = driverWindows(), inspecionar?: () => Promise<InspecaoJanela>) {
+export function criarServidor(driver: Driver = driverWindows(), inspecionar?: () => Promise<InspecaoJanela>, instalador?: InstaladorLocal) {
   const lerJanela = inspecionar || (() => rodarPowerShell('inspecionar'));
+  const detectar = instalador?.detectar || detectarComponentes;
+  const instalar = instalador?.instalar || instalarComWinget;
   return http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
     if (req.method === 'OPTIONS') {
@@ -318,17 +412,40 @@ export function criarServidor(driver: Driver = driverWindows(), inspecionar?: ()
       return;
     }
     if (req.method === 'GET' && url.pathname === '/install/check') {
-      enviar(200, { mensagem: process.platform === 'win32' ? 'Windows detectado. A pasta do usuário pode receber o aplicativo.' : 'Este instalador é para Windows.' });
+      const estado = detectar();
+      const componentes = COMPONENTES_INSTALADOR.map((item) => ({ ...item, instalado: estado[item.id] }));
+      enviar(200, {
+        mensagem: process.platform === 'win32' || instalador?.detectar
+          ? resumoInstalacao(estado)
+          : 'Este instalador é para Windows.',
+        componentes,
+      });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/install/componente') {
+      const corpo = await lerCorpo(req);
+      const item = componentePorId(String(corpo?.id || ''));
+      if (!item) { enviar(400, { ok: false, motivo: 'Componente desconhecido.' }); return; }
+      if (detectar()[item.id]) {
+        enviar(200, { ok: true, id: item.id, motivo: `${item.nome} já estava instalado.` });
+        return;
+      }
+      const resultado = await instalar(item.id);
+      enviar(200, { ok: resultado.ok, id: item.id, motivo: resultado.motivo });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/install/whatsapp/abrir') {
+      enviar(200, abrirWhatsApp());
       return;
     }
     if (req.method === 'GET' && url.pathname === '/install/whatsapp') {
-      const instalado = whatsappInstalado() || whatsappAberto();
+      const instalado = detectar().whatsapp;
       enviar(200, {
         instalado,
         canalOficial: 'https://www.whatsapp.com/download',
         mensagem: instalado
-          ? 'O WhatsApp Desktop oficial está neste computador. Se a conta ainda não estiver conectada, use o QR Code na tela do próprio WhatsApp. Nenhuma senha é pedida aqui.'
-          : 'O WhatsApp Desktop oficial ainda não foi encontrado. Abra o canal oficial, instale o aplicativo e conecte a conta pelo QR Code.',
+          ? 'O WhatsApp oficial está neste computador. Se a conta ainda não estiver conectada, use o QR Code na tela do próprio WhatsApp. Nenhuma senha é pedida aqui.'
+          : 'O WhatsApp ainda não foi instalado. Volte um passo e avance de novo para o assistente instalar o aplicativo oficial.',
       });
       return;
     }

@@ -6,7 +6,7 @@ O aplicativo fica só neste computador. Ele usa o WhatsApp Desktop já autentica
 
 1. Dê duplo clique em `desktop/whatsapp-desktop/Abrir instalador.vbs`. O atalho sobe o conector e abre o assistente. Não há comando para digitar.
 2. Siga as telas: Boas-vindas, Verificação do computador, Instalação dos componentes, Configuração do WhatsApp, Conexão com TM SEG, Teste de funcionamento e Instalação concluída.
-3. Se o WhatsApp Desktop oficial não estiver instalado, o assistente abre o canal `https://www.whatsapp.com/download`. A conta entra pelo QR Code do próprio WhatsApp.
+3. Em **Instalação dos componentes**, Avançar instala o que faltar: Node.js, Python e WhatsApp oficial, e configura a pasta local do conector. A conta do WhatsApp entra pelo QR Code do próprio aplicativo. Nenhuma senha é pedida.
 4. No teste, marque a autorização. O envio só ocorre se o chat aberto for exatamente **GRUPO TM SEG - ADM**. Se a janela não mostrar esse nome, nada é enviado.
 5. Na primeira conclusão, o TM SEG grava o computador. Nas próximas aberturas o conector identifica o dispositivo. Instalação, QR Code e mensagem de teste não se repetem. O QR Code volta somente se o WhatsApp perder a conta. O código manual fica só para a primeira vez, se a identificação automática não ocorrer.
 

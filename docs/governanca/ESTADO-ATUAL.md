@@ -33,6 +33,7 @@ A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch l
 - WhatsApp Desktop: o computador preparado fica gravado no conector e no navegador. A reabertura do TM SEG identifica o dispositivo. Instalação, QR Code e teste não se repetem, salvo reautenticação do WhatsApp. Ainda não publicado. Migrations da solicitação e do desktop seguem sem aplicação.
 - Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Não publicado.
 - Auditoria de faturamento: o perfil Financeiro, ao clicar em Edição Total, edita os campos da OS aprovada. Prejuízo analisado e fatura paga continuam travados. Não publicado.
+- Instalador: Avançar instala Node.js, Python e WhatsApp quando faltam, e configura o conector. Não publicado.
 - Fast-forward da `dev` até a `main`: não foi pedido.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.
 - Policies do Postgres da TM SEG: não carregadas.
