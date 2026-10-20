@@ -50,5 +50,5 @@ O pedido “pode publicar” o 350 e o 351 autoriza a ida para a main. A Ediçã
 10. Continuidade
 A PR 350 já estava mergeada (`cea83883`). A PR 351 foi para a main por fast-forward, commit `a24b1254`. `/api/version` em `sistema.grupotmseg.com.br` confirma esse build no projeto `sistema-grupo-tm-seg`. Health 200. O zip `/instalador-grupo-tmseg.zip` respondeu 200, application/zip, com o atalho, o conector, o assistente, o driver e a logo. `publicar.ps1` não foi usado, porque ele publica a `dev`.
 
-11. Escolha da tabela pela rota aprovada
-Quando a cidade não está na tabela do cliente, a auditoria usa a rota cidade-cidade mais aprovada desse cliente e seleciona a tabela de cliente e a de fornecedor. O cálculo de KM, pedágio e tarifa não mudou. Três testes em `scripts/rota-aprovada-tabela.test.ts` passaram. Esta parte não foi publicada.
+11. Escolha da tabela pelo histórico aprovado
+A auditoria compara cliente, origem e destino com as OS já aprovadas. A tabela mais aprovada nessa rota é a escolhida. OS faturada pesa o dobro. Quilometragem parecida (margem de 40 km ou metade da KM atual) entra na frente; se nenhuma for parecida, vale o conjunto da rota. Sem histórico, o motor da OS continua. O cálculo de KM, pedágio e tarifa não mudou. OS já aprovada, conferida ou com ajuste manual não é trocada. Testes em `scripts/rota-aprovada-tabela.test.ts`. Esta parte não foi publicada.
