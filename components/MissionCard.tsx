@@ -922,14 +922,13 @@ Qualquer dúvida, estamos a disposição.
                 </div>
                 
                 <div className="os-col-cliente sm:col-span-1 xl:col-span-3 p-2.5 xl:p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100 min-w-0">
-                    <CaminhaoRelevo cliente={String((mission as any).originalClientName || mission.client || '')} />
                     <div className="flex flex-col gap-3">
                         <div className="flex flex-wrap gap-2">
                             <span className="text-[12px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
                                 <Building2 size={10} className="inline mr-1 text-red-600" /> {mission.client}
                             </span>
                         </div>
-                        
+                        <CaminhaoRelevo cliente={String((mission as any).originalClientName || mission.client || '')} />
                         <div className="space-y-2.5 pl-1">
                             <div className="flex items-center gap-2.5">
                                 <div className="p-1.5 bg-white rounded-lg text-blue-600 border border-gray-100 shadow-sm"><Truck size={12}/></div>
