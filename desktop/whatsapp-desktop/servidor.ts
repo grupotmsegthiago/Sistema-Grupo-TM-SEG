@@ -163,8 +163,11 @@ function rodarPowerShell(acao: string, grupo = '', mensagem = ''): Promise<any> 
   return new Promise((resolve) => {
     const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', acharArquivo('driver.ps1'), '-Acao', acao, '-Grupo', grupo, '-Mensagem', mensagem], { windowsHide: true });
     let saida = '';
+    let falhou = false;
     proc.stdout.on('data', (parte) => { saida += parte.toString(); });
+    proc.on('error', () => { falhou = true; resolve({ ok: false, aberto: false, motivo: 'O Windows não devolveu o resultado do WhatsApp.' }); });
     proc.on('close', () => {
+      if (falhou) return;
       try { resolve(JSON.parse(saida || '{}')); }
       catch { resolve({ ok: false, motivo: 'O Windows não devolveu o resultado do WhatsApp.' }); }
     });

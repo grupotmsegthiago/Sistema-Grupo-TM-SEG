@@ -25,7 +25,6 @@ __export(financialUtils_exports, {
   applyRegionSuffix: () => applyRegionSuffix,
   auditMissionFinancials: () => auditMissionFinancials,
   calculateMissionFinancials: () => calculateMissionFinancials,
-  classificarTarifaKm: () => classificarTarifaKm,
   clientFuzzyFilter: () => clientFuzzyFilter,
   clientNameShort: () => clientNameShort,
   clientTableMatchesMission: () => clientTableMatchesMission,
@@ -479,17 +478,6 @@ function resolveStoredProviderToll(tollValue, tollValueProvider, isSameOs = fals
   return normalizeTollAmount(tollValue);
 }
 
-// lib/missionSnapshot.ts
-var CARIMBO_RECALCULO_AUTOMATICO = "Sistema (Recalcular e Comparar)";
-function carimboRecalculoAutomatico(valor) {
-  return String(valor ?? "").trim() === CARIMBO_RECALCULO_AUTOMATICO;
-}
-function carimboAprovacaoHumana(valor) {
-  const texto = String(valor ?? "").trim();
-  if (!texto || carimboRecalculoAutomatico(texto)) return null;
-  return texto;
-}
-
 // lib/financialUtils.ts
 var STOP_WORDS = ["LTDA", "LTDA.", "S.A.", "S.A", "SA", "S/A", "S/A.", "DO", "DE", "DA", "E", "DAS", "DOS"];
 function quoteForOr(v) {
@@ -526,15 +514,6 @@ function isSameClientName(a, b) {
   }
   return true;
 }
-function classificarTarifaKm(valor, excepcional) {
-  if (excepcional != null && Number.isFinite(Number(excepcional)) && Number(excepcional) > 0) {
-    return { origem: "excepcional", tarifa: Math.round(Number(excepcional) * 100) / 100 };
-  }
-  if (valor == null || !Number.isFinite(Number(valor))) return { origem: "ausente", tarifa: 0 };
-  if (Number(valor) < 0) return { origem: "ausente", tarifa: 0 };
-  if (Number(valor) === 0) return { origem: "zero_contratual", tarifa: 0 };
-  return { origem: "tabela", tarifa: Math.round(Number(valor) * 100) / 100 };
-}
 function dhlDefaultUnitKmExcess(originUF) {
   const uf = String(originUF || "").toUpperCase().trim();
   return uf === "SC" || uf === "RS" ? 7.35 : 6.9;
@@ -552,8 +531,10 @@ function resolveDisplacementFromAuthorizedKm(opts) {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
   const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
   const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
-  const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
-  const clientRate = tarifaCliente.tarifa;
+  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
+  if (km > 0 && clientRate <= 0) {
+    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ""));
+  }
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
   const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
   const derivedProvider = km > 0 && providerRate > 0 ? Math.round(km * providerRate * 100) / 100 : 0;
@@ -561,7 +542,6 @@ function resolveDisplacementFromAuthorizedKm(opts) {
     km,
     clientRate,
     providerRate,
-    origemTarifaCliente: tarifaCliente.origem,
     client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
     provider: opts.isSameOs ? 0 : storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider
   };
@@ -1008,24 +988,6 @@ var TABLE_SPECIFIC_CITY_KEYWORDS = [
   "SUAPE",
   "PECEM"
 ];
-function isNamedCityRoute(tableOp, cities) {
-  if (cities.length < 2) return false;
-  const positions = cities.map((city) => ({ city, index: tableOp.indexOf(city) })).filter((hit) => hit.index >= 0).sort((a, b) => a.index - b.index);
-  const distinct = [];
-  for (const hit of positions) {
-    const insideLonger = distinct.some(
-      (kept) => hit.index >= kept.index && hit.index + hit.city.length <= kept.index + kept.city.length
-    );
-    if (!insideLonger) distinct.push(hit);
-  }
-  if (distinct.length < 2) return false;
-  for (let i = 0; i < distinct.length - 1; i++) {
-    const start = distinct[i].index + distinct[i].city.length;
-    const between = tableOp.slice(start, distinct[i + 1].index);
-    if (/\bX\b/.test(between) || /^[\s\-–—]+$/.test(between)) return true;
-  }
-  return false;
-}
 function evaluateRegionalTableConstraint(operationType, opts) {
   const tableOp = normalize2(operationType || "");
   if (!tableOp) return { blocked: false, reason: "" };
@@ -1036,17 +998,6 @@ function evaluateRegionalTableConstraint(operationType, opts) {
   const missionText = `${originCity} ${destCity} ${originAddr}`;
   const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
   if (citiesInTable.length > 0) {
-    if (isNamedCityRoute(tableOp, citiesInTable)) {
-      const originText = `${originCity} ${originAddr}`;
-      const onOrigin = citiesInTable.filter((city) => originText.includes(city));
-      const onDest = citiesInTable.filter((city) => destCity.includes(city));
-      const leftover = citiesInTable.filter((city) => !originText.includes(city) && !destCity.includes(city));
-      if (leftover.length > 0 || onOrigin.length === 0 || onDest.length === 0) {
-        const missing = leftover[0] || citiesInTable.find((city) => !onDest.includes(city)) || citiesInTable[0];
-        return { blocked: true, reason: `BLOQUEIO ROTA (${missing})` };
-      }
-      return { blocked: false, reason: "", matchedCity: onOrigin[0] };
-    }
     const matchedCity = citiesInTable.find((c) => missionText.includes(c));
     if (!matchedCity) {
       return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
@@ -1761,11 +1712,10 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
   const cFranchiseHr = appliedClientTable?.franchise_hours || 3;
   let cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
   let cExcessHr = Math.max(0, durationHours - cFranchiseHr);
-  const tarifaKmTabela = classificarTarifaKm(
-    manualTableOverrides?.customClientUnitKm !== void 0 ? manualTableOverrides.customClientUnitKm : appliedClientTable?.price_per_extra_km,
-    manualTableOverrides?.tarifaExcepcionalKm
-  );
-  let cUnitPriceKm = tarifaKmTabela.tarifa;
+  let cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== void 0 ? manualTableOverrides.customClientUnitKm : appliedClientTable?.price_per_extra_km || 0;
+  if (cUnitPriceKm <= 0 && findDhlAutoClient(missionClientRaw) && manualTableOverrides?.customClientUnitKm === void 0) {
+    cUnitPriceKm = dhlDefaultUnitKmExcess(originUF);
+  }
   const cUnitPriceHour = manualTableOverrides?.customClientUnitHour !== void 0 ? manualTableOverrides.customClientUnitHour : appliedClientTable?.price_per_extra_hour || 0;
   const appliedTableName = (appliedClientTable?.operation_type || "").toUpperCase();
   const missionDest = (mission.destination || "").toUpperCase();
@@ -1932,7 +1882,6 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
       excessHours: cExcessHr,
       excessHoursReal: cExcessHrReal,
       unitPriceKm: cUnitPriceKm,
-      tarifaKmOrigem: tarifaKmTabela.origem,
       unitPriceHour: cUnitPriceHour,
       franchiseKm: cFranchiseKm,
       franchiseHours: cFranchiseHr,
@@ -1967,7 +1916,7 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   const m = mission;
   const dispVal = safeNumber(m.displacement_value);
   const dispProvVal = safeNumber(m.displacement_value_provider);
-  const hasManualOverride = !!m.revenue_edit_reason || !!m.cost_edit_reason || !!carimboAprovacaoHumana(m.snapshot_approved_by);
+  const hasManualOverride = !!m.revenue_edit_reason || !!m.cost_edit_reason || !!m.snapshot_approved_by;
   if (hasManualOverride) {
     const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, mission.toll_value_provider, mission.client) + dispVal;
     const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, mission.toll_value_provider, !!mission.is_same_os) + dispProvVal;
@@ -2022,7 +1971,6 @@ var auditMissionFinancials = (mission, clientTables, providerTables, clientData,
   applyRegionSuffix,
   auditMissionFinancials,
   calculateMissionFinancials,
-  classificarTarifaKm,
   clientFuzzyFilter,
   clientNameShort,
   clientTableMatchesMission,

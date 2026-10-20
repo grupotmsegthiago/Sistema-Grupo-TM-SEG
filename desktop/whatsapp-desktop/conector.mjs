@@ -401,7 +401,13 @@ function rodarPowerShell(acao, grupo = "", mensagem = "") {
     proc.stdout.on("data", (parte) => {
       saida += parte.toString();
     });
+    let falhou = false;
+    proc.on("error", () => {
+      falhou = true;
+      resolve({ ok: false, aberto: false, motivo: "O Windows n\xE3o devolveu o resultado do WhatsApp." });
+    });
     proc.on("close", () => {
+      if (falhou) return;
       try {
         resolve(JSON.parse(saida || "{}"));
       } catch {

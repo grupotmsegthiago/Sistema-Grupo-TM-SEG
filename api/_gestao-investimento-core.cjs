@@ -210,54 +210,9 @@ function canAccessDiretoriaMenu(user) {
 
 // lib/osAnalysis/apiAuth.ts
 var import_supabase_js2 = require("@supabase/supabase-js");
-
-// lib/sessao/token.ts
-var import_node_crypto = require("node:crypto");
-var PREFIXO = "ponte.v1.";
-var TTL_SESSAO_MS = 12 * 60 * 60 * 1e3;
-function segredoDaSessao(env = process.env) {
-  return String(env.SESSION_SECRET || "").trim();
-}
-function tokenLegado(token) {
-  const limpo = String(token || "").replace(/^Bearer\s+/i, "").trim();
-  return limpo.startsWith("tmseg-token-") || limpo.startsWith("impersonation-token-");
-}
-function assinar(segredo, carga) {
-  return (0, import_node_crypto.createHmac)("sha256", segredo).update(carga).digest("base64url");
-}
-function abrirSessao(segredo, token, agora = Date.now()) {
-  const limpo = String(token || "").replace(/^Bearer\s+/i, "").trim();
-  if (!segredo || tokenLegado(limpo) || !limpo.startsWith(PREFIXO)) return null;
-  const resto = limpo.slice(PREFIXO.length);
-  const ponto = resto.lastIndexOf(".");
-  if (ponto <= 0) return null;
-  const corpo = resto.slice(0, ponto);
-  const assinatura = resto.slice(ponto + 1);
-  const esperada = assinar(segredo, corpo);
-  const recebida = Buffer.from(assinatura);
-  const calculada = Buffer.from(esperada);
-  if (recebida.length !== calculada.length || !(0, import_node_crypto.timingSafeEqual)(recebida, calculada)) return null;
-  try {
-    const json = JSON.parse(Buffer.from(corpo, "base64url").toString("utf8"));
-    if (!json.sub || typeof json.exp !== "number" || !json.csrf) return null;
-    if (agora >= json.exp) return null;
-    return {
-      usuarioId: String(json.sub),
-      csrf: json.csrf,
-      expiraEm: json.exp,
-      epoch: typeof json.ep === "number" ? json.ep : 0
-    };
-  } catch {
-    return null;
-  }
-}
-function usuarioIdDoToken(token, env, agora) {
-  return abrirSessao(segredoDaSessao(env), token, agora)?.usuarioId ?? null;
-}
-
-// lib/osAnalysis/apiAuth.ts
 function extractUserIdFromToken(token) {
-  return usuarioIdDoToken(token);
+  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
+  return match ? match[1] : null;
 }
 function headerValue(req, name) {
   const raw = req?.headers?.[name] ?? req?.headers?.[name.toLowerCase()];
