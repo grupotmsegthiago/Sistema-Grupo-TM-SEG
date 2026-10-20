@@ -47,6 +47,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     dhl_solicitation_email: '',
     phone: '',
     whatsapp_group_id: '',
+    whatsapp_group_link: '',
     zip_code: '',
     street: '',
     number: '',
@@ -201,6 +202,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     dhl_solicitation_email: data.dhl_solicitation_email || '',
                     phone: data.phone || '',
                     whatsapp_group_id: data.whatsapp_group_id || '',
+                    whatsapp_group_link: data.whatsapp_group_link || '',
                     zip_code: data.zip_code || '',
                     street: data.street || '',
                     number: data.number || '',
@@ -657,6 +659,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             dhl_solicitation_email: formData.dhl_solicitation_email?.toLowerCase() || null,
             phone: formData.phone,
             whatsapp_group_id: formData.whatsapp_group_id?.trim() || null,
+            whatsapp_group_link: formData.whatsapp_group_link?.trim() || null,
             zip_code: formData.zip_code,
             street: formData.street.toUpperCase(),
             number: formData.number,
@@ -679,6 +682,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
            if (/dhl_channel_preference/i.test(errMsg)) delete (fallback as any).dhl_channel_preference;
            if (/dhl_solicitation_email/i.test(errMsg)) delete (fallback as any).dhl_solicitation_email;
            if (/whatsapp_group_id/i.test(errMsg)) delete (fallback as any).whatsapp_group_id;
+           if (/whatsapp_group_link/i.test(errMsg)) delete (fallback as any).whatsapp_group_link;
            if (/operating_coverage/i.test(errMsg)) {
                delete (fallback as any).operating_coverage;
                coverageColumnMissing = true;
@@ -689,13 +693,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
        };
        if (id) {
            let { error } = await supabase.from('providers').update(payload).eq('id', id);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|whatsapp_group_link|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
            if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
            let { error } = await supabase.from('providers').insert([payload]);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|whatsapp_group_link|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
            void publicarNovidadeCadastro({
@@ -986,6 +990,20 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <p className="text-[10px] text-gray-400 font-medium normal-case">
                           Opcional. Também dá para vincular pelo WhatsApp: no grupo, mencione @monitoramento e digite
                           {' '}<span className="text-gray-500">cadastra este grupo no fornecedor NOME</span>.
+                        </p>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-3">
+                        <label className={LABEL_CLASS}>Link do grupo no WhatsApp do operador</label>
+                        <input
+                          type="text"
+                          className={`${INPUT_CLASS} normal-case`}
+                          value={formData.whatsapp_group_link}
+                          onChange={e => setFormData({ ...formData, whatsapp_group_link: e.target.value.trim() })}
+                          placeholder="https://chat.whatsapp.com/..."
+                          data-testid="input-provider-whatsapp-group-link"
+                        />
+                        <p className="text-[10px] text-gray-400 font-medium normal-case">
+                          Usado na solicitação de escolta. O clique copia a mensagem e abre este grupo no WhatsApp de quem está operando.
                         </p>
                     </div>
                     <div className="space-y-1.5 md:col-span-3">

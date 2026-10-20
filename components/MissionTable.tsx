@@ -54,6 +54,7 @@ import {
 import ClientExecutiveDashboard from './ClientExecutiveDashboard';
 import ClientReportsTab from './ClientReportsTab';
 import ClientMissionRequest from './ClientMissionRequest';
+import SolicitacaoEscoltaModal from './SolicitacaoEscoltaModal';
 import ClientCommitteePresentation from './ClientCommitteePresentation';
 import MissionOperationalReport from './MissionOperationalReport';
 import MissionTeamPresenceBoard from './MissionTeamPresenceBoard';
@@ -203,6 +204,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
   const [lossHiddenTick, setLossHiddenTick] = useState(0);
   const [isMissingTableOpen, setIsMissingTableOpen] = useState(false);
   const [showClientRequestModal, setShowClientRequestModal] = useState(false);
+  const [showSolicitacaoEscolta, setShowSolicitacaoEscolta] = useState(false);
   const [solicitationCount, setSolicitationCount] = useState(0);
   const [accidentCount, setAccidentCount] = useState(0);
   const [approvalMap, setApprovalMap] = useState<Record<string, { stage: string; date: string }[]>>({});
@@ -1935,6 +1937,11 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                         <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[9px] bg-pink-600 text-white font-black min-w-[18px] text-center">{solicitationCount}</span>
                     </button>
                 )}
+                {onNewMission && !isRestrictedClientView && (
+                  <button onClick={() => setShowSolicitacaoEscolta(true)} className="flex items-center gap-2 bg-green-700 hover:bg-green-800 text-white px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase" data-testid="button-solicitacao-escolta">
+                    <MessageCircle size={16} /> Solicitação
+                  </button>
+                )}
                 {onNewMission && !isRestrictedClientView && ( <button onClick={onNewMission} className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-black px-4 py-2.5 rounded-lg text-[11px] font-black transition-all shadow-md uppercase"> <Plus size={16} /> Nova Missão </button> )}
           </div>
           </div>
@@ -2462,6 +2469,12 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         {isPrintModalOpen && missionForPrint && <MissionPrintModal mission={missionForPrint} onClose={() => setIsPrintModalOpen(false)} />}
         {isFullReportOpen && missionForFullReport && <MissionFullReportModal mission={missionForFullReport} onClose={() => { setIsFullReportOpen(false); setMissionForFullReport(null); }} hideProviderInfo={isRestrictedClientView} />}
         {showClientRequestModal && resolvedClientName && <ClientMissionRequest clientName={resolvedClientName} onClose={() => setShowClientRequestModal(false)} onSuccess={() => { fetchMissions(true); showNotification('Sucesso', 'Solicitação enviada com sucesso!', 'success'); }} />}
+        {showSolicitacaoEscolta && (
+          <SolicitacaoEscoltaModal
+            onClose={() => setShowSolicitacaoEscolta(false)}
+            onAbrirOs={() => { setShowSolicitacaoEscolta(false); onNewMission?.(); }}
+          />
+        )}
         <DhlSolicitationModal isOpen={showDhlSolicitation} onClose={() => setShowDhlSolicitation(false)} />
         {missionForOpReport && <MissionOperationalReport mission={missionForOpReport} onClose={() => setMissionForOpReport(null)} isClientView={isRestrictedClientView} isInternalEditor={isDirector || (currentUser?.role || '').toLowerCase() === 'avançado'} />}
         {planoAcaoId && <OsActionPlanModal missionId={planoAcaoId} onClose={() => setPlanoAcaoId(null)} />}

@@ -228,6 +228,8 @@ export interface ProviderData {
   alvaraUrl?: string;
   /** Grupo WhatsApp vinculado (mesmo padrão de clients.whatsapp_group_id). */
   whatsapp_group_id?: string;
+  /** Link chat.whatsapp.com que abre o grupo no WhatsApp do operador. */
+  whatsapp_group_link?: string | null;
   dhl_channel_preference?: 'email' | 'whatsapp' | 'both' | null;
   dhl_solicitation_email?: string | null;
   /** Estados de atuação (sede + filiais) e valor 100 km por UF. */

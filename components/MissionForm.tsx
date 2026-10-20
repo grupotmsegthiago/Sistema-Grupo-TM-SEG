@@ -26,6 +26,7 @@ import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientToll
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
+import { consumirPrefillSolicitacao } from '../lib/solicitacaoEscolta/prefill';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -582,11 +583,28 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const canShowStep6 = stepComplete.step5;
 
   useEffect(() => {
+    const prefill = consumirPrefillSolicitacao();
+    if (!prefill) return;
+    setFormData(prev => ({
+      ...prev,
+      provider: prefill.provider || prev.provider,
+      origin: prefill.origin || prev.origin,
+      destination: prefill.destination || prev.destination,
+      scheduledDate: prefill.scheduledDate || prev.scheduledDate,
+      scheduledTime: prefill.scheduledTime || prev.scheduledTime,
+    }));
+    setScheduleMode(prefill.imediata ? 'immediate' : 'scheduled');
+  }, []);
+
+  useEffect(() => {
     if (expandedStep === 1 && stepComplete.step1) setExpandedStep(2);
     else if (expandedStep === 2 && stepComplete.step2) setExpandedStep(3);
     else if (expandedStep === 3 && stepComplete.step3) setExpandedStep(4);
     else if (expandedStep === 4 && stepComplete.step4) setExpandedStep(5);
-    else if (expandedStep === 5 && stepComplete.step5) { setScheduleMode('asking'); setExpandedStep(6); }
+    else if (expandedStep === 5 && stepComplete.step5) {
+      setScheduleMode(prev => (prev === 'immediate' || prev === 'scheduled') ? prev : 'asking');
+      setExpandedStep(6);
+    }
   }, [stepComplete.step1, stepComplete.step2, stepComplete.step3, stepComplete.step4, stepComplete.step5, manualRevenueTableId]);
 
   useEffect(() => {
