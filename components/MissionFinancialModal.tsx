@@ -7,7 +7,7 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
-import { escolherTabelasDaRotaAprovada, type OsRotaAprovada } from '../lib/rotaAprovadaTabela';
+import { escolherTabelasDaRotaAprovada, quilometragemRegistrada, type OsRotaAprovada } from '../lib/rotaAprovadaTabela';
 import { fetchAllPages } from '../lib/supabasePaging';
 import {
   isDhlSupplyClient,
@@ -1090,9 +1090,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         snapshot_data: { clientTableId?: string; providerTableId?: string } | string | null;
         snapshot_approved_at: string | null;
         updated_at: string | null;
+        invoice_number: string | null;
+        start_km: number | null;
+        end_km: number | null;
+        total_distance: number | null;
       }>((from, size) => supabase
         .from('missions')
-        .select('id,origin,destination,client,original_client_name,provider,snapshot_data,snapshot_approved_at,updated_at')
+        .select('id,origin,destination,client,original_client_name,provider,snapshot_data,snapshot_approved_at,updated_at,invoice_number,start_km,end_km,total_distance')
         .eq('billing_approved', true)
         .or(`client.ilike.%${token}%,original_client_name.ilike.%${token}%`)
         .order('id')
@@ -1110,6 +1114,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       if (typeof snap === 'string') {
         try { snap = JSON.parse(snap); } catch { snap = null; }
       }
+      const nota = String(row.invoice_number || '').trim();
       return {
         id: String(row.id),
         cliente: String(row.original_client_name || row.client || ''),
@@ -1119,14 +1124,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         clientTableId: snap?.clientTableId ? String(snap.clientTableId) : null,
         providerTableId: snap?.providerTableId ? String(snap.providerTableId) : null,
         aprovadaEm: row.snapshot_approved_at || row.updated_at,
+        km: quilometragemRegistrada(row.start_km, row.end_km, row.total_distance),
+        faturada: nota.length > 0,
       };
     });
+    const ufOrigem = extractUF(currentMission.origin || '');
     const escolha = escolherTabelasDaRotaAprovada({
       osAtualId: String(currentMission.id),
       cliente,
       origem: currentMission.origin || '',
       destino: currentMission.destination || '',
       fornecedorAtual: currentMission.provider,
+      kmAtual: quilometragemRegistrada(currentMission.startKm, currentMission.endKm, currentMission.totalDistance),
+      regiao: UF_TO_REGION[ufOrigem] || '',
       historico,
       tabelasCliente: tabelasCliente.map((tabela) => ({ id: String(tabela.id), operation_type: tabela.operation_type, client: tabela.client })),
       tabelasFornecedor: tabelasFornecedor.map((tabela) => ({ id: String(tabela.id), provider: tabela.provider })),
@@ -1138,7 +1148,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     setMemoryLoaded(true);
     showNotification(
       'Rota aprovada',
-      `Rota ${escolha.rota}: tabela usada em ${escolha.votos} OS aprovada(s). Exemplo ${escolha.osExemplo}. O pedágio continua desta OS.`,
+      `Rota ${escolha.rota}: ${escolha.votos} OS aprovada(s), ${escolha.faturadas} faturada(s). Exemplo ${escolha.osExemplo}. O pedágio continua desta OS.`,
       'success',
     );
   };

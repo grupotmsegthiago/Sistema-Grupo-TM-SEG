@@ -21,6 +21,10 @@ export interface OsRotaAprovada {
   clientTableId?: string | null;
   providerTableId?: string | null;
   aprovadaEm?: string | null;
+  /** Quilometragem já gravada nessa OS. Ausente não entra no grupo de KM parecido. */
+  km?: number | null;
+  /** Nota já emitida ou número de fatura preenchido. */
+  faturada?: boolean;
 }
 
 export interface EscolhaRotaAprovada {
@@ -28,6 +32,7 @@ export interface EscolhaRotaAprovada {
   clientTableId: string;
   providerTableId?: string;
   votos: number;
+  faturadas: number;
   osExemplo: string;
 }
 
@@ -76,6 +81,16 @@ export function algumaTabelaCobreCidade(tabelas: LinhaTabelaRota[], cidade: stri
   return tabelas.some((tabela) => normalizar(tabela.operation_type || '').includes(alvo));
 }
 
+/** KM da OS: diferença dos hodômetros quando os dois existem; senão a distância total. */
+export function quilometragemRegistrada(inicio?: number | null, fim?: number | null, total?: number | null): number | null {
+  const start = Number(inicio);
+  const end = Number(fim);
+  if (Number.isFinite(end) && Number.isFinite(start) && end > start && start > 0) return end - start;
+  const distancia = Number(total);
+  if (Number.isFinite(distancia) && distancia > 0) return distancia;
+  return null;
+}
+
 function mesmoCliente(candidato: string, atual: string): boolean {
   return clientTableMatchesMission(candidato, atual) || clientTableMatchesMission(atual, candidato);
 }
@@ -87,10 +102,70 @@ function mesmoFornecedor(candidato: string, atual: string): boolean {
   return a === b || a.includes(b) || b.includes(a);
 }
 
+function margemKm(kmAtual: number): number {
+  return Math.max(40, kmAtual * 0.5);
+}
+
+function kmParecido(kmOs: number | null | undefined, kmAtual: number): boolean {
+  if (!(kmAtual > 0)) return false;
+  if (kmOs == null || !(kmOs > 0)) return false;
+  return Math.abs(kmOs - kmAtual) <= margemKm(kmAtual);
+}
+
+interface Contagem {
+  peso: number;
+  votos: number;
+  faturadas: number;
+  proximas: number;
+  recente: number;
+  exemplo: string;
+}
+
+function acumular(tally: Map<string, Contagem>, id: string, os: OsRotaAprovada, kmAtual: number) {
+  const em = Date.parse(os.aprovadaEm || '') || 0;
+  const faturada = os.faturada === true;
+  const perto = kmParecido(os.km, kmAtual);
+  const atual = tally.get(id);
+  if (!atual) {
+    tally.set(id, {
+      peso: 1 + (faturada ? 1 : 0),
+      votos: 1,
+      faturadas: faturada ? 1 : 0,
+      proximas: perto ? 1 : 0,
+      recente: em,
+      exemplo: String(os.id),
+    });
+    return;
+  }
+  atual.peso += 1 + (faturada ? 1 : 0);
+  atual.votos += 1;
+  if (faturada) atual.faturadas += 1;
+  if (perto) atual.proximas += 1;
+  if (em >= atual.recente) {
+    atual.recente = em;
+    atual.exemplo = String(os.id);
+  }
+}
+
+function ordenar(tally: Map<string, Contagem>, regiao: string, nomePorId: Map<string, string>) {
+  const alvo = normalizar(regiao);
+  return [...tally.entries()].sort((a, b) => {
+    if (b[1].peso !== a[1].peso) return b[1].peso - a[1].peso;
+    if (b[1].votos !== a[1].votos) return b[1].votos - a[1].votos;
+    if (b[1].proximas !== a[1].proximas) return b[1].proximas - a[1].proximas;
+    if (alvo) {
+      const regA = normalizar(nomePorId.get(a[0]) || '').includes(alvo) ? 1 : 0;
+      const regB = normalizar(nomePorId.get(b[0]) || '').includes(alvo) ? 1 : 0;
+      if (regB !== regA) return regB - regA;
+    }
+    return b[1].recente - a[1].recente;
+  })[0];
+}
+
 /**
- * Quando a cidade não está na tabela, a escolha é a tabela mais vezes
- * aprovada na mesma rota (cidade de origem e cidade de destino) desse cliente.
- * A tabela do fornecedor sai das mesmas OS, só se o fornecedor for o atual.
+ * A escolha principal é o histórico já aprovado (e, com peso maior, faturado)
+ * do mesmo cliente, na mesma rota cidade-cidade. Quilometragem parecida entra
+ * na frente. Se não houver histórico, devolve null e o motor da OS segue.
  */
 export function escolherTabelasDaRotaAprovada(entrada: {
   osAtualId?: string;
@@ -98,16 +173,20 @@ export function escolherTabelasDaRotaAprovada(entrada: {
   origem: string;
   destino: string;
   fornecedorAtual?: string | null;
+  kmAtual?: number | null;
+  regiao?: string | null;
   historico: OsRotaAprovada[];
   tabelasCliente: LinhaTabelaRota[];
   tabelasFornecedor: LinhaTabelaRota[];
 }): EscolhaRotaAprovada | null {
   const rota = rotaDaOs(entrada.origem, entrada.destino);
   if (!rota) return null;
-  if (algumaTabelaCobreCidade(entrada.tabelasCliente, rota.origem)) return null;
 
+  const kmAtual = Number(entrada.kmAtual) > 0 ? Number(entrada.kmAtual) : 0;
   const idsCliente = new Set(entrada.tabelasCliente.map((tabela) => String(tabela.id)));
+  const nomeCliente = new Map(entrada.tabelasCliente.map((tabela) => [String(tabela.id), tabela.operation_type || '']));
   const fornecedorPorId = new Map(entrada.tabelasFornecedor.map((tabela) => [String(tabela.id), tabela]));
+  const nomeFornecedor = new Map(entrada.tabelasFornecedor.map((tabela) => [String(tabela.id), tabela.provider || '']));
   const iguais = entrada.historico.filter((os) => {
     if (entrada.osAtualId && String(os.id) === String(entrada.osAtualId)) return false;
     if (!os.clientTableId || !idsCliente.has(String(os.clientTableId))) return false;
@@ -117,29 +196,16 @@ export function escolherTabelasDaRotaAprovada(entrada: {
   });
   if (iguais.length === 0) return null;
 
-  const tally = new Map<string, { votos: number; recente: number; exemplo: string }>();
-  for (const os of iguais) {
-    const id = String(os.clientTableId);
-    const em = Date.parse(os.aprovadaEm || '') || 0;
-    const atual = tally.get(id);
-    if (!atual) {
-      tally.set(id, { votos: 1, recente: em, exemplo: String(os.id) });
-      continue;
-    }
-    atual.votos += 1;
-    if (em >= atual.recente) {
-      atual.recente = em;
-      atual.exemplo = String(os.id);
-    }
-  }
-  const vencedor = [...tally.entries()].sort((a, b) => {
-    if (b[1].votos !== a[1].votos) return b[1].votos - a[1].votos;
-    return b[1].recente - a[1].recente;
-  })[0];
+  const perto = kmAtual > 0 ? iguais.filter((os) => kmParecido(os.km, kmAtual)) : [];
+  const usadas = perto.length > 0 ? perto : iguais;
+
+  const tally = new Map<string, Contagem>();
+  for (const os of usadas) acumular(tally, String(os.clientTableId), os, kmAtual);
+  const vencedor = ordenar(tally, entrada.regiao || '', nomeCliente);
   if (!vencedor) return null;
 
-  const doCliente = iguais.filter((os) => String(os.clientTableId) === vencedor[0]);
-  const votosFornecedor = new Map<string, { votos: number; recente: number }>();
+  const doCliente = usadas.filter((os) => String(os.clientTableId) === vencedor[0]);
+  const votosFornecedor = new Map<string, Contagem>();
   for (const os of doCliente) {
     const id = os.providerTableId ? String(os.providerTableId) : '';
     const tabela = id ? fornecedorPorId.get(id) : undefined;
@@ -148,24 +214,16 @@ export function escolherTabelasDaRotaAprovada(entrada: {
     const nomeOs = os.fornecedor || '';
     const atual = entrada.fornecedorAtual || '';
     if (atual && !mesmoFornecedor(nomeTabela, atual) && !mesmoFornecedor(nomeOs, atual)) continue;
-    const em = Date.parse(os.aprovadaEm || '') || 0;
-    const item = votosFornecedor.get(id);
-    if (!item) votosFornecedor.set(id, { votos: 1, recente: em });
-    else {
-      item.votos += 1;
-      if (em >= item.recente) item.recente = em;
-    }
+    acumular(votosFornecedor, id, os, kmAtual);
   }
-  const fornecedor = [...votosFornecedor.entries()].sort((a, b) => {
-    if (b[1].votos !== a[1].votos) return b[1].votos - a[1].votos;
-    return b[1].recente - a[1].recente;
-  })[0];
+  const fornecedor = ordenar(votosFornecedor, entrada.regiao || '', nomeFornecedor);
 
   return {
     rota: `${rota.origem} → ${rota.destino}`,
     clientTableId: vencedor[0],
     providerTableId: fornecedor?.[0],
     votos: vencedor[1].votos,
+    faturadas: vencedor[1].faturadas,
     osExemplo: vencedor[1].exemplo,
   };
 }
