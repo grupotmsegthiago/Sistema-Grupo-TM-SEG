@@ -31,6 +31,8 @@ import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrenc
 import { PANEL_LAYER_META, type MissionPanelLayer } from '../lib/missionPanelLayers';
 import MissionOccurrenceDialog from './MissionOccurrenceDialog';
 import MissionHandoverNoteButton, { type HandoverNote } from './MissionHandoverNoteButton';
+import CaminhaoRelevo from './os/CaminhaoRelevo';
+import './os/cardOsPremium.css';
 
 const geocodeCache: Record<string, string> = {};
 const geocodePending: Record<string, Promise<string>> = {};
@@ -693,8 +695,8 @@ Qualquer dúvida, estamos a disposição.
 
     return (<>
         <div 
-          className={`group relative overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-0.5 shadow-sm ${
-              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_16px_40px_rgba(220,38,38,0.12)]' : 'bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)] hover:shadow-[0_16px_40px_rgba(15,23,42,0.08)]'
+          className={`os-card group relative overflow-hidden rounded-[22px] border transition-all duration-300 hover:-translate-y-0.5 ${
+              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_18px_40px_rgba(220,38,38,0.16)]' : 'bg-white border-slate-200/80 shadow-[0_16px_36px_rgba(15,23,42,0.08)] hover:shadow-[0_22px_48px_rgba(15,23,42,0.14)]'
           } ${
               !isNegativeProfit && (isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-slate-200 hover:border-slate-300')
           }`}
@@ -919,7 +921,8 @@ Qualquer dúvida, estamos a disposição.
                     <div className="w-full">{isActive && !showOpsPendingAlert ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[12px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{showOpsPendingAlert ? 'DADOS PENDENTES' : '-'}</div>)}</div>
                 </div>
                 
-                <div className="sm:col-span-1 xl:col-span-3 p-2.5 xl:p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100 min-w-0">
+                <div className="os-col-cliente sm:col-span-1 xl:col-span-3 p-2.5 xl:p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100 min-w-0">
+                    <CaminhaoRelevo cliente={String((mission as any).originalClientName || mission.client || '')} />
                     <div className="flex flex-col gap-3">
                         <div className="flex flex-wrap gap-2">
                             <span className="text-[12px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
