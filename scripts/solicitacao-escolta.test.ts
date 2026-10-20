@@ -165,6 +165,15 @@ test('tabela ausente é reconhecida e o painel não dispara a Z-API', () => {
   assert.equal(/send-text|send-group|z-api\.io|from\('missions'\)/.test(painel), false);
   assert.match(painel, /linkGrupoOperador/);
   assert.match(painel, /postgres_changes/);
+  assert.match(painel, /LINK_INSTALADOR/);
+  assert.match(painel, /Você não tem todos os aplicativos/);
+  assert.match(painel, /Baixe para instalar/);
+  assert.match(painel, /aplicativoLiberado/);
+  assert.match(painel, /painel-baixar-aplicativo/);
+  assert.match(painel, /import React/);
+  const cliente = fs.readFileSync('lib/whatsappDesktop/clienteLocal.ts', 'utf8');
+  assert.match(cliente, /instalador-grupo-tmseg\.zip/);
+  assert.match(cliente, /corpo\.preparado !== true\) return false/);
   assert.match(formulario, /consumirPrefillSolicitacao/);
   assert.match(formulario, /import React/);
 });

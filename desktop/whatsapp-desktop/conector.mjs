@@ -648,7 +648,7 @@ function criarServidor(driver = driverWindows(), inspecionar, instalador) {
       return;
     }
     if (req.method === "GET" && url.pathname === "/logo.png") {
-      const logo = [path.resolve(raiz, "../../public/logo.png"), path.resolve(raiz, "../../../public/logo.png")].find((item) => fs.existsSync(item)) || "";
+      const logo = [path.join(raiz, "logo.png"), path.resolve(raiz, "../../public/logo.png"), path.resolve(raiz, "../../../public/logo.png")].find((item) => fs.existsSync(item)) || "";
       if (!fs.existsSync(logo)) {
         res.writeHead(404);
         res.end();

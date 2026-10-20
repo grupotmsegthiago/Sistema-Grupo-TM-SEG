@@ -883,7 +883,7 @@
       "destination": "/api/index"
     },
     {
-      "source": "/((?!docs/|assets/|manifest\\.json|icon-|sw\\.js|build-meta\\.json).*)",
+      "source": "/((?!docs/|assets/|manifest\\.json|icon-|sw\\.js|build-meta\\.json|instalador-grupo-tmseg\\.zip).*)",
       "destination": "/index.html"
     }
   ],
