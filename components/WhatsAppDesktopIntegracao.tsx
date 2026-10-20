@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { atualizarAplicativo, consultarAplicativo, desvincularComputador, guardarTokenDesktop, testarHomologacao, type StatusAplicativo } from '../lib/whatsappDesktop/clienteLocal';
+import { atualizarAplicativo, consultarAplicativo, desvincularComputador, guardarTokenDesktop, identificarComputador, lerMemoriaDispositivo, revincularComputador, testarHomologacao, type MemoriaDispositivo, type StatusAplicativo } from '../lib/whatsappDesktop/clienteLocal';
 
 const vazio: StatusAplicativo = {
   conectado: false,
@@ -12,9 +12,12 @@ const vazio: StatusAplicativo = {
 const WhatsAppDesktopIntegracao: React.FC = () => {
   const [codigo, setCodigo] = useState('');
   const [status, setStatus] = useState<StatusAplicativo>(vazio);
+  const [memoria, setMemoria] = useState<MemoriaDispositivo | null>(lerMemoriaDispositivo());
   const [aviso, setAviso] = useState('');
 
   const atualizar = async () => {
+    const reconhecido = await identificarComputador();
+    setMemoria(reconhecido);
     setStatus(await consultarAplicativo());
   };
 
@@ -32,10 +35,15 @@ const WhatsAppDesktopIntegracao: React.FC = () => {
     setAviso(lido.pareado ? 'Computador conectado.' : (lido.motivo || 'Não foi possível confirmar o aplicativo.'));
   };
 
+  const preparado = !!(memoria?.preparado || status.preparado);
+  const identificado = !!(memoria?.identificado || status.identificado);
+  const reauth = !!(memoria?.precisaReautenticar || status.precisaReautenticar);
   const conectar = !!status.conectado && !!status.pareado;
-  const whatsapp = status.whatsappAberto
-    ? (status.whatsappAutenticado === true ? 'WhatsApp pronto' : 'WhatsApp aberto — autenticação não comprovada')
-    : 'WhatsApp pendente';
+  const whatsapp = reauth
+    ? 'WhatsApp pendente de autenticação'
+    : status.whatsappAberto
+      ? (status.whatsappAutenticado === true ? 'WhatsApp pronto' : 'WhatsApp aberto')
+      : 'WhatsApp pendente';
 
   return (
     <section className="overflow-hidden rounded-2xl border border-gray-200 bg-[#0b0d12] text-white shadow-sm" data-testid="painel-whatsapp-desktop">
@@ -48,26 +56,28 @@ const WhatsAppDesktopIntegracao: React.FC = () => {
       </div>
       <div className="space-y-4 p-5">
         <div className="grid gap-2 text-xs font-bold sm:grid-cols-2">
-          <p>{conectar ? 'Computador conectado' : 'Computador desconectado'}</p>
+          <p>{identificado ? 'Computador preparado e reconhecido' : conectar ? 'Computador conectado' : preparado ? 'Computador preparado. Abra o conector para continuar.' : 'Computador desconectado'}</p>
           <p>{whatsapp}</p>
           <p>Versão instalada: {status.versao || '—'}</p>
           <p>Último teste: {status.ultimoTeste?.em ? new Date(status.ultimoTeste.em).toLocaleString('pt-BR') : 'ainda não realizado'}</p>
           <p className="sm:col-span-2">Comunicação: {status.resultadoComunicacao || status.motivo || 'sem resposta do conector'}</p>
           <p className="sm:col-span-2 text-gray-400">Instalação: {status.instalacaoId || '—'}</p>
         </div>
+        {reauth && <p className="text-xs font-bold text-red-200">A conta do WhatsApp saiu. Abra o aplicativo oficial e conecte pelo QR Code. A instalação e o teste não serão repetidos.</p>}
         <div className="flex flex-wrap gap-2">
-          <a href="http://127.0.0.1:47321/" target="_blank" rel="noreferrer" className="rounded-xl bg-red-700 px-4 py-2 text-[11px] font-black uppercase text-white" data-testid="button-instalar-tmseg">Instalar aplicativo TM SEG</a>
+          {!preparado && <a href="http://127.0.0.1:47321/" target="_blank" rel="noreferrer" className="rounded-xl bg-red-700 px-4 py-2 text-[11px] font-black uppercase text-white" data-testid="button-instalar-tmseg">Instalar aplicativo TM SEG</a>}
           <button type="button" onClick={() => void atualizar()} className="rounded-xl border border-white/15 px-4 py-2 text-[11px] font-black uppercase">Testar conexão</button>
           <button type="button" onClick={() => void atualizarAplicativo().then((r) => { setAviso(r.ok ? 'Aplicativo marcado na versão atual.' : (r.motivo || 'Falha ao atualizar.')); void atualizar(); })} className="rounded-xl border border-white/15 px-4 py-2 text-[11px] font-black uppercase">Atualizar aplicativo</button>
-          <button type="button" onClick={() => void desvincularComputador().then(() => { setAviso('Computador desvinculado neste navegador.'); void atualizar(); })} className="rounded-xl border border-white/15 px-4 py-2 text-[11px] font-black uppercase">Desvincular computador</button>
-          <button type="button" onClick={() => void testarHomologacao().then((r) => { setAviso(String(r.motivo || (r.ok ? 'Comando de teste executado. Entrega não comprovada.' : 'Teste não enviado.'))); void atualizar(); })} className="rounded-xl bg-white px-4 py-2 text-[11px] font-black uppercase text-gray-900">Autorizar teste único</button>
+          {conectar && <button type="button" onClick={() => void desvincularComputador().then(() => { setAviso('Computador desvinculado. A instalação permanece neste aparelho.'); void atualizar(); })} className="rounded-xl border border-white/15 px-4 py-2 text-[11px] font-black uppercase">Desvincular computador</button>}
+          {preparado && memoria?.vinculado === false && <button type="button" onClick={() => void revincularComputador().then((r) => { setAviso(r.ok ? 'Computador reconhecido de novo.' : (r.motivo || 'Não foi possível vincular.')); void atualizar(); })} className="rounded-xl bg-white px-4 py-2 text-[11px] font-black uppercase text-gray-900">Reconhecer de novo</button>}
+          {!preparado && <button type="button" onClick={() => void testarHomologacao().then((r) => { setAviso(String(r.motivo || (r.ok ? 'Comando de teste executado. Entrega não comprovada.' : 'Teste não enviado.'))); void atualizar(); })} className="rounded-xl bg-white px-4 py-2 text-[11px] font-black uppercase text-gray-900">Autorizar teste único</button>}
         </div>
-        <div className="flex flex-wrap gap-2">
+        {!preparado && <div className="flex flex-wrap gap-2">
           <input className="min-w-[240px] flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm" placeholder="Código do instalador" value={codigo} onChange={(evento) => setCodigo(evento.target.value)} data-testid="input-codigo-whatsapp-desktop" />
           <button type="button" onClick={() => void parear()} className="rounded-xl bg-gray-100 px-4 py-2 text-[11px] font-black uppercase text-gray-900">Vincular este computador</button>
-        </div>
+        </div>}
         {aviso && <p className="text-xs font-bold text-red-200">{aviso}</p>}
-        <p className="text-[11px] text-gray-500">O duplo clique em desktop/whatsapp-desktop/Abrir instalador.vbs abre o assistente. O teste real só segue se o chat for exatamente GRUPO TM SEG - ADM.</p>
+        <p className="text-[11px] text-gray-500">{preparado ? 'Este navegador guarda o computador preparado. A próxima abertura do TM SEG identifica o dispositivo sem repetir a instalação.' : 'O duplo clique em desktop/whatsapp-desktop/Abrir instalador.vbs abre o assistente. O teste real só segue se o chat for exatamente GRUPO TM SEG - ADM.'}</p>
       </div>
     </section>
   );

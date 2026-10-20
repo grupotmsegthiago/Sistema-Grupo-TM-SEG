@@ -8,7 +8,7 @@ O aplicativo fica só neste computador. Ele usa o WhatsApp Desktop já autentica
 2. Siga as telas: Boas-vindas, Verificação do computador, Instalação dos componentes, Configuração do WhatsApp, Conexão com TM SEG, Teste de funcionamento e Instalação concluída.
 3. Se o WhatsApp Desktop oficial não estiver instalado, o assistente abre o canal `https://www.whatsapp.com/download`. A conta entra pelo QR Code do próprio WhatsApp.
 4. No teste, marque a autorização. O envio só ocorre se o chat aberto for exatamente **GRUPO TM SEG - ADM**. Se a janela não mostrar esse nome, nada é enviado.
-5. Em Configurações, cole o código e clique em **Vincular este computador**.
+5. Na primeira conclusão, o TM SEG grava o computador. Nas próximas aberturas o conector identifica o dispositivo. Instalação, QR Code e mensagem de teste não se repetem. O QR Code volta somente se o WhatsApp perder a conta. O código manual fica só para a primeira vez, se a identificação automática não ocorrer.
 
 O assistente não é um arquivo BAT. A assinatura digital só entra quando houver certificado. Neste computador, a inspeção de 19/10/2026 viu o WhatsApp aberto, mas a árvore de acessibilidade não expôs o nome do grupo. O teste real não foi enviado.
 

@@ -1,6 +1,21 @@
 import { ORIGEM_LOCAL, origemPermitida } from './fila';
 
 export const CHAVE_TOKEN_DESKTOP = 'tmseg.whatsappDesktop.token';
+export const CHAVE_DISPOSITIVO_DESKTOP = 'tmseg.whatsappDesktop.dispositivo';
+
+export interface MemoriaDispositivo {
+  identificado: boolean;
+  preparado: boolean;
+  vinculado: boolean;
+  repetirInstalacao: boolean;
+  repetirQr: boolean;
+  repetirTeste: boolean;
+  precisaReautenticar: boolean;
+  instalacaoId?: string | null;
+  versao?: string | null;
+  codigo?: string;
+  motivo?: string;
+}
 
 export interface StatusAplicativo {
   conectado: boolean;
@@ -10,9 +25,16 @@ export interface StatusAplicativo {
   whatsappAutenticado: boolean | null;
   versao?: string;
   instalacaoId?: string;
-  ultimoTeste?: { em?: string; estado?: string; motivo?: string; entrega?: null } | null;
+  ultimoTeste?: { em?: string; estado?: string; motivo?: string; entrega?: null; registrado?: boolean } | null;
   resultadoComunicacao?: string;
   motivo?: string;
+  identificado?: boolean;
+  preparado?: boolean;
+  vinculado?: boolean;
+  repetirInstalacao?: boolean;
+  repetirQr?: boolean;
+  repetirTeste?: boolean;
+  precisaReautenticar?: boolean;
 }
 
 export function lerTokenDesktop(): string {
@@ -29,6 +51,54 @@ export function guardarTokenDesktop(token: string): void {
 
 export function esquecerTokenDesktop(): void {
   localStorage.removeItem(CHAVE_TOKEN_DESKTOP);
+}
+
+export function lerMemoriaDispositivo(): MemoriaDispositivo | null {
+  try {
+    const bruto = localStorage.getItem(CHAVE_DISPOSITIVO_DESKTOP);
+    return bruto ? JSON.parse(bruto) as MemoriaDispositivo : null;
+  } catch {
+    return null;
+  }
+}
+
+export function guardarMemoriaDispositivo(memoria: MemoriaDispositivo): void {
+  const copia = { ...memoria };
+  delete copia.codigo;
+  localStorage.setItem(CHAVE_DISPOSITIVO_DESKTOP, JSON.stringify(copia));
+}
+
+export async function identificarComputador(): Promise<MemoriaDispositivo> {
+  const vazio: MemoriaDispositivo = {
+    identificado: false,
+    preparado: false,
+    vinculado: false,
+    repetirInstalacao: true,
+    repetirQr: true,
+    repetirTeste: true,
+    precisaReautenticar: false,
+  };
+  try {
+    const resposta = await fetch(`${ORIGEM_LOCAL}/identificar`);
+    const corpo = await resposta.json() as MemoriaDispositivo;
+    if (!resposta.ok) return { ...vazio, motivo: corpo.motivo || 'O conector recusou a identificação.' };
+    if (corpo.codigo) guardarTokenDesktop(corpo.codigo);
+    guardarMemoriaDispositivo(corpo);
+    return corpo;
+  } catch {
+    return lerMemoriaDispositivo() || { ...vazio, motivo: 'Computador sem o aplicativo TM SEG.' };
+  }
+}
+
+export function revincularComputador(): Promise<{ ok: boolean; motivo?: string; codigo?: string }> {
+  return fetch(`${ORIGEM_LOCAL}/dispositivo/vincular`, { method: 'POST' })
+    .then(async (resposta) => {
+      const corpo = await resposta.json() as { ok?: boolean; motivo?: string; codigo?: string };
+      if (corpo.codigo) guardarTokenDesktop(corpo.codigo);
+      if (corpo.ok) guardarMemoriaDispositivo({ ...(lerMemoriaDispositivo() || { identificado: true, preparado: true, repetirInstalacao: false, repetirQr: false, repetirTeste: false, precisaReautenticar: false }), vinculado: true, identificado: true });
+      return { ok: !!corpo.ok, motivo: corpo.motivo, codigo: corpo.codigo };
+    })
+    .catch(() => ({ ok: false, motivo: 'O aplicativo local não respondeu.' }));
 }
 
 async function postAutenticado(caminho: string, corpo?: unknown): Promise<{ ok: boolean; motivo?: string; [chave: string]: unknown }> {
@@ -50,6 +120,8 @@ async function postAutenticado(caminho: string, corpo?: unknown): Promise<{ ok: 
 export function desvincularComputador(): Promise<{ ok: boolean; motivo?: string }> {
   return postAutenticado('/unlink', {}).then((resultado) => {
     esquecerTokenDesktop();
+    const memoria = lerMemoriaDispositivo();
+    if (memoria) guardarMemoriaDispositivo({ ...memoria, vinculado: false, identificado: false });
     return resultado;
   });
 }
@@ -84,6 +156,13 @@ export async function consultarAplicativo(token = lerTokenDesktop()): Promise<St
       instalacaoId: corpo.instalacaoId,
       ultimoTeste: corpo.ultimoTeste || null,
       resultadoComunicacao: corpo.resultadoComunicacao,
+      identificado: corpo.identificado,
+      preparado: corpo.preparado,
+      vinculado: corpo.vinculado,
+      repetirInstalacao: corpo.repetirInstalacao,
+      repetirQr: corpo.repetirQr,
+      repetirTeste: corpo.repetirTeste,
+      precisaReautenticar: corpo.precisaReautenticar,
     };
   } catch {
     return { conectado: false, pareado: false, pausado: false, whatsappAberto: false, whatsappAutenticado: null, motivo: 'Computador sem o aplicativo TM SEG.' };

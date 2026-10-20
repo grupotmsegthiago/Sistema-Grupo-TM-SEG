@@ -208,6 +208,40 @@ export function origemPermitida(origem: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Depois da primeira preparação, o mesmo computador não reinstala,
+ * não pede QR Code e não repete a mensagem de teste.
+ * QR Code só volta quando o WhatsApp perdeu a autenticação.
+ */
+export function lembrarDispositivo(entrada: {
+  instalacaoId?: string | null;
+  preparado: boolean;
+  vinculado: boolean;
+  testeRegistrado: boolean;
+  whatsappAutenticado: boolean | null;
+}): {
+  identificado: boolean;
+  preparado: boolean;
+  vinculado: boolean;
+  repetirInstalacao: boolean;
+  repetirQr: boolean;
+  repetirTeste: boolean;
+  precisaReautenticar: boolean;
+} {
+  const preparado = !!entrada.instalacaoId && entrada.preparado;
+  const vinculado = preparado && entrada.vinculado;
+  const precisaReautenticar = preparado && entrada.whatsappAutenticado === false;
+  return {
+    identificado: vinculado && !precisaReautenticar,
+    preparado,
+    vinculado,
+    repetirInstalacao: !preparado,
+    repetirQr: !preparado || precisaReautenticar,
+    repetirTeste: !preparado && !entrada.testeRegistrado,
+    precisaReautenticar,
+  };
+}
+
 /** Um teste de homologação por instalação. Sem autorização ou sem o nome exato, não envia. */
 export function decidirTesteHomologacao(entrada: {
   autorizar: boolean;

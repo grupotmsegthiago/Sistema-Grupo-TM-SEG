@@ -67,13 +67,15 @@
       ['Verificação do computador', 'Conferindo Windows e a pasta local do usuário.'],
       ['Instalação dos componentes', 'O conector TM SEG fica neste computador. Python não é instalado: a automação usa o Windows já presente.'],
       ['Configuração do WhatsApp', 'O WhatsApp precisa ser o aplicativo oficial. Se a conta ainda não estiver no aparelho, conecte pelo QR Code na tela do próprio WhatsApp.'],
-      ['Conexão com TM SEG', 'Cole o código abaixo em Configurações → Integração WhatsApp Desktop.'],
+      ['Conexão com TM SEG', 'Depois desta etapa o TM SEG reconhece o computador sozinho. O código abaixo só é necessário se a identificação automática falhar.'],
       ['Teste de funcionamento', 'O teste envia uma única mensagem para o grupo GRUPO TM SEG - ADM, somente com a sua autorização e se o nome do chat for confirmado.'],
-      ['Instalação concluída', 'O computador fica registrado. Entrega e leitura da mensagem não são afirmadas sem comprovação.']
+      ['Instalação concluída', 'O computador fica registrado. Nas próximas aberturas a instalação, o QR Code e o teste não se repetem.']
     ];
     let atual = 0;
     let autorizado = false;
     let inicioAutomatico = false;
+    let jaPreparado = false;
+    let reauth = false;
     const passos = document.getElementById('passos');
     etapas.forEach(() => passos.appendChild(document.createElement('i')));
     const titulo = document.getElementById('titulo');
@@ -91,7 +93,8 @@
       if (atual === 2) extra.innerHTML = '<label class="ok"><input id="inicio" type="checkbox"' + (inicioAutomatico ? ' checked' : '') + '> Autorizo o conector a iniciar junto com o Windows.</label><p id="pasta"></p>';
       if (atual === 2) extra.querySelector('#inicio').onchange = (e) => { inicioAutomatico = e.target.checked; };
       if (atual === 3) fetch('/install/whatsapp').then(r => r.json()).then(d => {
-        extra.innerHTML = '<p>' + d.mensagem + '</p>' + (d.instalado ? '' : '<p><a href="' + d.canalOficial + '" style="color:#fecaca">Abrir o canal oficial do WhatsApp</a></p>');
+        const aviso = reauth ? '<p>A instalação e o teste já estão salvos. Só a conta do WhatsApp precisa ser conectada de novo, pelo QR Code.</p>' : '';
+        extra.innerHTML = aviso + '<p>' + d.mensagem + '</p>' + (d.instalado ? '' : '<p><a href="' + d.canalOficial + '" style="color:#fecaca">Abrir o canal oficial do WhatsApp</a></p>');
       });
       if (atual === 4) fetch('/pair/code').then(r => r.json()).then(d => { extra.innerHTML = '<p>Código desta máquina</p><code>' + d.codigo + '</code>'; });
       if (atual === 5) {
@@ -99,12 +102,32 @@
         document.getElementById('autorizo').onchange = (e) => { autorizado = e.target.checked; };
         fetch('/install/mensagem').then(r => r.json()).then(d => { document.getElementById('previa').textContent = d.mensagem; });
       }
-      if (atual === 6) fetch('/status', { headers: {} }).then(r => r.json()).then(d => {
-        extra.textContent = d.instalacaoId ? 'Identificador da instalação: ' + d.instalacaoId : 'Abra o sistema e vincule este computador.';
-      }).catch(() => {});
+      if (atual === 6) {
+        const texto = jaPreparado
+          ? 'Este computador já está preparado. Abra o TM SEG. O conector identifica o dispositivo sem nova instalação, sem QR Code e sem nova mensagem de teste.'
+          : 'Concluindo o registro deste computador.';
+        extra.innerHTML = '<p>' + texto + '</p><p id="registro"></p>';
+        if (!jaPreparado) {
+          fetch('/dispositivo/preparar', { method: 'POST' }).then(r => r.json()).then(d => {
+            jaPreparado = !!d.preparado;
+            const registro = document.getElementById('registro');
+            if (registro) registro.textContent = d.instalacaoId ? 'Identificador da instalação: ' + d.instalacaoId : '';
+          });
+        } else {
+          fetch('/identificar').then(r => r.json()).then(d => {
+            const registro = document.getElementById('registro');
+            if (registro) registro.textContent = d.instalacaoId ? 'Identificador da instalação: ' + d.instalacaoId : '';
+          });
+        }
+      }
     }
-    voltar.onclick = () => { if (atual > 0) { atual--; desenhar(); } };
+    voltar.onclick = () => {
+      if (jaPreparado && !reauth) return;
+      if (reauth && atual <= 3) return;
+      if (atual > 0) { atual--; desenhar(); }
+    };
     avancar.onclick = async () => {
+      if (reauth && atual === 3) { atual = 6; desenhar(); return; }
       if (atual === 2) {
         const preparo = await fetch('/install/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autostart: inicioAutomatico }) }).then(r => r.json());
         const pasta = document.getElementById('pasta');
@@ -124,7 +147,13 @@
       atual++;
       desenhar();
     };
-    desenhar();
+    fetch('/identificar').then(r => r.json()).then(d => {
+      jaPreparado = !!d.preparado;
+      reauth = !!d.precisaReautenticar;
+      if (jaPreparado && reauth) atual = 3;
+      else if (jaPreparado) atual = 6;
+      desenhar();
+    }).catch(() => desenhar());
   </script>
 </body>
 </html>

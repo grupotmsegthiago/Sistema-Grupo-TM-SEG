@@ -9,7 +9,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { validarDestinatario, origemPermitida, PORTA_LOCAL, limparPesquisaEntreEnvios, decidirTesteHomologacao, VERSAO_CONECTOR, GRUPO_HOMOLOGACAO, MENSAGEM_TESTE_HOMOLOGACAO, dobrar } from '../../lib/whatsappDesktop/fila.ts';
+import { validarDestinatario, origemPermitida, PORTA_LOCAL, limparPesquisaEntreEnvios, decidirTesteHomologacao, lembrarDispositivo, VERSAO_CONECTOR, GRUPO_HOMOLOGACAO, MENSAGEM_TESTE_HOMOLOGACAO, dobrar } from '../../lib/whatsappDesktop/fila.ts';
 
 const raiz = path.dirname(fileURLToPath(import.meta.url));
 
@@ -73,6 +73,8 @@ function autorizado(req: http.IncomingMessage): boolean {
   if (origem && !origemPermitida(origem)) return false;
   const token = lerToken();
   if (!token) return false;
+  const instalacao = lerJson(arquivoInstalacao());
+  if (instalacao?.vinculado === false) return false;
   return req.headers.authorization === `Bearer ${token}`;
 }
 
@@ -112,13 +114,41 @@ function lerJson(arquivo: string): any {
   try { return JSON.parse(fs.readFileSync(arquivo, 'utf8')); } catch { return null; }
 }
 
-function garantirInstalacao(): { id: string; versao: string } {
+function garantirInstalacao(): { id: string; versao: string; preparado?: boolean; vinculado?: boolean; whatsappAutenticado?: boolean | null; preparadaEm?: string } {
   const atual = lerJson(arquivoInstalacao());
   if (atual?.id) return atual;
-  const criada = { id: crypto.randomUUID(), versao: VERSAO_CONECTOR, criadaEm: new Date().toISOString() };
+  const criada = { id: crypto.randomUUID(), versao: VERSAO_CONECTOR, criadaEm: new Date().toISOString(), preparado: false };
   garantirPasta();
   fs.writeFileSync(arquivoInstalacao(), JSON.stringify(criada));
   return criada;
+}
+
+function gravarInstalacao(parcial: Record<string, unknown>) {
+  const atual = garantirInstalacao();
+  const novo = { ...atual, ...parcial };
+  garantirPasta();
+  fs.writeFileSync(arquivoInstalacao(), JSON.stringify(novo));
+  return novo;
+}
+
+function memoriaDispositivo() {
+  const instalacao = lerJson(arquivoInstalacao());
+  const teste = lerJson(arquivoTeste());
+  const autenticado = instalacao?.whatsappAutenticado === true ? true : instalacao?.whatsappAutenticado === false ? false : null;
+  const memoria = lembrarDispositivo({
+    instalacaoId: instalacao?.id || null,
+    preparado: instalacao?.preparado === true,
+    vinculado: instalacao?.preparado === true && instalacao?.vinculado !== false && !!lerToken(),
+    testeRegistrado: !!teste?.registrado,
+    whatsappAutenticado: autenticado,
+  });
+  return { instalacao, teste, autenticado, memoria };
+}
+
+function origemDaRequisicao(req: http.IncomingMessage): boolean {
+  const origem = req.headers.origin;
+  if (!origem) return true;
+  return origemPermitida(origem);
 }
 
 type InspecaoJanela = { candidatos?: string[]; titulo?: string; autenticado?: boolean | null; aberto?: boolean; motivo?: string };
@@ -246,6 +276,38 @@ export function criarServidor(driver: Driver = driverWindows(), inspecionar?: ()
       enviar(200, { ok: true, pareado: !!lerToken() });
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/identificar') {
+      if (!origemDaRequisicao(req)) { enviar(403, { identificado: false, motivo: 'Origem não autorizada.' }); return; }
+      const { instalacao, teste, autenticado, memoria } = memoriaDispositivo();
+      const corpo: Record<string, unknown> = {
+        ...memoria,
+        instalacaoId: instalacao?.id || null,
+        versao: instalacao?.versao || null,
+        ultimoTeste: teste,
+        whatsappAutenticado: autenticado,
+      };
+      if (memoria.preparado && memoria.vinculado) corpo.codigo = lerToken();
+      enviar(200, corpo);
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/dispositivo/preparar') {
+      if (!origemDaRequisicao(req)) { enviar(403, { ok: false, motivo: 'Origem não autorizada.' }); return; }
+      const instalacao = gravarInstalacao({ preparado: true, vinculado: true, preparadaEm: new Date().toISOString(), versao: VERSAO_CONECTOR });
+      if (!lerToken()) gravarToken(crypto.randomBytes(18).toString('hex'));
+      const { memoria, teste, autenticado } = memoriaDispositivo();
+      enviar(200, { ok: true, ...memoria, instalacaoId: instalacao.id, versao: instalacao.versao, ultimoTeste: teste, whatsappAutenticado: autenticado, codigo: lerToken() });
+      return;
+    }
+    if (req.method === 'POST' && url.pathname === '/dispositivo/vincular') {
+      if (!origemDaRequisicao(req)) { enviar(403, { ok: false, motivo: 'Origem não autorizada.' }); return; }
+      const { memoria } = memoriaDispositivo();
+      if (!memoria.preparado) { enviar(200, { ok: false, motivo: 'Este computador ainda não foi preparado.' }); return; }
+      if (!lerToken()) gravarToken(crypto.randomBytes(18).toString('hex'));
+      gravarInstalacao({ vinculado: true });
+      const atual = memoriaDispositivo();
+      enviar(200, { ok: true, ...atual.memoria, instalacaoId: atual.instalacao?.id, codigo: lerToken() });
+      return;
+    }
     if (req.method === 'GET' && url.pathname === '/pair/code') {
       let token = lerToken();
       if (!token) {
@@ -294,23 +356,27 @@ export function criarServidor(driver: Driver = driverWindows(), inspecionar?: ()
         enviar(401, { conectado: true, pareado: false, pausado, whatsappAberto: aberto, whatsappAutenticado: null, versao: instalacao.versao, instalacaoId: instalacao.id, ultimoTeste: teste, resultadoComunicacao: 'Pareamento necessário.' });
         return;
       }
+      const { memoria, autenticado } = memoriaDispositivo();
       enviar(200, {
         conectado: true,
         pareado: true,
         pausado,
         whatsappAberto: aberto,
-        whatsappAutenticado: null,
+        whatsappAutenticado: autenticado,
         versao: VERSAO_CONECTOR,
         instalacaoId: instalacao.id,
         ultimoTeste: teste,
-        resultadoComunicacao: 'Conector local autenticado neste computador.',
+        resultadoComunicacao: memoria.identificado
+          ? 'Computador preparado e reconhecido automaticamente.'
+          : 'Conector local autenticado neste computador.',
+        ...memoria,
       });
       return;
     }
     if (req.method === 'POST' && url.pathname === '/unlink') {
       if (!autorizado(req)) { enviar(401, { motivo: 'Pareie este computador antes de desvincular.' }); return; }
-      try { fs.unlinkSync(arquivoToken()); } catch { /* já desvinculado */ }
-      enviar(200, { ok: true, pareado: false });
+      gravarInstalacao({ vinculado: false });
+      enviar(200, { ok: true, pareado: false, preparado: true });
       return;
     }
     if (req.method === 'POST' && url.pathname === '/update') {
@@ -327,6 +393,8 @@ export function criarServidor(driver: Driver = driverWindows(), inspecionar?: ()
       const instalacao = garantirInstalacao();
       const teste = lerJson(arquivoTeste());
       const inspecao = await lerJanela();
+      if (inspecao.aberto === true && inspecao.autenticado === false) gravarInstalacao({ whatsappAutenticado: false });
+      if (inspecao.autenticado === true) gravarInstalacao({ whatsappAutenticado: true });
       if (inspecao.campoMensagem === false || inspecao.aberto === false) {
         enviar(200, {
           ok: false,

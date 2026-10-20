@@ -4,6 +4,7 @@ import { montarLiberacoes } from '../lib/solicitacaoEscolta/regras.ts';
 import { buildActivationOffers, rankOffers } from '../lib/providerActivationRanking.ts';
 import {
   decidirTesteHomologacao,
+  lembrarDispositivo,
   GRUPO_HOMOLOGACAO,
   MENSAGEM_TESTE_HOMOLOGACAO,
   envioAposConfirmacao,
@@ -188,6 +189,40 @@ test('o teste de homologação exige autorização, o grupo exato e não repete'
     testeJaRegistrado: true,
   });
   assert.equal(repetido.enviar, false);
+});
+
+test('computador preparado não reinstala, não pede QR e não repete o teste', () => {
+  const pronto = lembrarDispositivo({
+    instalacaoId: 'maq-1',
+    preparado: true,
+    vinculado: true,
+    testeRegistrado: true,
+    whatsappAutenticado: true,
+  });
+  assert.equal(pronto.identificado, true);
+  assert.equal(pronto.repetirInstalacao, false);
+  assert.equal(pronto.repetirQr, false);
+  assert.equal(pronto.repetirTeste, false);
+  const reauth = lembrarDispositivo({
+    instalacaoId: 'maq-1',
+    preparado: true,
+    vinculado: true,
+    testeRegistrado: true,
+    whatsappAutenticado: false,
+  });
+  assert.equal(reauth.precisaReautenticar, true);
+  assert.equal(reauth.repetirInstalacao, false);
+  assert.equal(reauth.repetirTeste, false);
+  assert.equal(reauth.repetirQr, true);
+  const novo = lembrarDispositivo({
+    instalacaoId: null,
+    preparado: false,
+    vinculado: false,
+    testeRegistrado: false,
+    whatsappAutenticado: null,
+  });
+  assert.equal(novo.repetirInstalacao, true);
+  assert.equal(novo.repetirTeste, true);
 });
 
 test('a API local só aceita a máquina e o sistema oficial', () => {
