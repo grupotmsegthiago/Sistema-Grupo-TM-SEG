@@ -7,6 +7,8 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
+import { escolherTabelasDaRotaAprovada, type OsRotaAprovada } from '../lib/rotaAprovadaTabela';
+import { fetchAllPages } from '../lib/supabasePaging';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -1072,7 +1074,80 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // BLINDAGEM: Pedágio NUNCA é herdado de outras missões (IDs diferentes).
   // Se a missão atual tem toll_value salvo no banco, usa esse valor.
   // Se não tem, busca via API ou histórico automaticamente.
-  const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[]) => {
+  const rotaAprovadaAplicadaRef = useRef(false);
+
+  const aplicarRotaAprovada = async (currentMission: Mission, tabelasCliente: ClientPriceTable[], tabelasFornecedor: ProviderCostTable[]) => {
+    if (isDhlSupplyClient(currentMission.originalClientName || currentMission.client)) return;
+    const cliente = String(currentMission.originalClientName || currentMission.client || '');
+    const token = (cliente.split(/[\s,.\-/]+/).find((parte) => parte.length >= 6) || '').replace(/[^A-Za-z0-9]/g, '');
+    if (!token) return;
+    let pagina;
+    try {
+      pagina = await fetchAllPages<{
+        id: string;
+        origin: string | null;
+        destination: string | null;
+        client: string | null;
+        original_client_name: string | null;
+        provider: string | null;
+        snapshot_data: { clientTableId?: string; providerTableId?: string } | string | null;
+        snapshot_approved_at: string | null;
+        updated_at: string | null;
+      }>((from, size) => supabase
+        .from('missions')
+        .select('id,origin,destination,client,original_client_name,provider,snapshot_data,snapshot_approved_at,updated_at')
+        .eq('billing_approved', true)
+        .or(`client.ilike.%${token}%,original_client_name.ilike.%${token}%`)
+        .order('id')
+        .range(from, from + size - 1) as Promise<{ data: any; error: unknown; count?: number | null }>,
+      1000,
+      20000,
+      { getRowKey: (row) => row.id });
+    } catch (erro) {
+      console.warn('[Rota aprovada] Consulta incompleta. Nenhuma tabela foi trocada.', erro);
+      return;
+    }
+    if (!pagina.complete) return;
+    const historico: OsRotaAprovada[] = pagina.rows.map((row) => {
+      let snap = row.snapshot_data;
+      if (typeof snap === 'string') {
+        try { snap = JSON.parse(snap); } catch { snap = null; }
+      }
+      return {
+        id: String(row.id),
+        cliente: String(row.original_client_name || row.client || ''),
+        origem: String(row.origin || ''),
+        destino: String(row.destination || ''),
+        fornecedor: row.provider,
+        clientTableId: snap?.clientTableId ? String(snap.clientTableId) : null,
+        providerTableId: snap?.providerTableId ? String(snap.providerTableId) : null,
+        aprovadaEm: row.snapshot_approved_at || row.updated_at,
+      };
+    });
+    const escolha = escolherTabelasDaRotaAprovada({
+      osAtualId: String(currentMission.id),
+      cliente,
+      origem: currentMission.origin || '',
+      destino: currentMission.destination || '',
+      fornecedorAtual: currentMission.provider,
+      historico,
+      tabelasCliente: tabelasCliente.map((tabela) => ({ id: String(tabela.id), operation_type: tabela.operation_type, client: tabela.client })),
+      tabelasFornecedor: tabelasFornecedor.map((tabela) => ({ id: String(tabela.id), provider: tabela.provider })),
+    });
+    if (!escolha) return;
+    rotaAprovadaAplicadaRef.current = true;
+    setManualClientTableId(escolha.clientTableId);
+    if (escolha.providerTableId) setManualProviderTableId(escolha.providerTableId);
+    setMemoryLoaded(true);
+    showNotification(
+      'Rota aprovada',
+      `Rota ${escolha.rota}: tabela usada em ${escolha.votos} OS aprovada(s). Exemplo ${escolha.osExemplo}. O pedágio continua desta OS.`,
+      'success',
+    );
+  };
+
+  const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[], tabelasClienteCarregadas?: ClientPriceTable[]) => {
+      rotaAprovadaAplicadaRef.current = false;
       if (!currentMission.client || !currentMission.origin || isSavingRef.current) return;
       try {
           const dbToll = Math.max(0, currentMission.toll_value ?? 0);
@@ -1112,7 +1187,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           setAiMaturity(0);
 
-          if (hasSavedData || currentMission.billing_approved) {
+          const osTravada = !!currentMission.billing_approved
+            || !!currentMission.billing_verified_by
+            || !!carimboAprovacaoHumana(currentMission.snapshot_approved_by)
+            || isIntentionalBillingOverride(currentMission.revenue_edit_reason)
+            || isIntentionalBillingOverride(currentMission.cost_edit_reason);
+          if (osTravada) return;
+          if (hasSavedData) {
+              await aplicarRotaAprovada(currentMission, tabelasClienteCarregadas || clientTables, allProviderTables || providerTables);
               return;
           }
 
@@ -1154,6 +1236,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                      const tableRegion = tableRegions.find(r => tableOp.includes(r)) || '';
                      const regionCompatible = !tableRegion || !originRegion || tableRegion === originRegion;
                      if (regionCompatible) {
+                         rotaAprovadaAplicadaRef.current = true;
                          setManualClientTableId(details.clientTableId);
                      }
                  }
@@ -1180,7 +1263,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  showNotification('Memória Evolutiva', `Tabela${extraInfo} aplicada (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}). Pedágio precisa ser confirmado manualmente.`, 'success');
              } catch (e) { console.error("Erro ao ler memória:", e); }
           }
-          
+          if (!rotaAprovadaAplicadaRef.current) {
+              await aplicarRotaAprovada(currentMission, tabelasClienteCarregadas || clientTables, allProviderTables || providerTables);
+          }
       } catch (e) { console.error("Erro na IA de Padrões:", e); }
   };
 
@@ -1458,7 +1543,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   dbValuesLoadedRef.current = true;
               }
               
-              fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[]);
+              fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[], (ctRes.data || []) as ClientPriceTable[]);
 
               const [approvalRes, adjustmentRes, editHistRes, tollConfRes] = await Promise.all([
                   supabase.from('system_logs').select('id, action_type, user_name, created_at, details').eq('entity', 'BillingApproval').eq('entity_id', initialMission.id).neq('action_type', 'APPROVAL_SCREENSHOT').order('created_at', { ascending: true }),
@@ -2160,7 +2245,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           // automático) em manualProviderTableId — isso desligaria o motor por
           // engano. Só persistimos ids de tabelas REAIS selecionadas.
           if (financialData.provider.tableId && !String(financialData.provider.tableId).startsWith('auto-')) {
-              if (!manualProviderTableId) {
+              if (!manualProviderTableId && !rotaAprovadaAplicadaRef.current) {
                   setManualProviderTableId(financialData.provider.tableId);
               }
               if (manualProviderTableId && financialData.provider.tableId !== manualProviderTableId && financialData.provider.detectionLog.includes('CEVA Jundiaí')) {
@@ -2168,7 +2253,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
           if (financialData.client.tableId) {
-              if (!manualClientTableId) {
+              if (!manualClientTableId && !rotaAprovadaAplicadaRef.current) {
                   setManualClientTableId(financialData.client.tableId);
               }
           }
