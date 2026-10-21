@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-21, portal do cliente na working tree da `dev`. Não publicado. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-21. ANA.FERNANDES entrou na mesma supervisão financeira da Giovanna Marsili, só no código, sem gravar permissão no banco. Não publicado. O localhost tem `SESSION_SECRET` só neste computador, no `.env` ignorado pelo Git. A chave `SUPABASE_SERVICE_ROLE_KEY` do projeto `ajhmmjuewdsukecaimik` ainda não está nesse arquivo. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
 
 | Campo | Valor |
 | --- | --- |
@@ -17,11 +17,12 @@ Atualizado em 2026-10-21, portal do cliente na working tree da `dev`. Não publi
 
 - Motor de OS: `calculateMissionFinancials` em `lib/financialUtils.ts`. Não criar outro.
 - Valor oficial da OS: colunas de `missions`. Override com motivo não é recalculado por cima.
-- Tarifa vinculada (PR #344) está em produção. O rollback do PR #339 (PR #343) também está. Não reaplicar o #339 sem pedido novo.
+- Tarifa vinculada (PR #344) está em produção. O rollback do PR #339 (PR #343) também está. O pedido de 21/10/2026 reaplicou só a equivalência de ANA.FERNANDES com a Giovanna. O restante do #339, inclusive a tela inicial de orçamento, continua fora.
 - Asaas permanece no fluxo já existente. Boleto não é nota fiscal. NF viva: PlugNotas e, quando a fatura já marca, o provedor Asaas. eNotas não tem cliente ativo; não inventar um e não apagar o legado sem ordem.
 - Troca de mês na comissão não lança conta a pagar. Lançamento da TORRES só no clique, no banco dela.
 - Z-API é a integração de WhatsApp que está no ar (cron de 1 minuto, webhooks, envio na atualização da OS). Não está descontinuada no código. Não remover e não criar um segundo provedor até o proprietário dizer o contrário.
 - A palavra publicar / deploy / colocar no ar continua sendo a autorização já escrita em `.cursorrules` e `.cursor/rules/publicar.mdc`. Deploy espontâneo segue proibido.
+- Supervisão financeira pelo nome: Bárbara Sgarlata, Giovanna Marsili e o cadastro `ANA.FERNANDES`. “Ana” sozinho não entra. A trava de prejuízo continua só com Giovanna Marsili, Beatriz Rocha e Thiago Moreira.
 
 ## Versionamento
 
@@ -31,7 +32,7 @@ A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch l
 
 - Working tree da `dev`, sem commit. CEVA continua em `/ceva`. IBL continua em `/ibl` e é o modelo dos demais.
 - No cadastro da empresa, “Portal do cliente” publica `/{slug}`. O login de cada pessoa continua no cadastro de usuário.
-- Solicitação no portal abre OS `Solicitada`, sem fornecedor e sem preço. E-mail para `operacional@grupotmseg.com.br` e para os e-mails operacionais do cliente. Alerta interno para operador, avançado, administrador e diretoria.
+- Solicitação no portal abre OS `Solicitada` como a criação interna: tabela do cliente e valor calculado já gravados. Sem fornecedor, a tabela do fornecedor espera a escolha. O valor não aparece para o cliente. E-mail para `operacional@grupotmseg.com.br` e para os e-mails operacionais do cliente. Alerta interno para operador, avançado, administrador e diretoria.
 - Migration `migrations/2026_10_21_portal_cliente.sql` **não foi aplicada**. Sem ela o slug novo responde que o cadastro ainda não está no banco.
 - O pedido é o mesmo formulário em cada portal: `/ceva`, `/ibl` e `/{slug}`. A CEVA mantém os campos exclusivos. A escolha é Escolta Caracterizada ou Escolta Velada. Na velada, a pessoa informa 1 ou 2 agentes.
 - A solicitação mostra a coluna de etapas à esquerda e a barra azul de percentual no topo. O controle interno da OS é opcional. Sem a operação, a próxima etapa fica fechada e a tela diz qual dado falta. No localhost, se a lista não gravar, o nome entra só naquela solicitação e o formulário segue.
@@ -44,8 +45,9 @@ A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch l
 - Gestor Fiscal: coluna de emissão de NF no fornecedor, alíquotas da contabilidade e atribuição de despesa/tributo por CNPJ. Sem migration.
 - WhatsApp Desktop: o computador preparado fica gravado no conector e no navegador. A reabertura do TM SEG identifica o dispositivo. Instalação, QR Code e teste não se repetem, salvo reautenticação do WhatsApp. Publicado na main `a24b1254`. Migrations da solicitação e do desktop seguem sem aplicação.
 - Solicitação de escolta: texto ou print; agendada libera 2 fornecedores e os 2 próximos a cada 5 minutos. Confirmado abre a OS como Solicitada, com pendência. Sem o conector preparado, a tela pede o download do instalador e não mostra o formulário. Publicado na main `a24b1254` (PRs 350 e 351). A migration da solicitação segue sem aplicação.
-- Auditoria de faturamento: o perfil Financeiro, ao clicar em Edição Total, edita os campos da OS aprovada. Prejuízo analisado e fatura paga continuam travados. Não publicado. Ficou fora da publicação do 351.
-- Escolha de tabela: a auditoria lê o histórico aprovado do mesmo cliente, origem e destino. A tabela com mais aprovações nessa rota entra na frente; OS já faturada pesa mais, e a quilometragem parecida filtra antes. Se não houver histórico, o motor da OS segue. OS já aprovada, conferida ou com ajuste manual não é trocada. Publicada na `main`. A Edição Total do financeiro continua fora desta publicação.
+- Auditoria de faturamento: o perfil Financeiro edita os campos da OS. Na reaprovação, senha e texto da alteração são obrigatórios, e a Diretoria vê o aviso com opção de marcar como lida ou deixar pendente. Prejuízo analisado e fatura paga continuam travados. O Salvar grava só o campo editado (pedágio, receita, custo, deslocamento ou dado operacional). O motor não reescreve o restante. Não publicado.
+- Escolha de tabela na criação: as últimas 10 do mesmo cliente. A OS de origem e destino iguais vem na frente; se as tabelas diferirem, vale a de km mais próximo. Sem fornecedor, grava só a tabela do cliente. A do fornecedor entra quando ele é escolhido, pela regra do km. A auditoria não troca essa tabela. O histórico aprovado da `main` continua para OS antiga sem essa marca. Não publicado.
+- Relatório de OS: as colunas de receita ficam juntas, com fundo verde: Receita, Ped. Recebido, Desl. Recebido e Total Recebido. Em seguida: Custo, Ped. Pago, Desl. Pago e Total Pago. Total Recebido e Total Pago usam a mesma soma que já existia. O aviso do pedágio é um “i” ao lado do valor; o texto aparece com o mouse. A fórmula não mudou. Não publicado.
 - Instalador: o atalho instala o Node.js sozinho (winget e, se falhar, o zip oficial) antes de abrir o assistente. Avançar instala Python e WhatsApp quando faltam. Todo envio abre o WhatsApp, clica em Conversas, pesquisa o grupo, abre esse grupo, cola em Digite uma mensagem, envia e apaga a pesquisa. A frase “resposta inesperada” era a área de transferência quebrando o envio antes de começar. Vários grupos repetem a sequência. O download é `/instalador-grupo-tmseg.zip`.
 - Fast-forward da `dev` até a `main`: feito nesta publicação, porque a `dev` não tinha commit exclusivo.
 - Dono humano por domínio, além do proprietário do sistema: não designado. Não inventar nome.

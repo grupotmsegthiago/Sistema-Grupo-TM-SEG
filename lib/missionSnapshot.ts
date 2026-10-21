@@ -23,12 +23,48 @@ export function hasUsableBillingSnapshot(snapshotData: unknown): boolean {
   return Object.keys(snapshotData as Record<string, unknown>).length > 0;
 }
 
+export const ORIGEM_TABELA_CRIACAO = 'criacao';
+
+/** Marca só a tabela escolhida na criação. Não é o congelamento da aprovação. */
+export function snapshotTabelaNaCriacao(input: {
+  clientTableId: string;
+  providerTableId?: string | null;
+}): Record<string, unknown> {
+  const snap: Record<string, unknown> = {
+    origemTabela: ORIGEM_TABELA_CRIACAO,
+    clientTableId: String(input.clientTableId),
+  };
+  const fornecedor = String(input.providerTableId || '').trim();
+  if (fornecedor) snap.providerTableId = fornecedor;
+  return snap;
+}
+
+/** Tabela gravada ao abrir a OS, antes de qualquer aprovação. */
+export function snapshotEhSoTabelaNaCriacao(snapshot: unknown): boolean {
+  const obj = objetoSnapshot(snapshot);
+  if (!obj || obj.origemTabela !== ORIGEM_TABELA_CRIACAO || !obj.clientTableId) return false;
+  if (obj.revenueServiceOnly != null || obj.totalGeral != null || obj.tollVal != null) return false;
+  return true;
+}
+
+export function lerTabelaGravadaNaCriacao(snapshot: unknown): { clientTableId: string; providerTableId?: string } | null {
+  if (!snapshotEhSoTabelaNaCriacao(snapshot)) return null;
+  const obj = objetoSnapshot(snapshot);
+  if (!obj) return null;
+  const fornecedor = String(obj.providerTableId || '').trim();
+  return {
+    clientTableId: String(obj.clientTableId),
+    providerTableId: fornecedor || undefined,
+  };
+}
+
 export function shouldWriteBillingSnapshot(opts: {
   approve: boolean;
   billingApproved: boolean;
   existingSnapshot: unknown;
 }): boolean {
-  return opts.approve && opts.billingApproved && !hasUsableBillingSnapshot(opts.existingSnapshot);
+  const foto = snapshotEhSoTabelaNaCriacao(opts.existingSnapshot) ? null : opts.existingSnapshot;
+  return opts.approve && opts.billingApproved && !hasUsableBillingSnapshot(foto);
 }
 
 export function buildMinimalBillingSnapshot(opts: {

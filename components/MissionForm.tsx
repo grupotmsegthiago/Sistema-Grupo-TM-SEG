@@ -23,7 +23,10 @@ import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, eva
 import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { historicoRecenteDoCliente } from '../lib/billing/tabelaNaCriacao';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
+import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
+import { escolherTabelaProxima } from '../lib/rotaAprovadaTabela';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 import { consumirPrefillSolicitacao } from '../lib/solicitacaoEscolta/prefill';
@@ -1380,7 +1383,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
       }
 
-      await calculatePricing(route);
+      const kmRota = parseFloat(String((route as any).distance || '0')) || Number((route as any)._googleDistKm) || 0;
+      const escolha = await sugerirTabelaDaRota(route.origin, route.destination, formData.provider, kmRota);
+      await calculatePricing(route, undefined, escolha?.clientTableId, formData.provider ? escolha?.providerTableId : undefined);
       await applyTollForRoute(route.origin, getTollDestination(route.destination));
 
       if (manualOverrides.toll) {
@@ -1411,7 +1416,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
           if (gResult && gResult.distKm > 0) virtualRoute._googleDistKm = gResult.distKm;
-          await calculatePricing(virtualRoute);
+          const escolha = await sugerirTabelaDaRota(origin, destination, formData.provider, distKm);
+          await calculatePricing(virtualRoute, undefined, escolha?.clientTableId, formData.provider ? escolha?.providerTableId : undefined);
           await applyTollForRoute(origin, destination);
       }, 1200);
       return () => clearTimeout(handle);
@@ -1464,12 +1470,32 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       else { setManualCostTableId(val); calculatePricing(route, undefined, manualRevenueTableId, val); }
   };
 
-  const handleProviderSelection = (newProviderName: string) => {
+  const sugerirTabelaDaRota = async (origem: string, destino: string, fornecedor: string, km: number) => {
+      if (!formData.client || !origem || !destino) return null;
+      try {
+          const historico = await historicoRecenteDoCliente(supabase, formData.client);
+          return escolherTabelaProxima({
+              cliente: formData.client,
+              origem,
+              destino,
+              fornecedorAtual: fornecedor,
+              kmAtual: km,
+              historico,
+          });
+      } catch (erro) {
+          console.warn('[Tabela da criação] histórico indisponível', erro);
+          return null;
+      }
+  };
+
+  const handleProviderSelection = async (newProviderName: string) => {
       setProviderSearchTerm(newProviderName);
       
       const route = getActiveRoute();
-      if(route) { 
-          calculatePricing(route, newProviderName, manualRevenueTableId, ''); 
+      if(route) {
+          const km = parseFloat(formData.totalDistance) || parseFloat(String(route.distance || '0')) || 0;
+          const escolha = await sugerirTabelaDaRota(route.origin, route.destination, newProviderName, km);
+          calculatePricing(route, newProviderName, manualRevenueTableId || escolha?.clientTableId, escolha?.providerTableId);
       }
       setFormData(prev => ({ ...prev, provider: newProviderName })); 
       setActiveDropdown(null);
@@ -1565,7 +1591,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
                 driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null,
-                snapshot_data: null, snapshot_approved_by: null, snapshot_approved_at: null,
+                snapshot_data: manualRevenueTableId
+                    ? snapshotTabelaNaCriacao({
+                        clientTableId: manualRevenueTableId,
+                        providerTableId: formData.provider ? manualCostTableId : null,
+                    })
+                    : null,
+                snapshot_approved_by: null, snapshot_approved_at: null,
                 reference_number: formData.reference_number || null,
                 dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null,
                 dhl_sm_number: formData.dhl_sm_number ? formData.dhl_sm_number.trim().toUpperCase() : null,

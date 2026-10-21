@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   canSeeMissionBillingSummary,
   canSeeOsComPrejuizo,
+  isAnaFernandes,
   isFinanceProfileRole,
   isFinanceSupervisorName,
   normalizePersonName,
@@ -18,6 +19,16 @@ describe('financeSupervisorAccess', () => {
   it('reconhece Giovanna Marsili (mesmo acesso da Bárbara)', () => {
     assert.equal(isFinanceSupervisorName('Giovanna Marsili'), true);
     assert.equal(isFinanceSupervisorName('giovanna marsili andré'), true);
+  });
+
+  it('reconhece somente o cadastro ANA.FERNANDES', () => {
+    assert.equal(isAnaFernandes('ANA.FERNANDES'), true);
+    assert.equal(isAnaFernandes('Ana Fernandes'), true);
+    assert.equal(isFinanceSupervisorName('ANA.FERNANDES'), true);
+    assert.equal(isAnaFernandes('Ana'), false);
+    assert.equal(isFinanceSupervisorName('Ana'), false);
+    assert.equal(isFinanceSupervisorName('Ana Comercial'), false);
+    assert.equal(isFinanceSupervisorName('Lilian Raquel Viana'), false);
   });
 
   it('não marca outros nomes', () => {
@@ -37,6 +48,7 @@ describe('canSeeOsComPrejuizo', () => {
     assert.equal(canSeeOsComPrejuizo({ name: 'Barbara Sgarlata', role: 'financeiro' }), true);
     assert.equal(canSeeOsComPrejuizo({ name: 'DANIEL LIMA', role: 'operacional' }), true);
     assert.equal(canSeeOsComPrejuizo({ name: 'Giovanna Marsili', role: 'financeiro' }), true);
+    assert.equal(canSeeOsComPrejuizo({ name: 'ANA.FERNANDES', role: 'financeiro' }), true);
   });
 
   it('libera perfil administrador mesmo sem nome especial', () => {

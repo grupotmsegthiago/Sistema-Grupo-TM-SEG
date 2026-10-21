@@ -109,6 +109,7 @@ import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
 import EvidenceStartAlert from './components/EvidenceStartAlert';
 import VeladaClosureAlert from './components/VeladaClosureAlert';
+import AvisoEdicaoFinanceiraDiretoria from './components/AvisoEdicaoFinanceiraDiretoria';
 import DhlCopiaAoVivo from './components/DhlCopiaAoVivo';
 import DhlViaturaNovaAlerta from './components/DhlViaturaNovaAlerta';
 import CartasTabelaErrada from './components/CartasTabelaErrada';
@@ -794,6 +795,7 @@ const App: React.FC = () => {
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <><MissionAlertMonitor /><EvidenceStartAlert /></>}
         {isAuthenticated && <AlertaSolicitacaoPortal />}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <VeladaClosureAlert />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <AvisoEdicaoFinanceiraDiretoria />}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlCopiaAoVivo />}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlViaturaNovaAlerta />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">

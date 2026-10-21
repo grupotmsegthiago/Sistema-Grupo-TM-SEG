@@ -227,3 +227,76 @@ export function escolherTabelasDaRotaAprovada(entrada: {
     osExemplo: vencedor[1].exemplo,
   };
 }
+
+export interface EscolhaTabelaProxima {
+  clientTableId: string;
+  providerTableId?: string;
+  osExemplo: string;
+  mesmaRota: boolean;
+}
+
+/**
+ * Nas últimas OS do mesmo cliente, a mais próxima do cenário novo.
+ * Mesma origem e mesmo destino vencem. Se houver mais de uma tabela nessa
+ * rota, a quilometragem mais parecida decide. Sem fornecedor na OS nova,
+ * a tabela do fornecedor não entra. Com fornecedor, a tabela dele sai da
+ * OS desse fornecedor com o km mais próximo.
+ */
+export function escolherTabelaProxima(entrada: {
+  cliente: string;
+  origem: string;
+  destino: string;
+  fornecedorAtual?: string | null;
+  kmAtual?: number | null;
+  historico: OsRotaAprovada[];
+}): EscolhaTabelaProxima | null {
+  const rota = rotaDaOs(entrada.origem, entrada.destino);
+  if (!rota) return null;
+  const kmAtual = Number(entrada.kmAtual) > 0 ? Number(entrada.kmAtual) : 0;
+  const doCliente = entrada.historico.filter((os) => !!os.clientTableId && mesmoCliente(os.cliente, entrada.cliente));
+  if (!doCliente.length) return null;
+
+  const nota = (os: OsRotaAprovada) => {
+    const rotaOs = rotaDaOs(os.origem, os.destino);
+    let pontos = 0;
+    const mesma = !!rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino;
+    if (mesma) pontos += 1000;
+    else if (rotaOs && (rotaOs.origem === rota.origem || rotaOs.destino === rota.destino)) pontos += 250;
+    if (kmAtual > 0 && os.km != null && os.km > 0) pontos += Math.max(0, 500 - Math.abs(os.km - kmAtual));
+    return { pontos, mesma, recente: Date.parse(os.aprovadaEm || '') || 0 };
+  };
+
+  const ordenadas = [...doCliente].sort((a, b) => {
+    const na = nota(a);
+    const nb = nota(b);
+    if (nb.pontos !== na.pontos) return nb.pontos - na.pontos;
+    return nb.recente - na.recente;
+  });
+  const escolhida = ordenadas[0];
+  if (!escolhida?.clientTableId) return null;
+
+  let providerTableId: string | undefined;
+  const fornecedor = String(entrada.fornecedorAtual || '').trim();
+  if (fornecedor) {
+    const doFornecedor = doCliente.filter((os) => !!os.providerTableId && mesmoFornecedor(os.fornecedor || '', fornecedor));
+    const naRota = doFornecedor.filter((os) => {
+      const rotaOs = rotaDaOs(os.origem, os.destino);
+      return !!rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino;
+    });
+    const pool = naRota.length ? naRota : doFornecedor;
+    if (pool.length) {
+      const porKm = [...pool].sort((a, b) => {
+        if (kmAtual > 0 && a.km && b.km) return Math.abs(a.km - kmAtual) - Math.abs(b.km - kmAtual);
+        return (Date.parse(b.aprovadaEm || '') || 0) - (Date.parse(a.aprovadaEm || '') || 0);
+      });
+      providerTableId = String(porKm[0].providerTableId);
+    }
+  }
+
+  return {
+    clientTableId: String(escolhida.clientTableId),
+    providerTableId,
+    osExemplo: String(escolhida.id),
+    mesmaRota: nota(escolhida).mesma,
+  };
+}

@@ -1,7 +1,10 @@
-/** Abre a OS como Solicitada, sem preço e sem fornecedor. A tabela entra só na validação interna. */
+/** Abre a OS como Solicitada, no mesmo formato da criação interna. Sem fornecedor, só a tabela do cliente. O valor não vai para o cliente. */
 
 import type { PortalServidor } from '../cevaPortal/portalServidor';
 import { sendMail, SMTP_FROM } from '../email/smtp';
+import { historicoRecenteDoCliente, receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
+import { snapshotTabelaNaCriacao } from '../missionSnapshot';
+import { escolherTabelaProxima } from '../rotaAprovadaTabela';
 import type { PedidoPortal } from './pedido';
 import { emailsDaSolicitacao } from './pedido';
 
@@ -34,7 +37,9 @@ function payloadOs(
   vehicleId: number | null,
   agora: string,
   comValorZero: boolean,
+  extras?: { receita: number; km: number; snapshot: Record<string, unknown> } | null,
 ) {
+  const receita = extras && extras.receita > 0 ? extras.receita : null;
   const base: Record<string, unknown> = {
     id,
     client: cliente,
@@ -48,12 +53,12 @@ function payloadOs(
     start_time: pedido.dataInicio,
     mission_type: pedido.missionType,
     special_operation_type: pedido.servico,
-    revenue_value: comValorZero ? 0 : null,
+    revenue_value: receita != null ? receita : (comValorZero ? 0 : null),
     cost_value: comValorZero ? 0 : null,
     toll_value: null,
     toll_value_provider: null,
     billing_approved: false,
-    snapshot_data: null,
+    snapshot_data: extras?.snapshot || null,
     snapshot_approved_by: null,
     snapshot_approved_at: null,
     current_location: LOCAL_PORTAL,
@@ -63,7 +68,30 @@ function payloadOs(
     reference_number: pedido.identificacao,
     client_vehicle: vehicleId,
   };
+  if (extras && extras.km > 0) base.total_distance = Math.round(extras.km * 100) / 100;
   return base;
+}
+
+async function tabelaEValorIniciais(sb: SupabaseAdmin, cliente: string, pedido: PedidoPortal) {
+  try {
+    const historico = await historicoRecenteDoCliente(sb, cliente);
+    const escolha = escolherTabelaProxima({
+      cliente,
+      origem: pedido.origem,
+      destino: pedido.destino,
+      historico,
+    });
+    if (!escolha?.clientTableId) return null;
+    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.clientTableId);
+    return {
+      receita: valor?.receita || 0,
+      km: valor?.km || 0,
+      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.clientTableId }),
+    };
+  } catch (erro) {
+    console.warn('[portal] tabela da criação', erro);
+    return null;
+  }
 }
 
 function semColunaOpcional(payload: Record<string, unknown>, mensagem: string): Record<string, unknown> | null {
@@ -84,17 +112,18 @@ async function inserirOs(
   vehicleId: number | null,
 ): Promise<string> {
   const agora = new Date().toISOString();
+  const extras = await tabelaEValorIniciais(sb, cliente, pedido);
   let comValorZero = false;
   for (let tentativa = 0; tentativa < 8; tentativa += 1) {
     const numero = await proximoNumero(sb);
     const id = `GTM-${String(numero).padStart(4, '0')}`;
-    let payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero);
+    let payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero, extras);
     let resultado = await sb.from('missions').insert([payload]);
     for (let ajuste = 0; ajuste < 6 && resultado.error; ajuste += 1) {
       const mensagem = String(resultado.error.message || '');
       if (/revenue_value|cost_value|not-null|null value/i.test(mensagem) && !comValorZero) {
         comValorZero = true;
-        payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, true);
+        payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, true, extras);
         resultado = await sb.from('missions').insert([payload]);
         continue;
       }
@@ -199,7 +228,7 @@ export async function enviarEmailSolicitacao(input: {
   ].filter((par): par is [string, string] => Boolean(par[1]));
   const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:Segoe UI,Arial,sans-serif;color:#333;line-height:1.5">
     <h2>Solicitação de escolta — ${escapar(input.os)}</h2>
-    <p>O portal do cliente abriu uma OS com status <strong>SOLICITADA</strong>. Ainda não há fornecedor nem valor. A tabela só entra depois da validação interna.</p>
+    <p>O portal do cliente abriu uma OS com status <strong>SOLICITADA</strong>, no mesmo formato da criação interna. O fornecedor ainda não foi escolhido. O valor fica somente no sistema e não aparece para o cliente.</p>
     <table>${linhas.map(([rotulo, valor]) => `<tr><td style="padding:4px 12px 4px 0"><strong>${escapar(rotulo)}</strong></td><td>${escapar(valor)}</td></tr>`).join('')}</table>
     <p>Atenciosamente,<br><strong>Grupo TM SEG</strong></p>
   </body></html>`;

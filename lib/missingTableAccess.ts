@@ -28,7 +28,7 @@ export function isAvancadoProfile(role: string | null | undefined): boolean {
 
 /**
  * Alerta "OS sem Tabela": Administrador, acesso total e nomes históricos
- * (Thiago Moreira, Bárbara, Giovanna, Simone).
+ * (Thiago Moreira, Bárbara, Giovanna, Ana Fernandes, Simone).
  * Os perfis Operador e Avançado ficam de fora em qualquer caso.
  */
 export function canSeeMissingTableAlert(user: MissingTableUser | null | undefined): boolean {

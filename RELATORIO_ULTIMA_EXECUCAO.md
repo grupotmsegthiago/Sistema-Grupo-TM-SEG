@@ -1,64 +1,76 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
-Fase: portal do cliente no modelo da IBL, com solicitação de escolta sem preço
+## Segredo da sessão no localhost (21/10/2026, não publicado)
+
+A Vercel não exporta `SESSION_SECRET`: a variável é Secret e o pull grava `[SENSITIVE]`. Foi criado um segredo só deste computador, no `.env` da raiz, que o Git ignora. O servidor local foi reiniciado. O login deixou de responder “o segredo da sessão não está configurado” e passou a responder que a fonte confiável não está disponível, porque `SUPABASE_SERVICE_ROLE_KEY` também é Secret na Vercel e não veio no pull. Sem inventar a chave do banco e sem publicação.
+
+---
+
+## Colunas do relatório de OS (21/10/2026, não publicado)
+
+No relatório de OS, o que é receita ficou lado a lado, com fundo verde: Receita, Ped. Recebido, Desl. Recebido e Total Recebido. Depois vêm Custo, Ped. Pago, Desl. Pago e Total Pago. O deslocamento recebido entra no verde porque faz parte do total recebido. Os totais são a soma que o rodapé já usava. Resultado, % lucro, auditoria e faturamento continuam no mesmo lugar. O aviso do pedágio saiu de dentro da célula e ficou num “i”: o texto só aparece com o mouse em cima. A fórmula da OS não foi alterada. Sem commit e sem publicação.
+
+---
+
+## Tabela na criação da OS (21/10/2026, não publicado)
+
+Na criação interna e no portal, a tabela sai das últimas OS do mesmo cliente. Mesma origem e mesmo destino vencem. Se houver tabelas diferentes, fica a do km mais próximo. Sem fornecedor, só a tabela do cliente é gravada. O portal nasce com a receita calculada pelo motor da OS e o valor não vai no e-mail nem na resposta ao cliente. A marca `origemTabela: criacao` não substitui o snapshot da aprovação. Edição manual na auditoria continua gravando só o campo alterado.
+
+---
+
+## Salvamento só do campo editado (21/10/2026, não publicado)
+
+Na auditoria de faturamento, Salvar grava apenas o que foi alterado. Pedágio do cliente grava `toll_value`. Pedágio do fornecedor grava `toll_value_provider` e não mexe no custo. Receita, custo e deslocamento seguem a mesma regra. O snapshot existente troca só a chave correspondente e o total do cliente, e conserva franquia e km extra. A fórmula `calculateMissionFinancials` não foi alterada. Sem migration e sem publicação.
+
+Teste: `npx tsx --test scripts/gravar-somente-alterado.test.ts` — 7 passaram.
+
+---
+
+## Edição do Financeiro na auditoria (21/10/2026, não publicado)
+
+O perfil Financeiro edita a auditoria de faturamento. Ao reaprovar uma OS já aprovada, a tela pede a senha e um texto da alteração. A Diretoria recebe um aviso com OS, quem, hora, texto e mudanças. Marcar como lida grava em `system_logs` e o aviso some. Deixar pendente mantém o aviso. Prejuízo analisado e fatura paga continuam travados. GTM-8763 está Agendada, então a senha só aparece depois da primeira aprovação. Sem migration e sem publicação.
+
+---
+
+# RELATÓRIO ANTERIOR
+
+Fase: equivalência de acesso ANA.FERNANDES e Giovanna Marsili
 Data: 2026-10-21
-SHA da sessão: `dev` em `9282635c` antes desta alteração, working tree suja, sem commit
+SHA da sessão: `dev` em `640e24b1`, working tree suja, sem commit
 SHA de produção (/api/version): não consultado. Não houve publicação.
 
 1. Objetivo e escopo
-Ligar portal para qualquer cliente a partir do cadastro, copiando a IBL. A CEVA permanece na página própria. O cliente pede escolta armada ou pronta resposta, informa caracterizada ou velada, origem, destino e os dados da viagem. A OS nasce Solicitada, sem preço. Sai e-mail e alerta interno para buscar fornecedor.
+Fazer o usuário da Ana ter a mesma supervisão financeira da Giovanna. As duas já estão no perfil Financeiro. A diferença era a regra por nome, que reconhecia Giovanna e não reconhecia o cadastro `ANA.FERNANDES`.
 
 2. Baseline
-Branch `dev`, alinhada com `origin/dev` em `9282635c` antes dos arquivos novos. Supabase do app `ajhmmjuewdsukecaimik`. Nenhum SQL foi executado.
+Branch `dev`, alinhada com `origin/dev` em `640e24b1` antes desta alteração. Supabase do app `ajhmmjuewdsukecaimik`. A leitura do cadastro foi só consulta. Nenhum SQL de escrita.
 
 3. Arquivos alterados
-- `lib/portalCliente/slug.ts`, `pedido.ts`, `marcaSite.ts`, `marcaSiteHttp.ts`, `registrarOs.ts`
-- `lib/cevaPortal/portalServidor.ts`, `httpHandler.ts`, `cadastroSistema.ts`, `exportarControle.ts`
-- `lib/portalEscolta/marca.ts`
-- `components/CevaPortal.tsx`, `ceva/SolicitarEscolta.tsx`, `ceva/portalMarca.tsx`, `ceva/LogoCeva.tsx`, `ceva/PessoasCeva.tsx`
-- `components/PortalClientePagina.tsx`, `AlertaSolicitacaoPortal.tsx`, `VisualizacaoPortalProcesso.tsx`, `ceva/ListaCatalogo.tsx`, `ClientForm.tsx`, `UserForm.tsx`
-- `App.tsx`, `api/ibl-portal.ts`, `server/iblPortal.ts`, `server/routes.ts`, `server/portalClienteAcesso.ts`
-- `vercel.json` (só rewrites; `functions` continua com 50 chaves)
-- `migrations/2026_10_21_portal_cliente.sql`
-- `scripts/portal-cliente.test.ts`
+- `lib/financeSupervisorAccess.ts` — `isAnaFernandes` e inclusão em `isFinanceSupervisorName`
+- `lib/missionAccess.ts`, `lib/missionReportAccess.ts`, `lib/missingTableAccess.ts`, `lib/missionOpsIncomplete.ts`
+- `lib/osAnalysisAccess.ts`, `lib/controleDiario.ts`
+- `components/RequestOsAnalysisModal.tsx`
+- `scripts/finance-supervisor-access.test.ts`, `scripts/mission-access.test.ts`, `scripts/controle-diario.test.ts`
+- `scripts/acessos-financeiro-ana.test.ts`
 - `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`
 
 4. Regras preservadas
-Motor de OS, Asaas, NF, TORRES, comissão e WhatsApp de fornecedor não foram alterados. A solicitação não calcula preço e não dispara a fila de WhatsApp. O valor no portal continua “Aguardando validação” até `billing_approved`.
+Motor de OS, Asaas, NF, TORRES, comissão e WhatsApp não foram alterados. A trava de prejuízo continua só com Giovanna Marsili, Beatriz Rocha e Thiago Moreira. “Ana” sozinho, “Ana Comercial” e outro sobrenome não entram. O restante do PR #339 (tela inicial de orçamento) não voltou. Nenhuma permissão foi gravada no banco.
 
 5. Banco
-Nenhum comando executado. A migration está só no arquivo. TORRES não foi tocado.
+Consulta de leitura em `system_users` + `profiles`. ANA.FERNANDES e Giovanna Marsili estão ativas, internas, perfil Financeiro, com a mesma lista do perfil. Giovanna tem no usuário `client-prices` e `provider-costs`. Ana não tem permissão extra no usuário. Essas duas chaves não mudam a tela de tabela, porque o perfil Financeiro já abre preço de cliente e custo de fornecedor. Nada foi gravado.
 
 6. Riscos e rollback
-Sem a migration, página nova não abre e o cadastro avisa. CEVA e IBL seguem nas tabelas atuais. Rollback: descartar a working tree. OS já criada por um teste manual, se houver, fica em `missions` com status Solicitada.
+Ana passa a editar OS concluída, ver a lista completa, o card de prejuízo, o alerta de OS sem tabela, reaprovar no estágio financeiro e abrir a auditoria pelo controle diário, como a Giovanna. Rollback: descartar estes arquivos na working tree. Sem migration.
 
 7. Testes executados
-`npx tsx --test scripts/portal-cliente.test.ts scripts/ibl-portal.test.ts scripts/ceva-portal-ajustes.test.ts scripts/ceva-portal-acesso.test.ts` — 21 passaram.
-`npm run build` — terminou sem erro. O bundle `api/_ceva-portal-core.cjs` exporta `handleClientePortalHttp`.
-`GET http://localhost:5000/api/health` — `{"status":"ok"}`.
-`GET http://localhost:5000/ceva` — HTTP 200.
-`GET /api/cliente-portal/marca` com slug `ceslog` — HTTP 503 `O cadastro do portal ainda não está no banco.` A service role local não está no ambiente; a coluna `portal_slug` também não existe até o SQL.
+`npx tsx --test scripts/finance-supervisor-access.test.ts scripts/mission-access.test.ts scripts/controle-diario.test.ts scripts/acessos-financeiro-ana.test.ts scripts/mission-ops-incomplete.test.ts scripts/missing-table-access.test.ts scripts/fase3-p0-financial-integrity.test.ts`
+53 passaram. 1 falhou fora deste escopo: `scripts/fase3-p0-financial-integrity.test.ts` exige o texto `canAccessMissionReport` em `components/Sidebar.tsx`. O menu usa `canAccessScreen`, que chama essa função. O arquivo não foi alterado nesta tarefa. `App.tsx` continua chamando `canAccessMissionReport`.
+`npm run build` terminou sem erro. O HTML injeta `__TMSEG_SUPABASE__` do projeto `ajhmmjuewdsukecaimik`.
+`GET http://localhost:5000/api/health` retornou `{"status":"ok"}`.
 
-8. Homologação
-Servidor em `http://localhost:5000/`. Não entrei no portal com usuário de cliente, então o formulário Solicitar não foi exercido na tela logada. Não publiquei.
-Visualização do fluxo em `http://localhost:5005/`: HTTP 200, formulário IBL na raiz e campos exclusivos da CEVA ao trocar o modelo. O envio nessa página não grava OS.
-Data e hora: o calendário nativo (mês em inglês e AM/PM) saiu. Em `http://localhost:5005/` o calendário abre em português, o dia 22/10/2026 foi escolhido e a hora 08 (00 a 23) com minuto 30 ficou no cartão. Nada gravado.
+8. Autorização
+Pedido explícito de igualar a regra das duas. Não publicar até o proprietário validar no localhost e pedir publicar.
 
-9. Autorização recebida
-Pedido do Thiago em 21/10/2026, com as decisões: empresa liga a página e o usuário ganha o acesso; slug pelo nome fantasia; OS Solicitada com alerta e sem WhatsApp automático de fornecedor; e-mail para operacional@grupotmseg.com.br e e-mails operacionais do cliente; texto “Aguardando validação”; origem e destino no Google; site tenta ler logo e cor; formulário na CEVA, na IBL e nos clientes novos.
-
-10. Pendências
-Aplicar `migrations/2026_10_21_portal_cliente.sql` no Supabase da TM SEG, com autorização. Sem isso o slug novo não grava.
-
-11. Próxima fase autorizada
-Nenhuma além desta. Gestor Fiscal segue pendente e não foi mexido.
-
-12. BLOCO PARA CONTINUAÇÃO
-Portal genérico reusa `api/ibl-portal` com header `x-portal-slug`. Não criar function nova no `vercel.json`. Preço não entra no POST. A OS usa `current_location` começando com `Solicitação do portal` para o alerta interno.
-O cliente da OS é o nome oficial de `clients.name` carregado na hora do pedido. CEVA: `CEVA LOGISTICS LTDA`. IBL: `INTERMODAL BRASIL LOGISTICA S.A.`. Portal por slug: o nome daquele cliente. Não criar outro campo de cliente.
-
-VEREDITO: código e testes locais passaram. A tela logada do portal e o banco novo não foram exercidos. Não está publicado.
-
-13. Continuação de 21/10/2026 — barra e etapas
-O formulário parava no veículo sem explicar o motivo: a operação vazia (e, antes, o controle interno) segurava a etapa seguinte. O controle interno voltou a ser opcional. A operação continua obrigatória. Com o veículo escolhido e a operação vazia, a tela diz “Para seguir, falta a operação. O veículo já entrou.” A coluna esquerda marca Concluída, Agora e Pendente. A barra do topo enche em azul conforme o percentual. Teste de render `scripts/portal-solicitar-etapas.test.tsx` e `scripts/portal-cliente.test.ts` (controle interno vazio aceito). Não publicado.
-O aviso da etapa diz qual dado falta e que a próxima etapa fica fechada. No localhost, falha ao gravar a lista não trava: o nome entra na solicitação. Em produção a lista continua obrigatória para gravar o catálogo.
+9. Próximo passo
+Entrar com o usuário ANA.FERNANDES em `http://localhost:5000/` e conferir a lista de OS, o card de prejuízo e a edição de OS concluída. Se a trava de prejuízo também tiver de ser da Ana, isso é outra regra e precisa de pedido separado.

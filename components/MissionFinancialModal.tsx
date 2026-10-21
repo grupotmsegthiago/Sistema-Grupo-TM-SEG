@@ -7,7 +7,7 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
-import { escolherTabelasDaRotaAprovada, quilometragemRegistrada, type OsRotaAprovada } from '../lib/rotaAprovadaTabela';
+import { escolherTabelaProxima, escolherTabelasDaRotaAprovada, quilometragemRegistrada, type OsRotaAprovada } from '../lib/rotaAprovadaTabela';
 import { fetchAllPages } from '../lib/supabasePaging';
 import {
   isDhlSupplyClient,
@@ -28,14 +28,12 @@ import ClientPriceForm from './ClientPriceForm';
 import TollConfirmationDialog from './TollConfirmationDialog';
 import { billableClientToll, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import {
-    classificarFornecedorGravado,
-    deveReescreverSnapshotAprovado,
-    franquiaSnapshotLoteZerada,
     fornecedorPedagioMudou,
     impactoTrocaFornecedorAusentePorZero,
     montarAtualizacaoPedagio,
 } from '../lib/toll/aprovacaoPedagio';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
+import { colunasDaEdicao, snapshotComSomenteOAlterado, textoSeAlterado, valorOperacionalAlterado } from '../lib/billing/gravarSomenteAlterado';
 import { gravarOcorrenciaFornecedorAusenteParaZero, gravarOcorrenciaPedagioAprovado, pedagioAlterado, senhaDoUsuarioConfere } from '../lib/toll/pedagioDaOs';
 import { formatProviderName } from '../lib/utils';
 import { AvisoTabelaOs } from './AvisoTabelaOs';
@@ -50,9 +48,12 @@ import {
   buildMinimalBillingSnapshot,
   carimboAprovacaoHumana,
   carimboRecalculoAutomatico,
+  lerTabelaGravadaNaCriacao,
   retryPayloadForSnapshotConstraint,
   shouldWriteBillingSnapshot,
+  snapshotEhSoTabelaNaCriacao,
 } from '../lib/missionSnapshot';
+import { historicoRecenteDoCliente } from '../lib/billing/tabelaNaCriacao';
 import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -62,6 +63,13 @@ import {
   isMissionOpsIncomplete,
 } from '../lib/missionOpsIncomplete';
 import { isFinanceProfileRole, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import {
+  ACAO_AVISO_EDICAO,
+  ENTIDADE_AVISO_EDICAO,
+  montarDetalhesAviso,
+  reaprovacaoExigeConfirmacao,
+  textoReaprovacaoValido,
+} from '../lib/edicaoFinanceiraDiretoria';
 import {
   canApproveNegativeMarginLock,
   canEditNegativeMarginLockedOs,
@@ -86,7 +94,6 @@ import {
   isProviderOnlyControllerUser,
 } from '../lib/plinioMissionRestrictions';
 import {
-  buildProviderOnlyMissionPayload,
   providerTollToPersist,
   resolveProviderSaveObservation,
 } from '../lib/controllerProviderScope';
@@ -539,6 +546,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [senhaPedagioErro, setSenhaPedagioErro] = useState('');
   const [senhaPedagioChecando, setSenhaPedagioChecando] = useState(false);
   const senhaPedagioOkRef = useRef(false);
+  const [reaprovacaoAberta, setReaprovacaoAberta] = useState(false);
+  const [reaprovacaoTexto, setReaprovacaoTexto] = useState('');
+  const [reaprovacaoSenha, setReaprovacaoSenha] = useState('');
+  const [reaprovacaoErro, setReaprovacaoErro] = useState('');
+  const [reaprovacaoChecando, setReaprovacaoChecando] = useState(false);
+  const reaprovacaoOkRef = useRef(false);
+  const reaprovacaoTextoRef = useRef('');
   const zeroFornecedorConfirmadoRef = useRef(false);
   const [avisoZeroFornecedor, setAvisoZeroFornecedor] = useState<ReturnType<typeof impactoTrocaFornecedorAusentePorZero>>(null);
   const saveApproveRef = useRef(false);
@@ -571,6 +585,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const userManuallyEditedRef = React.useRef(false);
   const fornecedorPedagioEditadoRef = React.useRef(false);
   const pedagioClienteEditadoRef = React.useRef(false);
+  const receitaEditadaRef = React.useRef(false);
+  const custoEditadoRef = React.useRef(false);
+  const deslocamentoClienteEditadoRef = React.useRef(false);
+  const deslocamentoFornecedorEditadoRef = React.useRef(false);
+  const opsFornecedorCarregadoRef = React.useRef({ pStartKm: '', pEndKm: '', pStartTime: '', pEndTime: '' });
   const dbValuesLoadedRef = React.useRef(false);
   const openedTablesRef = React.useRef<{ clientId: string; clientName: string; providerId: string; providerName: string } | null>(null);
   const [savedByInfo, setSavedByInfo] = useState<string | null>(null);
@@ -686,11 +705,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     [mission],
   );
   const opsDataSectionRef = useRef<HTMLDivElement>(null);
-  // Supervisão financeira (Bárbara / Giovanna): liberação permanente para editar e aprovar
-  // faturamento, inclusive OS verificadas pelo Controller ou já salvas/aprovadas.
+  // Perfil Financeiro edita a auditoria inteira. A supervisão por nome continua valendo.
+  // Prejuízo analisado e fatura paga seguem nas travas próprias.
   const isBarbaraFinance = useMemo(() => {
-    return isFinanceSupervisorName(userNameLower);
-  }, [userNameLower]);
+    return isFinanceSupervisorName(userNameLower) || isFinanceProfileRole(userRoleLower);
+  }, [userNameLower, userRoleLower]);
   const canAskOsAnalysis = useMemo(() => {
     try {
       const u = JSON.parse(localStorage.getItem('userData') || '{}');
@@ -725,6 +744,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (isProviderOnlyUser) return false;
     if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs({ role: userRoleLower, name: userNameLower })) return false;
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria'
+      || isFinanceProfileRole(userRoleLower)
       || isFinanceSupervisorName(userNameLower) || userNameLower.includes('thiago')
       || userNameLower.includes('simone');
   }, [userRoleLower, userNameLower, isProviderOnlyUser, mission?.negative_margin_locked]);
@@ -736,6 +756,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // pegar o comercial Thiago Arruda.
   const canOverrideAutoProvider = useMemo(() => {
     return userRoleLower === 'administrador' || userRoleLower === 'diretoria' || userRoleLower === 'controller'
+      || isFinanceProfileRole(userRoleLower)
       || isFinanceSupervisorName(userNameLower)
       || userNameLower.includes('thiago moreira')
       || userNameLower.includes('simone');
@@ -746,14 +767,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // ligar a EDIÇÃO TOTAL. Isso apenas destrava o campo; NÃO recalcula nem
   // sobrescreve valores por conta própria (os snapshots de OS aprovadas seguem
   // protegidos no fluxo de salvar/aprovar).
+  const [fullEditMode, setFullEditMode] = useState(false);
+  // O perfil Financeiro altera o valor do cliente na auditoria. A trava continua para os demais.
+  // Edição Total também abre esses campos. Prejuízo analisado e fatura paga não passam por aqui.
   const financeApprovedClientLock = isClientValueLockedAfterFinanceApproval(
     approvalLog.some((entry) => entry.stage === 'financeiro'),
     userRoleLower,
-  );
+  ) && !isFinanceProfileRole(userRoleLower) && !fullEditMode;
   const canEditClientTablesEvenIfLocked = canOverrideAutoProvider && !isProviderOnlyUser && !financeApprovedClientLock;
   const canEditProviderTablesEvenIfLocked = canOverrideAutoProvider || isProviderOnlyUser;
   const canEditTablesEvenIfLocked = canEditClientTablesEvenIfLocked || canEditProviderTablesEvenIfLocked;
-  const [fullEditMode, setFullEditMode] = useState(false);
   // isController: identifica o cargo Controller para travas de edição.
   // Quando EDIÇÃO TOTAL está ligada, o gate de Controller é suspenso para
   // que TODOS os campos (cliente, pedágio, etc.) fiquem editáveis.
@@ -1199,6 +1222,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             || !!carimboAprovacaoHumana(currentMission.snapshot_approved_by)
             || isIntentionalBillingOverride(currentMission.revenue_edit_reason)
             || isIntentionalBillingOverride(currentMission.cost_edit_reason);
+          const tabelaCriacao = lerTabelaGravadaNaCriacao((currentMission as any).snapshot_data);
+          if (!osTravada && tabelaCriacao?.clientTableId) {
+              setManualClientTableId(tabelaCriacao.clientTableId);
+              if (currentMission.provider && tabelaCriacao.providerTableId) {
+                  setManualProviderTableId(tabelaCriacao.providerTableId);
+              } else if (currentMission.provider && !tabelaCriacao.providerTableId) {
+                  const historico = await historicoRecenteDoCliente(supabase, String(currentMission.originalClientName || currentMission.client || ''));
+                  const escolha = escolherTabelaProxima({
+                      cliente: String(currentMission.originalClientName || currentMission.client || ''),
+                      origem: currentMission.origin || '',
+                      destino: currentMission.destination || '',
+                      fornecedorAtual: currentMission.provider,
+                      kmAtual: quilometragemRegistrada(currentMission.startKm, currentMission.endKm, currentMission.totalDistance),
+                      historico,
+                  });
+                  if (escolha?.providerTableId) {
+                      setManualProviderTableId(escolha.providerTableId);
+                      const atual = (currentMission as any).snapshot_data;
+                      if (atual && typeof atual === 'object') {
+                          await supabase.from('missions').update({
+                              snapshot_data: { ...atual, providerTableId: escolha.providerTableId },
+                          }).eq('id', currentMission.id);
+                      }
+                  }
+              }
+              rotaAprovadaAplicadaRef.current = true;
+              return;
+          }
           if (osTravada) return;
           if (hasSavedData) {
               await aplicarRotaAprovada(currentMission, tabelasClienteCarregadas || clientTables, allProviderTables || providerTables);
@@ -1469,6 +1520,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setProvEditEndKm(pEndKm ? String(pEndKm) : '');
               setProvEditStartTime(pStartTime ? toDatetimeLocalValueBR(pStartTime) : '');
               setProvEditEndTime(pEndTime ? toDatetimeLocalValueBR(pEndTime) : '');
+              opsFornecedorCarregadoRef.current = {
+                  pStartKm: pStartKm ? String(pStartKm) : '',
+                  pEndKm: pEndKm ? String(pEndKm) : '',
+                  pStartTime: pStartTime ? toDatetimeLocalValueBR(pStartTime) : '',
+                  pEndTime: pEndTime ? toDatetimeLocalValueBR(pEndTime) : '',
+              };
               setIsEditingProvOpsData(false);
 
               setRevenueEditReason(loadedRevReason);
@@ -1478,6 +1535,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
               fornecedorPedagioEditadoRef.current = false;
               pedagioClienteEditadoRef.current = false;
+              receitaEditadaRef.current = false;
+              custoEditadoRef.current = false;
+              deslocamentoClienteEditadoRef.current = false;
+              deslocamentoFornecedorEditadoRef.current = false;
               const dbToll = Math.max(0, mRes.data.toll_value || 0);
               // Pedágio do FORNECEDOR vem ESTRITAMENTE de toll_value_provider; se nulo, é 0.
               // NUNCA herda dbToll (pedágio do cliente) — era o "pedágio fantasma" que
@@ -2348,7 +2409,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       // Edição manual NÃO conta como confirmação explícita: o usuário precisa
       // responder Sim/Não no dialog para liberar a aprovação (Task #45).
       setTollConfirmed(false);
-      if (!userManuallyEditedRef.current) {
+      if (!receitaEditadaRef.current) {
           const currentRev = parseNumber(revenueInput);
           const updatedRev = currentRev - oldToll + newToll;
           setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -2376,10 +2437,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Deslocamento Aprovado (Cobrado): valor aditivo que espelha o comportamento
   // do pedágio — entra no número grande (Valor Final) e em todos os relatórios.
   const handleDisplacementChange = (val: string) => {
+      deslocamentoClienteEditadoRef.current = true;
       const oldDisp = parseNumber(displacementInput);
       const newDisp = parseNumber(val);
       setDisplacementInput(val);
-      if (!userManuallyEditedRef.current) {
+      if (!receitaEditadaRef.current) {
           const currentRev = parseNumber(revenueInput);
           const updatedRev = currentRev - oldDisp + newDisp;
           setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
@@ -2390,6 +2452,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const handleDisplacementProviderChange = (val: string) => {
+      deslocamentoFornecedorEditadoRef.current = true;
       const oldDispProv = parseNumber(displacementProviderInput);
       const newDispProv = parseNumber(val);
       setDisplacementProviderInput(val);
@@ -2399,7 +2462,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       setUseSavedValues(true);
   };
 
-  const handleManualInput = (setter: any, val: string) => {
+  const handleManualInput = (setter: any, val: string, lado?: 'cliente' | 'fornecedor') => {
+      if (lado === 'cliente') receitaEditadaRef.current = true;
+      if (lado === 'fornecedor') custoEditadoRef.current = true;
       setter(val);
   }
 
@@ -2593,6 +2658,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const swapClientTable = (id: string) => {
       if (financeApprovedClientLock || !canEditClientData) return;
       if (!shouldRecalcOnTableChange(manualClientTableId, id)) return;
+      receitaEditadaRef.current = true;
       setManualClientTableId(id);
       setCustomClientBase(''); setCustomClientKm(''); setCustomClientHour('');
       recalcBigNumbersOnTableSwap({ clientTableId: id });
@@ -2601,6 +2667,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Troca da tabela do fornecedor. Mesma regra do cliente, só no custo.
   const swapProviderTable = (id: string) => {
       if (!shouldRecalcOnTableChange(manualProviderTableId, id)) return;
+      custoEditadoRef.current = true;
       setManualProviderTableId(id);
       setCustomProviderBase(''); setCustomProviderKm(''); setCustomProviderHour('');
       recalcBigNumbersOnTableSwap({ providerTableId: id });
@@ -2610,7 +2677,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       const nameLower = (userName || '').toLowerCase();
       const roleLower = (userRole || '').toLowerCase();
       if (nameLower.includes('daniel') || nameLower.includes('michelle')) return { stage: 'auditor', label: 'Aprovado pelo Auditor' };
-      if (roleLower === 'administrador' || isFinanceSupervisorName(userName)) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
+      if (roleLower === 'administrador' || isFinanceProfileRole(roleLower) || isFinanceSupervisorName(userName)) return { stage: 'financeiro', label: 'Aprovado pelo Financeiro' };
       if (roleLower === 'diretoria' || nameLower.includes('thiago')) return { stage: 'diretoria', label: 'Aprovado pela Diretoria' };
       if (roleLower === 'controller') return { stage: 'controller', label: 'Aprovado pelo Controller' };
       return { stage: 'operacional', label: `Aprovado por ${userName}` };
@@ -2652,10 +2719,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const uRole = (u.role || '').toLowerCase();
           // Usuários com poder permanente de editar e re-aprovar a qualquer momento.
           isPrivilegedReapprover = uName.includes('daniel') || uName.includes('michelle')
+              || isFinanceProfileRole(uRole)
               || isFinanceSupervisorName(u.name)
               || uName.includes('thiago');
           if (uName.includes('daniel') || uName.includes('michelle')) currentUserStage = 'auditor';
-          else if (uRole === 'administrador' || isFinanceSupervisorName(u.name)) currentUserStage = 'financeiro';
+          else if (uRole === 'administrador' || isFinanceProfileRole(uRole) || isFinanceSupervisorName(u.name)) currentUserStage = 'financeiro';
           else if (uRole === 'diretoria' || uName.includes('thiago')) currentUserStage = 'diretoria';
           else if (uRole === 'controller') currentUserStage = 'controller';
       } catch {}
@@ -2930,6 +2998,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           setSenhaPedagioAberta(true);
           return;
       }
+      let perfilReaprovacao = '';
+      try { perfilReaprovacao = JSON.parse(localStorage.getItem('userData') || '{}').role || ''; } catch { perfilReaprovacao = ''; }
+      if (reaprovacaoExigeConfirmacao({ aprovar: approve, jaAprovada: wasAlreadyApproved, perfil: perfilReaprovacao }) && !reaprovacaoOkRef.current) {
+          saveApproveRef.current = approve;
+          setReaprovacaoErro('');
+          setReaprovacaoAberta(true);
+          return;
+      }
 
       setIsUpdating(true);
       isSavingRef.current = true;
@@ -2937,7 +3013,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const userName = userData.name || 'Usuário';
           const userRole = userData.role || '';
+          const confirmouReaprovacao = reaprovacaoOkRef.current;
+          const textoReaprovacao = reaprovacaoTextoRef.current.trim();
           if (senhaPedagioOkRef.current) senhaPedagioOkRef.current = false;
+          if (reaprovacaoOkRef.current) reaprovacaoOkRef.current = false;
           
           // Sem captura de tela: o histórico fica só em texto
           // (dia / horário · login > alteração). O JPEG em system_logs
@@ -3003,7 +3082,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           });
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
-          const existingSnapshot = mission.snapshot_data && typeof mission.snapshot_data === 'object' && Object.keys(mission.snapshot_data).length > 0;
+          const existingSnapshot = mission.snapshot_data && typeof mission.snapshot_data === 'object' && Object.keys(mission.snapshot_data).length > 0 && !snapshotEhSoTabelaNaCriacao(mission.snapshot_data);
           const pedagioAprovacao = montarAtualizacaoPedagio({
               tollValueInformado: toll,
               tollProviderOriginal: (mission as any).toll_value_provider,
@@ -3018,14 +3097,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               displacementProviderOriginal: (mission as any).displacement_value_provider,
               displacementProviderInformado: dispProv,
           });
-          const basePayload: any = {
-              revenue_value: r2(revServiceOnly),
-              cost_value: isSameOs ? 0 : r2(costServiceOnly),
-              toll_value: r2(toll),
-              billing_approved: lockingNegative ? true : isApprovedForBilling,
-              last_update: new Date().toISOString(),
-              ...pedagioAprovacao.patch,
+          const edicaoAuditoria = {
+              receita: !isProviderOnlyUser && receitaEditadaRef.current,
+              custo: custoEditadoRef.current,
+              pedagioCliente: pedagioClienteEditadoRef.current && !travarPedagioCliente
+                  && (!isProviderOnlyUser || !travaPedagioClienteFinanceiro),
+              pedagioFornecedor: fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor,
+              deslocamentoCliente: !isProviderOnlyUser && deslocamentoClienteEditadoRef.current,
+              deslocamentoFornecedor: deslocamentoFornecedorEditadoRef.current,
           };
+          const colunasEditadas = colunasDaEdicao(edicaoAuditoria, {
+              receitaServico: revServiceOnly,
+              custoServico: costServiceOnly,
+              pedagioCliente: toll,
+              pedagioFornecedor: tollProv,
+              deslocamentoCliente: displacement,
+              deslocamentoFornecedor: dispProv,
+              mesmaOs: !!isSameOs,
+          });
+          const basePayload: any = {
+              last_update: new Date().toISOString(),
+              ...colunasEditadas,
+          };
+          if (approve || lockingNegative) {
+              basePayload.billing_approved = lockingNegative ? true : isApprovedForBilling;
+          }
           if (lockingNegative) {
               const lockedAt = new Date().toISOString();
               basePayload.negative_margin_locked = true;
@@ -3039,7 +3135,27 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               basePayload.billing_verified_by = userName;
           }
 
-          if (shouldSnapshot && financialData) {
+          const receitaCongelada = edicaoAuditoria.receita ? r2(revServiceOnly) : r2(mission.revenue_value || 0);
+          const custoCongelado = edicaoAuditoria.custo ? (isSameOs ? 0 : r2(costServiceOnly)) : r2(mission.cost_value || 0);
+          const pedagioCongelado = edicaoAuditoria.pedagioCliente ? r2(toll) : r2(mission.toll_value || 0);
+          const pedagioFornecedorCongelado = edicaoAuditoria.pedagioFornecedor
+              ? (isSameOs ? 0 : r2(tollProv))
+              : r2((mission as any).toll_value_provider || 0);
+          const deslocamentoCongelado = edicaoAuditoria.deslocamentoCliente ? r2(displacement) : r2((mission as any).displacement_value || 0);
+          const deslocamentoFornecedorCongelado = edicaoAuditoria.deslocamentoFornecedor
+              ? (isSameOs ? 0 : r2(dispProv))
+              : r2((mission as any).displacement_value_provider || 0);
+          const totalClienteCongelado = r2(receitaCongelada + pedagioCongelado + deslocamentoCongelado);
+          const snapshotParcial = existingSnapshot
+              ? snapshotComSomenteOAlterado(mission.snapshot_data as Record<string, unknown>, colunasEditadas)
+              : null;
+          if (snapshotParcial) {
+              basePayload.snapshot_data = snapshotParcial;
+              if (approve) {
+                  basePayload.snapshot_approved_by = userName;
+                  basePayload.snapshot_approved_at = new Date().toISOString();
+              }
+          } else if (!existingSnapshot && approve && shouldSnapshot && financialData) {
               const usedTable = clientTables.find((t: any) => t.id.toString() === (manualClientTableId || financialData.client.tableId));
               const snapshotNow = new Date().toISOString();
               const snapshotObj = {
@@ -3060,72 +3176,68 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   hrExtraQtd: financialData.client.excessHours,
                   hrExtraTotal: financialData.client.extraHrVal,
                   durationHours: financialData.durationHours,
-                  tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
-                  tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider,
-                  displacementVal: displacement,
-                  displacementProvider: isSameOs ? 0 : dispProv,
+                  tollVal: pedagioCongelado,
+                  tollProvider: pedagioFornecedorCongelado,
+                  displacementVal: deslocamentoCongelado,
+                  displacementProvider: deslocamentoFornecedorCongelado,
                   systemCalculatedRevenue: r2(calcRevTotal),
                   systemCalculatedCost: r2(calcCostTotal),
-                  revenueServiceOnly: r2(revServiceOnly),
-                  costServiceOnly: r2(costServiceOnly),
-                  totalGeral: pedagioAprovacao.snapshotPedagio.totalGeral,
+                  revenueServiceOnly: receitaCongelada,
+                  costServiceOnly: custoCongelado,
+                  totalGeral: totalClienteCongelado,
                   iblFee: financialData.iblFee || 0
               };
               basePayload.snapshot_data = snapshotObj;
               basePayload.snapshot_approved_by = userName;
               basePayload.snapshot_approved_at = snapshotNow;
-          } else if (shouldSnapshot) {
+          } else if (!existingSnapshot && approve && shouldSnapshot) {
               const snapshotNow = new Date().toISOString();
               basePayload.snapshot_data = {
                   ...buildMinimalBillingSnapshot({
                       route: mission.origin && mission.destination
                           ? `${(mission.origin || '').split(',')[0].trim()} X ${(mission.destination || '').split(',')[0].trim()}`
                           : '-',
-                      revenueServiceOnly: r2(revServiceOnly),
-                      costServiceOnly: isSameOs ? 0 : r2(costServiceOnly),
-                      tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
-                      tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider ?? 0,
-                      displacementVal: r2(displacement),
-                      displacementProvider: isSameOs ? 0 : r2(dispProv),
+                      revenueServiceOnly: receitaCongelada,
+                      costServiceOnly: custoCongelado,
+                      tollVal: pedagioCongelado,
+                      tollProvider: pedagioFornecedorCongelado,
+                      displacementVal: deslocamentoCongelado,
+                      displacementProvider: deslocamentoFornecedorCongelado,
                   }),
-                  tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
-                  tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider,
-                  totalGeral: pedagioAprovacao.snapshotPedagio.totalGeral,
+                  tollVal: pedagioCongelado,
+                  tollProvider: pedagioFornecedorCongelado,
+                  totalGeral: totalClienteCongelado,
               };
               basePayload.snapshot_approved_by = userName;
               basePayload.snapshot_approved_at = snapshotNow;
           }
           const reasonFields: any = {};
-          // Controller/Plínio nunca grava motivo de receita (lado cliente).
-          if (!isProviderOnlyUser && revDivergent && revenueEditReason.trim()) {
+          // Motivo só do lado que a pessoa editou. O outro valor permanece.
+          if (edicaoAuditoria.receita && revDivergent && revenueEditReason.trim()) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] ${revenueEditReason.trim()}`;
           }
-          if ((costDivergent || autoEngineDivergent) && costEditReason.trim()) {
+          if (edicaoAuditoria.custo && (costDivergent || autoEngineDivergent) && costEditReason.trim()) {
               const prefix = autoEngineDivergent
                   ? `[${userName} - ${formatNowDateTimeBR()}] [DIVERGENTE DO MOTOR AUTO R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}]`
                   : `[${userName} - ${formatNowDateTimeBR()}]`;
               reasonFields.cost_edit_reason = `${prefix} ${costEditReason.trim()}`;
           }
-          if (!isProviderOnlyUser && r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
+          if (edicaoAuditoria.receita && r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
-          if (r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
+          if (edicaoAuditoria.custo && r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
               reasonFields.cost_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
-          // Proteção contra reversão pelo /api/recalculate-all:
-          // QUALQUER clique em "Salvar Ajustes" trava a OS contra o
-          // recalculador automático. Se houve divergência ou edição manual
-          // explícita, a mensagem detalha; caso contrário, marca apenas que
-          // foi um salvamento manual confirmado pelo usuário. Isso garante
-          // que abrir a tela de Missões novamente NUNCA reverta o valor.
+          // O carimbo trava só o lado editado contra o recálculo automático.
+          // O lado que não foi mexido não recebe motivo novo nem valor novo.
           const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
           const stamp = `[${userName} - ${formatNowDateTimeBR()}]`;
-          if (!isProviderOnlyUser && !reasonFields.revenue_edit_reason) {
+          if (edicaoAuditoria.receita && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = revDivergent
                   ? `${stamp} Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`
                   : `${stamp} Salvamento manual confirmado — receita: ${brl(r2(revServiceOnly))}`;
           }
-          if (!reasonFields.cost_edit_reason) {
+          if (edicaoAuditoria.custo && !reasonFields.cost_edit_reason) {
               if (costDivergent || autoEngineDivergent) {
                   const sysHint = autoEngineDivergent
                       ? `motor auto sugeria: ${brl(autoEngineSuggestedCost || 0)}`
@@ -3137,49 +3249,69 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           const opsSaveFields: Record<string, unknown> = {};
+          const horaGravada = (valor: unknown) => {
+              if (!valor) return '';
+              try { return toDatetimeLocalValueBR(valor as string); } catch { return ''; }
+          };
           if (!isProviderOnlyUser && isEditingOpsData) {
-              if (editStartKm) opsSaveFields.start_km = parseFloat(editStartKm) || null;
-              if (editEndKm) opsSaveFields.end_km = parseFloat(editEndKm) || null;
-              const startIso = datetimeLocalToIsoBR(editStartTime);
-              const endIso = datetimeLocalToIsoBR(editEndTime);
-              if (startIso) opsSaveFields.start_time = startIso;
-              if (endIso) opsSaveFields.end_time = endIso;
+              const kmIni = valorOperacionalAlterado((mission as any).start_km ?? (mission as any).startKm, editStartKm);
+              const kmFim = valorOperacionalAlterado((mission as any).end_km ?? (mission as any).endKm, editEndKm);
+              if (kmIni !== undefined) opsSaveFields.start_km = kmIni;
+              if (kmFim !== undefined) opsSaveFields.end_km = kmFim;
+              if (editStartTime && editStartTime !== horaGravada((mission as any).start_time || (mission as any).startTime)) {
+                  const startIso = datetimeLocalToIsoBR(editStartTime);
+                  if (startIso) opsSaveFields.start_time = startIso;
+              }
+              if (editEndTime && editEndTime !== horaGravada((mission as any).end_time || (mission as any).endTime)) {
+                  const endIso = datetimeLocalToIsoBR(editEndTime);
+                  if (endIso) opsSaveFields.end_time = endIso;
+              }
           }
           if (isEditingProvOpsData) {
-              opsSaveFields.provider_start_km = provEditStartKm ? parseFloat(provEditStartKm) || null : null;
-              opsSaveFields.provider_end_km = provEditEndKm ? parseFloat(provEditEndKm) || null : null;
-              const pStartIso = datetimeLocalToIsoBR(provEditStartTime);
-              const pEndIso = datetimeLocalToIsoBR(provEditEndTime);
-              if (pStartIso) opsSaveFields.provider_start_time = pStartIso;
-              if (pEndIso) opsSaveFields.provider_end_time = pEndIso;
-              opsSaveFields.provider_ops_edited = true;
+              const baseProv = opsFornecedorCarregadoRef.current;
+              if (provEditStartKm !== baseProv.pStartKm) {
+                  const km = valorOperacionalAlterado((mission as any).provider_start_km, provEditStartKm, true);
+                  if (km !== undefined) opsSaveFields.provider_start_km = km;
+              }
+              if (provEditEndKm !== baseProv.pEndKm) {
+                  const km = valorOperacionalAlterado((mission as any).provider_end_km, provEditEndKm, true);
+                  if (km !== undefined) opsSaveFields.provider_end_km = km;
+              }
+              if (provEditStartTime !== baseProv.pStartTime) {
+                  const pStartIso = datetimeLocalToIsoBR(provEditStartTime);
+                  if (pStartIso) opsSaveFields.provider_start_time = pStartIso;
+              }
+              if (provEditEndTime !== baseProv.pEndTime) {
+                  const pEndIso = datetimeLocalToIsoBR(provEditEndTime);
+                  if (pEndIso) opsSaveFields.provider_end_time = pEndIso;
+              }
+              if (Object.keys(opsSaveFields).some((chave) => chave.startsWith('provider_'))) {
+                  opsSaveFields.provider_ops_edited = true;
+              }
           }
           if (!isProviderOnlyUser && isEditingRoute) {
-              if (editOrigin.trim()) opsSaveFields.origin = editOrigin.trim();
-              if (editDestination.trim()) opsSaveFields.destination = editDestination.trim();
+              const origemNova = textoSeAlterado(mission.origin, editOrigin);
+              const destinoNovo = textoSeAlterado(mission.destination, editDestination);
+              if (origemNova) opsSaveFields.origin = origemNova;
+              if (destinoNovo) opsSaveFields.destination = destinoNovo;
               if (disableKmAutoCalc) {
-                  const v = parseFloat((editKmManual || '').replace(',', '.'));
-                  if (isFinite(v) && v >= 0) opsSaveFields.total_distance = Math.round(v * 100) / 100;
+                  const km = valorOperacionalAlterado((mission as any).total_distance ?? (mission as any).totalDistance, editKmManual);
+                  if (km !== undefined && km !== null) opsSaveFields.total_distance = km;
               }
           }
 
-          // Controller/Plínio grava o fornecedor e, se o financeiro ainda não auditou, o pedágio do cliente.
+          // Controller/Plínio grava só o lado fornecedor que ele mesmo editou.
           const fullPayload = isProviderOnlyUser
               ? (() => {
                   const payloadProvedor: Record<string, unknown> = {
-                      ...buildProviderOnlyMissionPayload({
-                          costValue: isSameOs ? 0 : r2(costServiceOnly),
-                          tollValue: r2(toll),
-                          persistClientToll: !travaPedagioClienteFinanceiro,
-                          tollValueProvider: isSameOs ? 0 : r2(tollProv),
-                          displacementValueProvider: isSameOs ? 0 : r2(dispProv),
-                          costEditReason: reasonFields.cost_edit_reason || null,
-                          lastUpdate: basePayload.last_update,
-                      }),
-                      ...(isEditingProvOpsData ? opsSaveFields : {}),
+                      last_update: basePayload.last_update,
+                      ...colunasEditadas,
+                      ...opsSaveFields,
                   };
-                  if (!('toll_value_provider' in pedagioAprovacao.patch)) delete payloadProvedor.toll_value_provider;
-                  if (!('displacement_value_provider' in pedagioAprovacao.patch)) delete payloadProvedor.displacement_value_provider;
+                  delete payloadProvedor.revenue_value;
+                  delete payloadProvedor.displacement_value;
+                  if (travaPedagioClienteFinanceiro) delete payloadProvedor.toll_value;
+                  if (reasonFields.cost_edit_reason) payloadProvedor.cost_edit_reason = reasonFields.cost_edit_reason;
                   return payloadProvedor;
               })()
               : {
@@ -3206,16 +3338,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       userName,
                       minimalSnapshot: {
                           ...buildMinimalBillingSnapshot({
-                              revenueServiceOnly: r2(revServiceOnly),
-                              costServiceOnly: isSameOs ? 0 : r2(costServiceOnly),
-                              tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
-                              tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider ?? 0,
-                              displacementVal: r2(displacement),
-                              displacementProvider: isSameOs ? 0 : r2(dispProv),
+                              revenueServiceOnly: receitaCongelada,
+                              costServiceOnly: custoCongelado,
+                              tollVal: pedagioCongelado,
+                              tollProvider: pedagioFornecedorCongelado,
+                              displacementVal: deslocamentoCongelado,
+                              displacementProvider: deslocamentoFornecedorCongelado,
                           }),
-                          tollVal: pedagioAprovacao.snapshotPedagio.tollVal,
-                          tollProvider: pedagioAprovacao.snapshotPedagio.tollProvider,
-                          totalGeral: pedagioAprovacao.snapshotPedagio.totalGeral,
+                          tollVal: pedagioCongelado,
+                          tollProvider: pedagioFornecedorCongelado,
+                          totalGeral: totalClienteCongelado,
                       },
                   })
                   : (() => {
@@ -3246,14 +3378,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               // Último recurso do controller: custo + pedágio + deslocamento + motivo
               if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
                   const ultimoRecurso: Record<string, unknown> = {
-                      cost_value: isSameOs ? 0 : r2(costServiceOnly),
-                      toll_value_provider: isSameOs ? 0 : r2(tollProv),
-                      displacement_value_provider: isSameOs ? 0 : r2(dispProv),
+                      ...colunasEditadas,
                       cost_edit_reason: reasonFields.cost_edit_reason,
                       last_update: basePayload.last_update,
                   };
-                  if (!('toll_value_provider' in pedagioAprovacao.patch)) delete ultimoRecurso.toll_value_provider;
-                  if (!('displacement_value_provider' in pedagioAprovacao.patch)) delete ultimoRecurso.displacement_value_provider;
+                  delete ultimoRecurso.revenue_value;
+                  delete ultimoRecurso.toll_value;
+                  delete ultimoRecurso.displacement_value;
                   result = await supabase.from('missions').update(ultimoRecurso).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
               }
               if (basePayload.snapshot_data && !result.error) {
@@ -3368,111 +3499,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               console.error('[AUDIT] Divergência pós-salvamento detectada!', { esperado: { rev: revServiceOnly, toll }, banco: { rev: savedRevCheck, toll: savedTollCheck } });
           }
 
-          if (!shouldSnapshot && carimboAprovacaoHumana(mission.snapshot_approved_by) && mission.snapshot_data) {
-              const existingSnap = mission.snapshot_data as any;
-              const usedTableNow = clientTables.find((t: any) => t.id.toString() === (manualClientTableId || financialData?.client.tableId));
-              const newClientTableId = manualClientTableId || financialData?.client.tableId || null;
-              const newActivationFee = usedTableNow?.activation_fee ?? financialData?.client.base ?? existingSnap.activationFee ?? 0;
-              const newFranchiseKm = usedTableNow?.franchise_km ?? existingSnap.franchiseKm ?? 0;
-              const newFranchiseHours = usedTableNow?.franchise_hours ?? existingSnap.franchiseHours ?? 0;
-              const newUnitKm = usedTableNow?.price_per_extra_km ?? existingSnap.unitKm ?? 0;
-              const newUnitHr = usedTableNow?.price_per_extra_hour ?? existingSnap.unitHr ?? 0;
-              const newKmExtraQtd = financialData?.client.excessKm ?? existingSnap.kmExtraQtd ?? 0;
-              const newKmExtraTotal = financialData?.client.extraKmVal ?? existingSnap.kmExtraTotal ?? 0;
-              const newHrExtraQtd = financialData?.client.excessHours ?? existingSnap.hrExtraQtd ?? 0;
-              const newHrExtraTotal = financialData?.client.extraHrVal ?? existingSnap.hrExtraTotal ?? 0;
-              const newDurationHours = financialData?.durationHours ?? existingSnap.durationHours ?? 0;
-              const newTableName = usedTableNow?.operation_type ?? existingSnap.tableName ?? '-';
+          // O snapshot já saiu no UPDATE principal, só com a chave editada.
+          // Não há segunda gravação reescrevendo franquia, km ou os outros valores.
 
-              const revenueChanged = existingSnap.revenueServiceOnly !== revServiceOnly;
-              const costChanged = existingSnap.costServiceOnly !== costServiceOnly;
-              const tollChanged = existingSnap.tollVal !== toll;
-              const tollProvChanged = existingSnap.tollProvider !== tollProv;
-              const dispChanged = (existingSnap.displacementVal || 0) !== displacement;
-              const dispProvChanged = (existingSnap.displacementProvider || 0) !== dispProv;
-              const tableChanged = String(existingSnap.clientTableId || '') !== String(newClientTableId || '');
-              const newProviderTableId = sanitizeProviderTableId(
-                manualProviderTableId || financialData?.provider.tableId || existingSnap.providerTableId,
-              );
-              const providerTableChanged =
-                String(existingSnap.providerTableId || '') !== String(newProviderTableId || '');
-              const breakdownChanged = (
-                  r2(existingSnap.activationFee || 0) !== r2(newActivationFee) ||
-                  (existingSnap.franchiseKm || 0) !== newFranchiseKm ||
-                  (existingSnap.franchiseHours || 0) !== newFranchiseHours ||
-                  r2(existingSnap.unitKm || 0) !== r2(newUnitKm) ||
-                  r2(existingSnap.unitHr || 0) !== r2(newUnitHr) ||
-                  r2(existingSnap.kmExtraTotal || 0) !== r2(newKmExtraTotal) ||
-                  r2(existingSnap.hrExtraTotal || 0) !== r2(newHrExtraTotal)
-              );
-
-              const reescreverSnapshot = deveReescreverSnapshotAprovado({
-                  revenueChanged: isProviderOnlyUser ? false : revenueChanged,
-                  costChanged,
-                  tollChanged: isProviderOnlyUser ? false : tollChanged,
-                  tollProvChanged,
-                  dispChanged: isProviderOnlyUser ? false : dispChanged,
-                  dispProvChanged,
-                  tableChanged: isProviderOnlyUser ? false : tableChanged,
-                  providerTableChanged,
-                  breakdownChanged: isProviderOnlyUser ? false : breakdownChanged,
-                  fornecedorEditado: fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor && !isSameOs,
-                  fornecedorOriginalAusente: classificarFornecedorGravado((mission as any).toll_value_provider) === 'ausente',
-                  pedagioClienteEditado: pedagioClienteEditadoRef.current && !travarPedagioCliente,
-                  franquiaSnapshotZerada: franquiaSnapshotLoteZerada(existingSnap),
-              });
-              const tollValPreservado = (pedagioClienteEditadoRef.current && !travarPedagioCliente)
-                  ? r2(toll)
-                  : existingSnap.tollVal;
-              const tollProviderPreservado = (fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor && !isSameOs)
-                  ? pedagioAprovacao.snapshotPedagio.tollProvider
-                  : existingSnap.tollProvider;
-              if (reescreverSnapshot) {
-                  const updatedSnap = isProviderOnlyUser ? {
-                      ...existingSnap,
-                      costServiceOnly: r2(costServiceOnly),
-                      tollProvider: tollProviderPreservado,
-                      displacementProvider: r2(dispProv),
-                      providerTableId: newProviderTableId,
-                      snapshot_resynced_at: new Date().toISOString(),
-                      snapshot_resynced_by: userName,
-                  } : {
-                      ...existingSnap,
-                      // valores financeiros
-                      revenueServiceOnly: r2(revServiceOnly),
-                      costServiceOnly: r2(costServiceOnly),
-                      tollVal: tollValPreservado,
-                      tollProvider: tollProviderPreservado,
-                      displacementVal: r2(displacement),
-                      displacementProvider: r2(dispProv),
-                      totalGeral: r2(revServiceOnly + (Number(tollValPreservado) || 0) + displacement),
-                      // tabela e breakdown atual — mantém o snapshot
-                      // alinhado com a tabela escolhida na auditoria
-                      clientTableId: newClientTableId,
-                      providerTableId: newProviderTableId,
-                      tableName: newTableName,
-                      activationFee: r2(newActivationFee),
-                      franchiseKm: newFranchiseKm,
-                      franchiseHours: newFranchiseHours,
-                      unitKm: r2(newUnitKm),
-                      unitHr: r2(newUnitHr),
-                      kmExtraQtd: newKmExtraQtd,
-                      kmExtraTotal: r2(newKmExtraTotal),
-                      hrExtraQtd: newHrExtraQtd,
-                      hrExtraTotal: r2(newHrExtraTotal),
-                      durationHours: newDurationHours,
-                      snapshot_resynced_at: new Date().toISOString(),
-                      snapshot_resynced_by: userName,
-                  };
-                  const snapUpdRes = await supabase.from('missions').update({ snapshot_data: updatedSnap }).eq('id', mission.id);
-                  if (snapUpdRes.error) {
-                      console.error('[Snapshot Update] Falha ao sincronizar snapshot:', snapUpdRes.error);
-                      showNotification('Erro', 'OS salva, mas falha ao sincronizar snapshot: ' + snapUpdRes.error.message, 'error');
-                      return;
-                  }
-              }
-          }
-          
           // Memória de padrão de rota: DELETE ilike em system_logs é lento e
           // não deve segurar o spinner após a OS já ter sido gravada.
           if (!isProviderOnlyUser && isFullyApproved && manualClientTableId) {
@@ -3562,7 +3591,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   role: userRole,
                   date: nowIso,
                   changes: detectedChanges,
-                  note: providerSaveObservation.observation || editObservation.trim() || (approve && wasAlreadyApproved ? 'Reaprovação' : ''),
+                  note: textoReaprovacao || providerSaveObservation.observation || editObservation.trim() || (approve && wasAlreadyApproved ? 'Reaprovação' : ''),
                   approve
               };
               const histAction = wasAlreadyApproved
@@ -3589,6 +3618,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
+          if (confirmouReaprovacao && textoReaprovacao) {
+              const aviso = await supabase.from('system_logs').insert([{
+                  user_name: userName,
+                  action_type: ACAO_AVISO_EDICAO,
+                  entity: ENTIDADE_AVISO_EDICAO,
+                  entity_id: mission.id,
+                  details: montarDetalhesAviso({
+                      os: String(mission.id),
+                      cliente: mission.client,
+                      quem: userName,
+                      perfil: userRole,
+                      quando: new Date().toISOString(),
+                      texto: textoReaprovacao,
+                      alteracoes: detectedChanges.length > 0 ? detectedChanges : ['Reaprovação sem mudança de valor detectada na tela.'],
+                  }),
+              }]);
+              if (aviso.error) {
+                  console.warn('[Aviso Diretoria] Falha ao registrar edição:', aviso.error);
+              } else {
+                  reaprovacaoTextoRef.current = '';
+                  setReaprovacaoTexto('');
+                  setReaprovacaoSenha('');
+                  window.dispatchEvent(new CustomEvent('tmseg:aviso-edicao-financeira'));
+              }
+          }
+
           const dateStr = formatNowDateTimeBR();
           const verifiedLabel = `${userName} (${dateStr})`;
           setSavedByInfo(verifiedLabel);
@@ -3598,21 +3653,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           setUseSavedValues(true);
           dbValuesLoadedRef.current = true;
           userManuallyEditedRef.current = true;
+          receitaEditadaRef.current = false;
+          custoEditadoRef.current = false;
+          pedagioClienteEditadoRef.current = false;
+          fornecedorPedagioEditadoRef.current = false;
+          deslocamentoClienteEditadoRef.current = false;
+          deslocamentoFornecedorEditadoRef.current = false;
 
           setMission(prev => prev ? {
               ...prev,
-              revenue_value: revServiceOnly,
-              cost_value: costServiceOnly,
-              toll_value: toll,
-              toll_value_provider: tollProv,
-              billing_approved: lockingNegative ? true : isApprovedForBilling,
+              ...colunasEditadas,
+              billing_approved: (approve || lockingNegative) ? (lockingNegative ? true : isApprovedForBilling) : prev.billing_approved,
               ...(lockingNegative ? {
                   negative_margin_locked: true,
                   negative_margin_locked_by: userName,
                   negative_margin_locked_at: basePayload.negative_margin_locked_at,
               } : {}),
               ...(approve ? { billing_verified_by: userName } : {}),
-              ...(shouldSnapshot ? { snapshot_data: basePayload.snapshot_data, snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}),
+              ...(basePayload.snapshot_data ? { snapshot_data: basePayload.snapshot_data, ...(approve ? { snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}) } : {}),
               last_update: basePayload.last_update,
               ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
               ...(reasonFields.cost_edit_reason ? { cost_edit_reason: reasonFields.cost_edit_reason } : {}),
@@ -3814,6 +3872,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       zeroFornecedorConfirmadoRef.current = true;
       setAvisoZeroFornecedor(null);
       void handleUpdate(saveApproveRef.current);
+  };
+
+  const confirmarReaprovacaoFinanceira = async () => {
+      setReaprovacaoErro('');
+      if (!textoReaprovacaoValido(reaprovacaoTexto)) {
+          setReaprovacaoErro('Escreva a alteração que está sendo feita.');
+          return;
+      }
+      setReaprovacaoChecando(true);
+      try {
+          const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+          const ok = await senhaDoUsuarioConfere(supabase, { id: userData.id, email: userData.email }, reaprovacaoSenha);
+          if (!ok) {
+              setReaprovacaoErro('Senha incorreta.');
+              return;
+          }
+          reaprovacaoTextoRef.current = reaprovacaoTexto.trim();
+          reaprovacaoOkRef.current = true;
+          setReaprovacaoAberta(false);
+          await handleUpdate(saveApproveRef.current);
+      } finally {
+          setReaprovacaoChecando(false);
+      }
   };
 
   const confirmarSenhaPedagio = async () => {
@@ -4258,7 +4339,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                     ? 'bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-300'
                     : 'bg-white/10 text-amber-200 hover:bg-white/20 border border-amber-400/40'
                 }`}
-                title={fullEditMode ? 'Modo Edição Total ATIVO — clique para desligar' : 'Liberar edição de TODOS os campos da OS (Barbara/Thiago)'}
+                title={fullEditMode ? 'Modo Edição Total ATIVO — clique para desligar' : 'Liberar edição de todos os campos da OS para o Financeiro, a Diretoria e o Administrador'}
               >
                 {fullEditMode ? <ShieldCheck size={12}/> : <Lock size={12}/>}
                 {fullEditMode ? 'EDIÇÃO TOTAL ✓' : 'EDIÇÃO TOTAL'}
@@ -5636,7 +5717,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientBase, e.target.value); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-base" />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.base.toFixed(2)} value={customClientBase} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientBase, e.target.value, 'cliente'); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-base" />
                                         {customClientBase && <span className="text-[8px] text-blue-600 font-bold bg-blue-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5652,7 +5733,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientKm, e.target.value); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-km" />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceKm.toFixed(2)} value={customClientKm} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientKm, e.target.value, 'cliente'); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-km" />
                                         {customClientKm && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5674,7 +5755,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientHour, e.target.value); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-hour" />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-200 outline-none ${clientFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.client.unitPriceHour.toFixed(2)} value={customClientHour} onChange={e => { if (!clientFinanceInputLocked) handleManualInput(setCustomClientHour, e.target.value, 'cliente'); }} readOnly={clientFinanceInputLocked} data-testid="input-custom-client-hour" />
                                         {customClientHour && <span className="text-[8px] text-blue-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -5987,7 +6068,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderBase, e.target.value); }} readOnly={providerFinanceInputLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.base.toFixed(2)} value={customProviderBase} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderBase, e.target.value, 'fornecedor'); }} readOnly={providerFinanceInputLocked} />
                                         {customProviderBase && <span className="text-[8px] text-red-600 font-bold bg-red-50 px-1 py-0.5 rounded shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -6003,7 +6084,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderKm, e.target.value); }} readOnly={providerFinanceInputLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostKm.toFixed(2)} value={customProviderKm} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderKm, e.target.value, 'fornecedor'); }} readOnly={providerFinanceInputLocked} />
                                         {customProviderKm && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -6025,7 +6106,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <div className="flex items-center gap-1 mt-2 pt-2 border-t border-gray-200">
                                         <span className="text-[10px] text-gray-400">R$</span>
-                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderHour, e.target.value); }} readOnly={providerFinanceInputLocked} />
+                                        <input type="text" className={`w-full bg-white border border-gray-200 rounded px-2 py-1 text-xs font-bold text-gray-700 focus:border-red-500 focus:ring-1 focus:ring-red-200 outline-none ${providerFinanceInputLocked ? 'pointer-events-none opacity-60' : ''}`} placeholder={financialData.provider.unitCostHour.toFixed(2)} value={customProviderHour} onChange={e => { if (!providerFinanceInputLocked) handleManualInput(setCustomProviderHour, e.target.value, 'fornecedor'); }} readOnly={providerFinanceInputLocked} />
                                         {customProviderHour && <span className="text-[8px] text-red-600 font-bold shrink-0">AJUST</span>}
                                     </div>
                                 </div>
@@ -6326,7 +6407,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                 inputMode="decimal"
                                                 className={`w-full bg-white/60 border rounded-lg px-2 py-1 outline-none font-black text-3xl font-mono focus:ring-2 ${isManualValue ? 'border-amber-400 text-amber-900 focus:ring-amber-400 focus:border-amber-400 bg-amber-50/40' : 'border-green-200 text-green-900 focus:ring-green-400 focus:border-green-400'} ${!canEditClientData ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                                 value={revenueInput} 
-                                                onChange={e => { if (canEditClientData) { userManuallyEditedRef.current = true; setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
+                                                onChange={e => { if (canEditClientData) { receitaEditadaRef.current = true; userManuallyEditedRef.current = true; setUseSavedValues(true); setRevenueInput(e.target.value); setShowRevenueReasonInput(true); } }}
                                                 readOnly={!canEditClientData}
                                                 data-testid="input-revenue-total"
                                             />
@@ -6497,7 +6578,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     inputMode="decimal"
                                     className={`w-full bg-white/60 border border-blue-200 rounded-lg px-2 py-1 outline-none font-black text-3xl text-blue-900 font-mono focus:ring-2 focus:ring-blue-400 focus:border-blue-400 ${!canEditProviderCostTotal ? 'pointer-events-none opacity-70' : 'cursor-text'}`}
                                     value={costInput} 
-                                    onChange={e => { if (canEditProviderCostTotal) { userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
+                                    onChange={e => { if (canEditProviderCostTotal) { custoEditadoRef.current = true; userManuallyEditedRef.current = true; setUseSavedValues(true); setCostInput(e.target.value); setShowCostReasonInput(true); } }}
                                     readOnly={!canEditProviderCostTotal}
                                     data-testid="input-cost-total"
                                 />
@@ -6923,6 +7004,51 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         onClose={() => { setShowTollConfirmDialog(false); setTollSomenteHistorico(false); setTollConfirmAutoOpened(true); }}
         onConfirm={applyTollConfirmation}
       />
+      {reaprovacaoAberta && (
+        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4" data-testid="modal-reaprovacao-financeira">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-3">
+            <h3 className="text-sm font-black uppercase text-slate-900">Confirmar reaprovação</h3>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              Escreva qual alteração está sendo feita e confirme com a senha do sistema. A Diretoria recebe o aviso com o seu nome, a hora e este texto.
+            </p>
+            <textarea
+              value={reaprovacaoTexto}
+              onChange={(e) => setReaprovacaoTexto(e.target.value)}
+              rows={4}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              placeholder="Descreva a alteração"
+              data-testid="input-texto-reaprovacao"
+            />
+            <input
+              type="password"
+              value={reaprovacaoSenha}
+              onChange={(e) => setReaprovacaoSenha(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              placeholder="Senha"
+              data-testid="input-senha-reaprovacao"
+            />
+            {reaprovacaoErro && <p className="text-[11px] font-bold text-red-600">{reaprovacaoErro}</p>}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setReaprovacaoAberta(false); setReaprovacaoErro(''); }}
+                className="px-3 py-2 text-[10px] font-black uppercase text-slate-500"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmarReaprovacaoFinanceira()}
+                disabled={reaprovacaoChecando || !reaprovacaoSenha.trim() || !textoReaprovacaoValido(reaprovacaoTexto)}
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-40"
+                data-testid="button-confirmar-reaprovacao"
+              >
+                {reaprovacaoChecando ? 'Conferindo...' : 'Reaprovar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {senhaPedagioAberta && (
         <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4" data-testid="modal-senha-pedagio">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-3">

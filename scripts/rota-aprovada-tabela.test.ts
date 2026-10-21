@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   algumaTabelaCobreCidade,
   cidadeNoEndereco,
+  escolherTabelaProxima,
   escolherTabelasDaRotaAprovada,
   quilometragemRegistrada,
   rotaDaOs,
@@ -146,4 +147,52 @@ test('sem quilometragem parecida, vale a tabela com mais aprovações da rota', 
   });
   assert.equal(escolha?.clientTableId, 'cli-longa');
   assert.equal(escolha?.votos, 3);
+});
+
+test('criação: mesma origem e destino vencem outra rota mais recente', () => {
+  const escolha = escolherTabelaProxima({
+    cliente: 'CEVA LOGISTICS LTDA',
+    origem: 'GUARULHOS - SP',
+    destino: 'CAMPINAS - SP',
+    kmAtual: 90,
+    historico: [
+      { id: 'OS-NOVA', cliente: 'CEVA LOGISTICS LTDA', origem: 'SANTOS - SP', destino: 'SANTOS - SP', clientTableId: 'tab-santos', aprovadaEm: '2026-10-20', km: 90 },
+      { id: 'OS-ROTA', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', clientTableId: 'tab-rota', aprovadaEm: '2026-08-01', km: 200 },
+    ],
+  });
+  assert.equal(escolha?.clientTableId, 'tab-rota');
+  assert.equal(escolha?.osExemplo, 'OS-ROTA');
+  assert.equal(escolha?.mesmaRota, true);
+  assert.equal(escolha?.providerTableId, undefined);
+});
+
+test('criação: na mesma rota, o km mais próximo escolhe a tabela, não a que mais repetiu', () => {
+  const escolha = escolherTabelaProxima({
+    cliente: 'CEVA LOGISTICS LTDA',
+    origem: 'GUARULHOS - SP',
+    destino: 'CAMPINAS - SP',
+    kmAtual: 95,
+    historico: [
+      { id: 'OS-1', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', clientTableId: 'tab-longa', aprovadaEm: '2026-10-01', km: 400 },
+      { id: 'OS-2', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', clientTableId: 'tab-longa', aprovadaEm: '2026-09-01', km: 380 },
+      { id: 'OS-3', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', clientTableId: 'tab-curta', aprovadaEm: '2026-07-01', km: 100 },
+    ],
+  });
+  assert.equal(escolha?.clientTableId, 'tab-curta');
+});
+
+test('criação: sem fornecedor não grava tabela de fornecedor; com fornecedor segue o km dele', () => {
+  const historico = [
+    { id: 'OS-A', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedor: 'ALFA ESCOLTA', clientTableId: 'tab-cli', providerTableId: 'prov-longe', aprovadaEm: '2026-10-01', km: 400 },
+    { id: 'OS-B', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedor: 'ALFA ESCOLTA', clientTableId: 'tab-cli', providerTableId: 'prov-perto', aprovadaEm: '2026-08-01', km: 90 },
+    { id: 'OS-C', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedor: 'BETA ESCOLTA', clientTableId: 'tab-cli', providerTableId: 'prov-beta', aprovadaEm: '2026-09-01', km: 92 },
+  ];
+  const semFornecedor = escolherTabelaProxima({
+    cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', kmAtual: 95, historico,
+  });
+  assert.equal(semFornecedor?.providerTableId, undefined);
+  const comFornecedor = escolherTabelaProxima({
+    cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedorAtual: 'ALFA ESCOLTA', kmAtual: 95, historico,
+  });
+  assert.equal(comFornecedor?.providerTableId, 'prov-perto');
 });

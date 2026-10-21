@@ -139,8 +139,11 @@ test('controle diário abre para o interno e fecha para comercial e cliente', ()
   }, 'controle-diario'), false);
 });
 
-test('auditoria da OS fica com Giovanna, Beatriz e Thiago Moreira', () => {
+test('auditoria da OS fica com Giovanna, Ana Fernandes, Beatriz e Thiago Moreira', () => {
   assert.equal(controleDiarioOpensAudit('Giovanna Marsili'), true);
+  assert.equal(controleDiarioOpensAudit('ANA.FERNANDES'), true);
+  assert.equal(controleDiarioOpensAudit('Ana'), false);
+  assert.equal(controleDiarioOpensAudit('Lilian Raquel Viana'), false);
   assert.equal(controleDiarioOpensAudit('Beatriz Rocha'), true);
   assert.equal(controleDiarioOpensAudit('Beatriz Machado'), true);
   assert.equal(controleDiarioOpensAudit('Beatriz de Carvalho'), false);
