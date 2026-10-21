@@ -149,14 +149,42 @@ if ($Acao -eq 'ler') {
   exit 0
 }
 
-function ColarTexto([string]$texto) {
-  $thread = New-Object System.Threading.Thread {
-    param($valor)
-    [System.Windows.Forms.Clipboard]::SetText([string]$valor)
+if (-not ('AreaTransferencia' -as [type])) {
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -ReferencedAssemblies System.Windows.Forms -TypeDefinition @'
+using System;
+using System.Threading;
+using System.Windows.Forms;
+public class AreaTransferencia {
+  public static string Ler() {
+    string texto = "";
+    ThreadStart trabalho = delegate {
+      try { if (Clipboard.ContainsText()) texto = Clipboard.GetText() ?? ""; } catch {}
+    };
+    Thread t = new Thread(trabalho);
+    t.SetApartmentState(ApartmentState.STA);
+    t.Start();
+    t.Join();
+    return texto;
   }
-  $thread.SetApartmentState([System.Threading.ApartmentState]::STA)
-  $thread.Start($texto)
-  $thread.Join()
+  public static void Gravar(string texto) {
+    ThreadStart trabalho = delegate {
+      try {
+        if (string.IsNullOrEmpty(texto)) Clipboard.Clear();
+        else Clipboard.SetText(texto);
+      } catch {}
+    };
+    Thread t = new Thread(trabalho);
+    t.SetApartmentState(ApartmentState.STA);
+    t.Start();
+    t.Join();
+  }
+}
+'@
+}
+
+function ColarTexto([string]$texto) {
+  [AreaTransferencia]::Gravar($texto)
   [System.Windows.Forms.SendKeys]::SendWait('^a')
   [System.Windows.Forms.SendKeys]::SendWait('^v')
 }
@@ -321,19 +349,75 @@ function AcharCampoMensagem {
   return $melhor
 }
 
-function AcharGrupoNaLista {
-  $melhor = $null
-  $melhorY = 999999
+function GrupoEstaAberto {
+  AtualizarTela
   foreach ($el in $script:todos) {
-    if ((Dobrar (NomeDe $el)) -ne $esperado) { continue }
+    $nome = Dobrar (NomeDe $el)
+    if ($nome -match 'DIGITE UMA MENSAGEM|DIGITA UMA MENSAGEM|TYPE A MESSAGE' -and $esperado -and $nome.Trim().EndsWith($esperado)) {
+      return $true
+    }
+  }
+  return $false
+}
+
+function AcharGrupoNaLista {
+  $candidatos = @()
+  foreach ($el in $script:todos) {
+    $nome = Dobrar (NomeDe $el)
+    if (-not $nome) { continue }
+    if ($nome -ne $esperado -and -not $nome.StartsWith("$esperado ")) { continue }
+    if ($nome -match 'DIGITE UMA MENSAGEM|PESQUISAR|TYPE A MESSAGE') { continue }
+    $tipo = ''
+    try { $tipo = [string]$el.Current.ControlType.ProgrammaticName } catch {}
+    if ($tipo -match 'Edit|Document|Button') { continue }
     try {
       $r = $el.Current.BoundingRectangle
-      if ($r.Height -lt 8 -or $r.Y -ge $melhorY) { continue }
-      $melhorY = $r.Y
-      $melhor = $el
+      if ($r.Height -lt 36 -or $r.Width -lt 160) { continue }
+      $candidatos += [pscustomobject]@{ El = $el; Y = $r.Y; Tipo = $tipo; Altura = $r.Height }
     } catch {}
   }
-  return $melhor
+  $linhas = @($candidatos | Where-Object { $_.Tipo -match 'DataItem|ListItem' })
+  if ($linhas.Count -eq 0) { $linhas = @($candidatos | Where-Object { $_.Altura -ge 40 }) }
+  if ($linhas.Count -eq 0) { return $null }
+  return ($linhas | Sort-Object Y | Select-Object -First 1).El
+}
+
+function ClicarLinhaDoGrupo($el) {
+  if (-not $el) { return }
+  TrazerFrente $proc
+  try { $el.SetFocus() } catch {}
+  try {
+    $r = $el.Current.BoundingRectangle
+    if ($r.Width -ge 4 -and $r.Height -ge 4) {
+      $x = [int]($r.X + 70)
+      $y = [int]($r.Y + ($r.Height / 2))
+      [CliqueJanela]::SetCursorPos($x, $y) | Out-Null
+      [CliqueJanela]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+      [CliqueJanela]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    }
+  } catch {}
+}
+
+function AbrirGrupoPesquisado {
+  AtualizarTela
+  $alvo = AcharGrupoNaLista
+  if ($alvo) {
+    ClicarLinhaDoGrupo $alvo
+  } else {
+    $busca = AcharBusca
+    if ($busca) { ClicarElemento $busca }
+    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+    Start-Sleep -Milliseconds 150
+    $alvo = AcharGrupoNaLista
+    if ($alvo) { ClicarLinhaDoGrupo $alvo } else { [System.Windows.Forms.SendKeys]::SendWait('{ENTER}') }
+  }
+  Start-Sleep -Milliseconds 800
+  if (GrupoEstaAberto) { return $true }
+  AtualizarTela
+  $alvo = AcharGrupoNaLista
+  if ($alvo) { ClicarLinhaDoGrupo $alvo }
+  Start-Sleep -Milliseconds 600
+  return (GrupoEstaAberto)
 }
 
 function AcharBotaoEnviar {
@@ -348,34 +432,9 @@ function AcharBotaoEnviar {
 }
 
 function UsarClipboard([string]$modo, [string]$texto) {
-  $arquivo = Join-Path $env:TEMP ('tmseg-clip-' + [guid]::NewGuid().ToString() + '.txt')
-  $thread = New-Object System.Threading.Thread {
-    param($dados)
-    try {
-      if ($dados[0] -eq 'ler') {
-        $lido = ''
-        if ([System.Windows.Forms.Clipboard]::ContainsText()) { $lido = [System.Windows.Forms.Clipboard]::GetText() }
-        [System.IO.File]::WriteAllText($dados[1], $lido, [System.Text.Encoding]::UTF8)
-      } elseif ([string]::IsNullOrEmpty($dados[2])) {
-        [System.Windows.Forms.Clipboard]::Clear()
-        [System.IO.File]::WriteAllText($dados[1], 'ok', [System.Text.Encoding]::UTF8)
-      } else {
-        [System.Windows.Forms.Clipboard]::SetText([string]$dados[2])
-        [System.IO.File]::WriteAllText($dados[1], 'ok', [System.Text.Encoding]::UTF8)
-      }
-    } catch {
-      [System.IO.File]::WriteAllText($dados[1], '', [System.Text.Encoding]::UTF8)
-    }
-  }
-  $thread.SetApartmentState([System.Threading.ApartmentState]::STA)
-  $thread.Start(@($modo, $arquivo, $texto))
-  $thread.Join()
-  $resultado = ''
-  if (Test-Path $arquivo) {
-    $resultado = [System.IO.File]::ReadAllText($arquivo, [System.Text.Encoding]::UTF8)
-    Remove-Item $arquivo -Force -ErrorAction SilentlyContinue
-  }
-  return $resultado
+  if ($modo -eq 'ler') { return [AreaTransferencia]::Ler() }
+  [AreaTransferencia]::Gravar($texto)
+  return 'ok'
 }
 
 function TextoVazio([string]$texto) {
@@ -475,7 +534,7 @@ for ($ciclo = 0; $ciclo -lt 10 -and -not ($enviou -and $pesquisaLimpa); $ciclo++
     $ultimo = 'pesquisar'
     LimparPesquisa
     $enviou = $false
-    $passo = $(if ($tela.temCampo) { 'colar' } else { 'pesquisar' })
+    $passo = 'pesquisar'
     continue
   }
   if ($tela.grupoNoCampo) {
@@ -491,21 +550,17 @@ for ($ciclo = 0; $ciclo -lt 10 -and -not ($enviou -and $pesquisaLimpa); $ciclo++
     'pesquisar' {
       $ultimo = 'pesquisar'
       if (-not (DigitarBusca $Grupo)) { continue }
-      $passo = 'abrir-chat'
+      $ultimo = 'abrir-chat'
+      if (AbrirGrupoPesquisado) { $passo = 'colar' } else { $passo = 'abrir-chat' }
     }
     'abrir-chat' {
       $ultimo = 'abrir-chat'
       if ($tela.buscaConhecida -and -not $tela.grupoNaPesquisa) { $passo = 'pesquisar'; continue }
-      AtualizarTela
-      $alvo = AcharGrupoNaLista
-      if ($alvo) { ClicarElemento $alvo } else { [System.Windows.Forms.SendKeys]::SendWait('{DOWN}{ENTER}') }
-      Start-Sleep -Milliseconds 600
-      AtualizarTela
-      if (AcharCampoMensagem) { $passo = 'colar' } else { $passo = 'pesquisar' }
+      if (AbrirGrupoPesquisado) { $passo = 'colar' } else { $passo = 'pesquisar' }
     }
     'colar' {
       $ultimo = 'colar'
-      if (-not $tela.temCampo) { $passo = 'pesquisar'; continue }
+      if (-not (GrupoEstaAberto)) { $passo = 'abrir-chat'; continue }
       if ($tela.msgNoCampo) { $passo = 'enviar'; continue }
       AtualizarTela
       $campoMensagem = AcharCampoMensagem

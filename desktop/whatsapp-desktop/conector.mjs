@@ -606,7 +606,8 @@ function driverWindows() {
     if (json.estado === "comando_executado" || json.estado === "destinatario_nao_validado" || json.estado === "falha_envio") {
       return { id: "", estado: json.estado, motivo: json.motivo };
     }
-    return { id: "", estado: json.aberto === false ? "falha_envio" : "destinatario_nao_validado", motivo: json.motivo || "Resposta inesperada do WhatsApp." };
+    const detalhe = json.motivo || (typeof json === "string" ? json : JSON.stringify(json));
+    return { id: "", estado: json.aberto === false ? "falha_envio" : "falha_envio", motivo: String(detalhe || "O Windows n\xE3o devolveu o resultado do WhatsApp.").slice(0, 400) };
   };
 }
 async function executarFila(comandos, driver) {
