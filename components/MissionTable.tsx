@@ -2303,7 +2303,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                           const isOpen = expandedLayers[group.layer];
                           const visibleCards = isOpen ? group.missions.filter(mission => pagedMissionIds.has(mission.id)) : [];
                           return (
-                              <div key={group.layer} className="flex flex-col gap-3">
+                              <div key={group.layer} className="flex flex-col gap-2">
                                   <button
                                       type="button"
                                       onClick={() => togglePanelLayer(group.layer)}
