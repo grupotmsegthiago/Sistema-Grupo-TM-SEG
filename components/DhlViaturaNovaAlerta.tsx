@@ -8,6 +8,7 @@ import {
   TEXTO_ALERTA_VIATURA_DISPONIVEL,
   detalheAlertaViaturaDisponivel,
   deveAvisarOperadores,
+  fornecedorEntraNoComunicadoDhl,
   podeVerPainelDhl,
 } from '../lib/dhlViaturaDisponivel';
 
@@ -122,7 +123,8 @@ const DhlViaturaNovaAlerta: React.FC = () => {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: TABELA_DHL_VIATURA }, (payload) => {
         const row = (payload.new || {}) as Record<string, unknown>;
         const finalizada = String(row.finalizada_em || '');
-        if (!row.mission_id || !deveAvisarOperadores(String(row.status || ''), finalizada)) return;
+        if (!fornecedorEntraNoComunicadoDhl(String(row.provider_name || ''))) return;
+        if (!row.mission_id || !deveAvisarOperadores(String(row.status || ''), finalizada, new Date(), String(row.provider_name || ''))) return;
         enfileirar({
           missionId: String(row.mission_id),
           posicao: String(row.posicao || ''),
@@ -134,7 +136,7 @@ const DhlViaturaNovaAlerta: React.FC = () => {
     const corte = new Date(Date.now() - HORA_MS).toISOString();
     void supabase
       .from(TABELA_DHL_VIATURA)
-      .select('mission_id, posicao, regiao, status, finalizada_em')
+      .select('mission_id, posicao, regiao, status, finalizada_em, provider_name')
       .eq('status', 'pendente')
       .gte('finalizada_em', corte)
       .order('finalizada_em', { ascending: true })
@@ -144,7 +146,7 @@ const DhlViaturaNovaAlerta: React.FC = () => {
         const agora = new Date();
         for (const row of data as Array<Record<string, unknown>>) {
           const finalizada = String(row.finalizada_em || '');
-          if (!deveAvisarOperadores(String(row.status || ''), finalizada, agora)) continue;
+          if (!deveAvisarOperadores(String(row.status || ''), finalizada, agora, String(row.provider_name || ''))) continue;
           enfileirar({
             missionId: String(row.mission_id || ''),
             posicao: String(row.posicao || ''),

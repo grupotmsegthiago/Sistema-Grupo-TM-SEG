@@ -13,7 +13,7 @@ import {
   type LinhaMapaViatura,
   type PontoMapaPublico,
 } from '../lib/dhlViaturaMapa.js';
-import { rascunhosDeMissoesFinalizadas } from '../lib/dhlViaturaDisponivel.js';
+import { fornecedorEntraNoComunicadoDhl, rascunhosDeMissoesFinalizadas } from '../lib/dhlViaturaDisponivel.js';
 
 const cacheGeo = new Map<string, { lat: number; lng: number } | null>();
 
@@ -52,16 +52,17 @@ export default async function handler(req: any, res: any) {
     });
     const { data, error } = await supabase
       .from('dhl_viatura_disponivel')
-      .select('mission_id, posicao, uf, regiao, finalizada_em, status')
+      .select('mission_id, posicao, uf, regiao, finalizada_em, status, provider_name')
       .gte('finalizada_em', corte)
       .in('status', ['pendente', 'copiado', 'confirmado'])
       .order('finalizada_em', { ascending: false })
       .limit(80);
 
-    const linhas = error ? [] : (data || []) as LinhaMapaViatura[];
+    const linhas = (error ? [] : (data || []) as Array<LinhaMapaViatura & { provider_name?: string | null }>)
+      .filter((linha) => fornecedorEntraNoComunicadoDhl(linha.provider_name));
     const { data: missoes } = await supabase
       .from('missions')
-      .select('id, status, current_location, destination, end_time, last_update, is_same_os')
+      .select('id, provider, status, current_location, destination, end_time, last_update, is_same_os')
       .eq('status', 'Concluída')
       .gte('end_time', corte)
       .order('end_time', { ascending: false })
