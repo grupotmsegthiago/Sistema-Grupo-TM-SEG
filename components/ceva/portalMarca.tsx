@@ -24,7 +24,10 @@ export function usePortalCliente() {
   return useMemo(() => ({
     marca,
     url: (caminho: string) => `${marca.api}${caminho}`,
-    cabecalhos: () => cabecalhosPortal(marca.chaveSessao),
+    cabecalhos: () => ({
+      ...cabecalhosPortal(marca.chaveSessao),
+      ...(marca.slug ? { 'x-portal-slug': marca.slug } : {}),
+    }),
     sair: () => sairDoPortal(marca.chaveSessao, marca.eventoSair),
     ler: () => lerSessaoPortal(marca.chaveSessao),
     gravar: (sessao: SessaoCeva) => gravarSessaoPortal(marca.chaveSessao, sessao),

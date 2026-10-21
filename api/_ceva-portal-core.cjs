@@ -35,6 +35,343 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
+// lib/missionSnapshot.ts
+function carimboRecalculoAutomatico(valor) {
+  return String(valor ?? "").trim() === CARIMBO_RECALCULO_AUTOMATICO;
+}
+function carimboAprovacaoHumana(valor) {
+  const texto4 = String(valor ?? "").trim();
+  if (!texto4 || carimboRecalculoAutomatico(texto4)) return null;
+  return texto4;
+}
+function textoMotivo(valor) {
+  return String(valor ?? "").trim().toLowerCase();
+}
+function temMotivoRegistrado(texto4) {
+  return FRASES_MOTIVO_REGISTRADO.some((frase) => texto4.includes(frase));
+}
+function classificarAlteracaoPosterior(opts) {
+  const receita = textoMotivo(opts.motivoReceita);
+  const custo = textoMotivo(opts.motivoCusto);
+  if (temMotivoRegistrado(receita) || temMotivoRegistrado(custo)) return "com_motivo";
+  const semTexto = !receita && !custo;
+  const soRecalculoSistema = [receita, custo].every((texto4) => !texto4 || texto4.includes("recalculado pelo sistema"));
+  if (semTexto || soRecalculoSistema) return "sem_motivo";
+  return "indeterminada";
+}
+function textoAlteracaoPosterior(classe) {
+  if (classe === "com_motivo") return DIVERGENCIA_ALTERACAO_COM_MOTIVO;
+  if (classe === "indeterminada") return DIVERGENCIA_ALTERACAO_INDETERMINADA;
+  return DIVERGENCIA_ALTERACAO_REAL;
+}
+function objetoSnapshot(snapshot) {
+  if (snapshot == null) return null;
+  if (typeof snapshot === "string") {
+    const texto4 = snapshot.trim();
+    if (!texto4 || texto4 === "null" || texto4 === "{}" || texto4 === '""') return null;
+    try {
+      return objetoSnapshot(JSON.parse(texto4));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof snapshot !== "object" || Array.isArray(snapshot)) return null;
+  if (Object.keys(snapshot).length === 0) return null;
+  return snapshot;
+}
+function approvedByDoSnapshot(snapshot) {
+  return objetoSnapshot(snapshot)?.approved_by ?? null;
+}
+function origemSnapshotFinanceiro(carimbo, snapshot) {
+  if (carimboAprovacaoHumana(carimbo)) return "humana";
+  if (carimboRecalculoAutomatico(carimbo)) return "automatica";
+  if (String(carimbo ?? "").trim()) return "indeterminada";
+  const interno = approvedByDoSnapshot(snapshot);
+  if (carimboAprovacaoHumana(interno)) return "humana";
+  if (carimboRecalculoAutomatico(interno)) return "automatica";
+  return "indeterminada";
+}
+function estadoDetalhamentoSnapshot(snapshot) {
+  const obj = objetoSnapshot(snapshot);
+  if (!obj) return "invalido";
+  const presentes = CAMPOS_DETALHE_SNAPSHOT.filter((campo) => {
+    const valor = obj[campo];
+    if (valor == null || valor === "") return false;
+    return Number.isFinite(Number(valor));
+  });
+  if (presentes.length === 0) return "incompleto";
+  const algumInformado = presentes.some((campo) => Math.abs(Number(obj[campo])) > 0);
+  return algumInformado ? "valido" : "zerado";
+}
+function devePreservarDetalhamentoRegistrado(opts) {
+  const estado = estadoDetalhamentoSnapshot(opts.snapshot);
+  if (estado === "invalido") return false;
+  const origem = origemSnapshotFinanceiro(opts.carimbo, opts.snapshot);
+  if (origem === "humana") return true;
+  return opts.billingApproved === true && (origem === "automatica" || origem === "indeterminada");
+}
+var CARIMBO_RECALCULO_AUTOMATICO, DIVERGENCIA_DETALHAMENTO_ZERADO, DIVERGENCIA_DETALHAMENTO_INCOMPLETO, DIVERGENCIA_SNAPSHOT_INVALIDO, DIVERGENCIA_ALTERACAO_REAL, DIVERGENCIA_ALTERACAO_COM_MOTIVO, DIVERGENCIA_ALTERACAO_INDETERMINADA, FRASES_MOTIVO_REGISTRADO, CAMPOS_DETALHE_SNAPSHOT;
+var init_missionSnapshot = __esm({
+  "lib/missionSnapshot.ts"() {
+    "use strict";
+    CARIMBO_RECALCULO_AUTOMATICO = "Sistema (Recalcular e Comparar)";
+    DIVERGENCIA_DETALHAMENTO_ZERADO = "Snapshot sem franquia, hora e tarifa gravadas. A tabela atual n\xE3o preencheu esses campos.";
+    DIVERGENCIA_DETALHAMENTO_INCOMPLETO = "Snapshot sem o detalhamento de franquia, hora e tarifa. A tabela atual n\xE3o o substituiu.";
+    DIVERGENCIA_SNAPSHOT_INVALIDO = "Snapshot ausente ou inv\xE1lido. Franquia, hora e tarifa n\xE3o foram preenchidas pela tabela atual. O total oficial permanece.";
+    DIVERGENCIA_ALTERACAO_REAL = "Diverg\xEAncia posterior sem motivo de edi\xE7\xE3o identificado. Franquia, horas e tarifas gravadas foram mantidas. O total oficial permanece.";
+    DIVERGENCIA_ALTERACAO_COM_MOTIVO = "Altera\xE7\xE3o posterior com motivo de edi\xE7\xE3o registrado. Franquia, horas e tarifas gravadas foram mantidas. O total oficial permanece.";
+    DIVERGENCIA_ALTERACAO_INDETERMINADA = "Altera\xE7\xE3o posterior com origem indeterminada. O texto gravado n\xE3o comprova autoriza\xE7\xE3o. Franquia, horas e tarifas gravadas foram mantidas. O total oficial permanece.";
+    FRASES_MOTIVO_REGISTRADO = [
+      "salvamento manual confirmado",
+      "tabela oficial aplicada",
+      "edi\xE7\xE3o manual",
+      "edicao manual",
+      "ajuste manual",
+      "valor zero confirmado"
+    ];
+    CAMPOS_DETALHE_SNAPSHOT = [
+      "franchiseKm",
+      "franchiseHours",
+      "unitKm",
+      "unitHr",
+      "activationFee",
+      "kmExtraTotal",
+      "hrExtraTotal",
+      "kmExtraQtd",
+      "hrExtraQtd",
+      "durationHours"
+    ];
+  }
+});
+
+// lib/cevaPortal/rules.ts
+function parseBrazilDateTime(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return `${text}:00-03:00`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(text)) return `${text}-03:00`;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+function normalizePlate(value) {
+  const plate = String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7);
+  return plate || null;
+}
+var CEVA_PORTAL_LOGIN_ENABLED;
+var init_rules = __esm({
+  "lib/cevaPortal/rules.ts"() {
+    "use strict";
+    CEVA_PORTAL_LOGIN_ENABLED = false;
+  }
+});
+
+// lib/email/smtp.ts
+function getTransporter() {
+  if (transporter) return transporter;
+  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || "";
+  transporter = import_nodemailer.default.createTransport({
+    host: "smtp.office365.com",
+    port: 587,
+    secure: false,
+    auth: { user: EMAIL_USER, pass },
+    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
+    requireTLS: true
+  });
+  return transporter;
+}
+async function sendMail(opts) {
+  return getTransporter().sendMail(opts);
+}
+var import_nodemailer, EMAIL_USER, SMTP_FROM, transporter;
+var init_smtp = __esm({
+  "lib/email/smtp.ts"() {
+    "use strict";
+    import_nodemailer = __toESM(require("nodemailer"), 1);
+    EMAIL_USER = process.env.EMAIL_USER || "adm@grupotmseg.com.br";
+    SMTP_FROM = '"Grupo TM SEG" <adm@grupotmseg.com.br>';
+    transporter = null;
+  }
+});
+
+// lib/sessao/token.ts
+function segredoDaSessao(env = process.env) {
+  return String(env.SESSION_SECRET || "").trim();
+}
+function tokenLegado(token) {
+  const limpo = String(token || "").replace(/^Bearer\s+/i, "").trim();
+  return limpo.startsWith("tmseg-token-") || limpo.startsWith("impersonation-token-");
+}
+function assinar(segredo, carga) {
+  return (0, import_node_crypto3.createHmac)("sha256", segredo).update(carga).digest("base64url");
+}
+function abrirSessao(segredo, token, agora = Date.now()) {
+  const limpo = String(token || "").replace(/^Bearer\s+/i, "").trim();
+  if (!segredo || tokenLegado(limpo) || !limpo.startsWith(PREFIXO)) return null;
+  const resto = limpo.slice(PREFIXO.length);
+  const ponto = resto.lastIndexOf(".");
+  if (ponto <= 0) return null;
+  const corpo = resto.slice(0, ponto);
+  const assinatura = resto.slice(ponto + 1);
+  const esperada = assinar(segredo, corpo);
+  const recebida = Buffer.from(assinatura);
+  const calculada = Buffer.from(esperada);
+  if (recebida.length !== calculada.length || !(0, import_node_crypto3.timingSafeEqual)(recebida, calculada)) return null;
+  try {
+    const json = JSON.parse(Buffer.from(corpo, "base64url").toString("utf8"));
+    if (!json.sub || typeof json.exp !== "number" || !json.csrf) return null;
+    if (agora >= json.exp) return null;
+    return {
+      usuarioId: String(json.sub),
+      csrf: json.csrf,
+      expiraEm: json.exp,
+      epoch: typeof json.ep === "number" ? json.ep : 0
+    };
+  } catch {
+    return null;
+  }
+}
+function usuarioIdDoToken(token, env, agora) {
+  return abrirSessao(segredoDaSessao(env), token, agora)?.usuarioId ?? null;
+}
+var import_node_crypto3, PREFIXO, TTL_SESSAO_MS;
+var init_token = __esm({
+  "lib/sessao/token.ts"() {
+    "use strict";
+    import_node_crypto3 = require("node:crypto");
+    PREFIXO = "ponte.v1.";
+    TTL_SESSAO_MS = 12 * 60 * 60 * 1e3;
+  }
+});
+
+// lib/portalCliente/slug.ts
+function corHex(valor) {
+  const texto4 = String(valor || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(texto4) ? texto4.toLowerCase() : null;
+}
+var init_slug = __esm({
+  "lib/portalCliente/slug.ts"() {
+    "use strict";
+  }
+});
+
+// lib/portalCliente/marcaSite.ts
+function urlDeSitePublico(bruto) {
+  let texto4 = String(bruto || "").trim();
+  if (!texto4) return null;
+  if (!/^https?:\/\//i.test(texto4)) texto4 = `https://${texto4}`;
+  let url;
+  try {
+    url = new URL(texto4);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  if (!host.includes(".") || HOST_BLOQUEADO.test(host) || host.endsWith(".local") || host.endsWith(".internal")) return null;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return null;
+  return url;
+}
+function absoluto(base, caminho) {
+  const texto4 = String(caminho || "").trim();
+  if (!texto4 || texto4.startsWith("data:")) return null;
+  try {
+    const url = new URL(texto4, base);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+function meta(html, atributo, nome) {
+  const re = new RegExp(`<meta[^>]*${atributo}=["']${nome}["'][^>]*>`, "i");
+  const tag = html.match(re)?.[0] || "";
+  const content = tag.match(/content=["']([^"']+)["']/i)?.[1] || "";
+  return content.trim() || null;
+}
+function lerMarcaDoHtml(html, base) {
+  const icone = html.match(/<link[^>]*rel=["'][^"']*icon[^"']*["'][^>]*>/i)?.[0] || "";
+  const hrefIcone = icone.match(/href=["']([^"']+)["']/i)?.[1] || "";
+  const og = meta(html, "property", "og:image") || meta(html, "name", "og:image");
+  const cor = corHex(meta(html, "name", "theme-color")) || corHex(meta(html, "name", "msapplication-TileColor"));
+  return {
+    logo: absoluto(base, og) || absoluto(base, hrefIcone),
+    cor,
+    corAcao: cor
+  };
+}
+async function buscarMarcaDoSite(bruto) {
+  const url = urlDeSitePublico(bruto);
+  if (!url) return { error: "Informe um site p\xFAblico, com endere\xE7o v\xE1lido." };
+  const controle = new AbortController();
+  const timer = setTimeout(() => controle.abort(), 6e3);
+  try {
+    let atual = url;
+    let resposta = null;
+    for (let salto = 0; salto < 3; salto += 1) {
+      resposta = await fetch(atual, {
+        signal: controle.signal,
+        redirect: "manual",
+        headers: { "User-Agent": "TMSEG-portal-marca", Accept: "text/html" }
+      });
+      if (resposta.status < 300 || resposta.status >= 400) break;
+      const proxima = urlDeSitePublico(resposta.headers.get("location") || "");
+      if (!proxima) return { error: "O site redirecionou para um endere\xE7o que n\xE3o pode ser lido." };
+      atual = proxima;
+    }
+    if (!resposta || !resposta.ok) return { error: "O site n\xE3o respondeu a leitura do logotipo." };
+    const html = (await resposta.text()).slice(0, 4e5);
+    return lerMarcaDoHtml(html, atual);
+  } catch {
+    return { error: "N\xE3o foi poss\xEDvel ler o site. Envie o logotipo e escolha as cores." };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+var HOST_BLOQUEADO;
+var init_marcaSite = __esm({
+  "lib/portalCliente/marcaSite.ts"() {
+    "use strict";
+    init_slug();
+    HOST_BLOQUEADO = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[0-1])\.|0\.0\.0\.0|metadata\.google|169\.254\.)/i;
+  }
+});
+
+// lib/portalCliente/marcaSiteHttp.ts
+var marcaSiteHttp_exports = {};
+__export(marcaSiteHttp_exports, {
+  responderMarcaSite: () => responderMarcaSite
+});
+async function responderMarcaSite(req, res) {
+  const userId = usuarioIdDoToken(String(req.headers?.authorization || ""));
+  if (!userId) {
+    res.status(401).json({ error: "N\xE3o autorizado" });
+    return;
+  }
+  const bruto = typeof req.body === "string" ? (() => {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  })() : req.body || {};
+  const url = String(bruto?.url || "");
+  const marca = await buscarMarcaDoSite(url);
+  if ("error" in marca) {
+    res.status(422).json(marca);
+    return;
+  }
+  res.status(200).json(marca);
+}
+var init_marcaSiteHttp = __esm({
+  "lib/portalCliente/marcaSiteHttp.ts"() {
+    "use strict";
+    init_token();
+    init_marcaSite();
+  }
+});
+
 // lib/cevaPortal/camposCliente.ts
 var camposCliente_exports = {};
 __export(camposCliente_exports, {
@@ -575,9 +912,14 @@ function isSameClientName(a, b) {
   }
   return true;
 }
-function dhlDefaultUnitKmExcess(originUF) {
-  const uf = String(originUF || "").toUpperCase().trim();
-  return uf === "SC" || uf === "RS" ? 7.35 : 6.9;
+function classificarTarifaKm(valor, excepcional) {
+  if (excepcional != null && Number.isFinite(Number(excepcional)) && Number(excepcional) > 0) {
+    return { origem: "excepcional", tarifa: Math.round(Number(excepcional) * 100) / 100 };
+  }
+  if (valor == null || !Number.isFinite(Number(valor))) return { origem: "ausente", tarifa: 0 };
+  if (Number(valor) < 0) return { origem: "ausente", tarifa: 0 };
+  if (Number(valor) === 0) return { origem: "zero_contratual", tarifa: 0 };
+  return { origem: "tabela", tarifa: Math.round(Number(valor) * 100) / 100 };
 }
 function isUndefinedDestinationPlaceholder(dest) {
   const n = String(dest || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
@@ -592,10 +934,8 @@ function resolveDisplacementFromAuthorizedKm(opts) {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
   const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
   const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
-  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
-  if (km > 0 && clientRate <= 0) {
-    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ""));
-  }
+  const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
+  const clientRate = tarifaCliente.tarifa;
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
   const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
   const derivedProvider = km > 0 && providerRate > 0 ? Math.round(km * providerRate * 100) / 100 : 0;
@@ -603,6 +943,7 @@ function resolveDisplacementFromAuthorizedKm(opts) {
     km,
     clientRate,
     providerRate,
+    origemTarifaCliente: tarifaCliente.origem,
     client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
     provider: opts.isSameOs ? 0 : storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider
   };
@@ -617,6 +958,24 @@ function clientTableMatchesMission(tableClient, missionClientName) {
   const tableDhl = findDhlAutoClient(tc);
   return !!(missionDhl && tableDhl && missionDhl === tableDhl);
 }
+function isNamedCityRoute(tableOp, cities) {
+  if (cities.length < 2) return false;
+  const positions = cities.map((city) => ({ city, index: tableOp.indexOf(city) })).filter((hit) => hit.index >= 0).sort((a, b) => a.index - b.index);
+  const distinct = [];
+  for (const hit of positions) {
+    const insideLonger = distinct.some(
+      (kept) => hit.index >= kept.index && hit.index + hit.city.length <= kept.index + kept.city.length
+    );
+    if (!insideLonger) distinct.push(hit);
+  }
+  if (distinct.length < 2) return false;
+  for (let i = 0; i < distinct.length - 1; i++) {
+    const start = distinct[i].index + distinct[i].city.length;
+    const between = tableOp.slice(start, distinct[i + 1].index);
+    if (/\bX\b/.test(between) || /^[\s\-–—]+$/.test(between)) return true;
+  }
+  return false;
+}
 function evaluateRegionalTableConstraint(operationType, opts) {
   const tableOp = normalize2(operationType || "");
   if (!tableOp) return { blocked: false, reason: "" };
@@ -627,6 +986,17 @@ function evaluateRegionalTableConstraint(operationType, opts) {
   const missionText = `${originCity} ${destCity} ${originAddr}`;
   const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
   if (citiesInTable.length > 0) {
+    if (isNamedCityRoute(tableOp, citiesInTable)) {
+      const originText = `${originCity} ${originAddr}`;
+      const onOrigin = citiesInTable.filter((city) => originText.includes(city));
+      const onDest = citiesInTable.filter((city) => destCity.includes(city));
+      const leftover = citiesInTable.filter((city) => !originText.includes(city) && !destCity.includes(city));
+      if (leftover.length > 0 || onOrigin.length === 0 || onDest.length === 0) {
+        const missing = leftover[0] || citiesInTable.find((city) => !onDest.includes(city)) || citiesInTable[0];
+        return { blocked: true, reason: `BLOQUEIO ROTA (${missing})` };
+      }
+      return { blocked: false, reason: "", matchedCity: onOrigin[0] };
+    }
     const matchedCity = citiesInTable.find((c) => missionText.includes(c));
     if (!matchedCity) {
       return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
@@ -661,6 +1031,7 @@ var init_financialUtils = __esm({
     init_providerAutoPricing();
     init_dhlAutoTableSelector();
     init_clientTollBilling();
+    init_missionSnapshot();
     STOP_WORDS = ["LTDA", "LTDA.", "S.A.", "S.A", "SA", "S/A", "S/A.", "DO", "DE", "DA", "E", "DAS", "DOS"];
     safeNumber = (val) => {
       if (val === null || val === void 0 || val === "") return 0;
@@ -1678,10 +2049,11 @@ var init_financialUtils = __esm({
       const cFranchiseHr = appliedClientTable?.franchise_hours || 3;
       let cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
       let cExcessHr = Math.max(0, durationHours - cFranchiseHr);
-      let cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== void 0 ? manualTableOverrides.customClientUnitKm : appliedClientTable?.price_per_extra_km || 0;
-      if (cUnitPriceKm <= 0 && findDhlAutoClient(missionClientRaw) && manualTableOverrides?.customClientUnitKm === void 0) {
-        cUnitPriceKm = dhlDefaultUnitKmExcess(originUF);
-      }
+      const tarifaKmTabela = classificarTarifaKm(
+        manualTableOverrides?.customClientUnitKm !== void 0 ? manualTableOverrides.customClientUnitKm : appliedClientTable?.price_per_extra_km,
+        manualTableOverrides?.tarifaExcepcionalKm
+      );
+      let cUnitPriceKm = tarifaKmTabela.tarifa;
       const cUnitPriceHour = manualTableOverrides?.customClientUnitHour !== void 0 ? manualTableOverrides.customClientUnitHour : appliedClientTable?.price_per_extra_hour || 0;
       const appliedTableName = (appliedClientTable?.operation_type || "").toUpperCase();
       const missionDest = (mission.destination || "").toUpperCase();
@@ -1848,6 +2220,7 @@ var init_financialUtils = __esm({
           excessHours: cExcessHr,
           excessHoursReal: cExcessHrReal,
           unitPriceKm: cUnitPriceKm,
+          tarifaKmOrigem: tarifaKmTabela.origem,
           unitPriceHour: cUnitPriceHour,
           franchiseKm: cFranchiseKm,
           franchiseHours: cFranchiseHr,
@@ -1878,6 +2251,22 @@ var init_financialUtils = __esm({
         marginPercent: totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue * 100 : 0
       };
     };
+  }
+});
+
+// lib/billing/boletimLineTotal.ts
+function resolveBoletimClientLineTotal(input) {
+  if (input.wasManuallyEdited) return input.dbTotal;
+  const snap = input.snapTotalWithDisp > 0 ? input.snapTotalWithDisp : 0;
+  if (snap > 0 && (input.dbTotal <= 0 || Math.abs(input.dbTotal - snap) < 0.01)) {
+    return snap;
+  }
+  if (input.dbTotal > 0) return input.dbTotal;
+  return input.componentTotal;
+}
+var init_boletimLineTotal = __esm({
+  "lib/billing/boletimLineTotal.ts"() {
+    "use strict";
   }
 });
 
@@ -1927,13 +2316,22 @@ function kmGravado(value) {
 function centavos(value) {
   return Math.round(value * 100);
 }
+function pedagioSoFaixaLegada(mission, snap) {
+  if (snap.tollVal == null) return false;
+  const oficial = resolveStoredClientToll(mission.toll_value ?? 0, mission.toll_value_provider, mission.client);
+  const congelado = numeroEntregue(snap.tollVal);
+  if (centavos(oficial) === centavos(congelado)) return false;
+  const bruto = numeroEntregue(mission.toll_value);
+  const faixa = billableClientToll(bruto, mission.client);
+  return centavos(congelado) === centavos(bruto) && centavos(oficial) === centavos(faixa);
+}
 function osMudouDepoisDoSnapshot(mission, snap) {
   const receita = numeroEntregue(mission.revenue_value);
   const servicoSnap = numeroOuNulo(snap.revenueServiceOnly);
   const baseSnap = servicoSnap != null ? servicoSnap : Math.max(0, numeroEntregue(snap.totalGeral) - numeroEntregue(snap.tollVal) - Math.max(0, numeroEntregue(snap.displacementVal)));
   if (centavos(receita) !== centavos(baseSnap)) return true;
   const pedagio = resolveStoredClientToll(mission.toll_value ?? 0, mission.toll_value_provider, mission.client);
-  if (snap.tollVal != null && centavos(pedagio) !== centavos(numeroEntregue(snap.tollVal))) return true;
+  if (snap.tollVal != null && centavos(pedagio) !== centavos(numeroEntregue(snap.tollVal)) && !pedagioSoFaixaLegada(mission, snap)) return true;
   const inicio = kmGravado(mission.start_km);
   const fim = kmGravado(mission.end_km);
   const kmSnap = numeroOuNulo(snap.kmTotal);
@@ -2038,9 +2436,16 @@ function linhaDoBoletimCeva(mission, ctx) {
   const providerTables = ctx.providerTables || [];
   const clientData = ctx.clientData;
   const snap = mission.snapshot_data && typeof mission.snapshot_data === "object" ? mission.snapshot_data : null;
-  const hasValidSnapshot = !!(mission.snapshot_approved_by && snap);
+  const estado = estadoDetalhamentoSnapshot(mission.snapshot_data);
+  const origem = origemSnapshotFinanceiro(mission.snapshot_approved_by, mission.snapshot_data);
+  const preservar = devePreservarDetalhamentoRegistrado({
+    billingApproved: mission.billing_approved === true,
+    carimbo: mission.snapshot_approved_by,
+    snapshot: mission.snapshot_data
+  });
+  const exibirRegistrado = !!(preservar && snap && (estado === "valido" || estado === "zerado"));
   const base = baseDaLinha(mission, os);
-  if (hasValidSnapshot && snap) {
+  if (exibirRegistrado && snap) {
     const useBase = numeroEntregue(snap.activationFee);
     const useKmEx = numeroEntregue(snap.kmExtraTotal);
     const useHrEx = numeroEntregue(snap.hrExtraTotal);
@@ -2069,30 +2474,21 @@ function linhaDoBoletimCeva(mission, ctx) {
     const snapTotal = numeroEntregue(snap.totalGeral);
     const snapDispStored = Math.max(0, numeroEntregue(snap.displacementVal));
     const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0 ? snapTotal + useDisp : snapTotal;
-    const useTotal = wasManuallyEdited ? dbTotal : snapTotalWithDisp > 0 ? snapTotalWithDisp : useBase + useKmEx + useHrEx + useToll + useDisp;
-    let snapFranchiseHours = numeroEntregue(snap.franchiseHours);
-    let snapFranchiseKm = numeroEntregue(snap.franchiseKm);
-    let snapUnitHr = numeroEntregue(snap.unitHr);
-    let snapUnitKm = numeroEntregue(snap.unitKm);
-    let snapHrExtraQtd = numeroEntregue(snap.hrExtraQtd);
-    let snapKmExtraQtd = numeroEntregue(snap.kmExtraQtd);
-    let snapDurationHours = numeroEntregue(snap.durationHours);
-    if (snapFranchiseHours === 0 && snapFranchiseKm === 0 && snapUnitHr === 0 && snapUnitKm === 0) {
-      try {
-        const finFallback = calculateMissionFinancials(mission, priceTables, providerTables, clientData, /* @__PURE__ */ new Date());
-        const tblFallback = priceTables.find((t) => t.id.toString() === finFallback.client.tableId);
-        if (tblFallback) {
-          snapFranchiseHours = tblFallback.franchise_hours ?? 0;
-          snapFranchiseKm = tblFallback.franchise_km ?? 0;
-          snapUnitHr = tblFallback.price_per_extra_hour ?? 0;
-          snapUnitKm = tblFallback.price_per_extra_km ?? 0;
-          snapHrExtraQtd = finFallback.client.excessHours ?? 0;
-          snapKmExtraQtd = finFallback.client.excessKm ?? 0;
-          snapDurationHours = finFallback.durationHours ?? 0;
-        }
-      } catch {
-      }
-    }
+    const componentes = useBase + useKmEx + useHrEx + useToll + useDisp;
+    const totalDoBoletim = resolveBoletimClientLineTotal({
+      dbTotal,
+      snapTotalWithDisp,
+      componentTotal: componentes,
+      wasManuallyEdited
+    });
+    const useTotal = mission.billing_approved === true ? totalDoBoletim : wasManuallyEdited ? dbTotal : snapTotalWithDisp > 0 ? snapTotalWithDisp : componentes;
+    const snapFranchiseHours = numeroEntregue(snap.franchiseHours);
+    const snapFranchiseKm = numeroEntregue(snap.franchiseKm);
+    const snapUnitHr = numeroEntregue(snap.unitHr);
+    const snapUnitKm = numeroEntregue(snap.unitKm);
+    const snapHrExtraQtd = numeroEntregue(snap.hrExtraQtd);
+    const snapKmExtraQtd = numeroEntregue(snap.kmExtraQtd);
+    const snapDurationHours = numeroEntregue(snap.durationHours);
     const isCancelledSnap = (mission.status || "").toString().toLowerCase().includes("cancel");
     const wasExecutedSnap = isCancelledSnap && !!mission.end_time && !!mission.start_time && new Date(mission.end_time).getTime() > new Date(mission.start_time).getTime();
     const cancelledBeforeSnap = isCancelledSnap && !wasExecutedSnap;
@@ -2119,35 +2515,57 @@ function linhaDoBoletimCeva(mission, ctx) {
       pedagio: useToll,
       tarifaKm: snapUnitKm,
       tarifaHora: snapUnitHr,
-      local: localOrigemDestino(mission.origin, mission.destination)
+      local: localOrigemDestino(mission.origin, mission.destination),
+      origemSnapshot: origem,
+      homologadoPorPessoa: origem === "humana",
+      divergenciaDetalhamento: estado === "zerado" ? DIVERGENCIA_DETALHAMENTO_ZERADO : null
     };
     if (osMudouDepoisDoSnapshot(mission, snap)) {
-      linha.valorTotal = dbTotal;
-      linha.pedagio = useToll;
-      if (!cancelledBeforeSnap && kmPeloHodometro2 != null && Math.abs(kmPeloHodometro2 - kmDoSnapshot) > 0.5) {
-        linha.kmInicio = kmInicio2;
-        linha.kmFim = kmFim2;
-        linha.kmRodado = kmPeloHodometro2;
-      }
-      try {
-        const finVivo = calculateMissionFinancials(mission, priceTables, providerTables, clientData, /* @__PURE__ */ new Date());
-        const tabelaViva = priceTables.find((t) => t.id.toString() === finVivo.client.tableId);
-        if (tabelaViva) {
-          linha.franquiaHora = horaDoBoletim(tabelaViva.franchise_hours ?? 0);
-          linha.franquiaKm = tabelaViva.franchise_km ?? 0;
-          linha.kmExcedente = finVivo.client.excessKm ?? 0;
-          linha.hrsTrabalhada = horaDoBoletim(finVivo.durationHours);
-          linha.hrsExcedente = horaDoBoletim(finVivo.client.excessHours);
-          linha.valorHrsExcedente = finVivo.client.extraHrVal ?? 0;
-          linha.valorKmExcedente = finVivo.client.extraKmVal ?? 0;
-          linha.valorAcionamento = tabelaViva.activation_fee ?? 0;
-          linha.tarifaKm = tabelaViva.price_per_extra_km ?? 0;
-          linha.tarifaHora = tabelaViva.price_per_extra_hour ?? 0;
-        }
-      } catch {
-      }
+      linha.divergenciaDetalhamento = textoAlteracaoPosterior(classificarAlteracaoPosterior({
+        motivoReceita: mission.revenue_edit_reason,
+        motivoCusto: mission.cost_edit_reason
+      }));
     }
     return fecharLinha(linha, mission);
+  }
+  if (mission.billing_approved === true || origem === "humana") {
+    const tollOficial = resolveStoredClientToll(mission.toll_value || 0, mission.toll_value_provider, mission.client);
+    const receitaOficial = numeroEntregue(mission.revenue_value);
+    let deslocamentoOficial = 0;
+    try {
+      const finOficial = calculateMissionFinancials(mission, priceTables, providerTables, clientData, /* @__PURE__ */ new Date());
+      deslocamentoOficial = resolveMissionDisplacement(mission, {
+        clientUnitPriceKm: finOficial.client.unitPriceKm,
+        providerUnitPriceKm: finOficial.provider.unitCostKm
+      }).client;
+    } catch {
+    }
+    const kmInicio2 = kmGravado(mission.start_km);
+    const kmFim2 = kmGravado(mission.end_km);
+    const kmRodado = kmInicio2 != null && kmFim2 != null && kmFim2 >= kmInicio2 ? kmFim2 - kmInicio2 : null;
+    const divergencia = estado === "incompleto" ? DIVERGENCIA_DETALHAMENTO_INCOMPLETO : DIVERGENCIA_SNAPSHOT_INVALIDO;
+    return fecharLinha({
+      ...base,
+      franquiaHora: null,
+      franquiaKm: null,
+      kmInicio: kmInicio2,
+      kmFim: kmFim2,
+      kmRodado,
+      kmExcedente: null,
+      hrsTrabalhada: null,
+      hrsExcedente: null,
+      valorHrsExcedente: null,
+      valorKmExcedente: null,
+      valorAcionamento: null,
+      valorTotal: receitaOficial + tollOficial + deslocamentoOficial,
+      pedagio: tollOficial,
+      tarifaKm: null,
+      tarifaHora: null,
+      local: localOrigemDestino(mission.origin, mission.destination),
+      origemSnapshot: origem,
+      homologadoPorPessoa: false,
+      divergenciaDetalhamento: divergencia
+    }, mission);
   }
   const tollVal = resolveStoredClientToll(mission.toll_value || 0, mission.toll_value_provider, mission.client);
   const savedRevenue = numeroEntregue(mission.revenue_value);
@@ -2200,7 +2618,10 @@ function linhaDoBoletimCeva(mission, ctx) {
     pedagio: tollVal,
     tarifaKm: unitKm,
     tarifaHora: unitHr,
-    local: localOrigemDestino(mission.origin, mission.destination)
+    local: localOrigemDestino(mission.origin, mission.destination),
+    origemSnapshot: origem,
+    homologadoPorPessoa: false,
+    divergenciaDetalhamento: null
   }, mission);
 }
 var UF_VALIDA, LIGACAO;
@@ -2208,8 +2629,10 @@ var init_report = __esm({
   "lib/cevaPortal/report.ts"() {
     "use strict";
     init_financialUtils();
+    init_boletimLineTotal();
     init_resolveMissionDisplacement();
     init_clientTollBilling();
+    init_missionSnapshot();
     UF_VALIDA = /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)$/;
     LIGACAO = /* @__PURE__ */ new Set(["de", "da", "do", "das", "dos", "e"]);
   }
@@ -2470,14 +2893,329 @@ var init_fetchBillingMissionUniverse = __esm({
   }
 });
 
+// lib/portalCliente/pedido.ts
+var pedido_exports = {};
+__export(pedido_exports, {
+  EMAIL_OPERACIONAL_TMSEG: () => EMAIL_OPERACIONAL_TMSEG,
+  MODALIDADES_PORTAL: () => MODALIDADES_PORTAL,
+  PEDIDOS_PORTAL: () => PEDIDOS_PORTAL,
+  corpoTrazPreco: () => corpoTrazPreco,
+  emailsDaSolicitacao: () => emailsDaSolicitacao,
+  validarPedidoPortal: () => validarPedidoPortal
+});
+function texto3(valor, max) {
+  return String(valor ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().replace(/\s+/g, " ").slice(0, max);
+}
+function opcional(valor, max) {
+  const limpo = texto3(valor, max);
+  return limpo || null;
+}
+function emailsDaSolicitacao(operationalEmail) {
+  const doCliente = String(operationalEmail || "").split(/[\s,;]+/).map((item) => item.trim().toLowerCase()).filter((item) => item.includes("@") && item.includes("."));
+  return [.../* @__PURE__ */ new Set([EMAIL_OPERACIONAL_TMSEG, ...doCliente])];
+}
+function corpoTrazPreco(body) {
+  if (!body || typeof body !== "object") return false;
+  return Object.keys(body).some((chave) => {
+    const nome = chave.toLowerCase();
+    return CHAVES_PRECO.some((marca) => nome.includes(marca));
+  });
+}
+function validarPedidoPortal(body, solicitanteSessao, agora = Date.now()) {
+  if (corpoTrazPreco(body)) {
+    return { ok: false, error: "O pedido n\xE3o aceita pre\xE7o, tarifa ou tabela." };
+  }
+  const source = body && typeof body === "object" ? body : {};
+  const solicitante = texto3(solicitanteSessao, 160);
+  if (solicitante.length < 2) return { ok: false, error: "Sess\xE3o sem identifica\xE7\xE3o da pessoa." };
+  const dataInicio = parseBrazilDateTime(source.dataInicio);
+  if (!dataInicio) return { ok: false, error: "Informe a data e a hora de in\xEDcio." };
+  const inicioMs = new Date(dataInicio).getTime();
+  if (inicioMs < agora - 12 * 60 * 60 * 1e3) return { ok: false, error: "A data de in\xEDcio n\xE3o pode estar no passado." };
+  if (inicioMs > agora + 90 * 24 * 60 * 60 * 1e3) return { ok: false, error: "A data de in\xEDcio passa de 90 dias." };
+  const pedido = PEDIDOS_PORTAL.find((item) => item === texto3(source.pedido, 40));
+  if (!pedido) return { ok: false, error: "Informe se \xE9 escolta armada ou pronta resposta." };
+  const modalidade = MODALIDADES_PORTAL.find((item) => item === texto3(source.modalidade, 40));
+  if (!modalidade) return { ok: false, error: "Informe se \xE9 caracterizada ou velada." };
+  const origem = texto3(source.origem, 240);
+  const destino = texto3(source.destino, 240);
+  if (origem.length < 3 || destino.length < 3) return { ok: false, error: "Informe a cidade de origem e a de destino." };
+  const operacao = texto3(source.operacao, 160);
+  if (operacao.length < 2) return { ok: false, error: "Informe a opera\xE7\xE3o." };
+  const identificacao = texto3(source.identificacao, 80);
+  if (!identificacao) return { ok: false, error: "Informe a identifica\xE7\xE3o da OS do cliente." };
+  const motorista = texto3(source.motorista, 160);
+  if (motorista.length < 2) return { ok: false, error: "Informe o motorista." };
+  const placa = normalizePlate(source.placa);
+  if (!placa || placa.length < 7) return { ok: false, error: "Informe a placa do ve\xEDculo." };
+  const telefone = texto3(source.telefone, 30).replace(/[^\d+()\-\s]/g, "");
+  if (telefone.replace(/\D/g, "").length < 8) return { ok: false, error: "Informe o telefone." };
+  return {
+    ok: true,
+    value: {
+      dataInicio,
+      dataFim: parseBrazilDateTime(source.dataFim),
+      pedido,
+      modalidade,
+      servico: `${pedido} \u2014 ${modalidade}`,
+      missionType: modalidade,
+      origem: origem.toUpperCase(),
+      destino: destino.toUpperCase(),
+      operacao: operacao.toUpperCase(),
+      identificacao: identificacao.toUpperCase(),
+      motorista: motorista.toUpperCase(),
+      placa,
+      telefone,
+      solicitante,
+      quemAutorizou: opcional(source.quemAutorizou, 160),
+      atendimentoPgr: opcional(source.atendimentoPgr, 300),
+      contrato: opcional(source.contrato, 160),
+      tsp: opcional(source.tsp, 160),
+      franquiaHora: opcional(source.franquiaHora, 20),
+      franquiaKm: opcional(source.franquiaKm, 20)
+    }
+  };
+}
+var PEDIDOS_PORTAL, MODALIDADES_PORTAL, EMAIL_OPERACIONAL_TMSEG, CHAVES_PRECO;
+var init_pedido = __esm({
+  "lib/portalCliente/pedido.ts"() {
+    "use strict";
+    init_rules();
+    PEDIDOS_PORTAL = ["Escolta armada", "Pronta resposta"];
+    MODALIDADES_PORTAL = ["Caracterizada", "Velada"];
+    EMAIL_OPERACIONAL_TMSEG = "operacional@grupotmseg.com.br";
+    CHAVES_PRECO = ["preco", "pre\xE7o", "valor", "revenue", "tabela", "price", "tarifa", "custo"];
+  }
+});
+
+// lib/portalCliente/registrarOs.ts
+var registrarOs_exports = {};
+__export(registrarOs_exports, {
+  enviarEmailSolicitacao: () => enviarEmailSolicitacao,
+  registrarSolicitacaoPortal: () => registrarSolicitacaoPortal
+});
+function escapar2(valor) {
+  return valor.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function proximoNumero(sb) {
+  const { data, error } = await sb.from("missions").select("id").order("created_at", { ascending: false }).limit(40);
+  if (error) throw error;
+  let max = 0;
+  for (const row of data || []) {
+    const numero = Number(String(row.id || "").split("-")[1]);
+    if (Number.isFinite(numero) && numero > max) max = numero;
+  }
+  return max + 1;
+}
+function payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero) {
+  const base = {
+    id,
+    client: cliente,
+    provider: null,
+    origin: pedido.origem,
+    destination: pedido.destino,
+    status: "Solicitada",
+    last_update: agora,
+    created_at: agora,
+    updated_by: solicitante,
+    start_time: pedido.dataInicio,
+    mission_type: pedido.missionType,
+    special_operation_type: pedido.pedido,
+    revenue_value: comValorZero ? 0 : null,
+    cost_value: comValorZero ? 0 : null,
+    toll_value: null,
+    toll_value_provider: null,
+    billing_approved: false,
+    snapshot_data: null,
+    snapshot_approved_by: null,
+    snapshot_approved_at: null,
+    current_location: LOCAL_PORTAL,
+    valor_zero_motivo: "AGUARDANDO DEFINI\xC7\xC3O",
+    driver_name: pedido.motorista,
+    driver_phone: pedido.telefone,
+    reference_number: pedido.identificacao,
+    client_vehicle: vehicleId
+  };
+  return base;
+}
+function semColunaOpcional(payload, mensagem) {
+  const texto4 = mensagem.toLowerCase();
+  const opcionais = ["special_operation_type", "valor_zero_motivo", "billing_approved", "toll_value_provider", "snapshot_approved_by", "snapshot_approved_at", "snapshot_data"];
+  const achou = opcionais.find((coluna) => texto4.includes(coluna));
+  if (!achou || !Object.prototype.hasOwnProperty.call(payload, achou)) return null;
+  const copia = { ...payload };
+  delete copia[achou];
+  return copia;
+}
+async function inserirOs(sb, cliente, pedido, solicitante, vehicleId) {
+  const agora = (/* @__PURE__ */ new Date()).toISOString();
+  let comValorZero = false;
+  for (let tentativa = 0; tentativa < 8; tentativa += 1) {
+    const numero = await proximoNumero(sb);
+    const id = `GTM-${String(numero).padStart(4, "0")}`;
+    let payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero);
+    let resultado = await sb.from("missions").insert([payload]);
+    for (let ajuste = 0; ajuste < 6 && resultado.error; ajuste += 1) {
+      const mensagem = String(resultado.error.message || "");
+      if (/revenue_value|cost_value|not-null|null value/i.test(mensagem) && !comValorZero) {
+        comValorZero = true;
+        payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, true);
+        resultado = await sb.from("missions").insert([payload]);
+        continue;
+      }
+      const reduzido = semColunaOpcional(payload, mensagem);
+      if (!reduzido) break;
+      payload = reduzido;
+      resultado = await sb.from("missions").insert([payload]);
+    }
+    if (!resultado.error) return id;
+    if (resultado.error.code === "23505") continue;
+    throw new Error(resultado.error.message || "N\xE3o foi poss\xEDvel abrir a OS.");
+  }
+  throw new Error("N\xE3o foi poss\xEDvel numerar a OS.");
+}
+async function gravarCampos(sb, portal, missionId, pedido) {
+  const linha = {
+    mission_id: missionId,
+    solicitante: pedido.solicitante,
+    quem_autorizou: pedido.quemAutorizou,
+    servico: pedido.servico,
+    atendimento_pgr: pedido.atendimentoPgr,
+    contrato: pedido.contrato,
+    operacao: pedido.operacao,
+    tsp: pedido.tsp,
+    placa: pedido.placa,
+    updated_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (portal.clientId != null) linha.client_id = portal.clientId;
+  let resultado = await sb.from(portal.tabelas.osCampos).upsert(linha, { onConflict: "mission_id" });
+  if (resultado.error && /placa/i.test(String(resultado.error.message || ""))) {
+    delete linha.placa;
+    resultado = await sb.from(portal.tabelas.osCampos).upsert(linha, { onConflict: "mission_id" });
+  }
+  if (resultado.error) {
+    console.error(`[${portal.logPrefix}] campos da solicita\xE7\xE3o`, resultado.error.message);
+  }
+}
+async function gravarSolicitacao(sb, portal, missionId, pedido, usuario) {
+  const linha = {
+    mission_id: missionId,
+    data_inicio: pedido.dataInicio,
+    data_fim: pedido.dataFim,
+    solicitante: pedido.solicitante,
+    quem_autorizou: pedido.quemAutorizou,
+    servico: pedido.servico,
+    atendimento_pgr: pedido.atendimentoPgr,
+    contrato: pedido.contrato,
+    operacao: pedido.operacao,
+    tsp: pedido.tsp,
+    placa: pedido.placa,
+    motorista: pedido.motorista,
+    franquia_hora: pedido.franquiaHora,
+    franquia_km: pedido.franquiaKm,
+    filled_by_user_id: usuario.id,
+    filled_by_name: pedido.solicitante,
+    filled_by_email: usuario.email
+  };
+  if (portal.clientId != null) linha.client_id = portal.clientId;
+  let resultado = await sb.from(portal.tabelas.solicitacoes).insert(linha);
+  if (resultado.error && /mission_id/i.test(String(resultado.error.message || ""))) {
+    delete linha.mission_id;
+    resultado = await sb.from(portal.tabelas.solicitacoes).insert(linha);
+  }
+  if (resultado.error) {
+    console.error(`[${portal.logPrefix}] fila da solicita\xE7\xE3o`, resultado.error.message);
+  }
+}
+async function enviarEmailSolicitacao(input) {
+  const pedido = input.pedido;
+  const linhas = [
+    ["OS", input.os],
+    ["Cliente", input.cliente],
+    ["Servi\xE7o", pedido.pedido],
+    ["Modalidade", pedido.modalidade],
+    ["Origem", pedido.origem],
+    ["Destino", pedido.destino],
+    ["Opera\xE7\xE3o", pedido.operacao],
+    ["Identifica\xE7\xE3o do cliente", pedido.identificacao],
+    ["Motorista", pedido.motorista],
+    ["Ve\xEDculo", pedido.placa],
+    ["Telefone", pedido.telefone],
+    ["Solicitante", pedido.solicitante]
+  ];
+  const html = `<!DOCTYPE html><html lang="pt-BR"><body style="font-family:Segoe UI,Arial,sans-serif;color:#333;line-height:1.5">
+    <h2>Solicita\xE7\xE3o de escolta \u2014 ${escapar2(input.os)}</h2>
+    <p>O portal do cliente abriu uma OS com status <strong>SOLICITADA</strong>. Ainda n\xE3o h\xE1 fornecedor nem valor. A tabela s\xF3 entra depois da valida\xE7\xE3o interna.</p>
+    <table>${linhas.map(([rotulo, valor]) => `<tr><td style="padding:4px 12px 4px 0"><strong>${escapar2(rotulo)}</strong></td><td>${escapar2(valor)}</td></tr>`).join("")}</table>
+    <p>Atenciosamente,<br><strong>Grupo TM SEG</strong></p>
+  </body></html>`;
+  try {
+    await sendMail({
+      from: SMTP_FROM,
+      to: input.destinatarios,
+      subject: `Solicita\xE7\xE3o ${input.os} \u2014 ${input.cliente}`,
+      html
+    });
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("[portal] e-mail da solicita\xE7\xE3o", message);
+    return false;
+  }
+}
+async function registrarSolicitacaoPortal(sb, portal, pedido, usuario, operationalEmail, clientId) {
+  let vehicleId = null;
+  if (clientId != null) {
+    const veiculo = await sb.from("client_vehicles").select("id, plate").eq("client_id", clientId).ilike("plate", pedido.placa).maybeSingle();
+    if (veiculo.data?.id) vehicleId = Number(veiculo.data.id);
+  }
+  const os = await inserirOs(sb, portal.clienteNome, pedido, pedido.solicitante, vehicleId);
+  await gravarCampos(sb, portal, os, pedido);
+  await gravarSolicitacao(sb, portal, os, pedido, usuario);
+  try {
+    await sb.from("system_logs").insert([{
+      user_name: pedido.solicitante,
+      action_type: "CREATE",
+      entity: "Mission",
+      entity_id: os,
+      details: JSON.stringify({
+        origem: "portal_cliente",
+        client: portal.clienteNome,
+        pedido: pedido.pedido,
+        modalidade: pedido.modalidade,
+        identificacao: pedido.identificacao
+      })
+    }]);
+  } catch {
+  }
+  const emailEnviado = await enviarEmailSolicitacao({
+    destinatarios: emailsDaSolicitacao(operationalEmail),
+    os,
+    cliente: portal.rotulo,
+    pedido
+  });
+  return { os, emailEnviado };
+}
+var LOCAL_PORTAL;
+var init_registrarOs = __esm({
+  "lib/portalCliente/registrarOs.ts"() {
+    "use strict";
+    init_smtp();
+    init_pedido();
+    LOCAL_PORTAL = "Solicita\xE7\xE3o do portal \u2014 aguardando fornecedor";
+  }
+});
+
 // lib/cevaPortal/httpHandler.ts
 var httpHandler_exports = {};
 __export(httpHandler_exports, {
   handleCevaPortalHttp: () => handleCevaPortalHttp,
+  handleClientePortalHttp: () => handleClientePortalHttp,
   handleIblPortalHttp: () => handleIblPortalHttp
 });
 module.exports = __toCommonJS(httpHandler_exports);
 var import_node_async_hooks = require("node:async_hooks");
+init_missionSnapshot();
 
 // lib/supabaseAdmin.ts
 var import_supabase_js = require("@supabase/supabase-js");
@@ -2684,6 +3422,31 @@ var PORTAL_IBL = {
     solicitacoes: "ibl_escolta_solicitacoes"
   }
 };
+var TABELAS_PORTAL_GENERICO = {
+  usuarios: "portal_cliente_usuarios",
+  osCampos: "portal_cliente_os_campos",
+  catalogo: "portal_cliente_catalogo",
+  pgrHistorico: "portal_cliente_pgr_historico",
+  solicitacoes: "portal_cliente_solicitacoes"
+};
+function portalGenerico(cliente) {
+  const slug = String(cliente.portal_slug || "").trim().toLowerCase();
+  const id = Number(cliente.id);
+  const nome = String(cliente.name || "").trim();
+  if (!slug || !nome || !Number.isFinite(id)) return null;
+  const fantasia = String(cliente.trading_name || "").trim();
+  return {
+    rotulo: fantasia || nome,
+    clienteNome: nome,
+    clientId: id,
+    tokenPrefix: `portal-${slug}`,
+    headerSessao: "x-portal-cliente",
+    logPrefix: `portal-${slug}`,
+    caminho: `/${slug}`,
+    exigeLogin: true,
+    tabelas: { ...TABELAS_PORTAL_GENERICO }
+  };
+}
 
 // lib/cevaPortal/acesso.ts
 var import_crypto = require("crypto");
@@ -2781,6 +3544,97 @@ function gerarSenhaTemporaria() {
   return [...bytes].map((byte) => ALFABETO_SENHA[byte % ALFABETO_SENHA.length]).join("");
 }
 
+// lib/gestorFiscal/ponteAuth/hashSenha.ts
+var import_node_crypto = require("node:crypto");
+var PARAMETROS_SCRYPT_V1 = { versao: 1, N: 16384, r: 8, p: 1, keylen: 32 };
+function identificarFormatoHash(gravada) {
+  const salva = gravada == null ? "" : String(gravada);
+  if (!salva) return null;
+  if (salva.startsWith("$2a$") || salva.startsWith("$2b$") || salva.startsWith("$2y$") || salva.startsWith("$argon2")) {
+    return "outro";
+  }
+  const partes = salva.split("$");
+  if (partes[0] !== "scrypt") return salva.includes("$") ? "outro" : null;
+  if (partes.length === 3 && hex(partes[1]) && hex(partes[2])) return "scrypt_portal";
+  if (partes.length === 8 && partes[1] === "v1" && parametrosConhecidos(partes) && hex(partes[6]) && hex(partes[7])) {
+    return "scrypt_v1";
+  }
+  return "outro";
+}
+function gerarHashVersionado(senha) {
+  const sal = (0, import_node_crypto.randomBytes)(16).toString("hex");
+  const hash = (0, import_node_crypto.scryptSync)(senha, sal, PARAMETROS_SCRYPT_V1.keylen, {
+    N: PARAMETROS_SCRYPT_V1.N,
+    r: PARAMETROS_SCRYPT_V1.r,
+    p: PARAMETROS_SCRYPT_V1.p
+  }).toString("hex");
+  return `scrypt$v1$${PARAMETROS_SCRYPT_V1.N}$${PARAMETROS_SCRYPT_V1.r}$${PARAMETROS_SCRYPT_V1.p}$${PARAMETROS_SCRYPT_V1.keylen}$${sal}$${hash}`;
+}
+function verificarSenhaArmazenada(senha, armazenada) {
+  const limpa = String(senha ?? "").trim();
+  if (!limpa) return false;
+  const formato = identificarFormatoHash(armazenada);
+  if (formato === "scrypt_portal") return portalConfere(limpa, String(armazenada));
+  if (formato === "scrypt_v1") return v1Confere(limpa, String(armazenada));
+  return false;
+}
+function portalConfere(senha, armazenada) {
+  const partes = armazenada.split("$");
+  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[1], 32);
+  const salvo = Buffer.from(partes[2], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
+}
+function v1Confere(senha, armazenada) {
+  const partes = armazenada.split("$");
+  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[6], PARAMETROS_SCRYPT_V1.keylen, {
+    N: PARAMETROS_SCRYPT_V1.N,
+    r: PARAMETROS_SCRYPT_V1.r,
+    p: PARAMETROS_SCRYPT_V1.p
+  });
+  const salvo = Buffer.from(partes[7], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
+}
+function parametrosConhecidos(partes) {
+  return Number(partes[2]) === PARAMETROS_SCRYPT_V1.N && Number(partes[3]) === PARAMETROS_SCRYPT_V1.r && Number(partes[4]) === PARAMETROS_SCRYPT_V1.p && Number(partes[5]) === PARAMETROS_SCRYPT_V1.keylen;
+}
+function hex(valor) {
+  return valor.length > 0 && valor.length % 2 === 0 && /^[0-9a-f]+$/i.test(valor);
+}
+
+// lib/sessao/gravarSenha.ts
+function colunaAusente(mensagem, coluna) {
+  return new RegExp(coluna, "i").test(mensagem) && /does not exist|n[aã]o existe|schema cache|could not find/i.test(mensagem);
+}
+async function gravarSenhaNoServidor(cliente, usuarioId, senha, extras = {}) {
+  const hash = gerarHashVersionado(senha);
+  const base = {
+    password_hash: hash,
+    password: null,
+    ...extras
+  };
+  let resultado = await cliente.from("system_users").update(base).eq("id", usuarioId);
+  if (resultado.error && colunaAusente(resultado.error.message || "", "session_epoch")) {
+    const semEpoch = { ...base };
+    delete semEpoch.session_epoch;
+    resultado = await cliente.from("system_users").update(semEpoch).eq("id", usuarioId);
+  }
+  if (!resultado.error) return "hash";
+  const mensagem = resultado.error.message || "";
+  if (!colunaAusente(mensagem, "password_hash")) {
+    throw new Error("Falha ao gravar a senha.");
+  }
+  const legado = { password: senha };
+  for (const [chave, valor] of Object.entries(extras)) {
+    if (chave === "session_epoch" || chave === "force_password_change") continue;
+    legado[chave] = valor;
+  }
+  const texto4 = await cliente.from("system_users").update(legado).eq("id", usuarioId);
+  if (texto4.error) throw new Error("Falha ao gravar a senha.");
+  return "texto";
+}
+
 // lib/cevaPortal/cadastroSistema.ts
 function colunaSenhaAlteradaAusente(error) {
   if (!error) return false;
@@ -2823,9 +3677,11 @@ async function vincularCadastroCliente(sb, input) {
     force_password_change: false,
     permissions: permissoes
   };
-  if (input.senhaTemporaria) payload.password = input.senhaTemporaria;
   const { data, error } = await sb.from("system_users").insert(payload).select("id").single();
   if (error || !data?.id) return { ok: false, error: "N\xE3o foi poss\xEDvel criar o usu\xE1rio no cadastro do cliente." };
+  if (input.senhaTemporaria) {
+    await gravarSenhaNoServidor(sb, String(data.id), input.senhaTemporaria, { force_password_change: false });
+  }
   return { ok: true, id: String(data.id) };
 }
 async function alinharStatusCadastroPortal(sb, email, ativo) {
@@ -2834,8 +3690,36 @@ async function alinharStatusCadastroPortal(sb, email, ativo) {
   await sb.from("system_users").update({ status: ativo ? "Ativo" : "Inativo" }).eq("id", data.id);
 }
 
+// lib/gestorFiscal/ponteAuth/formatoSenha.ts
+var import_node_crypto2 = require("node:crypto");
+function classificarSenhaGravada(gravada) {
+  const salva = gravada == null ? "" : String(gravada);
+  if (!salva) return "vazia";
+  if (salva.startsWith("$2a$") || salva.startsWith("$2b$") || salva.startsWith("$2y$") || salva.startsWith("$argon2")) {
+    return "nao_reconhecido";
+  }
+  const formato = identificarFormatoHash(salva);
+  if (formato === "scrypt_portal" || formato === "scrypt_v1") return "scrypt";
+  if (formato === "outro" || salva.includes("$")) return "nao_reconhecido";
+  return "texto";
+}
+function conferirSenhaDaFicha(informada, ficha) {
+  if (ficha.password_hash && verificarSenhaArmazenada(informada, ficha.password_hash)) return "hash";
+  if (conferirSenhaExistente(informada, ficha.password)) return "texto";
+  return "nao";
+}
+function conferirSenhaExistente(informada, gravada) {
+  const formato = classificarSenhaGravada(gravada);
+  const limpa = String(informada ?? "").trim();
+  if (!limpa || formato === "vazia" || formato === "nao_reconhecido") return false;
+  if (formato === "scrypt") return verificarSenhaArmazenada(limpa, gravada);
+  const digitada = Buffer.from(limpa);
+  const armazenada = Buffer.from(String(gravada));
+  if (digitada.length !== armazenada.length) return false;
+  return (0, import_node_crypto2.timingSafeEqual)(digitada, armazenada);
+}
+
 // lib/cevaPortal/equipeInterna.ts
-var import_crypto2 = require("crypto");
 function ehEquipeInterna(usuario) {
   if (!usuario || usuario.id == null || String(usuario.id) === "") return false;
   if (String(usuario.status || "") !== "Ativo") return false;
@@ -2845,14 +3729,8 @@ function ehEquipeInterna(usuario) {
   if (tipo === "internal") return true;
   return !tipo && !usuario.client_id && !usuario.provider_id;
 }
-function senhaEquipeConfere(informada, gravada) {
-  const limpa = String(informada ?? "").trim();
-  const salva = gravada == null ? "" : String(gravada);
-  if (!limpa || !salva) return false;
-  const digitada = Buffer.from(limpa);
-  const armazenada = Buffer.from(salva);
-  if (digitada.length !== armazenada.length) return false;
-  return (0, import_crypto2.timingSafeEqual)(digitada, armazenada);
+function senhaEquipeConfere(informada, gravada, hash) {
+  return conferirSenhaDaFicha(informada, { password: gravada, password_hash: hash }) !== "nao";
 }
 function tokenDaEquipeInterna(prefixo, userId, agora = Date.now()) {
   return `${prefixo}-interno-${userId}-${agora}`;
@@ -2867,91 +3745,11 @@ function origemDoTokenPortal(prefixo, header) {
   return null;
 }
 
-// lib/cevaPortal/rules.ts
-var CEVA_PORTAL_LOGIN_ENABLED = false;
-function cleanText(value, max) {
-  const text = String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim();
-  if (!text) return null;
-  return text.slice(0, max);
-}
-function parseBrazilDateTime(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return `${text}:00-03:00`;
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(text)) return `${text}-03:00`;
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
-function normalizePlate(value) {
-  const plate = String(value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 7);
-  return plate || null;
-}
-function solicitanteDaSessao(sessionName) {
-  return String(sessionName || "").trim();
-}
-function buildCevaSolicitacao(session, body) {
-  const source = body && typeof body === "object" ? body : {};
-  const solicitanteInformado = cleanText(source.solicitante, 160);
-  const solicitante = CEVA_PORTAL_LOGIN_ENABLED ? solicitanteDaSessao(session?.name || "") : solicitanteInformado || "";
-  const email = CEVA_PORTAL_LOGIN_ENABLED ? String(session?.email || "").trim().toLowerCase() : "sem-login";
-  const userId = CEVA_PORTAL_LOGIN_ENABLED ? String(session?.id || "").trim() : "aberto";
-  if (!solicitante) {
-    return { ok: false, error: CEVA_PORTAL_LOGIN_ENABLED ? "Sess\xE3o sem identifica\xE7\xE3o da pessoa." : "Informe o solicitante." };
-  }
-  if (CEVA_PORTAL_LOGIN_ENABLED && (!email || !userId)) {
-    return { ok: false, error: "Sess\xE3o sem identifica\xE7\xE3o da pessoa." };
-  }
-  const dataInicio = parseBrazilDateTime(source.dataInicio);
-  if (!dataInicio) return { ok: false, error: "Informe a data de in\xEDcio." };
-  const servico = cleanText(source.servico, 120);
-  if (!servico) return { ok: false, error: "Informe o servi\xE7o." };
-  return {
-    ok: true,
-    value: {
-      dataInicio,
-      dataFim: parseBrazilDateTime(source.dataFim),
-      solicitante,
-      quemAutorizou: cleanText(source.quemAutorizou, 160),
-      servico,
-      atendimentoPgr: cleanText(source.atendimentoPgr, 300),
-      contrato: cleanText(source.contrato, 160),
-      operacao: cleanText(source.operacao, 160),
-      tsp: cleanText(source.tsp, 160),
-      placa: normalizePlate(source.placa),
-      motorista: cleanText(source.motorista, 160),
-      franquiaHora: cleanText(source.franquiaHora, 20),
-      franquiaKm: cleanText(source.franquiaKm, 20),
-      filledByUserId: userId,
-      filledByName: solicitante,
-      filledByEmail: email
-    }
-  };
-}
-
-// lib/email/smtp.ts
-var import_nodemailer = __toESM(require("nodemailer"), 1);
-var EMAIL_USER = process.env.EMAIL_USER || "adm@grupotmseg.com.br";
-var SMTP_FROM = '"Grupo TM SEG" <adm@grupotmseg.com.br>';
-var transporter = null;
-function getTransporter() {
-  if (transporter) return transporter;
-  const pass = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || "";
-  transporter = import_nodemailer.default.createTransport({
-    host: "smtp.office365.com",
-    port: 587,
-    secure: false,
-    auth: { user: EMAIL_USER, pass },
-    tls: { ciphers: "SSLv3", rejectUnauthorized: false },
-    requireTLS: true
-  });
-  return transporter;
-}
-async function sendMail(opts) {
-  return getTransporter().sendMail(opts);
-}
+// lib/cevaPortal/httpHandler.ts
+init_rules();
 
 // lib/cevaPortal/emailAcesso.ts
+init_smtp();
 function escapar(valor) {
   return valor.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
@@ -2990,6 +3788,13 @@ async function sendCevaPortalAccessEmail(input) {
 var contextoPortal = new import_node_async_hooks.AsyncLocalStorage();
 function cfg() {
   return contextoPortal.getStore() ?? PORTAL_CEVA;
+}
+function comDono(row) {
+  if (cfg().clientId == null) return row;
+  return { ...row, client_id: cfg().clientId };
+}
+function conflitoCatalogo() {
+  return cfg().clientId != null ? "client_id,campo,valor" : "campo,valor";
 }
 function tokenDoPortal(userId, now = Date.now()) {
   return `${cfg().tokenPrefix}-${userId}-${now}`;
@@ -3056,6 +3861,7 @@ async function lerUsuarioPortal(sb, filtro, comSenha) {
     let query = sb.from(cfg().tabelas.usuarios).select(colunas);
     if (filtro.id) query = query.eq("id", filtro.id);
     if (filtro.email) query = query.eq("email", filtro.email);
+    if (cfg().clientId != null) query = query.eq("client_id", cfg().clientId);
     return query.maybeSingle();
   };
   const completo = await consulta(`${base}, senha_alterada_em`);
@@ -3119,12 +3925,16 @@ function exigirUso(res, session) {
   return true;
 }
 async function existeAdministrador(sb) {
-  const { count, error } = await sb.from(cfg().tabelas.usuarios).select("id", { count: "exact", head: true }).eq("perfil", "administrador");
+  let query = sb.from(cfg().tabelas.usuarios).select("id", { count: "exact", head: true }).eq("perfil", "administrador");
+  if (cfg().clientId != null) query = query.eq("client_id", cfg().clientId);
+  const { count, error } = await query;
   if (error) throw error;
   return (count || 0) > 0;
 }
 async function outroAdministradorVivo(sb, id) {
-  const { count, error } = await sb.from(cfg().tabelas.usuarios).select("id", { count: "exact", head: true }).eq("perfil", "administrador").neq("status", "inativo").neq("id", id);
+  let query = sb.from(cfg().tabelas.usuarios).select("id", { count: "exact", head: true }).eq("perfil", "administrador").neq("status", "inativo").neq("id", id);
+  if (cfg().clientId != null) query = query.eq("client_id", cfg().clientId);
+  const { count, error } = await query;
   if (error) throw error;
   return (count || 0) > 0;
 }
@@ -3265,6 +4075,11 @@ function acessoNegado(error) {
   return row?.code === "42501" || String(row?.message || "").toLowerCase().includes("permission denied");
 }
 async function carregarClienteDoPortal(sb) {
+  if (cfg().clientId != null) {
+    const { data: data2, error: error2 } = await sb.from("clients").select("*").eq("id", cfg().clientId).maybeSingle();
+    if (error2) throw error2;
+    return data2;
+  }
   const busca = String(cfg().clienteBusca || "").trim();
   if (!busca) {
     const { data: data2, error: error2 } = await sb.from("clients").select("*").eq("name", cfg().clienteNome).maybeSingle();
@@ -3296,7 +4111,9 @@ async function loadCatalogo(sb) {
     operacao: [],
     tsp: []
   };
-  const { data, error } = await sb.from(cfg().tabelas.catalogo).select("campo, valor").order("valor");
+  let queryCatalogo = sb.from(cfg().tabelas.catalogo).select("campo, valor").order("valor");
+  if (cfg().clientId != null) queryCatalogo = queryCatalogo.eq("client_id", cfg().clientId);
+  const { data, error } = await queryCatalogo;
   if (error) throw error;
   const reverso = {
     solicitante: "solicitante",
@@ -3316,7 +4133,7 @@ async function gravarColuna(sb, missionId, campo, valor) {
   const coluna = COLUNA_CAMPO[campo];
   const { data: atual, error: leitura } = await sb.from(cfg().tabelas.osCampos).select("*").eq("mission_id", missionId).maybeSingle();
   if (leitura) throw leitura;
-  const payload = { ...atual || { mission_id: missionId }, [coluna]: valor, updated_at: (/* @__PURE__ */ new Date()).toISOString() };
+  const payload = comDono({ ...atual || { mission_id: missionId }, [coluna]: valor, updated_at: (/* @__PURE__ */ new Date()).toISOString() });
   delete payload.id;
   const { error } = await sb.from(cfg().tabelas.osCampos).upsert(payload, { onConflict: "mission_id" });
   if (error) throw error;
@@ -3324,6 +4141,7 @@ async function gravarColuna(sb, missionId, campo, valor) {
 }
 function hydrateSnapshot(mission, logSnapshot) {
   if (!logSnapshot || mission.snapshot_approved_by) return mission;
+  if (carimboRecalculoAutomatico(logSnapshot.approved_by)) return mission;
   return {
     ...mission,
     snapshot_data: logSnapshot,
@@ -3360,6 +4178,54 @@ function resolveOp(req) {
     return "pgr";
   }
   return head;
+}
+async function handleClientePortalHttp(req, res) {
+  res.setHeader?.("Cache-Control", "no-store");
+  const method = String(req.method || "GET").toUpperCase();
+  const op = resolveOp(req);
+  if (op === "marca-site" && method === "POST") {
+    const { responderMarcaSite: responderMarcaSite2 } = await Promise.resolve().then(() => (init_marcaSiteHttp(), marcaSiteHttp_exports));
+    await responderMarcaSite2(req, res);
+    return;
+  }
+  const slug = String(req.headers?.["x-portal-slug"] || req.query?.slug || "").trim().toLowerCase();
+  if (!slug) {
+    res.status(404).json({ error: "Portal n\xE3o encontrado." });
+    return;
+  }
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    res.status(503).json({ error: "Portal indispon\xEDvel." });
+    return;
+  }
+  const consulta = await sb.from("clients").select("id, name, trading_name, status, portal_ativo, portal_slug, portal_logo_url, portal_cor, portal_cor_acao").eq("portal_slug", slug).maybeSingle();
+  if (consulta.error) {
+    console.error("[portal-cliente] marca", consulta.error.message);
+    res.status(503).json({ error: "O cadastro do portal ainda n\xE3o est\xE1 no banco." });
+    return;
+  }
+  const cliente = consulta.data;
+  if (!cliente || cliente.portal_ativo !== true || String(cliente.status || "") !== "Ativo") {
+    res.status(404).json({ error: "Portal n\xE3o encontrado." });
+    return;
+  }
+  if (op === "marca" && method === "GET") {
+    res.status(200).json({
+      slug,
+      rotulo: String(cliente.trading_name || cliente.name || slug),
+      logo: cliente.portal_logo_url || "",
+      cor: cliente.portal_cor || "",
+      corAcao: cliente.portal_cor_acao || "",
+      caminho: `/${slug}`
+    });
+    return;
+  }
+  const portal = portalGenerico(cliente);
+  if (!portal) {
+    res.status(404).json({ error: "Portal n\xE3o encontrado." });
+    return;
+  }
+  return contextoPortal.run(portal, () => executarPortalHttp(req, res));
 }
 async function handleCevaPortalHttp(req, res) {
   return contextoPortal.run(PORTAL_CEVA, () => executarPortalHttp(req, res));
@@ -3404,10 +4270,16 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data: sistema, error: erroSistema } = await sb.from("system_users").select("id, name, email, password, status, client_id, provider_id, user_type, permissions").ilike("email", email).maybeSingle();
+      const colunasEquipe = "id, name, email, password, password_hash, status, client_id, provider_id, user_type, permissions";
+      let consultaEquipe = await sb.from("system_users").select(colunasEquipe).ilike("email", email).maybeSingle();
+      if (consultaEquipe.error && /password_hash/i.test(consultaEquipe.error.message || "")) {
+        consultaEquipe = await sb.from("system_users").select("id, name, email, password, status, client_id, provider_id, user_type, permissions").ilike("email", email).maybeSingle();
+      }
+      const sistema = consultaEquipe.data;
+      const erroSistema = consultaEquipe.error;
       if (erroSistema) {
         console.error(`[${cfg().logPrefix}] login equipe`, erroSistema.message || erroSistema);
-      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password)) {
+      } else if (sistema && ehEquipeInterna(sistema) && senhaEquipeConfere(senha, sistema.password, sistema.password_hash)) {
         clearFailures(key);
         const session2 = sessaoDaEquipe(sistema);
         res.status(200).json({ token: tokenDaEquipeInterna(cfg().tokenPrefix, sistema.id), user: session2 });
@@ -3542,7 +4414,9 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data, error } = await sb.from(cfg().tabelas.usuarios).select("id, nome, email, perfil, status, trocar_senha").order("nome");
+      let listaPessoas = sb.from(cfg().tabelas.usuarios).select("id, nome, email, perfil, status, trocar_senha");
+      if (cfg().clientId != null) listaPessoas = listaPessoas.eq("client_id", cfg().clientId);
+      const { data, error } = await listaPessoas.order("nome");
       if (error) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel carregar as pessoas." });
         return;
@@ -3589,7 +4463,7 @@ async function executarPortalHttp(req, res) {
       }
       const senhaTemporaria = gerarSenhaTemporaria();
       const criador = Number(session.id);
-      const novo = {
+      const novo = comDono({
         nome,
         email,
         perfil,
@@ -3598,7 +4472,7 @@ async function executarPortalHttp(req, res) {
         senha_hash: hashSenha(senhaTemporaria),
         senha_alterada_em: null,
         criado_por: session.equipeInterna || !Number.isInteger(criador) ? null : criador
-      };
+      });
       let { data, error } = await sb.from(cfg().tabelas.usuarios).insert(novo).select("id, nome, email, perfil, status, trocar_senha").single();
       if (colunaSenhaAlteradaAusente(error)) {
         const { senha_alterada_em: _ignorado, ...semData } = novo;
@@ -3661,7 +4535,9 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data: atual, error: leitura } = await sb.from(cfg().tabelas.usuarios).select("id, perfil, status, senha_hash").eq("id", id).maybeSingle();
+      let leituraPessoa = sb.from(cfg().tabelas.usuarios).select("id, perfil, status, senha_hash").eq("id", id);
+      if (cfg().clientId != null) leituraPessoa = leituraPessoa.eq("client_id", cfg().clientId);
+      const { data: atual, error: leitura } = await leituraPessoa.maybeSingle();
       if (leitura) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel alterar a pessoa." });
         return;
@@ -3676,7 +4552,9 @@ async function executarPortalHttp(req, res) {
         return;
       }
       const proximo = status === "inativo" ? "inativo" : atual.senha_hash ? "ativo" : "pendente";
-      const { data, error } = await sb.from(cfg().tabelas.usuarios).update({ status: proximo, atualizado_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id).select("id, nome, email, perfil, status").single();
+      let atualizaPessoa = sb.from(cfg().tabelas.usuarios).update({ status: proximo, atualizado_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id);
+      if (cfg().clientId != null) atualizaPessoa = atualizaPessoa.eq("client_id", cfg().clientId);
+      const { data, error } = await atualizaPessoa.select("id, nome, email, perfil, status").single();
       if (error || !data) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel alterar a pessoa." });
         return;
@@ -3808,7 +4686,19 @@ async function executarPortalHttp(req, res) {
             tsp: []
           };
         }
-        for (const item of items) aplicarCamposCliente(item, campos.get(`GTM-${item.os}`), servicoDoSistema2);
+        const porOs = new Map(missions.map((row) => [numeroOsDoBoletim2(row.id), row]));
+        for (const item of items) {
+          const salvo = campos.get(`GTM-${item.os}`);
+          aplicarCamposCliente(item, salvo, servicoDoSistema2);
+          const mission = porOs.get(item.os);
+          const linha = item;
+          linha.telefone = String(mission?.driver_phone || "").trim() || null;
+          linha.identificacao = String(mission?.reference_number || "").trim() || null;
+          if (!item.placa && salvo?.placa) item.placa = String(salvo.placa);
+          if (!item.local && mission?.origin && mission?.destination) {
+            item.local = `${mission.origin} x ${mission.destination}`;
+          }
+        }
         res.status(200).json({
           periodo: "2026-01-01",
           total: items.length,
@@ -3858,26 +4748,28 @@ async function executarPortalHttp(req, res) {
       }
       try {
         if (campo === "atendimentoPgr") {
-          const texto3 = textoPgr2(valor);
-          const atual = await gravarColuna(sb, missionId, "atendimentoPgr", texto3 || null);
+          const texto4 = textoPgr2(valor);
+          const atual = await gravarColuna(sb, missionId, "atendimentoPgr", texto4 || null);
           const anterior = atual?.atendimento_pgr ?? null;
-          if ((anterior || "") !== texto3) {
-            const { error: histError } = await sb.from(cfg().tabelas.pgrHistorico).insert({
+          if ((anterior || "") !== texto4) {
+            const { error: histError } = await sb.from(cfg().tabelas.pgrHistorico).insert(comDono({
               mission_id: missionId,
-              valor: texto3,
+              valor: texto4,
               valor_anterior: anterior,
               alterado_por: session?.name || `Portal ${cfg().rotulo}`
-            });
+            }));
             if (histError) throw histError;
           }
-          res.status(200).json({ valor: texto3 || null });
+          res.status(200).json({ valor: texto4 || null });
           return;
         }
         if (!ehCampoFiltro2(campo)) {
           res.status(400).json({ error: "Campo inv\xE1lido." });
           return;
         }
-        const { data: linhas, error: catError } = await sb.from(cfg().tabelas.catalogo).select("valor").eq("campo", CATALOGO_CAMPO[campo]);
+        let leituraCatalogo = sb.from(cfg().tabelas.catalogo).select("valor").eq("campo", CATALOGO_CAMPO[campo]);
+        if (cfg().clientId != null) leituraCatalogo = leituraCatalogo.eq("client_id", cfg().clientId);
+        const { data: linhas, error: catError } = await leituraCatalogo;
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao2(campo, valor, catalogo);
@@ -3892,8 +4784,8 @@ async function executarPortalHttp(req, res) {
         const gravar = decisao.acao === "limpar" ? null : decisao.acao === "aplicar" ? decisao.valor : decisao.nome;
         if (decisao.acao === "confirmar") {
           const { error: novoError } = await sb.from(cfg().tabelas.catalogo).upsert(
-            { campo: CATALOGO_CAMPO[campo], valor: decisao.nome },
-            { onConflict: "campo,valor", ignoreDuplicates: true }
+            comDono({ campo: CATALOGO_CAMPO[campo], valor: decisao.nome }),
+            { onConflict: conflitoCatalogo(), ignoreDuplicates: true }
           );
           if (novoError) throw novoError;
         }
@@ -3926,7 +4818,9 @@ async function executarPortalHttp(req, res) {
       }
       try {
         const { decidirGravacao: decidirGravacao2 } = await Promise.resolve().then(() => (init_camposCliente(), camposCliente_exports));
-        const { data: linhas, error: catError } = await sb.from(cfg().tabelas.catalogo).select("valor").eq("campo", CATALOGO_CAMPO[campo]);
+        let leituraCatalogo = sb.from(cfg().tabelas.catalogo).select("valor").eq("campo", CATALOGO_CAMPO[campo]);
+        if (cfg().clientId != null) leituraCatalogo = leituraCatalogo.eq("client_id", cfg().clientId);
+        const { data: linhas, error: catError } = await leituraCatalogo;
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao2(campo, String(body?.valor ?? ""), catalogo);
@@ -3941,8 +4835,8 @@ async function executarPortalHttp(req, res) {
         const nome = decisao.acao === "aplicar" ? decisao.valor : decisao.nome;
         if (decisao.acao === "confirmar") {
           const { error: novoError } = await sb.from(cfg().tabelas.catalogo).upsert(
-            { campo: CATALOGO_CAMPO[campo], valor: nome },
-            { onConflict: "campo,valor", ignoreDuplicates: true }
+            comDono({ campo: CATALOGO_CAMPO[campo], valor: nome }),
+            { onConflict: conflitoCatalogo(), ignoreDuplicates: true }
           );
           if (novoError) throw novoError;
         }
@@ -4036,7 +4930,9 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data, error } = await sb.from(cfg().tabelas.solicitacoes).select("id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at").order("created_at", { ascending: false }).limit(200);
+      let lista = sb.from(cfg().tabelas.solicitacoes).select("id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at");
+      if (cfg().clientId != null) lista = lista.eq("client_id", cfg().clientId);
+      const { data, error } = await lista.order("created_at", { ascending: false }).limit(200);
       if (error) {
         console.error(`[${cfg().logPrefix}] list`, error.message);
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel carregar as solicita\xE7\xF5es." });
@@ -4046,15 +4942,10 @@ async function executarPortalHttp(req, res) {
       return;
     }
     if (op === "solicitacoes" && method === "POST") {
-      let session = null;
-      if (CEVA_PORTAL_LOGIN_ENABLED) {
-        session = await portalSession(req);
-        if (!session) {
-          res.status(401).json({ error: "Sess\xE3o expirada. Entre novamente." });
-          return;
-        }
-      }
-      const draft = buildCevaSolicitacao(session, body);
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const { validarPedidoPortal: validarPedidoPortal2 } = await Promise.resolve().then(() => (init_pedido(), pedido_exports));
+      const draft = validarPedidoPortal2(body, session.name);
       if (!draft.ok) {
         res.status(400).json({ error: draft.error });
         return;
@@ -4064,31 +4955,27 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const value = draft.value;
-      const { data, error } = await sb.from(cfg().tabelas.solicitacoes).insert({
-        data_inicio: value.dataInicio,
-        data_fim: value.dataFim,
-        solicitante: value.solicitante,
-        quem_autorizou: value.quemAutorizou,
-        servico: value.servico,
-        atendimento_pgr: value.atendimentoPgr,
-        contrato: value.contrato,
-        operacao: value.operacao,
-        tsp: value.tsp,
-        placa: value.placa,
-        motorista: value.motorista,
-        franquia_hora: value.franquiaHora,
-        franquia_km: value.franquiaKm,
-        filled_by_user_id: value.filledByUserId,
-        filled_by_name: value.filledByName,
-        filled_by_email: value.filledByEmail
-      }).select("id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at").single();
-      if (error || !data) {
-        console.error(`[${cfg().logPrefix}] insert`, error?.message);
-        res.status(500).json({ error: "N\xE3o foi poss\xEDvel registrar a solicita\xE7\xE3o." });
+      const cliente = await carregarClienteDoPortal(sb);
+      if (!cliente?.name) {
+        res.status(503).json({ error: `Cliente ${cfg().rotulo} n\xE3o encontrado.` });
         return;
       }
-      res.status(201).json({ item: rowToJson(data) });
+      try {
+        const { registrarSolicitacaoPortal: registrarSolicitacaoPortal2 } = await Promise.resolve().then(() => (init_registrarOs(), registrarOs_exports));
+        const criado = await registrarSolicitacaoPortal2(sb, cfg(), draft.value, {
+          id: session.id,
+          email: session.email
+        }, cliente.operational_email, Number(cliente.id) || null);
+        res.status(201).json({
+          os: criado.os,
+          emailEnviado: criado.emailEnviado,
+          status: "Solicitada"
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "falha";
+        console.error(`[${cfg().logPrefix}] solicita\xE7\xE3o`, message);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel registrar a solicita\xE7\xE3o." });
+      }
       return;
     }
     res.status(404).json({ error: `Rota do portal ${cfg().rotulo} n\xE3o encontrada.` });
@@ -4103,5 +4990,6 @@ async function executarPortalHttp(req, res) {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   handleCevaPortalHttp,
+  handleClientePortalHttp,
   handleIblPortalHttp
 });

@@ -14,6 +14,8 @@ export const CABECALHOS_CONTROLE = [
   'TSP',
   'Placa',
   'Motorista',
+  'Telefone',
+  'Controle Interno da OS',
   'Franquia hora',
   'Franquia km',
   'Km início',
@@ -49,6 +51,8 @@ export type LinhaControleExportavel = {
   tsp: string | null;
   placa: string | null;
   motorista: string | null;
+  telefone?: string | null;
+  identificacao?: string | null;
   franquiaHora: string | null;
   franquiaKm: number | null;
   kmInicio: number | null;
@@ -138,6 +142,8 @@ export function linhaControleExportavel(item: LinhaControleExportavel, numero: n
     texto(item.tsp),
     texto(item.placa),
     texto(item.motorista),
+    texto(item.telefone || null),
+    texto(item.identificacao || null),
     texto(item.franquiaHora),
     quantidade(item.franquiaKm),
     sistema(item.kmInicio, quantidade(item.kmInicio)),

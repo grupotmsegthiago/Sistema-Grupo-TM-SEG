@@ -25,7 +25,10 @@ export function registerCevaPortalRoutes(app: Express): void {
   app.get('/api/ceva-portal/ao-vivo', withOp('ao-vivo'));
   app.get('/api/ceva-portal/relatorio', withOp('relatorio'));
   app.post('/api/ceva-portal/campos', withOp('campos'));
+  app.get('/api/ceva-portal/catalogo', withOp('catalogo'));
+  app.get('/api/ceva-portal/frota', withOp('frota'));
   app.post('/api/ceva-portal/catalogo', withOp('catalogo'));
+  app.delete('/api/ceva-portal/catalogo', withOp('catalogo'));
   app.get('/api/ceva-portal/status', withOp('status'));
   app.get('/api/ceva-portal/pgr/:os', async (req, res) => {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pgr', os: String(req.params.os || '') });

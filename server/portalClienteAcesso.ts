@@ -4,7 +4,7 @@ import { createSupabaseAdminClient } from './supabaseConfig';
 import { emailDeAcesso, nomeDeAcesso, perfilDeAcesso } from '../lib/cevaPortal/acesso';
 import { perfilPortalDasPermissoes } from '../lib/cevaPortal/regrasAcesso';
 import { sincronizarAcessoPortal } from '../lib/cevaPortal/cadastroSistema';
-import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
+import { portalDaFicha } from '../lib/cevaPortal/portalServidor';
 
 function idDoTokenInterno(token: string): string | null {
   return usuarioIdDoToken(token);
@@ -66,12 +66,20 @@ export function registerPortalClienteAcesso(app: Express): void {
       }
     }
 
-    const { data: cliente, error: erroCliente } = await sb.from('clients').select('id, name').eq('id', clientId).maybeSingle();
-    if (erroCliente || !cliente?.name) {
+    let consultaCliente = await sb
+      .from('clients')
+      .select('id, name, trading_name, portal_ativo, portal_slug')
+      .eq('id', clientId)
+      .maybeSingle();
+    if (consultaCliente.error && /portal_/i.test(consultaCliente.error.message || '')) {
+      consultaCliente = await sb.from('clients').select('id, name').eq('id', clientId).maybeSingle();
+    }
+    const cliente = consultaCliente.data;
+    if (consultaCliente.error || !cliente?.name) {
       res.status(404).json({ error: 'Cliente não encontrado.' });
       return;
     }
-    const portal = portalPorNomeCliente(cliente.name);
+    const portal = portalDaFicha(cliente);
     if (!portal) {
       res.status(400).json({ error: 'Este cliente não tem portal.' });
       return;

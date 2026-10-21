@@ -62,3 +62,24 @@ export function avisoInclusaoAdmin(campo: CampoFiltro): string {
   if (campo === 'operacao') return 'Só o administrador inclui uma operação nova.';
   return 'Só o administrador inclui esse nome.';
 }
+
+/** Listas da solicitação. O mesmo catálogo do controle. A lixeira é só do administrador. */
+export const CAMPOS_LISTA_SOLICITACAO = ['operacao', 'quemAutorizou', 'contrato', 'tsp', 'atendimentoPgr'] as const;
+export type CampoListaSolicitacao = (typeof CAMPOS_LISTA_SOLICITACAO)[number];
+
+export const COLUNA_LISTA_SOLICITACAO: Record<CampoListaSolicitacao, string> = {
+  operacao: 'operacao',
+  quemAutorizou: 'quem_autorizou',
+  contrato: 'contrato',
+  tsp: 'tsp',
+  atendimentoPgr: 'atendimento_pgr',
+};
+
+export function ehCampoLista(campo: string): campo is CampoListaSolicitacao {
+  return (CAMPOS_LISTA_SOLICITACAO as readonly string[]).includes(campo);
+}
+
+/** Nome da lista, no mesmo critério de operação e TSP. Serviço fixo não entra aqui. */
+export function decidirNomeCatalogo(valor: string, catalogo: string[]): DecisaoCampo {
+  return decidirGravacao('operacao', valor, catalogo);
+}

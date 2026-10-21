@@ -61,6 +61,9 @@ import PublicAgentRegistration from './components/PublicAgentRegistration';
 import DhlSupplierIntake from './components/DhlSupplierIntake';
 import CevaPortal from './components/CevaPortal';
 import IblPortal from './components/IblPortal';
+import PortalClientePagina from './components/PortalClientePagina';
+import AlertaSolicitacaoPortal from './components/AlertaSolicitacaoPortal';
+import { slugDeCaminho } from './lib/portalCliente/slug';
 import PublicLiveTrack from './components/PublicLiveTrack';
 import MapaViaturasPublico from './components/MapaViaturasPublico';
 import SupportMapFinder from './components/SupportMapFinder'; 
@@ -181,6 +184,7 @@ const App: React.FC = () => {
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
   const isCevaPortalRoute = normalizedPath === '/ceva';
   const isIblPortalRoute = normalizedPath === '/ibl';
+  const slugPortal = slugDeCaminho(normalizedPath);
   const isPortalExternoRoute = isCevaPortalRoute || isIblPortalRoute;
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
@@ -549,6 +553,7 @@ const App: React.FC = () => {
   if (isViaturasMapaRoute) { return <MapaViaturasPublico />; }
   if (isIblPortalRoute) { return <IblPortal />; }
   if (isCevaPortalRoute) { return <CevaPortal />; }
+  if (slugPortal) { return <PortalClientePagina slug={slugPortal} />; }
 
   if (isResetPasswordRoute && resetToken) {
     return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;
@@ -787,6 +792,7 @@ const App: React.FC = () => {
         <PushNotificationManager />
         <PresenceDebugPanel />
         {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <><MissionAlertMonitor /><EvidenceStartAlert /></>}
+        {isAuthenticated && <AlertaSolicitacaoPortal />}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <VeladaClosureAlert />}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlCopiaAoVivo />}
         {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlViaturaNovaAlerta />}

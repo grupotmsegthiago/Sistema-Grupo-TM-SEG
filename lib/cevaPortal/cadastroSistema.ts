@@ -138,7 +138,9 @@ export async function sincronizarAcessoPortal(
     return { ok: false, status: 403, error: 'O usuário não pertence a este cliente.' };
   }
 
-  const leitura = await sb.from(input.tabela).select('id, senha_hash').eq('email', input.email).maybeSingle();
+  let leituraQuery = sb.from(input.tabela).select('id, senha_hash').eq('email', input.email);
+  if (input.tabela === 'portal_cliente_usuarios') leituraQuery = leituraQuery.eq('client_id', input.clientId);
+  const leitura = await leituraQuery.maybeSingle();
   if (leitura.error) return { ok: false, status: 500, error: 'Não foi possível ler o acesso do portal.' };
   const atual = leitura.data as { id: number | string; senha_hash?: string | null } | null;
   const preservar = preservarSenhaPortal(atual?.senha_hash);
@@ -162,6 +164,7 @@ export async function sincronizarAcessoPortal(
     atualizado_em: new Date().toISOString(),
   };
   if (!atual) campos.email = input.email;
+  if (input.tabela === 'portal_cliente_usuarios') campos.client_id = input.clientId;
   if (input.acesso && !preservar) {
     campos.senha_hash = hashSenha(input.senha);
     campos.trocar_senha = true;

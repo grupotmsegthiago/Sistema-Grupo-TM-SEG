@@ -89,7 +89,7 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
         return;
       }
       if (!response.ok) throw new Error(data.error || 'Não foi possível liberar o acesso.');
-      const link = `${window.location.origin}/${portal.marca.id}`;
+      const link = `${window.location.origin}${portal.marca.caminho || `/${portal.marca.id}`}`;
       const texto = typeof data.mensagem === 'string' && data.mensagem
         ? data.mensagem
         : mensagemAcessoPortal({

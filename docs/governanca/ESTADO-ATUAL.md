@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-19, na etapa 1 do Gestor Fiscal. Este arquivo é a memória curta. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-21, portal do cliente na working tree da `dev`. Não publicado. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
 
 | Campo | Valor |
 | --- | --- |
@@ -26,6 +26,18 @@ Atualizado em 2026-10-19, na etapa 1 do Gestor Fiscal. Este arquivo é a memóri
 ## Versionamento
 
 A PR #346 já está na `main` como `7676ea63`. O Gestor Fiscal está na branch local `cursor/gestor-fiscal-9d36`, sem push, sem merge e sem deploy. A `dev` não foi sincronizada.
+
+## Portal do cliente (21/10/2026, não publicado)
+
+- Working tree da `dev`, sem commit. CEVA continua em `/ceva`. IBL continua em `/ibl` e é o modelo dos demais.
+- No cadastro da empresa, “Portal do cliente” publica `/{slug}`. O login de cada pessoa continua no cadastro de usuário.
+- Solicitação no portal abre OS `Solicitada`, sem fornecedor e sem preço. E-mail para `operacional@grupotmseg.com.br` e para os e-mails operacionais do cliente. Alerta interno para operador, avançado, administrador e diretoria.
+- Migration `migrations/2026_10_21_portal_cliente.sql` **não foi aplicada**. Sem ela o slug novo responde que o cadastro ainda não está no banco.
+- O pedido é o mesmo formulário em cada portal: `/ceva`, `/ibl` e `/{slug}`. A CEVA mantém os campos exclusivos. A escolha é Escolta Caracterizada ou Escolta Velada. Na velada, a pessoa informa 1 ou 2 agentes.
+- A solicitação mostra a coluna de etapas à esquerda e a barra azul de percentual no topo. O controle interno da OS é opcional. Sem a operação, a próxima etapa fica fechada e a tela diz qual dado falta. No localhost, se a lista não gravar, o nome entra só naquela solicitação e o formulário segue.
+- O telefone só aparece depois que o motorista é escolhido na lista, e some se o nome mudar.
+- A OS da solicitação nasce com o nome oficial do cadastro. Portal da CEVA grava `CEVA LOGISTICS LTDA`. IBL grava `INTERMODAL BRASIL LOGISTICA S.A.`. Os demais gravam o nome do próprio cliente.
+- Na solicitação, operação, quem autorizou, contrato, TSP e atendimento PGR saem da lista do controle. O + cadastra. A lixeira é do administrador do portal. Franquia de hora e de km não entram no pedido. Dá para abrir até 20 OS iguais. O SQL `migrations/2026_10_21_portal_catalogo_pgr.sql` libera a lista de PGR e **não foi aplicado**.
 
 ## Pendências
 

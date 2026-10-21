@@ -5,7 +5,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { carimboRecalculoAutomatico } from '../missionSnapshot.js';
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
-import { PORTAL_CEVA, PORTAL_IBL, type PortalServidor } from './portalServidor.js';
+import { PORTAL_CEVA, PORTAL_IBL, portalGenerico, type PortalServidor } from './portalServidor.js';
 import {
   emailDeAcesso,
   gerarSenhaTemporaria,
@@ -27,7 +27,6 @@ import {
 import { alinharStatusCadastroPortal, colunaSenhaAlteradaAusente, vincularCadastroCliente } from './cadastroSistema.js';
 import { ehEquipeInterna, origemDoTokenPortal, senhaEquipeConfere, tokenDaEquipeInterna } from './equipeInterna.js';
 import {
-  buildCevaSolicitacao,
   CEVA_PORTAL_LOGIN_ENABLED,
   type CevaPortalSession,
 } from './rules.js';
@@ -42,6 +41,15 @@ const contextoPortal = new AsyncLocalStorage<PortalServidor>();
 
 function cfg(): PortalServidor {
   return contextoPortal.getStore() ?? PORTAL_CEVA;
+}
+
+function comDono<T extends Record<string, unknown>>(row: T): T {
+  if (cfg().clientId == null) return row;
+  return { ...row, client_id: cfg().clientId };
+}
+
+function conflitoCatalogo(): string {
+  return cfg().clientId != null ? 'client_id,campo,valor' : 'campo,valor';
 }
 
 function tokenDoPortal(userId: string | number, now = Date.now()): string {
@@ -131,6 +139,7 @@ async function lerUsuarioPortal(
     let query = sb.from(cfg().tabelas.usuarios).select(colunas);
     if (filtro.id) query = query.eq('id', filtro.id);
     if (filtro.email) query = query.eq('email', filtro.email);
+    if (cfg().clientId != null) query = query.eq('client_id', cfg().clientId);
     return query.maybeSingle();
   };
   const completo = await consulta(`${base}, senha_alterada_em`);
@@ -209,21 +218,25 @@ function exigirUso(res: any, session: PortalUser | null): session is PortalUser 
 }
 
 async function existeAdministrador(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>): Promise<boolean> {
-  const { count, error } = await sb
+  let query = sb
     .from(cfg().tabelas.usuarios)
     .select('id', { count: 'exact', head: true })
     .eq('perfil', 'administrador');
+  if (cfg().clientId != null) query = query.eq('client_id', cfg().clientId);
+  const { count, error } = await query;
   if (error) throw error;
   return (count || 0) > 0;
 }
 
 async function outroAdministradorVivo(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>, id: number): Promise<boolean> {
-  const { count, error } = await sb
+  let query = sb
     .from(cfg().tabelas.usuarios)
     .select('id', { count: 'exact', head: true })
     .eq('perfil', 'administrador')
     .neq('status', 'inativo')
     .neq('id', id);
+  if (cfg().clientId != null) query = query.eq('client_id', cfg().clientId);
+  const { count, error } = await query;
   if (error) throw error;
   return (count || 0) > 0;
 }
@@ -391,6 +404,11 @@ function acessoNegado(error: unknown): boolean {
 
 /** Nome oficial em clients. A IBL entra como Intermodal; a CEVA continua pelo nome exato. */
 async function carregarClienteDoPortal(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>) {
+  if (cfg().clientId != null) {
+    const { data, error } = await sb.from('clients').select('*').eq('id', cfg().clientId).maybeSingle();
+    if (error) throw error;
+    return data;
+  }
   const busca = String(cfg().clienteBusca || '').trim();
   if (!busca) {
     const { data, error } = await sb.from('clients').select('*').eq('name', cfg().clienteNome).maybeSingle();
@@ -416,23 +434,27 @@ async function loadCamposCliente(sb: NonNullable<ReturnType<typeof createSupabas
 }
 
 async function loadCatalogo(sb: NonNullable<ReturnType<typeof createSupabaseAdminClient>>) {
-  const catalogo: Record<CampoFiltro, string[]> = {
+  const catalogo: Record<CampoFiltro, string[]> & { atendimentoPgr: string[] } = {
     solicitante: [],
     quemAutorizou: [],
     servico: [],
     contrato: [],
     operacao: [],
     tsp: [],
+    atendimentoPgr: [],
   };
-  const { data, error } = await sb.from(cfg().tabelas.catalogo).select('campo, valor').order('valor');
+  let queryCatalogo = sb.from(cfg().tabelas.catalogo).select('campo, valor').order('valor');
+  if (cfg().clientId != null) queryCatalogo = queryCatalogo.eq('client_id', cfg().clientId);
+  const { data, error } = await queryCatalogo;
   if (error) throw error;
-  const reverso: Record<string, CampoFiltro> = {
+  const reverso: Record<string, keyof typeof catalogo> = {
     solicitante: 'solicitante',
     quem_autorizou: 'quemAutorizou',
     servico: 'servico',
     contrato: 'contrato',
     operacao: 'operacao',
     tsp: 'tsp',
+    atendimento_pgr: 'atendimentoPgr',
   };
   for (const row of data || []) {
     const campo = reverso[String(row.campo)];
@@ -445,7 +467,7 @@ async function gravarColuna(sb: NonNullable<ReturnType<typeof createSupabaseAdmi
   const coluna = COLUNA_CAMPO[campo];
   const { data: atual, error: leitura } = await sb.from(cfg().tabelas.osCampos).select('*').eq('mission_id', missionId).maybeSingle();
   if (leitura) throw leitura;
-  const payload = { ...(atual || { mission_id: missionId }), [coluna]: valor, updated_at: new Date().toISOString() };
+  const payload = comDono({ ...(atual || { mission_id: missionId }), [coluna]: valor, updated_at: new Date().toISOString() });
   delete payload.id;
   const { error } = await sb.from(cfg().tabelas.osCampos).upsert(payload, { onConflict: 'mission_id' });
   if (error) throw error;
@@ -495,6 +517,60 @@ function resolveOp(req: any): string {
     return 'pgr';
   }
   return head;
+}
+
+/** Entrada do portal genérico. A página usa o slug; a API reaproveita o handler da IBL. */
+export async function handleClientePortalHttp(req: any, res: any): Promise<void> {
+  res.setHeader?.('Cache-Control', 'no-store');
+  const method = String(req.method || 'GET').toUpperCase();
+  const op = resolveOp(req);
+  if (op === 'marca-site' && method === 'POST') {
+    const { responderMarcaSite } = await import('../portalCliente/marcaSiteHttp.js');
+    await responderMarcaSite(req, res);
+    return;
+  }
+  const slug = String(req.headers?.['x-portal-slug'] || req.query?.slug || '').trim().toLowerCase();
+  if (!slug) {
+    res.status(404).json({ error: 'Portal não encontrado.' });
+    return;
+  }
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    res.status(503).json({ error: 'Portal indisponível.' });
+    return;
+  }
+  const consulta = await sb
+    .from('clients')
+    .select('id, name, trading_name, status, portal_ativo, portal_slug, portal_logo_url, portal_cor, portal_cor_acao')
+    .eq('portal_slug', slug)
+    .maybeSingle();
+  if (consulta.error) {
+    console.error('[portal-cliente] marca', consulta.error.message);
+    res.status(503).json({ error: 'O cadastro do portal ainda não está no banco.' });
+    return;
+  }
+  const cliente = consulta.data;
+  if (!cliente || cliente.portal_ativo !== true || String(cliente.status || '') !== 'Ativo') {
+    res.status(404).json({ error: 'Portal não encontrado.' });
+    return;
+  }
+  if (op === 'marca' && method === 'GET') {
+    res.status(200).json({
+      slug,
+      rotulo: String(cliente.trading_name || cliente.name || slug),
+      logo: cliente.portal_logo_url || '',
+      cor: cliente.portal_cor || '',
+      corAcao: cliente.portal_cor_acao || '',
+      caminho: `/${slug}`,
+    });
+    return;
+  }
+  const portal = portalGenerico(cliente);
+  if (!portal) {
+    res.status(404).json({ error: 'Portal não encontrado.' });
+    return;
+  }
+  return contextoPortal.run(portal, () => executarPortalHttp(req, res));
 }
 
 /** Entrada única do portal CEVA (Vercel leve + Express local). */
@@ -702,10 +778,11 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data, error } = await sb
+      let listaPessoas = sb
         .from(cfg().tabelas.usuarios)
-        .select('id, nome, email, perfil, status, trocar_senha')
-        .order('nome');
+        .select('id, nome, email, perfil, status, trocar_senha');
+      if (cfg().clientId != null) listaPessoas = listaPessoas.eq('client_id', cfg().clientId);
+      const { data, error } = await listaPessoas.order('nome');
       if (error) {
         res.status(500).json({ error: 'Não foi possível carregar as pessoas.' });
         return;
@@ -753,7 +830,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       }
       const senhaTemporaria = gerarSenhaTemporaria();
       const criador = Number(session.id);
-      const novo = {
+      const novo = comDono({
         nome,
         email,
         perfil,
@@ -762,7 +839,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         senha_hash: hashSenha(senhaTemporaria),
         senha_alterada_em: null,
         criado_por: session.equipeInterna || !Number.isInteger(criador) ? null : criador,
-      };
+      });
       let { data, error } = await sb.from(cfg().tabelas.usuarios).insert(novo).select('id, nome, email, perfil, status, trocar_senha').single();
       if (colunaSenhaAlteradaAusente(error)) {
         const { senha_alterada_em: _ignorado, ...semData } = novo;
@@ -826,11 +903,12 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data: atual, error: leitura } = await sb
+      let leituraPessoa = sb
         .from(cfg().tabelas.usuarios)
         .select('id, perfil, status, senha_hash')
-        .eq('id', id)
-        .maybeSingle();
+        .eq('id', id);
+      if (cfg().clientId != null) leituraPessoa = leituraPessoa.eq('client_id', cfg().clientId);
+      const { data: atual, error: leitura } = await leituraPessoa.maybeSingle();
       if (leitura) {
         res.status(500).json({ error: 'Não foi possível alterar a pessoa.' });
         return;
@@ -845,10 +923,12 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       const proximo = status === 'inativo' ? 'inativo' : atual.senha_hash ? 'ativo' : 'pendente';
-      const { data, error } = await sb
+      let atualizaPessoa = sb
         .from(cfg().tabelas.usuarios)
         .update({ status: proximo, atualizado_em: new Date().toISOString() })
-        .eq('id', id)
+        .eq('id', id);
+      if (cfg().clientId != null) atualizaPessoa = atualizaPessoa.eq('client_id', cfg().clientId);
+      const { data, error } = await atualizaPessoa
         .select('id, nome, email, perfil, status')
         .single();
       if (error || !data) {
@@ -994,9 +1074,22 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
             contrato: [],
             operacao: [],
             tsp: [],
+            atendimentoPgr: [],
           };
         }
-        for (const item of items) aplicarCamposCliente(item, campos.get(`GTM-${item.os}`), servicoDoSistema);
+        const porOs = new Map(missions.map((row) => [numeroOsDoBoletim(row.id), row]));
+        for (const item of items) {
+          const salvo = campos.get(`GTM-${item.os}`);
+          aplicarCamposCliente(item, salvo, servicoDoSistema);
+          const mission = porOs.get(item.os) as { driver_phone?: string | null; reference_number?: string | null; origin?: string | null; destination?: string | null } | undefined;
+          const linha = item as typeof item & { telefone?: string | null; identificacao?: string | null };
+          linha.telefone = String(mission?.driver_phone || '').trim() || null;
+          linha.identificacao = String(mission?.reference_number || '').trim() || null;
+          if (!item.placa && salvo?.placa) item.placa = String(salvo.placa);
+          if (!item.local && mission?.origin && mission?.destination) {
+            item.local = `${mission.origin} x ${mission.destination}`;
+          }
+        }
 
         res.status(200).json({
           periodo: '2026-01-01',
@@ -1059,12 +1152,12 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           const atual = await gravarColuna(sb, missionId, 'atendimentoPgr', texto || null);
           const anterior = atual?.atendimento_pgr ?? null;
           if ((anterior || '') !== texto) {
-            const { error: histError } = await sb.from(cfg().tabelas.pgrHistorico).insert({
+            const { error: histError } = await sb.from(cfg().tabelas.pgrHistorico).insert(comDono({
               mission_id: missionId,
               valor: texto,
               valor_anterior: anterior,
               alterado_por: session?.name || `Portal ${cfg().rotulo}`,
-            });
+            }));
             if (histError) throw histError;
           }
           res.status(200).json({ valor: texto || null });
@@ -1074,7 +1167,9 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           res.status(400).json({ error: 'Campo inválido.' });
           return;
         }
-        const { data: linhas, error: catError } = await sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', CATALOGO_CAMPO[campo]);
+        let leituraCatalogo = sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', CATALOGO_CAMPO[campo]);
+        if (cfg().clientId != null) leituraCatalogo = leituraCatalogo.eq('client_id', cfg().clientId);
+        const { data: linhas, error: catError } = await leituraCatalogo;
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
         const decisao = decidirGravacao(campo, valor, catalogo);
@@ -1089,8 +1184,8 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         const gravar = decisao.acao === 'limpar' ? null : decisao.acao === 'aplicar' ? decisao.valor : decisao.nome;
         if (decisao.acao === 'confirmar') {
           const { error: novoError } = await sb.from(cfg().tabelas.catalogo).upsert(
-            { campo: CATALOGO_CAMPO[campo], valor: decisao.nome },
-            { onConflict: 'campo,valor', ignoreDuplicates: true },
+            comDono({ campo: CATALOGO_CAMPO[campo], valor: decisao.nome }),
+            { onConflict: conflitoCatalogo(), ignoreDuplicates: true },
           );
           if (novoError) throw novoError;
         }
@@ -1104,16 +1199,58 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       return;
     }
 
+    if (op === 'frota' && method === 'GET') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Portal indisponível.' });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        if (!cliente?.id || !cliente?.name) {
+          res.status(503).json({ error: `Cliente ${cfg().rotulo} não encontrado.` });
+          return;
+        }
+        const nomes = [String(cliente.name).trim()];
+        const fantasia = String(cliente.trading_name || '').trim();
+        if (fantasia && fantasia !== nomes[0]) nomes.push(fantasia);
+        const { listarFrotaPortal } = await import('../portalCliente/frota.js');
+        const frota = await listarFrotaPortal(sb, nomes, Number(cliente.id));
+        res.status(200).json(frota);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] frota`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível carregar motoristas e veículos.' });
+      }
+      return;
+    }
+
+    if (op === 'catalogo' && method === 'GET') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Portal indisponível.' });
+        return;
+      }
+      try {
+        const catalogo = await loadCatalogo(sb);
+        res.status(200).json({ catalogo });
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] catalogo`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível carregar as listas.' });
+      }
+      return;
+    }
+
     if (op === 'catalogo' && method === 'POST') {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
-      if (session.perfil !== 'administrador') {
-        res.status(403).json({ error: 'Só o administrador inclui operação ou TSP nova.' });
-        return;
-      }
+      const { COLUNA_LISTA_SOLICITACAO, decidirNomeCatalogo, ehCampoLista } = await import('./camposCliente.js');
       const campo = String(body?.campo || '');
-      if (campo !== 'operacao' && campo !== 'tsp') {
-        res.status(400).json({ error: 'Informe operação ou TSP.' });
+      if (!ehCampoLista(campo)) {
+        res.status(400).json({ error: 'Informe a lista: operação, quem autorizou, contrato, TSP ou atendimento PGR.' });
         return;
       }
       const confirmarNovo = body?.confirmarNovo === true;
@@ -1123,11 +1260,13 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         return;
       }
       try {
-        const { decidirGravacao } = await import('./camposCliente.js');
-        const { data: linhas, error: catError } = await sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', CATALOGO_CAMPO[campo]);
+        const coluna = COLUNA_LISTA_SOLICITACAO[campo];
+        let leituraCatalogo = sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', coluna);
+        if (cfg().clientId != null) leituraCatalogo = leituraCatalogo.eq('client_id', cfg().clientId);
+        const { data: linhas, error: catError } = await leituraCatalogo;
         if (catError) throw catError;
         const catalogo = (linhas || []).map((row) => String(row.valor));
-        const decisao = decidirGravacao(campo, String(body?.valor ?? ''), catalogo);
+        const decisao = decidirNomeCatalogo(String(body?.valor ?? ''), catalogo);
         if (decisao.acao === 'limpar') {
           res.status(400).json({ error: 'Informe o nome.' });
           return;
@@ -1139,15 +1278,64 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         const nome = decisao.acao === 'aplicar' ? decisao.valor : decisao.nome;
         if (decisao.acao === 'confirmar') {
           const { error: novoError } = await sb.from(cfg().tabelas.catalogo).upsert(
-            { campo: CATALOGO_CAMPO[campo], valor: nome },
-            { onConflict: 'campo,valor', ignoreDuplicates: true },
+            comDono({ campo: coluna, valor: nome }),
+            { onConflict: conflitoCatalogo(), ignoreDuplicates: true },
           );
           if (novoError) throw novoError;
         }
         res.status(200).json({ valor: nome });
       } catch (error) {
+        const mensagem = error instanceof Error ? error.message : String(error);
+        console.error(`[${cfg().logPrefix}] catalogo`, mensagem);
+        const trava = /check constraint|catalogo_campo_check|23514/i.test(mensagem);
+        res.status(trava ? 503 : 500).json({
+          error: trava
+            ? 'Essa lista ainda não está liberada no banco. Operação, quem autorizou, contrato e TSP continuam.'
+            : 'Não foi possível incluir o nome.',
+        });
+      }
+      return;
+    }
+
+    if (op === 'catalogo' && method === 'DELETE') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      if (session.perfil !== 'administrador') {
+        res.status(403).json({ error: 'Só o administrador remove um nome da lista.' });
+        return;
+      }
+      const { COLUNA_LISTA_SOLICITACAO, decidirNomeCatalogo, ehCampoLista } = await import('./camposCliente.js');
+      const campo = String(body?.campo || '');
+      if (!ehCampoLista(campo)) {
+        res.status(400).json({ error: 'Informe a lista.' });
+        return;
+      }
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Portal indisponível.' });
+        return;
+      }
+      try {
+        const coluna = COLUNA_LISTA_SOLICITACAO[campo];
+        let leituraCatalogo = sb.from(cfg().tabelas.catalogo).select('valor').eq('campo', coluna);
+        if (cfg().clientId != null) leituraCatalogo = leituraCatalogo.eq('client_id', cfg().clientId);
+        const { data: linhas, error: catError } = await leituraCatalogo;
+        if (catError) throw catError;
+        const catalogo = (linhas || []).map((row) => String(row.valor));
+        const decisao = decidirNomeCatalogo(String(body?.valor ?? ''), catalogo);
+        const nome = decisao.acao === 'aplicar' ? decisao.valor : decisao.acao === 'confirmar' ? decisao.nome : '';
+        if (!nome || !catalogo.some((item) => item === nome)) {
+          res.status(404).json({ error: 'Esse nome não está na lista.' });
+          return;
+        }
+        let apagar = sb.from(cfg().tabelas.catalogo).delete().eq('campo', coluna).eq('valor', nome);
+        if (cfg().clientId != null) apagar = apagar.eq('client_id', cfg().clientId);
+        const { error: delError } = await apagar;
+        if (delError) throw delError;
+        res.status(200).json({ valor: nome });
+      } catch (error) {
         console.error(`[${cfg().logPrefix}] catalogo`, error instanceof Error ? error.message : error);
-        res.status(500).json({ error: 'Não foi possível incluir o nome.' });
+        res.status(500).json({ error: 'Não foi possível remover o nome.' });
       }
       return;
     }
@@ -1242,9 +1430,11 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data, error } = await sb
+      let lista = sb
         .from(cfg().tabelas.solicitacoes)
-        .select('id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at')
+        .select('id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at');
+      if (cfg().clientId != null) lista = lista.eq('client_id', cfg().clientId);
+      const { data, error } = await lista
         .order('created_at', { ascending: false })
         .limit(200);
       if (error) {
@@ -1257,17 +1447,17 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
     }
 
     if (op === 'solicitacoes' && method === 'POST') {
-      let session = null;
-      if (CEVA_PORTAL_LOGIN_ENABLED) {
-        session = await portalSession(req);
-        if (!session) {
-          res.status(401).json({ error: 'Sessão expirada. Entre novamente.' });
-          return;
-        }
-      }
-      const draft = buildCevaSolicitacao(session, body);
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const { quantidadeDoPedido, validarPedidoPortal } = await import('../portalCliente/pedido.js');
+      const draft = validarPedidoPortal(body, session.name);
       if (!draft.ok) {
         res.status(400).json({ error: draft.error });
+        return;
+      }
+      const copias = quantidadeDoPedido(body);
+      if (!copias.ok) {
+        res.status(400).json({ error: copias.error });
         return;
       }
       const sb = createSupabaseAdminClient();
@@ -1275,35 +1465,53 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const value = draft.value;
-      const { data, error } = await sb
-        .from(cfg().tabelas.solicitacoes)
-        .insert({
-          data_inicio: value.dataInicio,
-          data_fim: value.dataFim,
-          solicitante: value.solicitante,
-          quem_autorizou: value.quemAutorizou,
-          servico: value.servico,
-          atendimento_pgr: value.atendimentoPgr,
-          contrato: value.contrato,
-          operacao: value.operacao,
-          tsp: value.tsp,
-          placa: value.placa,
-          motorista: value.motorista,
-          franquia_hora: value.franquiaHora,
-          franquia_km: value.franquiaKm,
-          filled_by_user_id: value.filledByUserId,
-          filled_by_name: value.filledByName,
-          filled_by_email: value.filledByEmail,
-        })
-        .select('id, numero, data_inicio, data_fim, solicitante, quem_autorizou, servico, atendimento_pgr, contrato, operacao, tsp, placa, motorista, franquia_hora, franquia_km, filled_by_name, filled_by_email, created_at')
-        .single();
-      if (error || !data) {
-        console.error(`[${cfg().logPrefix}] insert`, error?.message);
-        res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+      const cliente = await carregarClienteDoPortal(sb);
+      if (!cliente?.name) {
+        res.status(503).json({ error: `Cliente ${cfg().rotulo} não encontrado.` });
         return;
       }
-      res.status(201).json({ item: rowToJson(data) });
+      try {
+        const nomeCliente = String(cliente.name || '').trim() || cfg().clienteNome;
+        const { enviarEmailSolicitacao, registrarSolicitacaoPortal } = await import('../portalCliente/registrarOs.js');
+        const { emailsDaSolicitacao } = await import('../portalCliente/pedido.js');
+        const criadas: string[] = [];
+        let incompleto = false;
+        for (let copia = 0; copia < copias.value; copia += 1) {
+          try {
+            const criado = await registrarSolicitacaoPortal(sb, cfg(), draft.value, {
+              id: session.id,
+              email: session.email,
+            }, cliente.operational_email, Number(cliente.id) || null, { enviarEmail: false, clienteOficial: nomeCliente });
+            criadas.push(criado.os);
+          } catch (error) {
+            incompleto = true;
+            console.error(`[${cfg().logPrefix}] solicitação`, error instanceof Error ? error.message : error);
+            break;
+          }
+        }
+        if (criadas.length === 0) {
+          res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+          return;
+        }
+        const emailEnviado = await enviarEmailSolicitacao({
+          destinatarios: emailsDaSolicitacao(cliente.operational_email),
+          os: criadas.join(', '),
+          cliente: nomeCliente,
+          pedido: draft.value,
+        });
+        res.status(201).json({
+          os: criadas[0],
+          oss: criadas,
+          quantidade: criadas.length,
+          emailEnviado,
+          incompleto,
+          status: 'Solicitada',
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'falha';
+        console.error(`[${cfg().logPrefix}] solicitação`, message);
+        res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+      }
       return;
     }
 

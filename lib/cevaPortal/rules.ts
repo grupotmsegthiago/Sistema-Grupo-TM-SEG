@@ -56,9 +56,41 @@ function cleanText(value: unknown, max: number): string | null {
   return text.slice(0, max);
 }
 
+/** dd/mm/aaaa ou dd/mm/aaaa hh:mm, no fuso de Brasília, sem inverter o dia. */
+export function dataHoraBrasil(value: unknown): string | null {
+  const text = String(value ?? '').trim();
+  const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})(?: (\d{2}):(\d{2}))?$/);
+  if (!match) return null;
+  const dia = Number(match[1]);
+  const mes = Number(match[2]);
+  const hora = Number(match[4] ?? '0');
+  const minuto = Number(match[5] ?? '0');
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || hora > 23 || minuto > 59) return null;
+  return `${match[3]}-${match[2]}-${match[1]}T${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}:00-03:00`;
+}
+
+/** Enquanto a pessoa digita: 22102026 0830 vira 22/10/2026 08:30. */
+export function mascaraDataHora(bruto: string): string {
+  const digits = String(bruto ?? '').replace(/\D/g, '').slice(0, 12);
+  let texto = digits.slice(0, 2);
+  if (digits.length > 2) texto += `/${digits.slice(2, 4)}`;
+  if (digits.length > 4) texto += `/${digits.slice(4, 8)}`;
+  if (digits.length > 8) texto += ` ${digits.slice(8, 10)}`;
+  if (digits.length > 10) texto += `:${digits.slice(10, 12)}`;
+  return texto;
+}
+
+export function isoParaDataHoraBrasil(iso: string): string {
+  const match = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!match) return '';
+  return `${match[3]}/${match[2]}/${match[1]} ${match[4]}:${match[5]}`;
+}
+
 export function parseBrazilDateTime(value: unknown): string | null {
   const text = String(value ?? '').trim();
   if (!text) return null;
+  const brasil = dataHoraBrasil(text);
+  if (brasil) return brasil;
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return `${text}:00-03:00`;
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(text)) return `${text}-03:00`;
   const parsed = new Date(text);

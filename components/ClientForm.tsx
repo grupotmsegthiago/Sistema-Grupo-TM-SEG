@@ -28,6 +28,8 @@ import {
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
+import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
+import { limparSlug, slugDeNome, slugPublico } from '../lib/portalCliente/slug';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -110,6 +112,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
     nf_municipal_service_name: '',
     responsavel_comercial_id: '',
     ciclo_faturamento: '' as '' | 'diario' | 'quinzenal' | 'mensal',
+    portal_ativo: false,
+    portal_slug: '',
+    portal_site: '',
+    portal_logo_url: '',
+    portal_cor: '#111111',
+    portal_cor_acao: '#F7941E',
   }); 
   const [osEmailInput, setOsEmailInput] = useState('');
   const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
@@ -265,6 +273,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     ciclo_faturamento: (data.ciclo_faturamento === 'diario' || data.ciclo_faturamento === 'quinzenal' || data.ciclo_faturamento === 'mensal')
                       ? data.ciclo_faturamento
                       : '',
+                    portal_ativo: data.portal_ativo === true || Boolean(portalPorNomeCliente(data.name)),
+                    portal_slug: data.portal_slug || (portalPorNomeCliente(data.name)?.caminho || '').replace(/^\//, ''),
+                    portal_site: data.portal_site || '',
+                    portal_logo_url: data.portal_logo_url || '',
+                    portal_cor: data.portal_cor || '#111111',
+                    portal_cor_acao: data.portal_cor_acao || '#F7941E',
                 });
                 fetchPriceTables(data.name);
             }
@@ -703,6 +717,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Cadastro incompleto', 'Informe um CNPJ/CPF válido para cadastrar o cliente no Asaas.', 'error');
       return;
     }
+    if (formData.portal_ativo && !portalPorNomeCliente(formData.name) && !slugPublico(formData.portal_slug)) {
+      showNotification('Portal', 'Informe o endereço da página do cliente.', 'warning');
+      return;
+    }
     setIsSaving(true);
     setDuplicateError('');
     try {
@@ -769,15 +787,25 @@ const ClientForm: React.FC<ClientFormProps> = ({
         nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null,
         responsavel_comercial_id: comercialIdPayload || null,
         ciclo_faturamento: formData.ciclo_faturamento || null,
+        portal_ativo: Boolean(portalPorNomeCliente(formData.name) || formData.portal_ativo),
+        portal_slug: portalPorNomeCliente(formData.name) ? null : (formData.portal_ativo ? (slugPublico(formData.portal_slug) || null) : null),
+        portal_site: formData.portal_site?.trim() || null,
+        portal_logo_url: formData.portal_logo_url?.trim() || null,
+        portal_cor: formData.portal_cor || null,
+        portal_cor_acao: formData.portal_cor_acao || null,
       };
 
       let savedClientId: string | null = editingId;
       if (editingId) {
           let { error: updErr } = await supabase.from('clients').update(payload).eq('id', editingId);
           if (updErr && updErr.code === '42703') {
-            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, ...safePayload } = payload;
+            const faltaPortal = /portal_/i.test(updErr.message || '');
+            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, portal_ativo, portal_slug, portal_site, portal_logo_url, portal_cor, portal_cor_acao, ...safePayload } = payload;
             const res2 = await supabase.from('clients').update(safePayload).eq('id', editingId);
             updErr = res2.error;
+            if (!updErr && faltaPortal) {
+              showNotification('Portal', 'O cliente foi salvo, mas o banco ainda não tem as colunas do portal. Falta aplicar migrations/2026_10_21_portal_cliente.sql.', 'warning');
+            }
           }
           if (updErr) throw updErr;
           await logAction('UPDATE', 'Client', editingId, `Cliente atualizado: ${formData.name}`);
@@ -785,11 +813,15 @@ const ClientForm: React.FC<ClientFormProps> = ({
           payload.created_by = currentUser?.name || 'SISTEMA';
           let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
           if (insErr && insErr.code === '42703') {
-            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, ...safePayload } = payload;
+            const faltaPortal = /portal_/i.test(insErr.message || '');
+            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, portal_ativo, portal_slug, portal_site, portal_logo_url, portal_cor, portal_cor_acao, ...safePayload } = payload;
             safePayload.created_by = currentUser?.name || 'SISTEMA';
             const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
             insErr = res2.error;
             inserted = res2.data;
+            if (!insErr && faltaPortal) {
+              showNotification('Portal', 'O cliente foi salvo, mas o banco ainda não tem as colunas do portal. Falta aplicar migrations/2026_10_21_portal_cliente.sql.', 'warning');
+            }
           }
           if (insErr) throw insErr;
           savedClientId = inserted?.id != null ? String(inserted.id) : null;
@@ -1215,6 +1247,95 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <option value="mensal">Mensal — dia 1 ao último do mês</option>
                         </select>
                         <p className="text-[10px] text-gray-400">Define o boletim e os alertas do Financeiro. Sem ciclo cadastrado o painel trata como não validado.</p>
+                    </div>
+                    <div className="md:col-span-3 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                        <label className="flex items-center gap-2 text-sm font-black text-slate-800">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(portalPorNomeCliente(formData.name) || formData.portal_ativo)}
+                                disabled={Boolean(portalPorNomeCliente(formData.name))}
+                                onChange={(event) => {
+                                  const ligado = event.target.checked;
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    portal_ativo: ligado,
+                                    portal_slug: ligado ? (prev.portal_slug || slugDeNome(prev.trading_name || prev.name)) : prev.portal_slug,
+                                  }));
+                                }}
+                                data-testid="checkbox-portal-cliente"
+                            />
+                            Portal do cliente
+                        </label>
+                        {portalPorNomeCliente(formData.name) ? (
+                          <p className="text-xs text-slate-600">Este cliente já tem a página {portalPorNomeCliente(formData.name)?.caminho}. A CEVA permanece com o layout próprio. A IBL é o modelo dos demais.</p>
+                        ) : formData.portal_ativo && (
+                          <p className="text-xs text-slate-600">A página fica no ar em /{formData.portal_slug || slugDeNome(formData.trading_name || formData.name)}, no mesmo modelo da IBL. O acesso de cada pessoa continua no cadastro de usuário.</p>
+                        )}
+                        {!portalPorNomeCliente(formData.name) && formData.portal_ativo && (
+                          <div className="space-y-1.5">
+                            <label className={LABEL_CLASS}>Endereço da página</label>
+                            <input
+                              className={INPUT_CLASS}
+                              value={formData.portal_slug}
+                              onChange={(event) => setFormData({ ...formData, portal_slug: limparSlug(event.target.value) })}
+                              data-testid="input-portal-slug"
+                            />
+                          </div>
+                        )}
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className={LABEL_CLASS}>Site do cliente</label>
+                            <div className="flex gap-2">
+                              <input className={INPUT_CLASS} placeholder="https://cliente.com.br" value={formData.portal_site} onChange={(event) => setFormData({ ...formData, portal_site: event.target.value })} data-testid="input-portal-site" />
+                              <button
+                                type="button"
+                                className="rounded-lg bg-slate-800 px-3 text-xs font-bold text-white"
+                                onClick={async () => {
+                                  const resposta = await authFetch('/api/cliente-portal/marca-site', { method: 'POST', body: JSON.stringify({ url: formData.portal_site }) });
+                                  const corpo = await resposta.json().catch(() => ({}));
+                                  if (!resposta.ok) {
+                                    showNotification('Site', corpo.error || 'Não foi possível ler o site. Envie o logotipo e escolha as cores.', 'warning');
+                                    return;
+                                  }
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    portal_logo_url: prev.portal_logo_url || corpo.logo || '',
+                                    portal_cor: corpo.cor || prev.portal_cor,
+                                    portal_cor_acao: corpo.corAcao || prev.portal_cor_acao,
+                                  }));
+                                  showNotification('Site', corpo.logo || corpo.cor ? 'Logotipo e cores lidos. Confira antes de salvar.' : 'O site não trouxe logotipo nem cor. Complete manualmente.', 'info');
+                                }}
+                              >Ler</button>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className={LABEL_CLASS}>Logotipo</label>
+                            <input type="file" accept="image/*" onChange={async (event) => {
+                              const arquivo = event.target.files?.[0];
+                              if (!arquivo) return;
+                              const destino = persistedId || id;
+                              if (!destino) {
+                                showNotification('Logotipo', 'Salve o cliente antes de enviar o arquivo.', 'warning');
+                                return;
+                              }
+                              const caminho = `portal-logos/${destino}-${Date.now()}-${arquivo.name.replace(/[^\w.]+/g, '-')}`;
+                              const { error } = await supabase.storage.from('mission-evidence').upload(caminho, arquivo, { upsert: true });
+                              if (error) {
+                                showNotification('Logotipo', error.message, 'error');
+                                return;
+                              }
+                              const { data } = supabase.storage.from('mission-evidence').getPublicUrl(caminho);
+                              setFormData((prev) => ({ ...prev, portal_logo_url: data.publicUrl }));
+                            }} />
+                            {formData.portal_logo_url && <img src={formData.portal_logo_url} alt="Logotipo do portal" className="h-10 w-auto object-contain" />}
+                          </div>
+                          <label className="text-xs font-bold text-slate-600">Cor principal
+                            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(formData.portal_cor) ? formData.portal_cor : '#111111'} onChange={(event) => setFormData({ ...formData, portal_cor: event.target.value })} className="mt-1 block h-10 w-full" />
+                          </label>
+                          <label className="text-xs font-bold text-slate-600">Cor de ação
+                            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(formData.portal_cor_acao) ? formData.portal_cor_acao : '#F7941E'} onChange={(event) => setFormData({ ...formData, portal_cor_acao: event.target.value })} className="mt-1 block h-10 w-full" />
+                          </label>
+                        </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Grupo de WhatsApp do Cliente (envio automático de atualizações de OS)</label>

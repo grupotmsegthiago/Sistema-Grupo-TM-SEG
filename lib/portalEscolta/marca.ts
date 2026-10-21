@@ -1,9 +1,13 @@
 /** Identidade visual e rotas do controle de escolta por cliente. */
 
 export type MarcaPortal = {
-  id: 'ceva' | 'ibl';
+  id: 'ceva' | 'ibl' | 'cliente';
   rotulo: string;
   api: string;
+  /** Caminho público. No portal genérico é o slug, não o id. */
+  caminho: string;
+  /** Enviado no header quando a API é compartilhada. */
+  slug?: string;
   chaveSessao: string;
   eventoSair: string;
   logo: string;
@@ -50,6 +54,7 @@ export const MARCA_CEVA: MarcaPortal = {
   id: 'ceva',
   rotulo: 'CEVA',
   api: '/api/ceva-portal',
+  caminho: '/ceva',
   chaveSessao: 'ceva-portal-sessao',
   eventoSair: 'ceva-portal-sair',
   logo: '/logo_ceva_portal.png',
@@ -65,6 +70,7 @@ export const MARCA_IBL: MarcaPortal = {
   id: 'ibl',
   rotulo: 'IBL',
   api: '/api/ibl-portal',
+  caminho: '/ibl',
   chaveSessao: 'ibl-portal-sessao',
   eventoSair: 'ibl-portal-sair',
   logo: '/logo_ibl_portal.png',
@@ -75,3 +81,42 @@ export const MARCA_IBL: MarcaPortal = {
   colunasOcultas: ['Solicitante', 'Quem autorizou', 'Atendimento PGR', 'Operação', 'TSP'],
   css: CSS_IBL,
 };
+
+export function cssPortalCliente(cor: string | null | undefined, corAcao: string | null | undefined): Record<string, string> {
+  const marca = cor && /^#[0-9a-fA-F]{6}$/.test(cor) ? cor : CSS_IBL['--portal-marca'];
+  const acao = corAcao && /^#[0-9a-fA-F]{6}$/.test(corAcao) ? corAcao : CSS_IBL['--portal-acao'];
+  return {
+    ...CSS_IBL,
+    '--portal-marca': marca,
+    '--portal-acao': acao,
+    '--portal-acao-hover': acao,
+    '--portal-painel': marca,
+    '--portal-destaque': acao,
+  };
+}
+
+export function marcaPortalCliente(input: {
+  slug: string;
+  rotulo: string;
+  logo?: string | null;
+  cor?: string | null;
+  corAcao?: string | null;
+}): MarcaPortal {
+  const slug = String(input.slug || '').trim().toLowerCase();
+  return {
+    id: 'cliente',
+    rotulo: input.rotulo || slug.toUpperCase(),
+    api: '/api/cliente-portal',
+    caminho: `/${slug}`,
+    slug,
+    chaveSessao: `portal-${slug}-sessao`,
+    eventoSair: `portal-${slug}-sair`,
+    logo: String(input.logo || '').trim(),
+    logoAlt: input.rotulo || slug,
+    arquivo: slug || 'cliente',
+    tituloPdf: `Controle de Escolta ${input.rotulo || slug}`,
+    exigeLogin: true,
+    colunasOcultas: ['Solicitante', 'Quem autorizou', 'Atendimento PGR', 'TSP'],
+    css: cssPortalCliente(input.cor, input.corAcao),
+  };
+}

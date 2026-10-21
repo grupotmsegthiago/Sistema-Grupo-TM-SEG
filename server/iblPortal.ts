@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from 'express';
-import { handleIblPortalHttp } from '../lib/cevaPortal/httpHandler';
+import { handleClientePortalHttp, handleIblPortalHttp } from '../lib/cevaPortal/httpHandler';
 
 function withOp(op: string, extraQuery?: Record<string, string>) {
   return async (req: Request, res: Response) => {
@@ -25,7 +25,10 @@ export function registerIblPortalRoutes(app: Express): void {
   app.get('/api/ibl-portal/ao-vivo', withOp('ao-vivo'));
   app.get('/api/ibl-portal/relatorio', withOp('relatorio'));
   app.post('/api/ibl-portal/campos', withOp('campos'));
+  app.get('/api/ibl-portal/catalogo', withOp('catalogo'));
+  app.get('/api/ibl-portal/frota', withOp('frota'));
   app.post('/api/ibl-portal/catalogo', withOp('catalogo'));
+  app.delete('/api/ibl-portal/catalogo', withOp('catalogo'));
   app.get('/api/ibl-portal/status', withOp('status'));
   app.get('/api/ibl-portal/pgr/:os', async (req, res) => {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pgr', os: String(req.params.os || '') });
@@ -33,4 +36,42 @@ export function registerIblPortalRoutes(app: Express): void {
   });
   app.get('/api/ibl-portal/solicitacoes', withOp('solicitacoes'));
   app.post('/api/ibl-portal/solicitacoes', withOp('solicitacoes'));
+}
+
+function withCliente(op: string) {
+  return async (req: Request, res: Response) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op });
+    await handleClientePortalHttp(req, res);
+  };
+}
+
+/** Mesma API do portal, no slug do cliente. Em produção o rewrite cai em api/ibl-portal.ts. */
+export function registerClientePortalRoutes(app: Express): void {
+  app.get('/api/cliente-portal/marca', withCliente('marca'));
+  app.post('/api/cliente-portal/marca-site', withCliente('marca-site'));
+  app.get('/api/cliente-portal/acesso', withCliente('acesso'));
+  app.post('/api/cliente-portal/login', withCliente('login'));
+  app.post('/api/cliente-portal/primeiro-acesso', withCliente('primeiro-acesso'));
+  app.get('/api/cliente-portal/me', withCliente('me'));
+  app.post('/api/cliente-portal/trocar-senha', withCliente('trocar-senha'));
+  app.get('/api/cliente-portal/pessoas', withCliente('pessoas'));
+  app.post('/api/cliente-portal/pessoas', withCliente('pessoas'));
+  app.patch('/api/cliente-portal/pessoas/:id', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pessoas-item', id: String(req.params.id || '') });
+    await handleClientePortalHttp(req, res);
+  });
+  app.get('/api/cliente-portal/ao-vivo', withCliente('ao-vivo'));
+  app.get('/api/cliente-portal/relatorio', withCliente('relatorio'));
+  app.post('/api/cliente-portal/campos', withCliente('campos'));
+  app.get('/api/cliente-portal/catalogo', withCliente('catalogo'));
+  app.get('/api/cliente-portal/frota', withCliente('frota'));
+  app.post('/api/cliente-portal/catalogo', withCliente('catalogo'));
+  app.delete('/api/cliente-portal/catalogo', withCliente('catalogo'));
+  app.get('/api/cliente-portal/status', withCliente('status'));
+  app.get('/api/cliente-portal/pgr/:os', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pgr', os: String(req.params.os || '') });
+    await handleClientePortalHttp(req, res);
+  });
+  app.get('/api/cliente-portal/solicitacoes', withCliente('solicitacoes'));
+  app.post('/api/cliente-portal/solicitacoes', withCliente('solicitacoes'));
 }

@@ -17,7 +17,7 @@ import {
   usuarioSoPortal,
   type PerfilCeva,
 } from '../lib/cevaPortal/regrasAcesso';
-import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
+import { portalDaFicha } from '../lib/cevaPortal/portalServidor';
 
 interface EquipmentItem {
   id: string;
@@ -220,13 +220,15 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
   const fetchAuxData = async () => {
     try {
-        const clientQuery = isClientUser
-            ? supabase.from('clients').select('id, name').eq('id', currentUserClientId)
-            : supabase.from('clients').select('id, name').eq('status', 'Ativo').order('name');
+        const selectPortal = 'id, name, trading_name, portal_ativo, portal_slug';
+        const clientQuery = (colunas: string) => isClientUser
+            ? supabase.from('clients').select(colunas).eq('id', currentUserClientId)
+            : supabase.from('clients').select(colunas).eq('status', 'Ativo').order('name');
+        let cliRes = await clientQuery(selectPortal);
+        if (cliRes.error) cliRes = await clientQuery('id, name');
 
-        const [profRes, cliRes, provRes] = await Promise.all([
+        const [profRes, provRes] = await Promise.all([
             supabase.from('profiles').select('*').order('name'),
-            clientQuery,
             supabase.from('providers').select('id, name').eq('status', 'Ativo').order('name')
         ]);
 
@@ -303,7 +305,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
       const clienteId = userType === 'client' ? (isClientUser ? currentUserClientId : formData.clientId) : '';
       const clientePortal = clients.find((item) => String(item.id) === String(clienteId));
-      const portalCliente = userType === 'client' ? portalPorNomeCliente(clientePortal?.name) : null;
+      const portalCliente = userType === 'client' ? portalDaFicha(clientePortal) : null;
       const liberarPortal = Boolean(portalCliente && acessoPortal);
       if (liberarPortal && !perfilPortal) return showNotification('Erro', 'Selecione se a pessoa é administradora do portal.', 'error');
 
@@ -632,7 +634,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           )}
                       </div>
                       <p className="text-[10px] text-blue-700 mt-2 flex items-center gap-1"><Info size={12}/> {isClientUser ? 'Novo usuário será vinculado automaticamente à sua empresa.' : 'Este usuário verá apenas dados deste cliente.'}</p>
-                      {portalPorNomeCliente((isClientUser ? clients.find(c => c.id === currentUserClientId)?.name : clients.find(c => String(c.id) === String(formData.clientId))?.name)) && (
+                      {portalDaFicha(isClientUser ? clients.find(c => c.id === currentUserClientId) : clients.find(c => String(c.id) === String(formData.clientId))) && (
                           <div className="mt-4 rounded-lg border border-blue-200 bg-white p-3 space-y-3">
                               <label className="flex items-center gap-2 text-sm font-bold text-blue-900">
                                   <input

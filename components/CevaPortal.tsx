@@ -5,6 +5,7 @@ import { AcessoCeva } from './ceva/AcessoCeva';
 import { PessoasCeva } from './ceva/PessoasCeva';
 import { PainelDiretoria } from './ceva/PainelDiretoria';
 import { PainelAoVivo } from './ceva/PainelAoVivo';
+import { SolicitarEscolta } from './ceva/SolicitarEscolta';
 import { TrocarSenhaCeva } from './ceva/TrocarSenhaCeva';
 import { LogoCeva } from './ceva/LogoCeva';
 import { PortalCasca, usePortalCliente } from './ceva/portalMarca';
@@ -29,6 +30,8 @@ type ReportRow = {
   tsp: string | null;
   placa: string | null;
   motorista: string | null;
+  telefone?: string | null;
+  identificacao?: string | null;
   franquiaHora: string | null;
   franquiaKm: number | null;
   kmInicio: number | null;
@@ -79,6 +82,8 @@ const COLUNAS_TABELA = [
   { nome: 'TSP', grupo: 'cliente' },
   { nome: 'Placa', grupo: 'cliente' },
   { nome: 'Motorista', grupo: 'cliente' },
+  { nome: 'Telefone', grupo: 'cliente' },
+  { nome: 'Controle Interno da OS', grupo: 'cliente' },
   { nome: 'Franquia hora', grupo: 'cliente' },
   { nome: 'Franquia km', grupo: 'cliente' },
   { nome: 'Km início', grupo: 'sistema' },
@@ -237,6 +242,8 @@ const CevaPortal: React.FC = () => {
   const [sessao, setSessao] = useState<SessaoCeva | null>(() => (portal.marca.exigeLogin ? portal.ler() : sessaoAberta));
   const [pessoasAberto, setPessoasAberto] = useState(false);
   const [visao, setVisao] = useState<'controle' | 'diretoria' | 'aovivo'>('controle');
+  const [pedirAberto, setPedirAberto] = useState(false);
+  const [recarga, setRecarga] = useState(0);
   const [loading, setLoading] = useState(() => !portal.marca.exigeLogin || Boolean(portal.ler()));
   const [error, setError] = useState('');
   const [filtro, setFiltro] = useState<Filtros>(FILTRO_VAZIO);
@@ -279,7 +286,7 @@ const CevaPortal: React.FC = () => {
       .catch((err: Error) => { if (ativo) setError(err.message || 'Falha de comunicação.'); })
       .finally(() => { if (ativo) setLoading(false); });
     return () => { ativo = false; };
-  }, [sessaoAtual, portal]);
+  }, [sessaoAtual, portal, recarga]);
 
   useEffect(() => {
     if (!sessaoAtual || sessaoAtual.user.trocarSenha || loading) return;
@@ -397,6 +404,7 @@ const CevaPortal: React.FC = () => {
           </div>
           <nav className="flex justify-center">
             <div className="flex rounded-full bg-white/10 p-0.5">
+              <button type="button" onClick={() => setPedirAberto(true)} className="h-8 rounded-full bg-[var(--portal-acao)] px-3 text-xs font-black text-[var(--portal-acao-texto)]">Solicitar</button>
               <button type="button" onClick={() => setVisao('controle')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'controle' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Controle</button>
               <button type="button" onClick={() => setVisao('aovivo')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'aovivo' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Ao vivo</button>
               <button type="button" onClick={abrirDiretoria} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'diretoria' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Diretoria</button>
@@ -419,13 +427,19 @@ const CevaPortal: React.FC = () => {
         </div>
       </header>
       <main className="p-4 md:p-6">
+        {pedirAberto && sessaoAtual && (
+          <SolicitarEscolta
+            onFechar={() => setPedirAberto(false)}
+            onCriada={() => { setVisao('controle'); setRecarga((valor) => valor + 1); }}
+          />
+        )}
         {pessoasAberto && portal.marca.exigeLogin && sessaoAtual.user.perfil === 'administrador' && <PessoasCeva onFechar={() => setPessoasAberto(false)} />}
-        {visao !== 'aovivo' && loading && (
+        {!pedirAberto && visao !== 'aovivo' && loading && (
           <p className="inline-flex items-center gap-2 rounded-3xl bg-white px-4 py-3 text-sm text-slate-500 shadow-sm"><Loader2 className="animate-spin" size={16} /> Carregando relatório...</p>
         )}
-        {visao !== 'aovivo' && error && <p className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm">{error}</p>}
-        {visao === 'aovivo' && <PainelAoVivo />}
-        {visao !== 'aovivo' && !loading && !error && (
+        {!pedirAberto && visao !== 'aovivo' && error && <p className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm">{error}</p>}
+        {!pedirAberto && visao === 'aovivo' && <PainelAoVivo />}
+        {!pedirAberto && visao !== 'aovivo' && !loading && !error && (
           <div className="mb-4 rounded-3xl bg-white shadow-sm">
             <div className={`${LINHA_FILTRO} border-b border-slate-100`}>
               <p className="inline-flex items-center gap-2 rounded-full bg-[var(--portal-marca)] px-3 py-1 text-xs font-bold text-white">
@@ -533,6 +547,8 @@ const CevaPortal: React.FC = () => {
                     {colunaVisivel('TSP') && <td className={`${celula} whitespace-nowrap`}><CampoFiltro os={item.os} campo="tsp" valor={item.tsp} opcoes={catalogo.tsp} podeIncluirNovo={sessaoAtual.user.perfil === 'administrador'} onChange={(valor, filtro) => atualizarCampo(item.os, 'tsp', valor, filtro)} /></td>}
                     <td className={`${celula} whitespace-nowrap font-semibold`}>{text(item.placa)}</td>
                     <td className={`${celula} whitespace-nowrap`}>{text(item.motorista)}</td>
+                    <td className={`${celula} whitespace-nowrap`}>{text(item.telefone || null)}</td>
+                    <td className={`${celula} whitespace-nowrap`}>{text(item.identificacao || null)}</td>
                     <td className={celula}>{text(item.franquiaHora)}</td>
                     <td className={celula}>{qty(item.franquiaKm)}</td>
                     <td className={celula}>{celulaSistema(item.kmInicio, qty(item.kmInicio))}</td>

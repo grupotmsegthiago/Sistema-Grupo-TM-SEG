@@ -815,6 +815,10 @@
       "destination": "/api/ibl-portal?op=catalogo"
     },
     {
+      "source": "/api/ibl-portal/frota",
+      "destination": "/api/ibl-portal?op=frota"
+    },
+    {
       "source": "/api/ibl-portal/status",
       "destination": "/api/ibl-portal?op=status"
     },
@@ -871,12 +875,84 @@
       "destination": "/api/ceva-portal?op=catalogo"
     },
     {
+      "source": "/api/ceva-portal/frota",
+      "destination": "/api/ceva-portal?op=frota"
+    },
+    {
       "source": "/api/ceva-portal/status",
       "destination": "/api/ceva-portal?op=status"
     },
     {
       "source": "/api/ceva-portal/solicitacoes",
       "destination": "/api/ceva-portal?op=solicitacoes"
+    },
+    {
+      "source": "/api/cliente-portal/pessoas/:id",
+      "destination": "/api/ibl-portal?op=pessoas-item&id=:id"
+    },
+    {
+      "source": "/api/cliente-portal/pgr/:os",
+      "destination": "/api/ibl-portal?op=pgr&os=:os"
+    },
+    {
+      "source": "/api/cliente-portal/marca",
+      "destination": "/api/ibl-portal?op=marca"
+    },
+    {
+      "source": "/api/cliente-portal/marca-site",
+      "destination": "/api/ibl-portal?op=marca-site"
+    },
+    {
+      "source": "/api/cliente-portal/acesso",
+      "destination": "/api/ibl-portal?op=acesso"
+    },
+    {
+      "source": "/api/cliente-portal/login",
+      "destination": "/api/ibl-portal?op=login"
+    },
+    {
+      "source": "/api/cliente-portal/primeiro-acesso",
+      "destination": "/api/ibl-portal?op=primeiro-acesso"
+    },
+    {
+      "source": "/api/cliente-portal/me",
+      "destination": "/api/ibl-portal?op=me"
+    },
+    {
+      "source": "/api/cliente-portal/trocar-senha",
+      "destination": "/api/ibl-portal?op=trocar-senha"
+    },
+    {
+      "source": "/api/cliente-portal/pessoas",
+      "destination": "/api/ibl-portal?op=pessoas"
+    },
+    {
+      "source": "/api/cliente-portal/ao-vivo",
+      "destination": "/api/ibl-portal?op=ao-vivo"
+    },
+    {
+      "source": "/api/cliente-portal/relatorio",
+      "destination": "/api/ibl-portal?op=relatorio"
+    },
+    {
+      "source": "/api/cliente-portal/campos",
+      "destination": "/api/ibl-portal?op=campos"
+    },
+    {
+      "source": "/api/cliente-portal/catalogo",
+      "destination": "/api/ibl-portal?op=catalogo"
+    },
+    {
+      "source": "/api/cliente-portal/frota",
+      "destination": "/api/ibl-portal?op=frota"
+    },
+    {
+      "source": "/api/cliente-portal/status",
+      "destination": "/api/ibl-portal?op=status"
+    },
+    {
+      "source": "/api/cliente-portal/solicitacoes",
+      "destination": "/api/ibl-portal?op=solicitacoes"
     },
     {
       "source": "/api/(.*)",

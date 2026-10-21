@@ -8,11 +8,18 @@ const require = createRequire(import.meta.url);
 
 const core = require('./_ceva-portal-core.cjs') as {
   handleIblPortalHttp: (req: any, res: any) => Promise<void>;
+  handleClientePortalHttp: (req: any, res: any) => Promise<void>;
 };
 
 export default async function handler(req: any, res: any) {
   try {
     res.setHeader?.('Cache-Control', 'no-store');
+    const slug = String(req.headers?.['x-portal-slug'] || req.query?.slug || '').trim();
+    const op = String(req.query?.op || '');
+    if (slug || op === 'marca-site') {
+      await core.handleClientePortalHttp(req, res);
+      return;
+    }
     await core.handleIblPortalHttp(req, res);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
