@@ -108,6 +108,23 @@ const OsAnalysisDiretoriaModal: React.FC<{ onOpenMission?: (missionId: string) =
   }, [activeId]);
 
   const isClaimer = !!(active && String(active.claimed_by_id || '') === userId);
+  const avisoFinanceiro = active?.source === 'finance_reapproval';
+
+  const dispensarAvisoFinanceiro = async (req: OsAnalysisRequest) => {
+    setBusy(true);
+    try {
+      await authFetch(`/api/os-analysis?op=review&id=${encodeURIComponent(req.id)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: req.id, notes: 'Ciente do aviso de reaprovação do financeiro.' }),
+      });
+      broadcastInboxChanged();
+      await load();
+    } finally {
+      setBannerDismissed(true);
+      setBusy(false);
+    }
+  };
 
   const goToMission = (missionId: string) => {
     setBannerDismissed(true);
@@ -147,6 +164,45 @@ const OsAnalysisDiretoriaModal: React.FC<{ onOpenMission?: (missionId: string) =
   if (!userId || loading) return null;
   if (!active) return null;
   if (bannerDismissed) return null;
+
+  if (avisoFinanceiro) {
+    return (
+      <div
+        className="fixed top-0 inset-x-0 z-[80] bg-slate-900 text-white shadow-xl border-b-4 border-blue-400"
+        data-testid="banner-finance-reapproval"
+      >
+        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <MessageSquareWarning className="text-blue-300 shrink-0 mt-0.5" size={22} />
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-widest text-blue-300">Reaprovação do financeiro</p>
+              <p className="text-sm font-bold truncate">OS {active.mission_id} — {active.requested_by} alterou e aprovou de novo.</p>
+              <p className="text-xs text-slate-300 line-clamp-3 mt-0.5 whitespace-pre-wrap">{active.request_note}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => goToMission(active.mission_id)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-400 hover:bg-blue-300 text-slate-900 text-sm font-black"
+              data-testid="button-finance-reapproval-open"
+            >
+              Abrir OS <ExternalLink size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => { void dispensarAvisoFinanceiro(active); }}
+              disabled={busy}
+              className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-black disabled:opacity-50"
+              data-testid="button-finance-reapproval-dismiss"
+            >
+              Ciente
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isClaimer) {
     return (

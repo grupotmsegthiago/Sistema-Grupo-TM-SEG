@@ -9,6 +9,7 @@ import {
   getOpenOsAnalysisRequest,
   listInboxForUser,
   listOsAnalysisRequests,
+  avisarReaprovacaoFinanceira,
   requestOsAnalysis,
   respondOsAnalysis,
   reviewOsAnalysis,
@@ -74,6 +75,16 @@ export function registerOsAnalysisRoutes(app: Express, requireAuth: any): void {
         const id = String(req.query.id || req.body?.id || '');
         const request = await reviewOsAnalysis(user, id, req.body?.notes);
         return res.json({ ok: true, request });
+      }
+      if (op === 'finance-reapproval') {
+        const result = await avisarReaprovacaoFinanceira(user, {
+          missionId: req.body?.missionId || req.body?.id,
+          motivo: req.body?.motivo || req.body?.reason,
+          alteracoes: Array.isArray(req.body?.alteracoes) ? req.body.alteracoes : [],
+          client: req.body?.client,
+          provider: req.body?.provider,
+        });
+        return res.json({ ok: true, ...result });
       }
       return res.status(400).json({ ok: false, error: 'op inválida' });
     } catch (e: any) {

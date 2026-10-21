@@ -165,6 +165,23 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    if (op === 'finance-reapproval') {
+      if (req.method !== 'POST') {
+        res.status(405).json({ ok: false, error: 'method_not_allowed' });
+        return;
+      }
+      const body = readBody();
+      const result = await service.avisarReaprovacaoFinanceira(principal, {
+        missionId: body.missionId || body.id,
+        motivo: body.motivo || body.reason,
+        alteracoes: Array.isArray(body.alteracoes) ? body.alteracoes : [],
+        client: body.client,
+        provider: body.provider,
+      });
+      res.status(200).json({ ok: true, ...result });
+      return;
+    }
+
     res.status(400).json({ ok: false, error: `op desconhecida: ${op}` });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
