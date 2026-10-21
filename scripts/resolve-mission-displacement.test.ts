@@ -7,8 +7,8 @@ describe('resolveMissionDisplacement', () => {
     const d = resolveMissionDisplacement(
       {
         dhl_deslocamento_km: 160,
-        displacement_value: 0,
-        displacement_value_provider: 0,
+        displacement_value: null,
+        displacement_value_provider: null,
         origin: 'Palhoça - SC',
         is_same_os: false,
       },
@@ -44,13 +44,28 @@ describe('resolveMissionDisplacement', () => {
     const d = resolveMissionDisplacement(
       {
         dhl_deslocamento_km: 100,
-        displacement_value: 0,
-        displacement_value_provider: 0,
+        displacement_value: null,
+        displacement_value_provider: null,
         is_same_os: true,
       },
       { clientUnitPriceKm: 7.35, providerUnitPriceKm: 5 },
     );
     assert.ok(d.client > 0);
+    assert.equal(d.provider, 0);
+  });
+
+  it('zero gravado não deriva mesmo com KM autorizado', () => {
+    const d = resolveMissionDisplacement(
+      {
+        dhl_deslocamento_km: 160,
+        displacement_value: 0,
+        displacement_value_provider: 0,
+        origin: 'Palhoça - SC',
+        is_same_os: false,
+      },
+      { clientUnitPriceKm: 7.35, providerUnitPriceKm: 5.3125 },
+    );
+    assert.equal(d.client, 0);
     assert.equal(d.provider, 0);
   });
 });

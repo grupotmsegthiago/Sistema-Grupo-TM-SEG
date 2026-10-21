@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../supabase';
-import { authFetch } from '../authFetch';
 import { useRealtimeRefresh } from '../RealtimeProvider';
 import { listBalanceSnapshots } from '../investment/snapshotClient';
 import { fetchAllPages } from '../supabasePaging';
@@ -40,90 +39,10 @@ async function fetchAllPagesLegacy<T>(buildQuery: (from: number, size: number) =
   return rows;
 }
 
-/**
- * Recalcula receita/custo (inclui hora extra em andamento) nas OS abertas.
- * Sem AbortController no client — o abort gerava "Fetch is aborted" no Safari.
- * O servidor limita com scope=open + budgetMs.
- */
-function friendlyRecalcError(raw: string, httpStatus?: number): string {
-  const msg = String(raw || '').trim();
-  if (
-    /load failed|failed to fetch|networkerror|aborterror|fetch is aborted|the operation was aborted|aborted/i.test(msg)
-    || httpStatus === 504
-    || httpStatus === 408
-  ) {
-    return 'Recálculo demorou demais ou a rede caiu. Os KPIs já foram atualizados — toque Atualizar de novo em instantes.';
-  }
-  if (httpStatus === 500 || /FUNCTION_INVOCATION_FAILED|server error has occurred/i.test(msg)) {
-    return 'Falha no servidor ao recalcular OS abertas. Tente Atualizar de novo; se persistir, avise o suporte.';
-  }
-  if (httpStatus && httpStatus >= 400) {
-    return msg || `Falha ao recalcular OS (HTTP ${httpStatus}).`;
-  }
-  return msg || 'Erro ao recalcular OS em aberto.';
-}
-
-async function recalculateOpenMissionsBilling(): Promise<DashboardDiretoriaData['lastRecalc']> {
-  try {
-    // Rota dedicada: nunca processa as ~1000 OS não faturadas (só abertas ~dezenas).
-    const r = await authFetch('/api/recalculate-open', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-TMSEG-Recalc-Scope': 'open',
-      },
-      body: JSON.stringify({ scope: 'open', budgetMs: 40_000 }),
-    });
-    const data = await r.json().catch(() => ({} as Record<string, unknown>));
-    if (!r.ok) {
-      return {
-        updated: 0,
-        skipped: 0,
-        total: 0,
-        errors: 1,
-        message: friendlyRecalcError(String((data as any)?.error || ''), r.status),
-      };
-    }
-    const updated = Number((data as any)?.updated || 0);
-    const skipped = Number((data as any)?.skipped || 0);
-    const total = Number((data as any)?.total || 0);
-    const errors = Number((data as any)?.errors || 0);
-    const partial = (data as any)?.partial === true;
-    const usedScope = String((data as any)?.scope || 'open');
-    if (usedScope !== 'open') {
-      return {
-        updated,
-        skipped,
-        total,
-        errors: Math.max(errors, 1),
-        message: 'Recálculo usou escopo amplo demais — tente Atualizar de novo (rota open).',
-      };
-    }
-    let message: string;
-    if (updated > 0) {
-      message = partial
-        ? `${updated} OS aberta(s) atualizada(s) com hora extra (parcial — clique Atualizar de novo para continuar).`
-        : `${updated} OS aberta(s) atualizada(s) com valores/hora extra (${skipped} sem mudança).`;
-    } else {
-      message = `Nenhuma OS aberta precisou gravar mudança de hora extra (${total} analisadas).`;
-    }
-    return { updated, skipped, total, errors, message };
-  } catch (e: unknown) {
-    const raw = e instanceof Error ? e.message : String(e || '');
-    return {
-      updated: 0,
-      skipped: 0,
-      total: 0,
-      errors: 1,
-      message: friendlyRecalcError(raw),
-    };
-  }
-}
-
 export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDiretoriaData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lastRecalc, setLastRecalc] = useState<DashboardDiretoriaData['lastRecalc']>(null);
+  const [lastRecalc] = useState<DashboardDiretoriaData['lastRecalc']>(null);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [transactions, setTransactions] = useState<FinancialTransaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<FinancialTransaction[]>([]);
@@ -252,35 +171,10 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
     }
   }, [period.mode, period.year, period.month]);
 
-  /**
-   * Atualizar: 1) recarrega KPIs na hora; 2) recalcula hora extra nas OS abertas;
-   * 3) se gravou mudanças, recarrega KPIs de novo. Sem AbortController no client.
-   */
+  /** Atualizar só relê o banco. Não grava OS, hora extra nem recálculo. */
   const refresh = useCallback(async () => {
     setError(null);
-    setLastRecalc({
-      updated: 0,
-      skipped: 0,
-      total: 0,
-      errors: 0,
-      message: 'Atualizando painel… em seguida recalcula hora extra das OS abertas.',
-    });
-    setLoading(true);
     await load();
-
-    setLastRecalc({
-      updated: 0,
-      skipped: 0,
-      total: 0,
-      errors: 0,
-      message: 'Recalculando hora extra nas OS abertas…',
-    });
-    const recalc = await recalculateOpenMissionsBilling();
-    setLastRecalc(recalc);
-    if (recalc.updated > 0) {
-      setLoading(true);
-      await load();
-    }
   }, [load]);
 
   useEffect(() => { void load(); }, [load]);

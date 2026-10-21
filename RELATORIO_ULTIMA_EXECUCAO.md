@@ -1,5 +1,11 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Cockpit lê, zero gravado vale e boletim fecha (21/10/2026)
+
+O Atualizar do Cockpit deixou de chamar o recálculo de hora extra. Ele só busca de novo o que já está no banco. Receita e custo gravados, inclusive 0, entram no Cockpit e no relatório de OS mesmo sem a OS estar conferida. Estimativa só quando a coluna está NULL. Deslocamento 0 também permanece 0. No boletim, se a fórmula de km extra e hora extra não soma o valor gravado, o serviço inteiro fica no valor da OS e os extras de dinheiro zeram, para a linha fechar. A rota `/api/recalculate-open` continua no servidor, fora do botão. Sem mudança da fórmula do motor e sem migration.
+
+---
+
 ## Relatório de OS: pagamento ao fornecedor em vermelho claro (21/10/2026, não publicado)
 
 No relatório de OS, Custo, Ped. Pago, Desl. Pago e Total Pago ficaram com fundo vermelho claro, no mesmo bloco do verde da receita. Cabeçalho e totais seguem o vermelho mais forte. Os números não mudaram. Sem publicação.

@@ -114,7 +114,7 @@ export function mentionsFixedKmBand(text: string | undefined | null, band: 100 |
 
 /**
  * Materializa R$ de deslocamento a partir do KM autorizado (`dhl_deslocamento_km`).
- * Se já houver `displacement_value` / `_provider` salvo (> 0), preserva.
+ * Se `displacement_value` / `_provider` não for NULL, preserva, inclusive 0. NULL deriva.
  * Cliente: km × taxa da tabela vinculada. Zero ou ausência não viram tarifa regional.
  * Fornecedor: km × taxa da tabela de custo (0 se MESMA OS ou taxa 0).
  */
@@ -129,8 +129,10 @@ export function resolveDisplacementFromAuthorizedKm(opts: {
   isSameOs?: boolean | null;
 }): { client: number; provider: number; km: number; clientRate: number; providerRate: number; origemTarifaCliente: OrigemTarifaKm } {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
-  const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
-  const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
+  const clienteInformado = opts.displacementValue != null;
+  const fornecedorInformado = opts.displacementValueProvider != null;
+  const storedClient = clienteInformado ? Math.max(0, Number(opts.displacementValue) || 0) : 0;
+  const storedProvider = fornecedorInformado ? Math.max(0, Number(opts.displacementValueProvider) || 0) : 0;
 
   const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
   const clientRate = tarifaCliente.tarifa;
@@ -144,8 +146,8 @@ export function resolveDisplacementFromAuthorizedKm(opts: {
     clientRate,
     providerRate,
     origemTarifaCliente: tarifaCliente.origem,
-    client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
-    provider: opts.isSameOs ? 0 : (storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider),
+    client: clienteInformado ? Math.round(storedClient * 100) / 100 : derivedClient,
+    provider: opts.isSameOs ? 0 : (fornecedorInformado ? Math.round(storedProvider * 100) / 100 : derivedProvider),
   };
 }
 

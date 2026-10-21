@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-21. Na auditoria, o Salvar e os outros botões que gravam a OS só seguem depois que o banco devolve a linha. Enquanto isso a tela não fecha e os campos ficam travados. Se a gravação falhar, a tela continua aberta com o alerta. Não publicado. ANA.FERNANDES entrou na mesma supervisão financeira da Giovanna Marsili, só no código, sem gravar permissão no banco. O localhost tem `SESSION_SECRET` só neste computador, no `.env` ignorado pelo Git. A chave `SUPABASE_SERVICE_ROLE_KEY` do projeto `ajhmmjuewdsukecaimik` ainda não está nesse arquivo. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-21. O botão Atualizar do Cockpit só relê o banco. Receita ou custo gravados, inclusive zero, aparecem no Cockpit e no relatório mesmo sem conferência. A estimativa fica só para coluna NULL. No boletim, os subitens de dinheiro fecham no valor gravado da OS. Publicado nesta entrega, a partir da `dev`. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
 
 | Campo | Valor |
 | --- | --- |

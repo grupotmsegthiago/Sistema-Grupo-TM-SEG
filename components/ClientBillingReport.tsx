@@ -7,7 +7,7 @@ import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
-import { resolveBoletimClientLineTotal } from '../lib/billing/boletimLineTotal';
+import { fecharSubitensNoValorGravado, resolveBoletimClientLineTotal } from '../lib/billing/boletimLineTotal';
 import { resolveDhlCancelledSheetWindow, type DhlEndTimeHistory } from '../lib/billing/dhlCancelledSheetWindow';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
@@ -670,17 +670,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const clientObj = clients.find(c => c.name === clientName);
             const displayClient = clientObj?.trading_name || clientName;
 
-            const hasStoredRevenue = m.revenue_value != null && m.revenue_value > 0;
-            const hasStoredCost = m.cost_value != null && m.cost_value > 0;
+            const hasStoredRevenue = m.revenue_value != null;
+            const hasStoredCost = m.cost_value != null;
 
             let revenue: number;
             let cost: number;
 
-            // DESL: persistido ou derivado do KM autorizado (igual Relatório de OS)
+            // DESL: persistido (inclusive 0) ou derivado só quando a coluna está NULL.
             let clientUnitKm = 0;
             let providerUnitKm = 0;
+            let finChart: ReturnType<typeof calculateMissionFinancials> | null = null;
             try {
-                const finChart = calculateMissionFinancials(m, allClientTables, allProviderTables, clientObj, new Date());
+                finChart = calculateMissionFinancials(m, allClientTables, allProviderTables, clientObj, new Date());
                 clientUnitKm = finChart.client.unitPriceKm || 0;
                 providerUnitKm = finChart.provider.unitCostKm || 0;
             } catch { /* fallback DHL por UF no resolver */ }
@@ -690,10 +691,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             });
             const dispVal = dispChart.client;
             const dispProv = dispChart.provider;
-            revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client) + dispVal;
+            const podeEstimar = !(m.billing_approved || m.billing_verified_by);
+            const receitaBase = hasStoredRevenue ? Number(m.revenue_value) : (podeEstimar ? Number(finChart?.client.serviceTotal || 0) : 0);
+            revenue = receitaBase + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client) + dispVal;
             const isSameOsChild = !!(m as { is_same_os?: boolean }).is_same_os;
             const tollProv = resolveStoredProviderToll(m.toll_value || 0, m.toll_value_provider, isSameOsChild);
-            const costBase = isSameOsChild ? 0 : (m.cost_value || 0);
+            const costBase = isSameOsChild ? 0 : (m.cost_value != null ? Number(m.cost_value) : (podeEstimar ? Number(finChart?.provider.serviceTotal || 0) : 0));
             cost = costBase + tollProv + dispProv;
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
@@ -1068,11 +1071,20 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
                 const prov = finP.provider;
                 const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
-                const dispProvP = resolveMissionDisplacement(m as any, {
+                const dispProvDerivado = resolveMissionDisplacement(m as any, {
                     clientUnitPriceKm: finP.client.unitPriceKm,
                     providerUnitPriceKm: prov.unitCostKm,
                 }).provider;
-                const savedCost = m.cost_value || 0;
+                const dispProvP = m.is_same_os ? 0 : (m.displacement_value_provider != null ? Number(m.displacement_value_provider) || 0 : dispProvDerivado);
+                const custoGravado = m.is_same_os && m.cost_value == null
+                    ? 0
+                    : (m.cost_value == null ? null : Number(m.cost_value));
+                const partesP = fecharSubitensNoValorGravado({
+                    valorGravado: custoGravado,
+                    ativacao: prov.base ?? 0,
+                    kmExtra: prov.extraKmVal ?? 0,
+                    horaExtra: prov.extraHrVal ?? 0,
+                });
 
                 const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
                 const cancelWindowP = isCancelledP ? resolveCancelledWindow(m.start_time, m._cancelStatusAt) : null;
@@ -1091,7 +1103,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     id: (m.id || '').replace('GTM-', ''),
                     route: refCidadesP,
                     client: selectedProviderName,
-                    activationFee: prov.base ?? 0,
+                    activationFee: partesP.ativacao,
                     franchiseHours: prov.franchiseHours ?? 0,
                     franchiseKm: prov.franchiseKm ?? 0,
                     unitHr: prov.unitCostHour ?? 0,
@@ -1112,16 +1124,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     timeStart: fmtTime(effStartP),
                     timeEnd: fmtTime(effEndP),
                     timeTotal: cancelledBeforeP ? fmtHHMM(0) : fmtHHMM(finP.durationHours),
-                    kmExtraQtd: prov.excessKm ?? 0,
+                    kmExtraQtd: partesP.colapsou ? 0 : (prov.excessKm ?? 0),
                     kmExtraUnit: prov.unitCostKm ?? 0,
-                    kmExtraTotal: prov.extraKmVal ?? 0,
-                    hrExtraQtd: prov.excessHours ?? 0,
+                    kmExtraTotal: partesP.kmExtra,
+                    hrExtraQtd: partesP.colapsou ? 0 : (prov.excessHours ?? 0),
                     hrExtraUnit: prov.unitCostHour ?? 0,
-                    hrExtraTotal: prov.extraHrVal ?? 0,
-                    escoltaVal: prov.base ?? 0,
+                    hrExtraTotal: partesP.horaExtra,
+                    escoltaVal: partesP.ativacao,
                     tollVal: tollProv,
                     displacementVal: dispProvP,
-                    totalGeral: savedCost + tollProv + dispProvP,
+                    totalGeral: partesP.ativacao + partesP.kmExtra + partesP.horaExtra + tollProv + dispProvP,
                     franchiseHoursFmt: fmtFranchiseHr(prov.franchiseHours ?? 0),
                     frozen: false,
                     frozenBy: null as string | null,
@@ -1166,7 +1178,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 } catch { /* fallback UF */ }
                 const useDisp = resolveMissionDisplacement({
                     dhl_deslocamento_km: (m as any).dhl_deslocamento_km,
-                    displacement_value: m.displacement_value ?? snap.displacementVal ?? 0,
+                    displacement_value: m.displacement_value != null ? m.displacement_value : (snap.displacementVal != null ? snap.displacementVal : null),
                     displacement_value_provider: m.displacement_value_provider,
                     origin: m.origin,
                     is_same_os: (m as any).is_same_os,
@@ -1190,6 +1202,14 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     componentTotal: useBase + useKmEx + useHrEx + useToll + useDisp,
                     wasManuallyEdited,
                 });
+                const partesSnap = fecharSubitensNoValorGravado({
+                    valorGravado: m.revenue_value,
+                    ativacao: useBase,
+                    kmExtra: useKmEx,
+                    horaExtra: useHrEx,
+                });
+                const totalFechado = partesSnap.ativacao + partesSnap.kmExtra + partesSnap.horaExtra + useToll + useDisp;
+                const totalDaLinha = m.revenue_value != null ? totalFechado : useTotal;
 
                 // Franquia zerada permanece a gravada. A tabela viva não completa o snapshot.
                 const snapFranchiseHours = snap.franchiseHours ?? 0;
@@ -1225,7 +1245,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     id: (m.id || '').replace('GTM-', ''),
                     route: refCidades2,
                     client: displayClientName,
-                    activationFee: useBase,
+                    activationFee: partesSnap.ativacao,
                     franchiseHours: snapFranchiseHours,
                     franchiseKm: snapFranchiseKm,
                     unitHr: snapUnitHr,
@@ -1249,16 +1269,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     timeStart: fmtTime(m.start_time),
                     timeEnd: fmtTime(m.end_time),
                     timeTotal: fmtHHMM(snapDurationHours),
-                    kmExtraQtd: snapKmExtraQtd,
+                    kmExtraQtd: partesSnap.colapsou ? 0 : snapKmExtraQtd,
                     kmExtraUnit: snapUnitKm,
-                    kmExtraTotal: useKmEx,
-                    hrExtraQtd: snapHrExtraQtd,
+                    kmExtraTotal: partesSnap.kmExtra,
+                    hrExtraQtd: partesSnap.colapsou ? 0 : snapHrExtraQtd,
                     hrExtraUnit: snapUnitHr,
-                    hrExtraTotal: useHrEx,
-                    escoltaVal: useBase,
+                    hrExtraTotal: partesSnap.horaExtra,
+                    escoltaVal: partesSnap.ativacao,
                     tollVal: useToll,
                     displacementVal: useDisp,
-                    totalGeral: useTotal,
+                    totalGeral: totalDaLinha,
                     franchiseHoursFmt: fmtFranchiseHr(snapFranchiseHours),
                     frozen: true,
                     frozenBy: aprovadorHumano,
@@ -1289,8 +1309,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
 
             const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
-            const savedRevenue = m.revenue_value || 0;
-            const hasSavedRevenue = savedRevenue > 0;
+            const receitaGravada = m.revenue_value == null ? null : Number(m.revenue_value);
 
             const adj = billingAdjustments[m.id];
             const overrides = adj ? {
@@ -1338,8 +1357,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const hrExtraQtd = fin.client.excessHours;
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
+            const partesCliente = fecharSubitensNoValorGravado({
+                valorGravado: receitaGravada,
+                ativacao: activationFee,
+                kmExtra: kmExtraTotal,
+                horaExtra: hrExtraTotal,
+            });
+            const dispCliente = m.displacement_value != null ? Number(m.displacement_value) || 0 : dispValN;
 
-            const totalGeral = savedRevenue + tollVal + dispValN;
+            const totalGeral = partesCliente.ativacao + partesCliente.kmExtra + partesCliente.horaExtra + tollVal + dispCliente;
             const semDetalhamento = m.billing_approved === true || origemDetalhe === 'humana';
             const divergenciaSemDetalhe = estadoDetalhe === 'incompleto'
                 ? DIVERGENCIA_DETALHAMENTO_INCOMPLETO
@@ -1357,7 +1383,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 id: (m.id || '').replace('GTM-', ''),
                 route: refCidades,
                 client: displayClientName,
-                activationFee: semDetalhamento ? null : activationFee,
+                activationFee: semDetalhamento ? null : partesCliente.ativacao,
                 franchiseHours: semDetalhamento ? null : franchiseHours,
                 franchiseKm: semDetalhamento ? null : franchiseKm,
                 unitHr: semDetalhamento ? null : unitHr,
@@ -1378,15 +1404,15 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 timeStart: fmtTime(effStartTime),
                 timeEnd: fmtTime(effEndTime),
                 timeTotal: semDetalhamento ? '—' : (cancelledBefore ? fmtHHMM(0) : fmtHHMM(durationHours)),
-                kmExtraQtd: semDetalhamento ? 0 : kmExtraQtd,
+                kmExtraQtd: semDetalhamento || partesCliente.colapsou ? 0 : kmExtraQtd,
                 kmExtraUnit: semDetalhamento ? null : unitKm,
-                kmExtraTotal: semDetalhamento ? 0 : kmExtraTotal,
-                hrExtraQtd: semDetalhamento ? 0 : hrExtraQtd,
+                kmExtraTotal: semDetalhamento ? 0 : partesCliente.kmExtra,
+                hrExtraQtd: semDetalhamento || partesCliente.colapsou ? 0 : hrExtraQtd,
                 hrExtraUnit: semDetalhamento ? null : unitHr,
-                hrExtraTotal: semDetalhamento ? 0 : hrExtraTotal,
-                escoltaVal: semDetalhamento ? null : activationFee,
+                hrExtraTotal: semDetalhamento ? 0 : partesCliente.horaExtra,
+                escoltaVal: semDetalhamento ? null : partesCliente.ativacao,
                 tollVal,
-                displacementVal: dispValN,
+                displacementVal: dispCliente,
                 totalGeral,
                 franchiseHoursFmt: semDetalhamento ? '—' : fmtFranchiseHr(franchiseHours),
                 frozen: false,

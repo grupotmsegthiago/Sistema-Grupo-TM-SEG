@@ -623,8 +623,10 @@ const MissionReportPage: React.FC = () => {
     const asNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     const lightCanonical = (m: Mission): CanonicalResult => {
       const can = computeCanonicalRevenueCost(m, refs, now);
-      const revBase = asNum((m as any).revenue_value);
-      const costBase = asNum((m as any).cost_value);
+      const revRaw = (m as any).revenue_value;
+      const costRaw = (m as any).cost_value;
+      const revBase = revRaw != null ? asNum(revRaw) : can.revBase;
+      const costBase = costRaw != null ? asNum(costRaw) : can.costBase;
       const parPedagio = leituraPedagioDaMissao(m);
       const tollRev = parPedagio.clienteExibido;
       const tollCost = parPedagio.fornecedorExibido;

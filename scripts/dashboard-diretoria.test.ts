@@ -451,21 +451,16 @@ describe('DiretoriaSistemaTab auth', () => {
   });
 });
 
-describe('Cockpit Atualizar → recalcula OS', () => {
-  it('hook chama /api/recalculate-open antes de recarregar KPIs', async () => {
+describe('Cockpit Atualizar só lê', () => {
+  it('hook não grava OS ao atualizar', async () => {
     const src = await import('node:fs/promises').then((fs) =>
       fs.readFile('lib/dashboardDiretoria/useDashboardDiretoriaData.ts', 'utf8'),
     );
-    assert.match(src, /authFetch\('\/api\/recalculate-open'/);
-    assert.match(src, /scope:\s*'open'/);
-    assert.match(src, /recalculateOpenMissionsBilling/);
-    assert.match(src, /friendlyRecalcError/);
-    assert.match(src, /Fetch is aborted|fetch is aborted/i);
-    assert.match(src, /FUNCTION_INVOCATION_FAILED/);
-    assert.doesNotMatch(src, /new AbortController/);
+    assert.doesNotMatch(src, /recalculate-open/);
+    assert.doesNotMatch(src, /recalculateOpenMissionsBilling/);
     assert.match(src, /const refresh = useCallback\(async \(\) =>/);
-    assert.match(src, /await recalculateOpenMissionsBilling\(\)/);
     assert.match(src, /await load\(\)/);
+    assert.doesNotMatch(src, /new AbortController/);
   });
 
   it('o cockpit não mostra o TM SEG News', async () => {
@@ -482,8 +477,8 @@ describe('Cockpit Atualizar → recalcula OS', () => {
       fs.readFile('components/dashboard/DashboardDiretoria.tsx', 'utf8'),
     );
     assert.match(src, /data\.refresh/);
-    assert.match(src, /lastRecalc/);
-    assert.match(src, /hora extra/);
+    assert.match(src, /Não altera OS/);
+    assert.doesNotMatch(src, /Recalcula hora extra/);
   });
 
   it('cockpit mostra detalhamento de caixa com ranking de títulos', async () => {

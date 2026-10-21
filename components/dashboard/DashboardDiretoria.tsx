@@ -1159,7 +1159,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
               type="button"
               onClick={() => { void data.refresh(); }}
               disabled={data.loading}
-              title="Recalcula hora extra/valores nas OS em aberto (não faturadas) e atualiza os KPIs"
+              title="Busca de novo os dados gravados. Não altera OS."
               className="inline-flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-sm w-full sm:w-auto"
               data-testid="button-diretoria-refresh"
             >

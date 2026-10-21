@@ -6,8 +6,8 @@ describe('resolveDisplacementFromAuthorizedKm', () => {
   it('deriva cliente e fornecedor a partir do KM quando R$ não está salvo', () => {
     const r = resolveDisplacementFromAuthorizedKm({
       dhlDeslocamentoKm: 10,
-      displacementValue: 0,
-      displacementValueProvider: 0,
+      displacementValue: null,
+      displacementValueProvider: null,
       clientUnitPriceKm: 7.35,
       providerUnitPriceKm: 5,
       origin: 'Florianópolis - SC',

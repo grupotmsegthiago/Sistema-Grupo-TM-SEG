@@ -120,6 +120,37 @@ describe('P0-03 — computeCanonicalRevenueCost fail-closed', () => {
     assert.equal(r.costBase, 400);
   });
 
+  it('zero gravado sem conferência permanece zero', () => {
+    const r = computeCanonicalRevenueCost({
+      status: MissionStatus.PENDING,
+      revenue_value: 0,
+      cost_value: 0,
+      client: 'SEM TABELA',
+      origin: 'SAO PAULO - SP',
+      destination: 'CAMPINAS - SP',
+    }, emptyRefs);
+    assert.equal(r.revBase, 0);
+    assert.equal(r.costBase, 0);
+    assert.equal(r.source, 'saved');
+    assert.equal(r.valueStatus, 'official');
+  });
+
+  it('deslocamento zero gravado não vira estimativa', () => {
+    const r = computeCanonicalRevenueCost({
+      status: MissionStatus.COMPLETED,
+      revenue_value: 500,
+      cost_value: 300,
+      billing_approved: true,
+      dhl_deslocamento_km: 50,
+      displacement_value: 0,
+      displacement_value_provider: 0,
+      origin: 'SAO PAULO - SP',
+    }, emptyRefs);
+    assert.equal(r.dispRev, 0);
+    assert.equal(r.dispCost, 0);
+    assert.equal(r.rev, 500);
+  });
+
   it('OS não aprovada sem valores pode estimar (preview operacional)', () => {
     const r = computeCanonicalRevenueCost({
       status: MissionStatus.PENDING,
