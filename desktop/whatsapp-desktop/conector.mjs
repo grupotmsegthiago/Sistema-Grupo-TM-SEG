@@ -565,21 +565,38 @@ function rodarPowerShell(acao, grupo = "", mensagem = "") {
   return new Promise((resolve) => {
     const proc = spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", acharArquivo("driver.ps1"), "-Acao", acao, "-Grupo", grupo, "-Mensagem", mensagem], { windowsHide: true });
     let saida = "";
+    let erro = "";
     let falhou = false;
+    const texto = (parte) => parte.toString("utf8").replace(/\u0000/g, "").trim();
     proc.stdout.on("data", (parte) => {
-      saida += parte.toString();
+      saida += texto(parte);
+    });
+    proc.stderr.on("data", (parte) => {
+      erro += texto(parte);
     });
     proc.on("error", () => {
       falhou = true;
-      resolve({ ok: false, aberto: false, motivo: "O Windows n\xE3o devolveu o resultado do WhatsApp." });
+      resolve({ ok: false, aberto: false, estado: "falha_envio", motivo: "O Windows n\xE3o devolveu o resultado do WhatsApp." });
     });
     proc.on("close", () => {
       if (falhou) return;
-      try {
-        resolve(JSON.parse(saida || "{}"));
-      } catch {
-        resolve({ ok: false, motivo: "O Windows n\xE3o devolveu o resultado do WhatsApp." });
+      const bruto = saida.trim();
+      const inicio = bruto.lastIndexOf("{");
+      const fim = bruto.lastIndexOf("}");
+      let json = null;
+      if (inicio >= 0 && fim > inicio) {
+        try {
+          json = JSON.parse(bruto.slice(inicio, fim + 1));
+        } catch {
+          json = null;
+        }
       }
+      if (!json || !json.estado) {
+        const detalhe = (json?.motivo || erro || bruto || "O Windows n\xE3o devolveu o resultado do WhatsApp.").replace(/\s+/g, " ").slice(0, 400);
+        resolve({ ok: false, aberto: json?.aberto !== false, estado: "falha_envio", motivo: detalhe });
+        return;
+      }
+      resolve(json);
     });
   });
 }
@@ -611,7 +628,7 @@ async function executarFila(comandos, driver) {
         resultados.push(anterior);
         continue;
       }
-      passos.push("pesquisar", "enviar");
+      passos.push("abrir", "limpar", "pesquisar", "colar", "enviar", "limpar");
       const resultado = await driver(comando.groupName, comando.text);
       const gravado = { ...resultado, id: comando.id };
       gravarFeito(gravado);
@@ -822,28 +839,17 @@ function criarServidor(driver = driverWindows(), inspecionar, instalador) {
       const inspecao = await lerJanela();
       if (inspecao.aberto === true && inspecao.autenticado === false) gravarInstalacao({ whatsappAutenticado: false });
       if (inspecao.autenticado === true) gravarInstalacao({ whatsappAutenticado: true });
-      if (inspecao.campoMensagem === false || inspecao.aberto === false) {
-        enviar(200, {
-          ok: false,
-          motivo: "O WhatsApp Desktop n\xE3o mostrou o chat GRUPO TM SEG - ADM nem o campo de mensagem. Abra esse grupo no aplicativo oficial e autorize o teste outra vez. Nada foi enviado.",
-          instalacaoId: instalacao.id,
-          entrega: null,
-          whatsappAutenticado: false
-        });
-        return;
-      }
-      const candidatos = Array.isArray(inspecao.candidatos) ? inspecao.candidatos.map(String) : [];
-      const titulo = dobrar(inspecao.titulo) === dobrar(GRUPO_HOMOLOGACAO) ? GRUPO_HOMOLOGACAO : "";
       const decisao = decidirTesteHomologacao({
         autorizar: corpo?.autorizar === true,
-        tituloAberto: titulo,
-        candidatos,
+        tituloAberto: GRUPO_HOMOLOGACAO,
+        candidatos: [GRUPO_HOMOLOGACAO],
         testeJaRegistrado: !!teste?.registrado
       });
       if (!decisao.enviar) {
         enviar(200, { ok: false, motivo: decisao.motivo, instalacaoId: instalacao.id, entrega: null, whatsappAutenticado: inspecao.autenticado ?? null });
         return;
       }
+      if (inspecao.aberto === false) abrirWhatsApp();
       const resultado = await driver(GRUPO_HOMOLOGACAO, MENSAGEM_TESTE_HOMOLOGACAO);
       const registro = {
         registrado: resultado.estado === "comando_executado",

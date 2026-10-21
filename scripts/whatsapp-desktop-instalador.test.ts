@@ -23,14 +23,27 @@ test('o assistente instala ao avançar e o atalho instala o Node.js se faltar', 
   assert.match(html, /Instalando /);
   assert.match(html, /Node\.js, Python e WhatsApp/);
   assert.doesNotMatch(html, /Python não é instalado/);
-  assert.match(vbs, /winget install --id OpenJS\.NodeJS\.LTS/);
+  const ps1 = fs.readFileSync('desktop/whatsapp-desktop/instalar-node.ps1', 'utf8');
+  assert.match(vbs, /instalar-node\.ps1/);
+  assert.match(vbs, /ProgramW6432/);
+  assert.match(ps1, /winget install --id OpenJS\.NodeJS\.LTS/);
+  assert.match(ps1, /nodejs\.org\/dist/);
   assert.doesNotMatch(vbs, /não instala Python/);
   assert.match(vbs, /pastaScript & "\\conector\.mjs"/);
 });
 
+function listarZip(arquivo: string): string {
+  try {
+    return execFileSync('unzip', ['-Z1', arquivo], { encoding: 'utf8' });
+  } catch (erro: unknown) {
+    if (!(erro instanceof Error) || !('code' in erro) || (erro as NodeJS.ErrnoException).code !== 'ENOENT') throw erro;
+    return execFileSync('tar', ['-tf', arquivo], { encoding: 'utf8' });
+  }
+}
+
 test('o zip baixado traz o atalho, o conector e a logo na mesma pasta', () => {
-  const lista = execFileSync('unzip', ['-Z1', 'public/instalador-grupo-tmseg.zip'], { encoding: 'utf8' });
-  for (const nome of ['Abrir instalador.vbs', 'conector.mjs', 'assistente.html', 'driver.ps1', 'logo.png']) {
+  const lista = listarZip('public/instalador-grupo-tmseg.zip');
+  for (const nome of ['Abrir instalador.vbs', 'instalar-node.ps1', 'conector.mjs', 'assistente.html', 'driver.ps1', 'logo.png']) {
     assert.ok(lista.split(/\r?\n/).includes(nome), nome);
   }
   const servidor = fs.readFileSync('desktop/whatsapp-desktop/servidor.ts', 'utf8');

@@ -7,7 +7,7 @@ O aplicativo fica só neste computador. Ele usa o WhatsApp Desktop já autentica
 1. Em **Solicitação**, se o computador ainda não estiver preparado, a tela pede o download de `/instalador-grupo-tmseg.zip`. Extraia e dê duplo clique em `Abrir instalador.vbs`. O atalho sobe o conector e abre o assistente. Não há comando para digitar. No repositório, o mesmo atalho continua em `desktop/whatsapp-desktop/`.
 2. Siga as telas: Boas-vindas, Verificação do computador, Instalação dos componentes, Configuração do WhatsApp, Conexão com TM SEG, Teste de funcionamento e Instalação concluída.
 3. Em **Instalação dos componentes**, Avançar instala o que faltar: Node.js, Python e WhatsApp oficial, e configura a pasta local do conector. A conta do WhatsApp entra pelo QR Code do próprio aplicativo. Nenhuma senha é pedida.
-4. No teste, marque a autorização. O envio só ocorre se o chat aberto for exatamente **GRUPO TM SEG - ADM**. Se a janela não mostrar esse nome, nada é enviado.
+4. No teste, marque a autorização. O aplicativo abre o WhatsApp, apaga a pesquisa, busca **GRUPO TM SEG - ADM**, cola a mensagem em Digite uma mensagem, envia e apaga o nome da pesquisa. A solicitação usa a mesma sequência em cada grupo.
 5. Na primeira conclusão, o TM SEG grava o computador. Nas próximas aberturas o conector identifica o dispositivo. Instalação, QR Code e mensagem de teste não se repetem. O QR Code volta somente se o WhatsApp perder a conta. O código manual fica só para a primeira vez, se a identificação automática não ocorrer.
 
 O assistente não é um arquivo BAT. A assinatura digital só entra quando houver certificado. Neste computador, a inspeção de 19/10/2026 viu o WhatsApp aberto, mas a árvore de acessibilidade não expôs o nome do grupo. O teste real não foi enviado.
@@ -17,7 +17,7 @@ O assistente não é um arquivo BAT. A assinatura digital só entra quando houve
 1. No monitoramento, clique em **Solicitação**.
 2. Cole a mensagem do cliente e leia a fila. A ordem e a TORRES em São Paulo continuam as do PR 350.
 3. Confira o nome exato do grupo no cadastro do fornecedor. Sem esse nome, o aplicativo não envia.
-4. Clique em **Autorizar lote no computador**.
+4. Clique em **Autorizar lote no computador**. Para cada grupo, o aplicativo abre o WhatsApp, limpa a pesquisa, busca o nome, cola a mensagem em Digite uma mensagem, envia e apaga o nome da pesquisa.
 5. Imediata: todos os selecionados já liberados entram juntos. Agendada: os dois mais baratos agora e os dois próximos a cada 5 minutos.
 6. **Fornecedor confirmado** trava o restante e abre a OS como **Solicitada**. Uma mensagem que o WhatsApp já recebeu o comando não é descrita como cancelada.
 
