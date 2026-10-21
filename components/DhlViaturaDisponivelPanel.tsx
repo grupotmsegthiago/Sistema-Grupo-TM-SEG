@@ -138,10 +138,6 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
     () => rows.filter((row) => entraNaListaBloqueados(row, now)),
     [rows, now],
   );
-  const semConfirmacao = useMemo(
-    () => rows.filter((row) => row.status === 'copiado' && minutosRestantes(row.finalizada_em, now) === 0),
-    [rows, now],
-  );
   const podeAuditar = podeAuditarNaoEncaminhados(user);
 
   useEffect(() => {
@@ -206,14 +202,13 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
       if (resultado.resultado === 'erro') {
         showNotification('WhatsApp', 'O texto foi copiado, mas o painel não gravou. Os outros operadores podem não ver o verde claro.', 'warning');
       } else {
-        showNotification('WhatsApp', 'Texto copiado. Cole no grupo da DHL e confirme o envio.', 'success');
+        showNotification('WhatsApp', 'Texto copiado. A viatura saiu da lista para toda a equipe.', 'success');
       }
       setRows((prev) => prev.map((item) => (
         item.mission_id === row.mission_id && item.status === 'pendente'
           ? { ...item, status: 'copiado', copiado_em: new Date().toISOString(), copiado_por: nome }
           : item
       )));
-      setConfirmandoId(row.mission_id);
       void load(false);
     });
   };
@@ -273,7 +268,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <p className="text-[10px] font-bold uppercase text-green-200">Some ao confirmar o envio no grupo</p>
+          <p className="text-[10px] font-bold uppercase text-green-200">Some quando alguém comunica a DHL</p>
           <button
             type="button"
             onClick={() => {
@@ -426,7 +421,7 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
           </button>
           {auditAberta && (
             <div className="mt-2 max-h-64 space-y-2 overflow-y-auto" data-testid="lista-dhl-nao-encaminhadas">
-              {bloqueados.length === 0 && semConfirmacao.length === 0 && (
+              {bloqueados.length === 0 && (
                 <p className="text-[11px] font-semibold text-gray-500">Nenhuma comunicação perdida nos últimos 30 dias.</p>
               )}
               {bloqueados.map((row) => (
@@ -455,16 +450,6 @@ const DhlViaturaDisponivelPanel: React.FC = () => {
                   </div>
                 </article>
               ))}
-              {semConfirmacao.length > 0 && (
-                <div className="pt-1">
-                  <p className="text-[10px] font-black uppercase text-amber-800">Copiou e ainda não confirmou o grupo</p>
-                  {semConfirmacao.map((row) => (
-                    <p key={row.mission_id} className="mt-1 text-[11px] font-semibold text-amber-900">
-                      {row.mission_id} · {row.provider_name || '—'} · {row.posicao} · copiado por {row.copiado_por || '—'}
-                    </p>
-                  ))}
-                </div>
-              )}
             </div>
           )}
         </div>

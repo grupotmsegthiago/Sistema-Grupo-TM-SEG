@@ -171,7 +171,8 @@ test('cor do botão e saída do painel depois de 30 minutos', () => {
   assert.equal(tomDoBotao('copiado', copiado.finalizada_em, now), 'claro');
   assert.equal(tomDoBotao('pendente', estourado.finalizada_em, now), 'vermelho');
   assert.equal(visivelNoPainelVivo(pendente, now), true);
-  assert.equal(visivelNoPainelVivo(copiado, now), true);
+  assert.equal(visivelNoPainelVivo(copiado, now), false);
+  assert.equal(visivelNoPainelVivo({ status: 'copiado', finalizada_em: ha(148 * 60) }, now), false);
   assert.equal(visivelNoPainelVivo(estourado, now), false);
   assert.equal(visivelNoPainelVivo({ status: 'confirmado', finalizada_em: ha(5) }, now), false);
   assert.equal(entraNaListaBloqueados(estourado, now), true);

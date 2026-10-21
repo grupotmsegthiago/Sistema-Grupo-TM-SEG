@@ -411,6 +411,9 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
     }, [displayRevenue, displayCost]);
     const isNegativeProfit = !hideFinancialInfo && profitMargin < 0;
+    const mostraColunaFinanceira =
+        (!hideFinancialInfo && (isDirector || canSeeBillingSummary) && !hideProviderInfo) ||
+        (!hideFinancialInfo && hideProviderInfo && !!financials);
 
     const isActive = !isTerminal;
 
@@ -786,7 +789,7 @@ Qualquer dúvida, estamos a disposição.
                 </div>
             )}
             <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl transition-colors ${isRedLight ? 'bg-red-500' : isImminent ? 'bg-amber-500' : 'bg-transparent'}`}></div>
-            <div className="os-miolo grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-0 divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch">
+            <div className={`os-miolo${mostraColunaFinanceira ? '' : ' os-miolo--sem-fin'} grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-0 divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch`}>
                 <div className="os-col-id sm:col-span-1 xl:col-span-2 flex flex-col justify-between items-stretch gap-2 min-w-0">
                     <div className="os-id-cabeca">
                         <div className="os-id-nome">
@@ -1084,7 +1087,7 @@ Qualquer dúvida, estamos a disposição.
                         />
                 </div>
 
-                <div className="os-col-fin sm:col-span-1 xl:col-span-1 p-1 flex flex-col justify-center border-l border-r border-gray-100 min-w-[108px] shrink-0">
+                {mostraColunaFinanceira && <div className="os-col-fin sm:col-span-1 xl:col-span-1 p-1 flex flex-col justify-center border-l border-r border-gray-100 min-w-[108px] shrink-0">
                     {!hideFinancialInfo && (isDirector || canSeeBillingSummary) && !hideProviderInfo && (
                         <div className="os-fin" data-testid={`resumo-financeiro-${mission.id}`}>
                             <p className="os-fin-titulo"><Coins size={12} /> Financeiro</p>
@@ -1186,7 +1189,7 @@ Qualquer dúvida, estamos a disposição.
                            </div>
                         </div>
                     )}
-                </div>
+                </div>}
 
                 <div className="sm:col-span-1 xl:col-span-1 py-1 px-1 flex items-center justify-center border-l border-gray-100 bg-white shrink-0">
                     <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>

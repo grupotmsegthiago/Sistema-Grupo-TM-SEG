@@ -129,10 +129,10 @@ export function tomDoBotao(status: StatusAlertaDhl, finalizadaEm: string, now: D
   return 'escuro';
 }
 
+/** Só fica na lista quem ainda não comunicou, dentro dos 30 minutos. O clique de qualquer operador tira a OS para todo mundo. */
 export function visivelNoPainelVivo(alerta: Pick<AlertaDhl, 'status' | 'finalizada_em'>, now: Date): boolean {
-  if (alerta.status === 'copiado') return true;
-  if (alerta.status === 'pendente') return idadeMs(alerta.finalizada_em, now) < HORA_MS;
-  return false;
+  if (alerta.status !== 'pendente') return false;
+  return idadeMs(alerta.finalizada_em, now) < HORA_MS;
 }
 
 /** Motivo já escrito sai da lista. O texto fica na observação da OS. */

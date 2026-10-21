@@ -1529,6 +1529,7 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
+  cursor: pointer;
 }
 .os-hover-ancora > .os-veiculo3d,
 .os-hover-ancora > .os-escolta-cine { flex: 1 1 auto; width: 100%; min-height: 0; }
@@ -1726,3 +1727,10 @@
 .os-col-id .os-id-operacao,
 .os-col-id .os-id-atencao { min-height: 28px !important; padding: 3px 8px !important; }
 .os-col-id .os-id-operacao > .mt-2 span:nth-of-type(2) { font-size: 13px !important; font-variant-numeric: tabular-nums; }
+
+/* Sem faturamento, o vão da coluna volta para caminhão, escolta e mapa. */
+@media (min-width: 1280px) {
+  .os-miolo.os-miolo--sem-fin {
+    grid-template-columns: minmax(168px, 17fr) minmax(210px, 27fr) minmax(210px, 27fr) minmax(168px, 23fr) minmax(84px, 7fr) !important;
+  }
+}

@@ -85,26 +85,17 @@ export const FichaOs: React.FC<{
   );
 };
 
-/** Painel que abre ao passar o mouse e não fica preso dentro do card. */
+/** Painel que abre ao clicar na coluna e fecha ao clicar fora. */
 const PainelSuspensoOs: React.FC<{ children: React.ReactNode; painel: React.ReactNode }> = ({ children, painel }) => {
   const ancora = useRef<HTMLDivElement>(null);
   const caixa = useRef<HTMLDivElement>(null);
-  const espera = useRef<number | null>(null);
   const [aberto, setAberto] = useState(false);
   const [pos, setPos] = useState({ top: 8, left: 8 });
 
-  const cancelar = () => {
-    if (espera.current != null) window.clearTimeout(espera.current);
-  };
-  const abrir = () => {
-    cancelar();
-    const r = ancora.current?.getBoundingClientRect();
-    if (r) setPos({ top: Math.max(8, Math.min(r.top, window.innerHeight - 120)), left: Math.max(8, r.left) });
-    setAberto(true);
-  };
-  const fechar = () => {
-    cancelar();
-    espera.current = window.setTimeout(() => setAberto(false), 140);
+  const aoClicar = (ev: React.MouseEvent) => {
+    const alvo = ev.target as HTMLElement | null;
+    if (alvo?.closest("button, a, summary, input, textarea, select, label")) return;
+    setAberto((atual) => !atual);
   };
 
   useEffect(() => {
@@ -125,27 +116,35 @@ const PainelSuspensoOs: React.FC<{ children: React.ReactNode; painel: React.Reac
     };
     ajustar();
     const depois = window.requestAnimationFrame(ajustar);
-    const sair = (ev: Event) => { const alvo = ev.target as Node | null; if (alvo && caixa.current && (alvo === caixa.current || caixa.current.contains(alvo))) return; setAberto(false); };
+    const sairRolagem = (ev: Event) => {
+      const alvo = ev.target as Node | null;
+      if (alvo && caixa.current && (alvo === caixa.current || caixa.current.contains(alvo))) return;
+      setAberto(false);
+    };
+    const fora = (ev: MouseEvent) => {
+      const alvo = ev.target as Node | null;
+      if (!alvo) return;
+      if (ancora.current?.contains(alvo)) return;
+      if (caixa.current?.contains(alvo)) return;
+      setAberto(false);
+    };
     window.addEventListener("resize", ajustar);
-    window.addEventListener("scroll", sair, true);
+    window.addEventListener("scroll", sairRolagem, true);
+    const ouvir = window.setTimeout(() => document.addEventListener("mousedown", fora), 0);
     return () => {
       window.cancelAnimationFrame(depois);
+      window.clearTimeout(ouvir);
       window.removeEventListener("resize", ajustar);
-      window.removeEventListener("scroll", sair, true);
+      window.removeEventListener("scroll", sairRolagem, true);
+      document.removeEventListener("mousedown", fora);
     };
   }, [aberto]);
 
   return (
-    <div className="os-hover-ancora" ref={ancora} onMouseEnter={abrir} onMouseLeave={fechar}>
+    <div className="os-hover-ancora" ref={ancora} onClick={aoClicar}>
       {children}
       {aberto ? createPortal(
-        <div
-          className="os-ficha"
-          ref={caixa}
-          style={{ top: pos.top, left: pos.left }}
-          onMouseEnter={abrir}
-          onMouseLeave={fechar}
-        >
+        <div className="os-ficha" ref={caixa} style={{ top: pos.top, left: pos.left }}>
           {painel}
         </div>,
         document.body,
