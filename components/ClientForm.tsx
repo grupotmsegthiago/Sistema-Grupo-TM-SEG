@@ -211,7 +211,6 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   // Motor de Precificação Automática (cópia da lógica de ProviderForm, com REGIÃO)
   const AUTO_MASTER_PREFIX = '__AUTO_MASTER__';
-  const buildMasterOpType = (region: string) => `${AUTO_MASTER_PREFIX} ${region}`.toUpperCase().trim();
   const parseMasterRegion = (opType: string | null | undefined): string | null => {
     const s = (opType || '').toUpperCase().trim();
     if (!s.startsWith(AUTO_MASTER_PREFIX)) return null;
@@ -537,42 +536,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
   };
 
   const handleSaveAutoMaster = async () => {
-      if (!id || !formData.name) { showNotification('Atenção', 'Salve o cliente primeiro.', 'warning'); return; }
-      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro/comercial pode configurar o motor automático.', 'error'); return; }
-      if (!autoMasterRegion) { showNotification('Atenção', 'Selecione uma região.', 'warning'); return; }
-      const cfg = autoMasterConfig;
-      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0 || cfg.baseHourAllowance <= 0 || cfg.extraKmValue < 0 || cfg.extraHourValue < 0) {
-          showNotification('Atenção', 'Preencha as 5 variáveis mestre com valores positivos.', 'warning');
-          return;
-      }
-      setIsSavingMaster(true);
-      try {
-          const opType = buildMasterOpType(autoMasterRegion);
-          const payload: any = {
-              client: formData.name,
-              operation_type: opType,
-              activation_fee: cfg.baseActivationValue,
-              franchise_km: cfg.baseKmAllowance,
-              franchise_hours: cfg.baseHourAllowance,
-              price_per_extra_km: cfg.extraKmValue,
-              price_per_extra_hour: cfg.extraHourValue,
-          };
-          if (currentMasterRow) {
-              const { error } = await supabase.from('client_price_tables').update(payload).eq('id', currentMasterRow.id);
-              if (error) throw error;
-          } else {
-              const { error } = await supabase.from('client_price_tables').insert([payload]);
-              if (error) throw error;
-          }
-          await logAction('UPDATE', 'ClientAutoMaster', formData.name, `Motor Auto Cliente — ${formData.name} / ${autoMasterRegion}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h`);
-          setLastSuggestionInfo(null);
-          showNotification('Sucesso', `Configuração mestre salva para ${autoMasterRegion}.`, 'success');
-          fetchPriceTables(formData.name);
-      } catch (err: any) {
-          showNotification('Erro', 'Falha ao salvar configuração mestre: ' + (err?.message || 'erro desconhecido'), 'error');
-      } finally {
-          setIsSavingMaster(false);
-      }
+      showNotification(
+          'Tabela mestre desativada',
+          'O sistema não grava nem aplica uma tabela __AUTO_MASTER__. Mantenha a tabela contratual do cliente. Se essa linha ainda existir no cadastro, desative ou exclua.',
+          'warning',
+      );
   };
 
   const handleDisableAutoMaster = async () => {

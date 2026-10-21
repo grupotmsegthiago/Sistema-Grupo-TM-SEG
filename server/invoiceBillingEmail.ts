@@ -11,6 +11,7 @@ import {
   invoiceReadyForBillingEmail,
   pickMedicaoRecipients,
 } from '../lib/billing/invoiceBillingEmailPolicy.js';
+import { linhasDoBoletimDaFatura, planilhaBoletimDaFatura } from '../lib/billing/boletimDaFatura.js';
 import { createSupabaseAdminClient } from './supabaseConfig';
 import { sendBillingEmail } from './emailService';
 
@@ -74,6 +75,40 @@ async function loadInvoice(opts: { invoiceId?: string; paymentId?: string }): Pr
     .limit(1);
   if (error) throw new Error(error.message);
   return ((data || [])[0] as InvoiceRow | undefined) || null;
+}
+
+async function baixarSePdf(url: string | undefined): Promise<Buffer | null> {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  try {
+    const resposta = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!resposta.ok) return null;
+    const buf = Buffer.from(await resposta.arrayBuffer());
+    const parecePdf = buf.subarray(0, 5).toString() === '%PDF-';
+    if (!parecePdf || buf.length < 200 || buf.length > 12_000_000) return null;
+    return buf;
+  } catch {
+    return null;
+  }
+}
+
+async function boletimDaFatura(invoiceId: string, cliente: string): Promise<Buffer | null> {
+  try {
+    const sb = admin();
+    const vinculos = await sb.from('financial_invoice_missions').select('mission_id').eq('invoice_id', invoiceId);
+    if (vinculos.error) return null;
+    const ids = (vinculos.data || []).map((linha) => String((linha as { mission_id?: string }).mission_id || '')).filter(Boolean);
+    if (ids.length === 0) return null;
+    const os = await sb
+      .from('missions')
+      .select('id, origin, destination, start_time, revenue_value, toll_value, displacement_value')
+      .in('id', ids);
+    if (os.error) return null;
+    const linhas = linhasDoBoletimDaFatura(os.data || []);
+    if (linhas.length === 0) return null;
+    return planilhaBoletimDaFatura(cliente, linhas);
+  } catch {
+    return null;
+  }
 }
 
 async function loadMedicaoRecipients(clientName: string): Promise<string[]> {
@@ -206,6 +241,15 @@ export async function sendInvoiceBillingEmail(opts: {
   const boletoUrl = payment?.bankSlipUrl || invoice.asaas_bankslip_url || invoice.boleto_image_url || undefined;
   const hasBoleto = !!boletoUrl && !ready.transfer;
   const hasNf = !!nfPdfUrl;
+  const nomeCliente = String(invoice.client || 'Cliente').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 24) || 'Cliente';
+  const nomeNf = String(nfNumber || invoice.number || invoice.id).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 24);
+  const anexos: { filename: string; content: Buffer; contentType: string }[] = [];
+  const pdfNf = await baixarSePdf(nfPdfUrl);
+  if (pdfNf) anexos.push({ filename: `NF_${nomeNf}.pdf`, content: pdfNf, contentType: 'application/pdf' });
+  const pdfBoleto = ready.transfer ? null : await baixarSePdf(boletoUrl);
+  if (pdfBoleto) anexos.push({ filename: `Boleto_${nomeNf}.pdf`, content: pdfBoleto, contentType: 'application/pdf' });
+  const planilha = await boletimDaFatura(invoice.id, invoice.client || 'Cliente');
+  if (planilha) anexos.push({ filename: `Boletim_Medicao_${nomeCliente}.xlsx`, content: planilha, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
   try {
     const result = await sendBillingEmail({
@@ -225,6 +269,7 @@ export async function sendInvoiceBillingEmail(opts: {
       boletoDigitableLine: bankSlipData?.identificationField || undefined,
       nfPdfUrl,
       nfNumber,
+      attachments: anexos,
     });
 
     if (!result.success) {

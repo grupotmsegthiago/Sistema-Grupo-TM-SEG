@@ -15,9 +15,10 @@ describe('Troca de tabela não apaga valor salvo', () => {
     assert.equal(shouldRecalcOnTableChange('', 'tab-100'), true);
   });
 
-  it('valor salvo, motivo ou conferência congela o motor', () => {
+  it('motivo, conferência ou aprovação congela; número sozinho não', () => {
     assert.equal(hasPersistedBillingFreeze({ cost_value: 1197.85, cost_edit_reason: 'Rota Brasil' }), true);
-    assert.equal(hasPersistedBillingFreeze({ cost_value: 1244.6, revenue_value: 2062.2 }), true);
+    assert.equal(hasPersistedBillingFreeze({ cost_value: 1244.6, revenue_value: 2062.2 }), false);
+    assert.equal(hasPersistedBillingFreeze({ revenue_value: 800, revenue_edit_reason: '' }), false);
     assert.equal(hasPersistedBillingFreeze({ billing_verified_by: 'Giovanna Marsili', cost_value: 0, revenue_value: 0 }), true);
     assert.equal(hasPersistedBillingFreeze({ billing_approved: true }), true);
     assert.equal(hasPersistedBillingFreeze({ cost_value: 0, revenue_value: 0 }), false);

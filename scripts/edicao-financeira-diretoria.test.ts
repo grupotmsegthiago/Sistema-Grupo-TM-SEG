@@ -1,9 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   avisoContinuaPendente,
+  avisoDoHistoricoPosAprovacao,
   detalhesMarcadosComoLidos,
+  historicoJaInformado,
   lerAvisoEdicao,
+  marcadorDeHistoricoLido,
   montarDetalhesAviso,
   reaprovacaoExigeConfirmacao,
   textoReaprovacaoValido,
@@ -37,6 +41,14 @@ describe('reaprovação do perfil Financeiro', () => {
     assert.equal(textoReaprovacaoValido(''), false);
     assert.equal(textoReaprovacaoValido('alterei'), false);
     assert.equal(textoReaprovacaoValido('Alterei o KM final da OS.'), true);
+  });
+
+  it('o botão de reaprovar libera com a senha de quem está logado', () => {
+    const tela = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
+    const trecho = tela.slice(tela.indexOf('modal-reaprovacao-financeira'), tela.indexOf('modal-senha-pedagio'));
+    assert.match(trecho, /Senha de \$\{nomeDeQuemConfirma\}/);
+    assert.match(trecho, /disabled=\{reaprovacaoChecando \|\| !reaprovacaoSenha\.trim\(\)\}/);
+    assert.doesNotMatch(trecho, /senha do sistema/);
   });
 });
 
@@ -74,5 +86,43 @@ describe('aviso para a Diretoria', () => {
     assert.equal(avisoContinuaPendente(lido), false);
     assert.equal(lido?.texto, 'Corrigi o pedágio do cliente.');
     assert.equal(lido?.lidaPor, 'Thiago Moreira');
+  });
+
+  it('a alteração da Giovanna em OS já aprovada vira aviso, e a de um operador não', () => {
+    const daGiovanna = avisoDoHistoricoPosAprovacao({
+      id: 'hist-1',
+      action_type: 'POST_APPROVAL_EDIT',
+      user_name: 'Giovanna Marsili',
+      entity_id: 'GTM-8800',
+      created_at: '2026-10-21T21:10:00.000Z',
+      details: JSON.stringify({
+        user: 'Giovanna Marsili',
+        role: 'Financeiro',
+        date: '2026-10-21T21:10:00.000Z',
+        changes: ['Pedágio cliente: de 35,00 para 40,00'],
+        note: '',
+      }),
+    });
+    assert.equal(daGiovanna?.os, 'GTM-8800');
+    assert.equal(daGiovanna?.quem, 'Giovanna Marsili');
+    assert.equal(daGiovanna?.texto, 'Pedágio cliente: de 35,00 para 40,00');
+    assert.equal(daGiovanna?.historicoId, 'hist-1');
+    assert.equal(avisoDoHistoricoPosAprovacao({
+      id: 'hist-2',
+      action_type: 'POST_APPROVAL_EDIT',
+      user_name: 'Operador',
+      entity_id: 'GTM-1',
+      details: JSON.stringify({ role: 'Operador', changes: ['Origem'] }),
+    }), null);
+    assert.equal(avisoDoHistoricoPosAprovacao({
+      id: 'hist-3',
+      action_type: 'BILLING_EDIT',
+      user_name: 'Giovanna Marsili',
+      entity_id: 'GTM-1',
+      details: JSON.stringify({ role: 'Financeiro', changes: ['Receita'] }),
+    }), null);
+    const marcador = marcadorDeHistoricoLido(daGiovanna!, 'Thiago Moreira', '2026-10-21T21:20:00.000Z');
+    assert.equal(historicoJaInformado(marcador), 'hist-1');
+    assert.equal(avisoContinuaPendente(lerAvisoEdicao('marca', marcador)), false);
   });
 });

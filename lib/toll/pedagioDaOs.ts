@@ -216,7 +216,7 @@ async function confirmarSenhaNoServidor(usuarioId: string | null, email: string,
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json', authorization: token ? `Bearer ${token}` : '' },
-      body: JSON.stringify({ senha, usuarioId, email }),
+      body: JSON.stringify({ senha, email }),
     });
     if (!resposta.ok) return false;
     const corpo = await resposta.json() as { ok?: boolean };

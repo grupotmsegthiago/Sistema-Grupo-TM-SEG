@@ -1038,10 +1038,10 @@ const MissionReportPage: React.FC = () => {
               <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded">Ped. Recebido: R$ {fmtMoney(totalToll)}</span>
               <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded">Desl. Recebido: R$ {fmtMoney(totalDisp)}</span>
               <span className="bg-emerald-200 text-emerald-950 px-2 py-0.5 rounded">Total Recebido: R$ {fmtMoney(totals.rev)}</span>
-              <span className="text-blue-700">Custo: R$ {fmtMoney(totalCost)}</span>
-              <span className="text-orange-600">Ped. Pago: R$ {fmtMoney(totalTollProvider)}</span>
-              <span className="text-purple-600">Desl. Pago: R$ {fmtMoney(totalDispProvider)}</span>
-              <span className="text-gray-900">Total Pago: R$ {fmtMoney(totals.cost)}</span>
+              <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded">Custo: R$ {fmtMoney(totalCost)}</span>
+              <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded">Ped. Pago: R$ {fmtMoney(totalTollProvider)}</span>
+              <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded">Desl. Pago: R$ {fmtMoney(totalDispProvider)}</span>
+              <span className="bg-red-200 text-red-950 px-2 py-0.5 rounded">Total Pago: R$ {fmtMoney(totals.cost)}</span>
               <span className={`font-black ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                 Resultado: R$ {fmtMoney(totals.profit)}
               </span>
@@ -1111,10 +1111,10 @@ const MissionReportPage: React.FC = () => {
                       <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-700">PED. RECEB.</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-700">DESL. RECEB.</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-800">TOTAL RECEBIDO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">CUSTO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. PAGO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">DESL. PAGO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">TOTAL PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-700">CUSTO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-700">PED. PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-700">DESL. PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-800">TOTAL PAGO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RESULTADO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
@@ -1206,19 +1206,19 @@ const MissionReportPage: React.FC = () => {
                           </td>
                           <td className="px-3 py-2 border-r border-emerald-200 text-right text-emerald-900 whitespace-nowrap bg-emerald-100">{disp > 0 ? fmtMoney(disp) : '-'}</td>
                           <td className="px-3 py-2 border-r border-emerald-300 text-right font-black text-emerald-950 whitespace-nowrap bg-emerald-200">{temRecebido ? fmtMoney(revTotal) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap" title={m.is_same_os && cost === 0 ? 'Custo zerado: missão compartilha OS principal (reaproveitamento)' : (tableInfoMap.get(m.id)?.providerTable || '')}>
+                          <td className="px-3 py-2 border-r border-red-200 text-right font-bold text-red-900 whitespace-nowrap bg-red-100" title={m.is_same_os && cost === 0 ? 'Custo zerado: missão compartilha OS principal (reaproveitamento)' : (tableInfoMap.get(m.id)?.providerTable || '')}>
                             <div className="flex flex-col items-end">
                               {m.is_same_os && cost === 0 ? (
-                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-600">MESMA OS</span>
+                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">MESMA OS</span>
                               ) : (
                                 <span>{cost > 0 ? fmtMoney(cost) : '-'}</span>
                               )}
-                              {!(m.is_same_os && cost === 0) && tableInfoMap.get(m.id) && <span className="text-[8px] text-blue-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
+                              {!(m.is_same_os && cost === 0) && tableInfoMap.get(m.id) && <span className="text-[8px] text-red-700 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-500 whitespace-nowrap">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-500 whitespace-nowrap">{dispProvider > 0 ? fmtMoney(dispProvider) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-black text-gray-900 whitespace-nowrap">{temPago ? fmtMoney(pagoTotal) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-200 text-right text-red-900 whitespace-nowrap bg-red-100">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-200 text-right text-red-900 whitespace-nowrap bg-red-100">{dispProvider > 0 ? fmtMoney(dispProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-300 text-right font-black text-red-950 whitespace-nowrap bg-red-200">{temPago ? fmtMoney(pagoTotal) : '-'}</td>
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
                             {rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}
                           </td>
@@ -1378,10 +1378,10 @@ const MissionReportPage: React.FC = () => {
                     <td className="px-3 py-2.5 text-right border-r border-emerald-900 bg-emerald-700 text-white">{fmtMoney(totalToll)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-emerald-900 bg-emerald-700 text-white">{fmtMoney(totalDisp)}</td>
                     <td className="px-3 py-2.5 text-right border-r border-emerald-950 bg-emerald-800 text-white">{fmtMoney(totals.rev)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-200">{fmtMoney(totalTollProvider)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-purple-200">{fmtMoney(totalDispProvider)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600">{fmtMoney(totals.cost)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-900 bg-red-700 text-white">{fmtMoney(totalCost)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-900 bg-red-700 text-white">{fmtMoney(totalTollProvider)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-900 bg-red-700 text-white">{fmtMoney(totalDispProvider)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-950 bg-red-800 text-white">{fmtMoney(totals.cost)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtMoney(totals.profit)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}

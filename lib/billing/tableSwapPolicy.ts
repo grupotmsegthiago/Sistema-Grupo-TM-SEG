@@ -23,7 +23,8 @@ type BillingFreezeMission = {
 } | null | undefined;
 
 /**
- * Depois de Salvar, conferir ou aprovar, o motor não pode reescrever o valor.
+ * Conferida, aprovada ou com motivo de edição manual: o motor não reescreve o valor.
+ * Número gravado sem esse motivo acompanha a tabela que está na tela.
  * A troca para uma tabela diferente atualiza a tela à parte; o banco só muda no Salvar.
  */
 export function hasPersistedBillingFreeze(mission: BillingFreezeMission): boolean {
@@ -31,6 +32,5 @@ export function hasPersistedBillingFreeze(mission: BillingFreezeMission): boolea
   if (mission.billing_approved || carimboAprovacaoHumana(mission.snapshot_approved_by) || mission.billing_verified_by) return true;
   if (isIntentionalBillingOverride(mission.revenue_edit_reason)) return true;
   if (isIntentionalBillingOverride(mission.cost_edit_reason)) return true;
-  if (Number(mission.revenue_value) > 0 || Number(mission.cost_value) > 0) return true;
   return false;
 }

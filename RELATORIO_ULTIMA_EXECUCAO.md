@@ -1,5 +1,47 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Relatório de OS: pagamento ao fornecedor em vermelho claro (21/10/2026, não publicado)
+
+No relatório de OS, Custo, Ped. Pago, Desl. Pago e Total Pago ficaram com fundo vermelho claro, no mesmo bloco do verde da receita. Cabeçalho e totais seguem o vermelho mais forte. Os números não mudaram. Sem publicação.
+
+---
+
+## Auditoria não fecha no meio do salvamento (21/10/2026, não publicado)
+
+A varredura da tela de auditoria achou gravações que seguiam sem a linha de volta do banco: dados operacionais do fornecedor, recálculo, tabela oficial, rota, vínculo de mesma OS, boletim e referência da VS. Essas gravações agora usam a mesma confirmação do Salvar. Se o banco não devolver a OS, a tela mostra o erro e não diz que salvou. Durante o envio o botão de fechar não sai, os campos ficam desabilitados e o painel Salvando cobre a tela. Ao reabrir, a OS é lida de novo no servidor. Sem mudança de fórmula e sem publicação.
+
+---
+
+## Tabela mestre genérica fora do preço (21/10/2026, não publicado)
+
+O recálculo escolhia a linha `__AUTO_MASTER__ SUDESTE` como se fosse a tabela da OS. Na FLASH, essa linha vale R$ 800 e substituía a tabela `SUDESTE - FLASH - 30 DIAS - BARUERI` (R$ 650). Agora essa linha não entra na escolha, nem quando o id salvo é o dela. Se a OS já tem a tabela contratual, ela permanece. Se não houver correspondência, o preço fica zerado e o aviso é “Tabela não encontrada”. O cadastro do cliente deixou de gravar linha nova com esse nome. Nada foi apagado nem desativado no banco. Sem publicação e sem mudança da fórmula de km, hora, pedágio e deslocamento.
+
+---
+
+## Auditoria grava o que a tela mostra (21/10/2026, não publicado)
+
+O Salvar da auditoria envia os seis valores que estão na tela, inclusive zero, sem depender de marca de campo alterado. A chamada pede a linha de volta com `.select()`. Se o banco devolver erro ou nenhuma linha, a tela mostra o erro e não diz que salvou. A lista da auditoria recebe a linha devolvida e busca de novo. No projeto Grupo TMSEG, a política `public_access_missions` permite UPDATE. Sem mudança de fórmula e sem publicação.
+
+---
+
+## E-mail da fatura com NF, boleto e boletim (21/10/2026, não publicado)
+
+O aviso da Asaas de “fatura gerada” ia para o cliente sem a cópia do financeiro e sem os documentos. Na próxima cobrança, o cliente da Asaas recebe `financeiro@grupotmseg.com.br` nas cópias e o e-mail vazio de fatura criada deixa de ir ao cliente. Os lembretes de vencimento continuam. O e-mail do sistema, que já saía quando a NF e o boleto existiam, agora anexa o PDF da NF, o PDF do boleto quando o link é um PDF, e a planilha do boletim com as OS vinculadas. O boletim usa só os valores já gravados na OS. O texto do e-mail aponta para o financeiro, com cópia para o financeiro e para o Thiago. Sem mudança de fórmula, sem migration e sem publicação.
+
+---
+
+## Aviso da alteração já feita (21/10/2026, não publicado)
+
+O aviso da Diretoria só nascia na reaprovação com senha. O Salvar de uma OS já aprovada ficava só no histórico da OS, então a alteração da Giovanna não aparecia. A Diretoria agora também lê esse histórico (perfil Diretoria ou Thiago Moreira / Thiago Santos). Salvar daqui para a frente grava o aviso na hora. Marcar como lida continua valendo. Sem mudança de fórmula e sem publicação.
+
+---
+
+## Senha da reaprovação (21/10/2026, não publicado)
+
+Na OS já aprovada, o botão Reaprovar ficava cinza até o texto ter 8 caracteres, mesmo com a senha digitada. Agora ele libera quando a senha de quem está logado é preenchida. A conferência continua sendo a senha de acesso dessa pessoa: Giovanna com a dela, Ana com a dela. O texto da alteração segue obrigatório no clique. Sem mudança de fórmula e sem publicação.
+
+---
+
 ## Segredo da sessão no localhost (21/10/2026, não publicado)
 
 A Vercel não exporta `SESSION_SECRET`: a variável é Secret e o pull grava `[SENSITIVE]`. Foi criado um segredo só deste computador, no `.env` da raiz, que o Git ignora. O servidor local foi reiniciado. O login deixou de responder “o segredo da sessão não está configurado” e passou a responder que a fonte confiável não está disponível, porque `SUPABASE_SERVICE_ROLE_KEY` também é Secret na Vercel e não veio no pull. Sem inventar a chave do banco e sem publicação.

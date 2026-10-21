@@ -1169,6 +1169,16 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             scheduleFullRefetchRef.current();
           };
           window.addEventListener('refreshMissions', handleExternalRefresh);
+          const handleMissaoGravada = (ev: Event) => {
+            const row = (ev as CustomEvent).detail;
+            if (!row || row.id == null) {
+              scheduleFullRefetchRef.current();
+              return;
+            }
+            applyRealtimeMissionChangeRef.current({ eventType: 'UPDATE', new: row });
+            scheduleFullRefetchRef.current();
+          };
+          window.addEventListener('tmseg:missao-gravada', handleMissaoGravada);
           const boardTimer = setInterval(() => {
             if (document.hidden) return;
             void syncBoardFromServer();
@@ -1188,6 +1198,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             if (refetchTimerRef.current) clearTimeout(refetchTimerRef.current);
             if (auxTimerRef.current) clearTimeout(auxTimerRef.current);
             window.removeEventListener('refreshMissions', handleExternalRefresh);
+            window.removeEventListener('tmseg:missao-gravada', handleMissaoGravada);
           };
     }, [userSessionKey]);
 

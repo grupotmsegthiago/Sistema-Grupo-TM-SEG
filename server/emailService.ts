@@ -955,6 +955,7 @@ export interface BillingEmailData {
   boletoDigitableLine?: string;
   nfPdfUrl?: string;
   nfNumber?: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
 function formatCurrency(val: number): string {
@@ -1080,7 +1081,8 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{
     ${nfBlock}
 
     <div class="highlight-box">
-      <p><strong>Observação:</strong> Em caso de dúvidas sobre esta cobrança, entre em contato pelo e-mail <a href="mailto:adm@grupotmseg.com.br">adm@grupotmseg.com.br</a>.</p>
+      <p>Segue a <strong>Nota Fiscal</strong>, o <strong>boleto</strong> e o <strong>boletim de medição</strong> das OS desta fatura. A cópia deste e-mail vai para <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
+      <p><strong>Dúvidas:</strong> responda este e-mail ou fale com <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
     </div>
     <p>Atenciosamente,<br><strong>${data.issuerCompany}</strong></p>
   `);
@@ -1095,8 +1097,13 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{
       to: recipients,
       cc: ['financeiro@grupotmseg.com.br', 'thiago@grupotmseg.com.br'],
       replyTo: 'financeiro@grupotmseg.com.br',
-      subject: `Cobrança ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
+      subject: `NF, boleto e boletim — ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
       html,
+      attachments: (data.attachments || []).map((anexo) => ({
+        filename: anexo.filename,
+        content: anexo.content,
+        contentType: anexo.contentType,
+      })),
     };
 
     const info = await transporter.sendMail(mailOptions);

@@ -1,16 +1,26 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Bell, Check, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { isPerfilDiretoria } from '../lib/diretoriaAccess';
+import { canAccessDiretoriaMenu, isPerfilDiretoria } from '../lib/diretoriaAccess';
 import { formatDateTimeBR } from '../lib/dateUtils';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
   ACAO_AVISO_EDICAO,
   ENTIDADE_AVISO_EDICAO,
   avisoContinuaPendente,
+  avisoDoHistoricoPosAprovacao,
   detalhesMarcadosComoLidos,
+  historicoJaInformado,
   lerAvisoEdicao,
+  marcadorDeHistoricoLido,
   type AvisoEdicaoDiretoria,
 } from '../lib/edicaoFinanceiraDiretoria';
+
+type AvisoNaTela = AvisoEdicaoDiretoria & { fonte: 'aviso' | 'historico' };
+
+function podeVer(usuario: { name?: string; role?: string }): boolean {
+  return isPerfilDiretoria(usuario) || canAccessDiretoriaMenu(usuario);
+}
 
 function usuarioAtual(): { name?: string; role?: string } {
   try {
@@ -21,32 +31,51 @@ function usuarioAtual(): { name?: string; role?: string } {
 }
 
 const AvisoEdicaoFinanceiraDiretoria: React.FC = () => {
-  const [avisos, setAvisos] = useState<AvisoEdicaoDiretoria[]>([]);
+  const [avisos, setAvisos] = useState<AvisoNaTela[]>([]);
   const [painelAberto, setPainelAberto] = useState(true);
   const [adiados, setAdiados] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState('');
 
   const carregar = useCallback(async () => {
     const usuario = usuarioAtual();
-    if (!isPerfilDiretoria(usuario)) {
+    if (!podeVer(usuario)) {
       setAvisos([]);
       return;
     }
-    const { data, error } = await supabase
-      .from('system_logs')
-      .select('id, details, created_at')
-      .eq('entity', ENTIDADE_AVISO_EDICAO)
-      .eq('action_type', ACAO_AVISO_EDICAO)
-      .order('created_at', { ascending: false })
-      .limit(40);
-    if (error) {
+    const [avisosRes, histRes] = await Promise.all([
+      supabase
+        .from('system_logs')
+        .select('id, details, created_at')
+        .eq('entity', ENTIDADE_AVISO_EDICAO)
+        .eq('action_type', ACAO_AVISO_EDICAO)
+        .order('created_at', { ascending: false })
+        .limit(40),
+      supabase
+        .from('system_logs')
+        .select('id, details, created_at, entity_id, user_name, action_type')
+        .eq('entity', 'MissionEditHistory')
+        .in('action_type', ['POST_APPROVAL_EDIT', 'POST_APPROVAL_REAPPROVE'])
+        .order('created_at', { ascending: false })
+        .limit(30),
+    ]);
+    if (avisosRes.error && histRes.error) {
       setErro('Não foi possível carregar os avisos de edição.');
       return;
     }
-    const pendentes = (data || [])
+    const jaInformados = new Set(
+      (avisosRes.data || []).map((linha) => historicoJaInformado(linha.details)).filter(Boolean),
+    );
+    const pendentes: AvisoNaTela[] = (avisosRes.data || [])
       .map((linha) => lerAvisoEdicao(String(linha.id), linha.details))
-      .filter((aviso): aviso is AvisoEdicaoDiretoria => avisoContinuaPendente(aviso));
-    setAvisos(pendentes);
+      .filter((aviso): aviso is AvisoEdicaoDiretoria => avisoContinuaPendente(aviso))
+      .map((aviso) => ({ ...aviso, fonte: 'aviso' as const }));
+    const doHistorico: AvisoNaTela[] = (histRes.data || [])
+      .map((linha) => avisoDoHistoricoPosAprovacao(linha))
+      .filter((aviso): aviso is AvisoEdicaoDiretoria => !!aviso)
+      .filter((aviso) => !jaInformados.has(aviso.id))
+      .filter((aviso) => !pendentes.some((item) => item.os === aviso.os && Math.abs(new Date(item.quando).getTime() - new Date(aviso.quando).getTime()) < 5 * 60 * 1000))
+      .map((aviso) => ({ ...aviso, fonte: 'historico' as const }));
+    setAvisos([...pendentes, ...doHistorico]);
     setErro('');
   }, []);
 
@@ -57,12 +86,25 @@ const AvisoEdicaoFinanceiraDiretoria: React.FC = () => {
     return () => window.removeEventListener('tmseg:aviso-edicao-financeira', atualizar);
   }, [carregar]);
 
-  const marcarLida = async (aviso: AvisoEdicaoDiretoria) => {
+  useRealtimeRefresh('system_logs', () => { void carregar(); });
+
+  const marcarLida = async (aviso: AvisoNaTela) => {
     const usuario = usuarioAtual();
-    const { error } = await supabase
-      .from('system_logs')
-      .update({ details: detalhesMarcadosComoLidos(aviso, usuario.name || 'Diretoria', new Date().toISOString()) })
-      .eq('id', aviso.id);
+    const quem = usuario.name || 'Diretoria';
+    const quando = new Date().toISOString();
+    const resposta = aviso.fonte === 'historico'
+      ? await supabase.from('system_logs').insert([{
+          user_name: quem,
+          action_type: ACAO_AVISO_EDICAO,
+          entity: ENTIDADE_AVISO_EDICAO,
+          entity_id: aviso.os,
+          details: marcadorDeHistoricoLido(aviso, quem, quando),
+        }])
+      : await supabase
+          .from('system_logs')
+          .update({ details: detalhesMarcadosComoLidos(aviso, quem, quando) })
+          .eq('id', aviso.id);
+    const error = resposta.error;
     if (error) {
       setErro('Não foi possível marcar como lida.');
       return;
@@ -78,7 +120,7 @@ const AvisoEdicaoFinanceiraDiretoria: React.FC = () => {
     });
   };
 
-  if (!isPerfilDiretoria(usuarioAtual()) || avisos.length === 0) return null;
+  if (!podeVer(usuarioAtual()) || (avisos.length === 0 && !erro)) return null;
 
   const visiveis = avisos.filter((aviso) => !adiados.has(aviso.id));
   if (!painelAberto || visiveis.length === 0) {

@@ -229,6 +229,52 @@ export async function findCustomerByCpfCnpj(
   return found.data?.length > 0 ? (found.data[0] as AsaasCustomer) : null;
 }
 
+const EMAIL_FINANCEIRO_COBRANCA = 'financeiro@grupotmseg.com.br';
+
+/** Cópia do financeiro nas notificações e sem o e-mail vazio de “fatura gerada”. */
+async function incluirFinanceiroNoClienteAsaas(
+  customerId: string,
+  company?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const atual = await asaasFetch(`/customers/${customerId}`, { signal }, company);
+  const lista = String(atual?.additionalEmails || '')
+    .split(/[;,]/)
+    .map((item: string) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (!lista.includes(EMAIL_FINANCEIRO_COBRANCA)) {
+    await asaasFetch(`/customers/${customerId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ additionalEmails: [...lista, EMAIL_FINANCEIRO_COBRANCA].join(',') }),
+      signal,
+    }, company);
+  }
+  let notas = await asaasFetch(`/customers/${customerId}/notifications`, { signal }, company);
+  let eventos = Array.isArray(notas?.data) ? notas.data : [];
+  if (!eventos.some((nota: { event?: string }) => String(nota?.event || '') === 'PAYMENT_CREATED')) {
+    await new Promise((resolver) => setTimeout(resolver, 400));
+    notas = await asaasFetch(`/customers/${customerId}/notifications`, { signal }, company);
+    eventos = Array.isArray(notas?.data) ? notas.data : [];
+  }
+  for (const nota of eventos) {
+    if (String(nota?.event || '') !== 'PAYMENT_CREATED') continue;
+    if (nota.emailEnabledForCustomer === false && nota.smsEnabledForCustomer === false && nota.whatsappEnabledForCustomer === false) continue;
+    await asaasFetch(`/notifications/${nota.id}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: true,
+        emailEnabledForProvider: nota.emailEnabledForProvider !== false,
+        smsEnabledForProvider: false,
+        emailEnabledForCustomer: false,
+        smsEnabledForCustomer: false,
+        phoneCallEnabledForCustomer: false,
+        whatsappEnabledForCustomer: false,
+      }),
+      signal,
+    }, company);
+  }
+}
+
 export async function findOrCreateCustomer(params: {
   name: string;
   cpfCnpj: string;
@@ -255,6 +301,11 @@ export async function findOrCreateCustomer(params: {
         console.log('[Asaas] Aviso ao atualizar endereço do cliente:', e?.message || e);
       }
     }
+    try {
+      await incluirFinanceiroNoClienteAsaas(existing.id, params.company, params.signal);
+    } catch (e: any) {
+      console.log('[Asaas] Cópia do financeiro não aplicada:', e?.message || e);
+    }
     return existing;
   }
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -263,6 +314,7 @@ export async function findOrCreateCustomer(params: {
     name: params.name,
     cpfCnpj: clean,
     email: validEmail,
+    additionalEmails: EMAIL_FINANCEIRO_COBRANCA,
     notificationDisabled: false,
   };
   if (params.postalCode) body.postalCode = params.postalCode.replace(/\D/g, '');
@@ -272,7 +324,13 @@ export async function findOrCreateCustomer(params: {
   if (params.province) body.province = params.province;
   if (params.city) body.city = params.city;
   if (params.state) body.state = params.state;
-  return asaasFetch('/customers', { method: 'POST', body: JSON.stringify(body), signal: params.signal }, params.company);
+  const criado = await asaasFetch('/customers', { method: 'POST', body: JSON.stringify(body), signal: params.signal }, params.company);
+  try {
+    await incluirFinanceiroNoClienteAsaas(criado.id, params.company, params.signal);
+  } catch (e: any) {
+    console.log('[Asaas] Cópia do financeiro não aplicada:', e?.message || e);
+  }
+  return criado;
 }
 
 /** Cobrança Asaas (handler leve — sem server/asaasService). */

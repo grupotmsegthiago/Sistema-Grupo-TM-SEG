@@ -33,7 +33,7 @@ import {
     montarAtualizacaoPedagio,
 } from '../lib/toll/aprovacaoPedagio';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
-import { colunasDaEdicao, snapshotComSomenteOAlterado, textoSeAlterado, valorOperacionalAlterado } from '../lib/billing/gravarSomenteAlterado';
+import { colunasDoFormulario, snapshotComSomenteOAlterado, textoSeAlterado, valorOperacionalAlterado } from '../lib/billing/gravarSomenteAlterado';
 import { gravarOcorrenciaFornecedorAusenteParaZero, gravarOcorrenciaPedagioAprovado, pedagioAlterado, senhaDoUsuarioConfere } from '../lib/toll/pedagioDaOs';
 import { formatProviderName } from '../lib/utils';
 import { AvisoTabelaOs } from './AvisoTabelaOs';
@@ -134,16 +134,30 @@ async function zeroSameOsProviderCostInDb(missionId: string): Promise<boolean> {
         displacement_value_provider: 0,
         last_update: new Date().toISOString(),
     };
-    let { error } = await supabase.from('missions').update(payload).eq('id', missionId);
-    if (error?.message?.includes('does not exist')) {
+    let gravado = await gravarMissaoConfirmada(missionId, payload);
+    if (gravado.error?.message?.includes('does not exist')) {
         const { toll_value_provider, displacement_value_provider, ...minimal } = payload;
-        ({ error } = await supabase.from('missions').update(minimal).eq('id', missionId));
+        gravado = await gravarMissaoConfirmada(missionId, minimal);
     }
-    return !error;
+    return !gravado.error && !!gravado.data;
 }
 
 function broadcastMissionRefresh() {
     try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch {}
+}
+
+/** UPDATE de OS que só vale se o banco devolver a linha. Lista vazia é falha (RLS ou id inexistente). */
+async function gravarMissaoConfirmada(missionId: string, payload: Record<string, unknown>) {
+    const resposta = await supabase.from('missions').update(payload).eq('id', missionId).select();
+    if (resposta.error) return { error: resposta.error as { message?: string }, data: null as Record<string, any> | null };
+    const lista = Array.isArray(resposta.data) ? resposta.data : [];
+    if (lista.length === 0) {
+        return {
+            error: { message: 'O banco não devolveu a OS gravada. A gravação foi bloqueada ou não alterou nenhuma linha.' },
+            data: null as Record<string, any> | null,
+        };
+    }
+    return { error: null, data: lista[0] as Record<string, any> };
 }
 
 // Parser robusto para input BRL
@@ -212,22 +226,24 @@ const BillingPeriodOverridePanel: React.FC<{
             : null;
 
     const handleSave = async () => {
+        if (saving) return;
         setSaving(true);
         try {
             const isoOverride = overrideDate ? new Date(overrideDate).toISOString() : null;
-            const { error } = await supabase
-                .from('missions')
-                .update({ billing_period_override: isoOverride, exclude_from_billing: excluded })
-                .eq('id', mission.id);
-            if (error) {
-                if (/column .* does not exist/i.test(error.message)) {
+            const gravadoBoletim = await gravarMissaoConfirmada(mission.id, {
+                billing_period_override: isoOverride,
+                exclude_from_billing: excluded,
+            });
+            if (gravadoBoletim.error) {
+                const message = gravadoBoletim.error.message || '';
+                if (/column .* does not exist/i.test(message)) {
                     showNotification('Migração pendente', 'Rode o SQL em migrations/2026_05_08_billing_overrides.sql no Supabase antes de usar este controle.', 'error');
                 } else {
-                    showNotification('Erro', 'Falha ao salvar: ' + error.message, 'error');
+                    showNotification('Erro', 'Falha ao salvar: ' + message, 'error');
                 }
                 return;
             }
-            setMission(prev => prev ? { ...prev, billing_period_override: isoOverride, exclude_from_billing: excluded } : prev);
+            setMission(prev => prev ? { ...prev, ...gravadoBoletim.data } : prev);
             showNotification('Sucesso', 'Configuração do boletim atualizada.', 'success');
             setOpen(false);
             window.dispatchEvent(new CustomEvent('refreshMissions'));
@@ -325,6 +341,7 @@ const VsPedidoReferenciaPanel: React.FC<{
     if (!mission || !visible) return null;
 
     const handleSave = async () => {
+        if (saving) return;
         const referencia = value.trim();
         if (!referencia) {
             showNotification('Referência de Pedidos', 'Informe a referência de pedidos da VS TRANSPORTES. Ex.: 303185 / 303189', 'error');
@@ -332,15 +349,12 @@ const VsPedidoReferenciaPanel: React.FC<{
         }
         setSaving(true);
         try {
-            const { error } = await supabase
-                .from('missions')
-                .update({ reference_number: referencia })
-                .eq('id', mission.id);
-            if (error) {
-                showNotification('Erro', 'Falha ao salvar a referência de pedidos: ' + error.message, 'error');
+            const gravadoRef = await gravarMissaoConfirmada(mission.id, { reference_number: referencia });
+            if (gravadoRef.error) {
+                showNotification('Erro', 'Falha ao salvar a referência de pedidos: ' + (gravadoRef.error.message || 'o banco não confirmou'), 'error');
                 return;
             }
-            setMission(prev => prev ? { ...prev, reference_number: referencia } : prev);
+            setMission(prev => prev ? { ...prev, ...gravadoRef.data } : prev);
             showNotification('Salvo', 'Referência de Pedidos gravada. Ela entra na coluna REF. PEDIDOS ao gerar o boletim de novo.', 'success');
             window.dispatchEvent(new CustomEvent('refreshMissions'));
         } finally {
@@ -695,6 +709,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const currentUserIdentity = useMemo(() => {
     try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
   }, []);
+  const nomeDeQuemConfirma = String(currentUserIdentity.name || currentUserIdentity.username || '').trim() || 'quem está logado';
   const opsMissingFields = useMemo(
     () => (mission ? getMissionOpsMissingFields(mission) : []),
     [mission],
@@ -825,7 +840,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [paidUnlockReason, setPaidUnlockReason] = useState('');
   const [paidUnlocking, setPaidUnlocking] = useState(false);
   useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); setPaidInvoiceLock({ bloqueado: false }); setPaidUnlockOverride(false); setPaidUnlockReason(''); zeroFornecedorConfirmadoRef.current = false; setAvisoZeroFornecedor(null); }, [mission?.id]);
-  useEffect(() => { if (!isOpen) { setFullEditMode(false); setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setShowTollConfirmDialog(false); setTollConfirmAutoOpened(false); } }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen) {
+      setFullEditMode(false);
+      setUnlockOverride(false);
+      setEditObservation('');
+      setAnalysisReason('');
+      setShowTollConfirmDialog(false);
+      setTollConfirmAutoOpened(false);
+      userManuallyEditedRef.current = false;
+      receitaEditadaRef.current = false;
+      custoEditadoRef.current = false;
+      pedagioClienteEditadoRef.current = false;
+      fornecedorPedagioEditadoRef.current = false;
+      deslocamentoClienteEditadoRef.current = false;
+      deslocamentoFornecedorEditadoRef.current = false;
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !mission?.id) return;
@@ -999,17 +1030,17 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             toll_value_provider: r2(pair.toll_value_provider),
             last_update: new Date().toISOString(),
         };
-        let { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
-        if (error && error.message?.includes('does not exist')) {
+        let gravadoPedagio = await gravarMissaoConfirmada(mission.id, payload);
+        if (gravadoPedagio.error?.message?.includes('does not exist')) {
             const { toll_value_provider, ...minimal } = payload;
-            ({ error } = await supabase.from('missions').update(minimal).eq('id', mission.id));
+            gravadoPedagio = await gravarMissaoConfirmada(mission.id, minimal);
         }
-        if (error) {
-            console.error('[TollConfirm] falha ao salvar pedágio na OS', error);
-            throw new Error(`Não foi possível salvar o pedágio na OS: ${error.message}`);
+        if (gravadoPedagio.error) {
+            console.error('[TollConfirm] falha ao salvar pedágio na OS', gravadoPedagio.error);
+            throw new Error(`Não foi possível salvar o pedágio na OS: ${gravadoPedagio.error.message}`);
         }
-        setMission((prev) => prev ? { ...prev, toll_value: r2(pair.toll_value), toll_value_provider: r2(pair.toll_value_provider) } : prev);
-        try { window.dispatchEvent(new Event('refreshMissions')); } catch {}
+        setMission((prev) => prev ? { ...prev, ...gravadoPedagio.data } : prev);
+        window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: gravadoPedagio.data }));
     }
 
     setTollInput(clientFormatted);
@@ -1241,9 +1272,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       setManualProviderTableId(escolha.providerTableId);
                       const atual = (currentMission as any).snapshot_data;
                       if (atual && typeof atual === 'object') {
-                          await supabase.from('missions').update({
+                          const gravadoTabela = await gravarMissaoConfirmada(currentMission.id, {
                               snapshot_data: { ...atual, providerTableId: escolha.providerTableId },
-                          }).eq('id', currentMission.id);
+                          });
+                          if (gravadoTabela.error) {
+                              console.warn('[auditoria] tabela do fornecedor não ficou no snapshot', gravadoTabela.error.message);
+                          }
                       }
                   }
               }
@@ -1528,6 +1562,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               };
               setIsEditingProvOpsData(false);
 
+              const edicaoPendenteNaTela = userManuallyEditedRef.current
+                  || receitaEditadaRef.current
+                  || custoEditadoRef.current
+                  || pedagioClienteEditadoRef.current
+                  || fornecedorPedagioEditadoRef.current
+                  || deslocamentoClienteEditadoRef.current
+                  || deslocamentoFornecedorEditadoRef.current;
+              if (!edicaoPendenteNaTela) {
               setRevenueEditReason(loadedRevReason);
               setCostEditReason(loadedCostReason);
               setShowRevenueReasonInput(false);
@@ -1609,6 +1651,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (mRes.data.billing_verified_by) {
                   setSavedByInfo(`Salvo por ${mRes.data.billing_verified_by}`);
                   dbValuesLoadedRef.current = true;
+              }
               }
               
               fetchHistoricalPatterns(fullMission, (ptRes.data || []) as ProviderCostTable[], (ctRes.data || []) as ClientPriceTable[]);
@@ -1822,15 +1865,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         cost_value: 0,
         last_update: new Date().toISOString(),
       };
-      let { error } = await supabase.from('missions').update({
+      let gravadoVinculo = await gravarMissaoConfirmada(resolved.childId, {
         ...payload,
         toll_value_provider: 0,
         displacement_value_provider: 0,
-      }).eq('id', resolved.childId);
-      if (error?.message?.includes('does not exist')) {
-        ({ error } = await supabase.from('missions').update(payload).eq('id', resolved.childId));
+      });
+      if (gravadoVinculo.error?.message?.includes('does not exist')) {
+        gravadoVinculo = await gravarMissaoConfirmada(resolved.childId, payload);
       }
-      if (error) throw error;
+      if (gravadoVinculo.error) throw gravadoVinculo.error;
       await zeroSameOsProviderCostInDb(resolved.childId);
 
       try {
@@ -1876,11 +1919,11 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (!confirm(`Desvincular ${childId}?\nO custo do fornecedor será recalculado.`)) return;
     setOsLinkBusy(true);
     try {
-      const { error } = await supabase.from('missions').update({
+      const gravadoDesvinculo = await gravarMissaoConfirmada(childId, {
         is_same_os: false,
         parent_mission_id: null,
-      }).eq('id', childId);
-      if (error) throw error;
+      });
+      if (gravadoDesvinculo.error) throw gravadoDesvinculo.error;
       try {
         const userData = JSON.parse(localStorage.getItem('userData') || localStorage.getItem('user') || '{}');
         await supabase.from('system_logs').insert([{
@@ -1974,6 +2017,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveOpsData = async () => {
       if (!mission) return;
+      if (isSavingRef.current) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2009,9 +2053,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               updatePayload.status = 'Concluída';
           }
 
-          const { error, data: confirmedRow } = await supabase.from('missions').update(updatePayload).eq('id', mission.id).select('id, start_km, end_km, status, last_update').single();
-          if (error) throw error;
-          if (!confirmedRow) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+          const gravadoOps = await gravarMissaoConfirmada(mission.id, updatePayload);
+          if (gravadoOps.error) throw gravadoOps.error;
+          const confirmedRow = gravadoOps.data;
+          if (!confirmedRow) throw new Error('O banco não devolveu a OS gravada. A gravação foi bloqueada ou não alterou nenhuma linha.');
 
           await supabase.from('system_logs').insert([{
               user_name: updatePayload.updated_by || 'Usuário',
@@ -2037,6 +2082,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               setProvEditEndTime(updatePayload.end_time ? editEndTime : provEditEndTime);
           }
           showNotification('Salvo', updatePayload.status === 'Concluída' ? 'Dados salvos e missão concluída automaticamente.' : 'Dados do cliente atualizados com sucesso.', 'success');
+          window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: confirmedRow }));
           dispararSyncFaturaPorOS(mission.id);
           if (onUpdate) onUpdate();
       } catch (e: any) {
@@ -2046,6 +2092,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveProvOpsData = async () => {
       if (!mission) return;
+      if (isSavingRef.current) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2072,7 +2119,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           };
 
           let columnsExist = true;
-          const { error } = await supabase.from('missions').update({
+          let gravadoProvOps = await gravarMissaoConfirmada(mission.id, {
               provider_start_km: provData.provider_start_km,
               provider_end_km: provData.provider_end_km,
               provider_start_time: provData.provider_start_time,
@@ -2080,13 +2127,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               provider_ops_edited: true,
               last_update: new Date().toISOString(),
               updated_by: userName
-          }).eq('id', mission.id);
+          });
 
-          if (error && error.message?.includes('does not exist')) {
+          if (gravadoProvOps.error?.message?.includes('does not exist')) {
               columnsExist = false;
-          } else if (error) {
-              throw error;
+              gravadoProvOps = await gravarMissaoConfirmada(mission.id, {
+                  last_update: new Date().toISOString(),
+                  updated_by: userName
+              });
           }
+          if (gravadoProvOps.error) throw gravadoProvOps.error;
 
           await supabase.from('system_logs').insert([{
               user_name: userName,
@@ -2097,19 +2147,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }]);
 
           if (!columnsExist) {
-              await supabase.from('missions').update({
-                  last_update: new Date().toISOString(),
-                  updated_by: userName
-              }).eq('id', mission.id);
+              showNotification('Salvo', 'Dados do fornecedor registrados no log. Execute a migração SQL para persistência completa.', 'info');
+          } else {
+              setMission(prev => prev ? { ...prev, ...gravadoProvOps.data, provider_ops_edited: true } : prev);
+              window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: gravadoProvOps.data }));
+              showNotification('Salvo', 'Dados do fornecedor atualizados com sucesso.', 'success');
           }
-
-          setMission({ ...mission, ...provData, provider_ops_edited: true });
           setIsEditingProvOpsData(false);
           setUseSavedValues(false);
-          showNotification('Salvo', columnsExist 
-              ? 'Dados do fornecedor atualizados com sucesso.' 
-              : 'Dados do fornecedor registrados no log. Execute a migração SQL para persistência completa.',
-              columnsExist ? 'success' : 'info');
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados do fornecedor.', 'error');
@@ -2469,6 +2514,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }
 
   const handleRecalculateClient = async () => {
+      if (isSavingRef.current) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2493,6 +2539,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           setRevenueInput(newRevenue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
+          setIsUpdating(true);
+          isSavingRef.current = true;
           try {
               const userData = JSON.parse(localStorage.getItem('userData') || '{}');
               const userName = userData.name || 'Usuário';
@@ -2514,8 +2562,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   showNotification('Conflito', 'Outro usuário alterou esta OS, recarregue.', 'error');
                   return;
               }
-              const recalcRes = await supabase.from('missions').update(recalcPayload).eq('id', mission.id);
-              if (recalcRes.error) throw recalcRes.error;
+              const gravadoCliente = await gravarMissaoConfirmada(mission.id, recalcPayload);
+              if (gravadoCliente.error) throw gravadoCliente.error;
+              setMission(prev => prev ? { ...prev, ...gravadoCliente.data } : prev);
+              window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: gravadoCliente.data }));
               
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -2539,11 +2589,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           } catch (e) {
               console.error('Erro ao salvar recálculo cliente:', e);
               showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
+          } finally {
+              setIsUpdating(false);
+              isSavingRef.current = false;
           }
       }
   };
 
   const handleRecalculateProvider = async () => {
+      if (isSavingRef.current) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2573,6 +2627,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           setCostInput(newCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
           
           const r2 = (v: number) => Math.round(v * 100) / 100;
+          setIsUpdating(true);
+          isSavingRef.current = true;
           try {
               const userData = JSON.parse(localStorage.getItem('userData') || '{}');
               const userName = userData.name || 'Usuário';
@@ -2593,8 +2649,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   showNotification('Conflito', 'Outro usuário alterou esta OS, recarregue.', 'error');
                   return;
               }
-              const recalcProvRes = await supabase.from('missions').update(recalcProvPayload).eq('id', mission.id);
-              if (recalcProvRes.error) throw recalcProvRes.error;
+              const gravadoFornecedor = await gravarMissaoConfirmada(mission.id, recalcProvPayload);
+              if (gravadoFornecedor.error) throw gravadoFornecedor.error;
+              setMission(prev => prev ? { ...prev, ...gravadoFornecedor.data } : prev);
+              window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: gravadoFornecedor.data }));
               
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -2617,6 +2675,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           } catch (e) {
               console.error('Erro ao salvar recálculo fornecedor:', e);
               showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
+          } finally {
+              setIsUpdating(false);
+              isSavingRef.current = false;
           }
       }
   };
@@ -2739,6 +2800,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const applyOfficialTableToDb = async () => {
       if (!mission || !financialData) return;
+      if (isSavingRef.current) return;
       if (isProviderOnlyUser) {
           showNotification('Sem Permissão', 'A tabela oficial altera dados do cliente e não está disponível para o perfil controller/fornecedor.', 'error');
           return;
@@ -2781,12 +2843,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               payload.cost_edit_reason = `${stamp} Tabela oficial aplicada automaticamente`;
           }
 
-          let { error } = await supabase.from('missions').update(payload).eq('id', mission.id);
-          if (error?.message?.includes('does not exist')) {
+          let gravadoOficial = await gravarMissaoConfirmada(mission.id, payload);
+          if (gravadoOficial.error?.message?.includes('does not exist')) {
               const { toll_value_provider, displacement_value, displacement_value_provider, ...minimal } = payload;
-              ({ error } = await supabase.from('missions').update(minimal).eq('id', mission.id));
+              gravadoOficial = await gravarMissaoConfirmada(mission.id, minimal);
           }
-          if (error) throw error;
+          if (gravadoOficial.error) throw gravadoOficial.error;
+          setMission(prev => prev ? { ...prev, ...gravadoOficial.data } : prev);
+          window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: gravadoOficial.data }));
 
           dbValuesLoadedRef.current = true;
           showNotification('Tabela Aplicada', 'Valores gravados conforme tabela oficial de franquia.', 'success');
@@ -2803,7 +2867,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const handleUpdate = async (approve: boolean, opts?: { negativeMarginLock?: boolean }) => {
-      if (!mission) return;
+      if (!mission || isSavingRef.current) return;
       const lockingNegative = !!opts?.negativeMarginLock;
       let lockActor = false;
       try {
@@ -3097,16 +3161,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               displacementProviderOriginal: (mission as any).displacement_value_provider,
               displacementProviderInformado: dispProv,
           });
-          const edicaoAuditoria = {
-              receita: !isProviderOnlyUser && receitaEditadaRef.current,
-              custo: custoEditadoRef.current,
-              pedagioCliente: pedagioClienteEditadoRef.current && !travarPedagioCliente
-                  && (!isProviderOnlyUser || !travaPedagioClienteFinanceiro),
-              pedagioFornecedor: fornecedorPedagioEditadoRef.current && !travarPedagioFornecedor,
-              deslocamentoCliente: !isProviderOnlyUser && deslocamentoClienteEditadoRef.current,
-              deslocamentoFornecedor: deslocamentoFornecedorEditadoRef.current,
-          };
-          const colunasEditadas = colunasDaEdicao(edicaoAuditoria, {
+          const valoresNaTela = {
               receitaServico: revServiceOnly,
               custoServico: costServiceOnly,
               pedagioCliente: toll,
@@ -3114,7 +3169,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               deslocamentoCliente: displacement,
               deslocamentoFornecedor: dispProv,
               mesmaOs: !!isSameOs,
-          });
+          };
+          const colunasEditadas = colunasDoFormulario(valoresNaTela);
+          const receitaMudou = Math.abs(r2(revServiceOnly) - r2(Number(mission.revenue_value) || 0)) > 0.009;
+          const custoMudou = Math.abs((isSameOs ? 0 : r2(costServiceOnly)) - r2(Number(mission.cost_value) || 0)) > 0.009;
           const basePayload: any = {
               last_update: new Date().toISOString(),
               ...colunasEditadas,
@@ -3135,16 +3193,12 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               basePayload.billing_verified_by = userName;
           }
 
-          const receitaCongelada = edicaoAuditoria.receita ? r2(revServiceOnly) : r2(mission.revenue_value || 0);
-          const custoCongelado = edicaoAuditoria.custo ? (isSameOs ? 0 : r2(costServiceOnly)) : r2(mission.cost_value || 0);
-          const pedagioCongelado = edicaoAuditoria.pedagioCliente ? r2(toll) : r2(mission.toll_value || 0);
-          const pedagioFornecedorCongelado = edicaoAuditoria.pedagioFornecedor
-              ? (isSameOs ? 0 : r2(tollProv))
-              : r2((mission as any).toll_value_provider || 0);
-          const deslocamentoCongelado = edicaoAuditoria.deslocamentoCliente ? r2(displacement) : r2((mission as any).displacement_value || 0);
-          const deslocamentoFornecedorCongelado = edicaoAuditoria.deslocamentoFornecedor
-              ? (isSameOs ? 0 : r2(dispProv))
-              : r2((mission as any).displacement_value_provider || 0);
+          const receitaCongelada = r2(revServiceOnly);
+          const custoCongelado = isSameOs ? 0 : r2(costServiceOnly);
+          const pedagioCongelado = r2(toll);
+          const pedagioFornecedorCongelado = isSameOs ? 0 : r2(tollProv);
+          const deslocamentoCongelado = r2(displacement);
+          const deslocamentoFornecedorCongelado = isSameOs ? 0 : r2(dispProv);
           const totalClienteCongelado = r2(receitaCongelada + pedagioCongelado + deslocamentoCongelado);
           const snapshotParcial = existingSnapshot
               ? snapshotComSomenteOAlterado(mission.snapshot_data as Record<string, unknown>, colunasEditadas)
@@ -3213,31 +3267,31 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           const reasonFields: any = {};
           // Motivo só do lado que a pessoa editou. O outro valor permanece.
-          if (edicaoAuditoria.receita && revDivergent && revenueEditReason.trim()) {
+          if (receitaMudou && revDivergent && revenueEditReason.trim()) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] ${revenueEditReason.trim()}`;
           }
-          if (edicaoAuditoria.custo && (costDivergent || autoEngineDivergent) && costEditReason.trim()) {
+          if (custoMudou && (costDivergent || autoEngineDivergent) && costEditReason.trim()) {
               const prefix = autoEngineDivergent
                   ? `[${userName} - ${formatNowDateTimeBR()}] [DIVERGENTE DO MOTOR AUTO R$ ${(autoEngineSuggestedCost || 0).toFixed(2)}]`
                   : `[${userName} - ${formatNowDateTimeBR()}]`;
               reasonFields.cost_edit_reason = `${prefix} ${costEditReason.trim()}`;
           }
-          if (edicaoAuditoria.receita && r2(revServiceOnly) === 0 && !reasonFields.revenue_edit_reason) {
+          if (r2(revServiceOnly) === 0 && !String(mission.revenue_edit_reason || '').trim() && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
-          if (edicaoAuditoria.custo && r2(costServiceOnly) === 0 && !reasonFields.cost_edit_reason) {
+          if ((isSameOs ? 0 : r2(costServiceOnly)) === 0 && !String(mission.cost_edit_reason || '').trim() && !reasonFields.cost_edit_reason) {
               reasonFields.cost_edit_reason = `[${userName} - ${formatNowDateTimeBR()}] Valor zero confirmado`;
           }
           // O carimbo trava só o lado editado contra o recálculo automático.
           // O lado que não foi mexido não recebe motivo novo nem valor novo.
           const brl = (v: number) => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
           const stamp = `[${userName} - ${formatNowDateTimeBR()}]`;
-          if (edicaoAuditoria.receita && !reasonFields.revenue_edit_reason) {
+          if (receitaMudou && !reasonFields.revenue_edit_reason) {
               reasonFields.revenue_edit_reason = revDivergent
                   ? `${stamp} Edição manual (sem justificativa) — receita salva: ${brl(r2(revServiceOnly))} | sistema sugeria: ${brl(r2(calcRevTotal))}`
                   : `${stamp} Salvamento manual confirmado — receita: ${brl(r2(revServiceOnly))}`;
           }
-          if (edicaoAuditoria.custo && !reasonFields.cost_edit_reason) {
+          if (custoMudou && !reasonFields.cost_edit_reason) {
               if (costDivergent || autoEngineDivergent) {
                   const sysHint = autoEngineDivergent
                       ? `motor auto sugeria: ${brl(autoEngineSuggestedCost || 0)}`
@@ -3319,7 +3373,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   ...reasonFields,
                   ...opsSaveFields,
               };
-          let result = await supabase.from('missions').update(fullPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
+          const gravarNoBanco = async (payload: Record<string, unknown>) => {
+              const resposta = await supabase.from('missions').update(payload).eq('id', mission.id).select();
+              if (resposta.error) return { error: resposta.error, data: null as Record<string, any> | null };
+              const lista = Array.isArray(resposta.data) ? resposta.data : [];
+              if (lista.length === 0) {
+                  return {
+                      error: { message: 'O banco não devolveu a OS gravada. A gravação foi bloqueada ou não alterou nenhuma linha.' },
+                      data: null as Record<string, any> | null,
+                  };
+              }
+              return { error: null, data: lista[0] as Record<string, any> };
+          };
+          let payloadEnviado: Record<string, unknown> = fullPayload as Record<string, unknown>;
+          let result = await gravarNoBanco(fullPayload as Record<string, unknown>);
           if (!result.error && shouldSnapshot && basePayload.snapshot_data) {
               await supabase.from('system_logs').insert([{
                   user_name: userName,
@@ -3355,7 +3422,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       void snapshot_data; void snapshot_approved_by; void snapshot_approved_at;
                       return rest;
                   })();
-              result = await supabase.from('missions').update(retryPayload).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
+              payloadEnviado = retryPayload as Record<string, unknown>;
+              result = await gravarNoBanco(retryPayload as Record<string, unknown>);
               if (result.error && (result.error.message?.includes('does not exist') || result.error.message?.includes('check_snapshot_not_empty'))) {
                   // Mantém cost_edit_reason no payload mínimo — é o campo crítico
                   // do override do controller. Remove só colunas opcionais/legado.
@@ -3373,7 +3441,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       payloadMin.snapshot_approved_by = retryPayload.snapshot_approved_by;
                       payloadMin.snapshot_approved_at = retryPayload.snapshot_approved_at;
                   }
-                  result = await supabase.from('missions').update(payloadMin).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
+                  payloadEnviado = payloadMin as Record<string, unknown>;
+                  result = await gravarNoBanco(payloadMin as Record<string, unknown>);
               }
               // Último recurso do controller: custo + pedágio + deslocamento + motivo
               if (result.error && isProviderOnlyUser && reasonFields.cost_edit_reason) {
@@ -3385,7 +3454,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   delete ultimoRecurso.revenue_value;
                   delete ultimoRecurso.toll_value;
                   delete ultimoRecurso.displacement_value;
-                  result = await supabase.from('missions').update(ultimoRecurso).eq('id', mission.id).select('id, revenue_value, cost_value, toll_value, toll_value_provider, last_update').single();
+                  payloadEnviado = ultimoRecurso;
+                  result = await gravarNoBanco(ultimoRecurso);
               }
               if (basePayload.snapshot_data && !result.error) {
                   await supabase.from('system_logs').insert([{
@@ -3399,6 +3469,15 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (result.error) throw result.error;
           if (!result.data) throw new Error('Falha na persistência: registro não retornado após UPDATE');
+          const camposDinheiro = ['revenue_value', 'cost_value', 'toll_value', 'toll_value_provider', 'displacement_value', 'displacement_value_provider'] as const;
+          const naoConfirmado = camposDinheiro.filter((campo) => {
+              if (!Object.prototype.hasOwnProperty.call(payloadEnviado, campo)) return false;
+              const voltou = Number((result.data as Record<string, unknown>)[campo] ?? 0);
+              return Math.abs(voltou - Number(payloadEnviado[campo] ?? 0)) > 0.01;
+          });
+          if (naoConfirmado.length > 0) {
+              throw new Error(`O banco não confirmou a gravação de: ${naoConfirmado.join(', ')}. A alteração não ficou salva.`);
+          }
           if (impactoZero && Number(pedagioAprovacao.patch.toll_value_provider) === 0) {
               const ocorrenciaZero = await gravarOcorrenciaFornecedorAusenteParaZero(supabase, {
                   missionId: String(mission.id),
@@ -3432,7 +3511,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       cost_edit_reason: reasonFields.cost_edit_reason,
                       last_update: basePayload.last_update,
                   }).eq('id', mission.id).select('id, toll_value_provider').single();
-                  if (retryToll.error) throw retryToll.error;
+                  if (retryToll.error || !retryToll.data) throw retryToll.error || new Error('O pedágio do fornecedor não foi gravado. Tente salvar novamente.');
                   savedTollProv = Number(retryToll.data?.toll_value_provider);
                   if (Math.abs(savedTollProv - wantedToll) > 0.01) {
                       throw new Error('O pedágio do fornecedor não foi gravado. Tente salvar novamente.');
@@ -3493,11 +3572,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               });
           }
           
-          const savedRevCheck = safeNumber(result.data.revenue_value);
-          const savedTollCheck = safeNumber(result.data.toll_value);
-          if (Math.abs(savedRevCheck - revServiceOnly) > 0.01 || Math.abs(savedTollCheck - toll) > 0.01) {
-              console.error('[AUDIT] Divergência pós-salvamento detectada!', { esperado: { rev: revServiceOnly, toll }, banco: { rev: savedRevCheck, toll: savedTollCheck } });
-          }
+          // O banco já devolveu as colunas enviadas. Divergência aqui interrompe o salvamento.
 
           // O snapshot já saiu no UPDATE principal, só com a chave editada.
           // Não há segunda gravação reescrevendo franquia, km ou os outros valores.
@@ -3618,7 +3693,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               }
           }
 
-          if (confirmouReaprovacao && textoReaprovacao) {
+          const financeiroAlterouAprovada = wasAlreadyApproved
+              && (isFinanceProfileRole(userRole) || isFinanceSupervisorName(userName))
+              && (confirmouReaprovacao || detectedChanges.length > 0);
+          if (financeiroAlterouAprovada) {
+              const textoAviso = textoReaprovacao
+                  || detectedChanges.join(' · ')
+                  || 'Alteração em OS já aprovada.';
               const aviso = await supabase.from('system_logs').insert([{
                   user_name: userName,
                   action_type: ACAO_AVISO_EDICAO,
@@ -3630,12 +3711,13 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                       quem: userName,
                       perfil: userRole,
                       quando: new Date().toISOString(),
-                      texto: textoReaprovacao,
+                      texto: textoAviso,
                       alteracoes: detectedChanges.length > 0 ? detectedChanges : ['Reaprovação sem mudança de valor detectada na tela.'],
                   }),
               }]);
               if (aviso.error) {
                   console.warn('[Aviso Diretoria] Falha ao registrar edição:', aviso.error);
+                  showNotification('Aviso da Diretoria', 'A OS foi salva, mas o aviso para a Diretoria não foi gravado: ' + aviso.error.message, 'error');
               } else {
                   reaprovacaoTextoRef.current = '';
                   setReaprovacaoTexto('');
@@ -3660,25 +3742,32 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           deslocamentoClienteEditadoRef.current = false;
           deslocamentoFornecedorEditadoRef.current = false;
 
+          const gravado = result.data as Record<string, any>;
           setMission(prev => prev ? {
               ...prev,
-              ...colunasEditadas,
-              billing_approved: (approve || lockingNegative) ? (lockingNegative ? true : isApprovedForBilling) : prev.billing_approved,
+              revenue_value: gravado.revenue_value,
+              cost_value: gravado.cost_value,
+              toll_value: gravado.toll_value,
+              toll_value_provider: gravado.toll_value_provider,
+              displacement_value: gravado.displacement_value,
+              displacement_value_provider: gravado.displacement_value_provider,
+              billing_approved: gravado.billing_approved ?? ((approve || lockingNegative) ? (lockingNegative ? true : isApprovedForBilling) : prev.billing_approved),
               ...(lockingNegative ? {
-                  negative_margin_locked: true,
-                  negative_margin_locked_by: userName,
-                  negative_margin_locked_at: basePayload.negative_margin_locked_at,
+                  negative_margin_locked: gravado.negative_margin_locked ?? true,
+                  negative_margin_locked_by: gravado.negative_margin_locked_by ?? userName,
+                  negative_margin_locked_at: gravado.negative_margin_locked_at ?? basePayload.negative_margin_locked_at,
               } : {}),
-              ...(approve ? { billing_verified_by: userName } : {}),
-              ...(basePayload.snapshot_data ? { snapshot_data: basePayload.snapshot_data, ...(approve ? { snapshot_approved_by: userName, snapshot_approved_at: basePayload.snapshot_approved_at } : {}) } : {}),
-              last_update: basePayload.last_update,
-              ...(reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {}),
-              ...(reasonFields.cost_edit_reason ? { cost_edit_reason: reasonFields.cost_edit_reason } : {}),
-              ...(opsSaveFields.origin ? { origin: String(opsSaveFields.origin) } : {}),
-              ...(opsSaveFields.destination ? { destination: String(opsSaveFields.destination) } : {}),
-              ...(opsSaveFields.total_distance != null ? { totalDistance: opsSaveFields.total_distance, total_distance: opsSaveFields.total_distance } : {}),
-              ...(opsSaveFields.start_time ? { startTime: opsSaveFields.start_time, start_time: opsSaveFields.start_time } : {}),
-              ...(opsSaveFields.end_time ? { endTime: opsSaveFields.end_time, end_time: opsSaveFields.end_time } : {}),
+              ...(approve ? { billing_verified_by: gravado.billing_verified_by ?? userName } : {}),
+              ...(gravado.snapshot_data ? { snapshot_data: gravado.snapshot_data } : (basePayload.snapshot_data ? { snapshot_data: basePayload.snapshot_data } : {})),
+              ...(approve && gravado.snapshot_approved_by ? { snapshot_approved_by: gravado.snapshot_approved_by, snapshot_approved_at: gravado.snapshot_approved_at } : {}),
+              last_update: gravado.last_update || basePayload.last_update,
+              ...(gravado.revenue_edit_reason ? { revenue_edit_reason: gravado.revenue_edit_reason } : (reasonFields.revenue_edit_reason ? { revenue_edit_reason: reasonFields.revenue_edit_reason } : {})),
+              ...(gravado.cost_edit_reason ? { cost_edit_reason: gravado.cost_edit_reason } : (reasonFields.cost_edit_reason ? { cost_edit_reason: reasonFields.cost_edit_reason } : {})),
+              ...(gravado.origin ? { origin: String(gravado.origin) } : {}),
+              ...(gravado.destination ? { destination: String(gravado.destination) } : {}),
+              ...(gravado.total_distance != null ? { totalDistance: gravado.total_distance, total_distance: gravado.total_distance } : {}),
+              ...(gravado.start_time ? { startTime: gravado.start_time, start_time: gravado.start_time } : {}),
+              ...(gravado.end_time ? { endTime: gravado.end_time, end_time: gravado.end_time } : {}),
           } : prev);
           if (isEditingOpsData) setIsEditingOpsData(false);
           if (isEditingProvOpsData) setIsEditingProvOpsData(false);
@@ -3765,6 +3854,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               });
           }
 
+          window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: result.data }));
           dispararSyncFaturaPorOS(mission.id, userName);
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
@@ -3777,7 +3867,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   };
 
   const desaprovarPelaDiretoria = async () => {
-      if (!mission || isUpdating) return;
+      if (!mission || isUpdating || isSavingRef.current) return;
       if (currentApprovalStatus.currentUserStage !== 'diretoria' || !currentApprovalStatus.isFullyApproved) return;
       const segue = window.confirm('Desaprovar esta OS pela Diretoria? Os valores salvos não mudam. A aprovação da Diretoria sai do histórico.');
       if (!segue) return;
@@ -3807,18 +3897,18 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   billing_verified_by: null,
                   last_update: agora,
               };
-          const result = await supabase.from('missions').update(payload).eq('id', mission.id).select('id').single();
+          const result = await supabase.from('missions').update(payload).eq('id', mission.id).select();
           if (result.error) throw result.error;
+          const lista = Array.isArray(result.data) ? result.data : [];
+          if (lista.length === 0) {
+              throw new Error('O banco não devolveu a OS gravada. A gravação foi bloqueada ou não alterou nenhuma linha.');
+          }
           setApprovalLog(prev => [...prev, logEntry]);
-          setMission(prev => prev ? {
-              ...prev,
-              billing_approved: mantemFaturamento,
-              last_update: agora,
-              ...(mantemFaturamento ? {} : { snapshot_approved_by: null, snapshot_approved_at: null, billing_verified_by: undefined }),
-          } : prev);
+          setMission(prev => prev ? { ...prev, ...lista[0] } : prev);
           showNotification('Desaprovado', mantemFaturamento
               ? 'Aprovação da Diretoria retirada. Financeiro ou Controller seguem valendo.'
               : 'Aprovação da Diretoria retirada. A OS volta para a pendência de aprovações.', 'success');
+          window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: lista[0] }));
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
       } catch (e: any) {
@@ -3885,7 +3975,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const ok = await senhaDoUsuarioConfere(supabase, { id: userData.id, email: userData.email }, reaprovacaoSenha);
           if (!ok) {
-              setReaprovacaoErro('Senha incorreta.');
+              setReaprovacaoErro(`A senha não é a de ${nomeDeQuemConfirma}. Use a mesma senha do seu acesso.`);
               return;
           }
           reaprovacaoTextoRef.current = reaprovacaoTexto.trim();
@@ -3904,7 +3994,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           const userData = JSON.parse(localStorage.getItem('userData') || '{}');
           const ok = await senhaDoUsuarioConfere(supabase, { id: userData.id, email: userData.email }, senhaPedagio);
           if (!ok) {
-              setSenhaPedagioErro('Senha incorreta.');
+              setSenhaPedagioErro(`A senha não é a de ${nomeDeQuemConfirma}. Use a mesma senha do seu acesso.`);
               return;
           }
           senhaPedagioOkRef.current = true;
@@ -4028,6 +4118,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }
   };
 
+  const fecharAuditoria = () => {
+    if (isSavingRef.current || isUpdating || isSavingRoute) {
+      showNotification('Salvando', 'Aguarde a confirmação do banco. A tela permanece aberta.', 'info');
+      return;
+    }
+    onClose();
+  };
+
   const copyAuditSummary = () => {
     const text = (auditSummaryEditText || auditSummaryData?.whatsappText || '').trim();
     if (!text) return;
@@ -4058,6 +4156,20 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
+      {isUpdating && (
+          <div
+              className="absolute inset-0 z-[140] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+              data-testid="painel-salvando-auditoria"
+              role="status"
+              aria-live="polite"
+          >
+              <div className="bg-white rounded-2xl shadow-2xl px-8 py-7 flex flex-col items-center gap-3 min-w-[280px]">
+                  <Loader2 size={36} className="animate-spin text-emerald-600" />
+                  <p className="text-lg font-black uppercase tracking-wide text-slate-900">Salvando</p>
+                  <p className="text-xs font-bold text-slate-500 text-center max-w-[240px]">Confirmando no banco. Esta tela só sai quando a gravação voltar confirmada.</p>
+              </div>
+          </div>
+      )}
       
       {showAuditSummary && (
           <div className="absolute inset-0 z-[125] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowAuditSummary(false)}>
@@ -4368,7 +4480,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 Plano DHL
               </button>
             )}
-            <button onClick={onClose} className="p-2 rounded-full hover:bg-white/10 transition-colors"><X size={24}/></button>
+            <button type="button" onClick={fecharAuditoria} disabled={isUpdating || isSavingRoute} className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-40" data-testid="button-fechar-auditoria"><X size={24}/></button>
           </div>
           </div>
 
@@ -4482,7 +4594,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                           <button
                               onClick={async () => {
                                   if (!editOrigin.trim() || !editDestination.trim()) return;
+                                  if (isSavingRef.current) return;
                                   setIsSavingRoute(true);
+                                  setIsUpdating(true);
+                                  isSavingRef.current = true;
                                   try {
                                       // OS Cancelada: força KM = 0 (regra do negócio).
                                       const isCancelledStatus = mission.status === MissionStatus.CANCELLED;
@@ -4510,8 +4625,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                           updatePayload.total_distance = newDistanceKm;
                                       }
 
-                                      const { error } = await supabase.from('missions').update(updatePayload).eq('id', mission.id).select('id').single();
-                                      if (error) throw error;
+                                      const gravadoRota = await gravarMissaoConfirmada(mission.id, updatePayload);
+                                      if (gravadoRota.error) throw gravadoRota.error;
                                       const userData = JSON.parse(localStorage.getItem('userData') || '{}');
                                       await supabase.from('system_logs').insert([{
                                           user_name: userData.name || 'Sistema',
@@ -4541,17 +4656,21 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                       try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch {}
                                   } catch (err: any) {
                                       showNotification('Erro', err.message, 'error');
+                                  } finally {
+                                      setIsSavingRoute(false);
+                                      setIsUpdating(false);
+                                      isSavingRef.current = false;
                                   }
-                                  setIsSavingRoute(false);
                               }}
-                              disabled={isSavingRoute}
+                              disabled={isSavingRoute || isUpdating}
                               className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded text-xs font-black hover:bg-emerald-700"
                               data-testid="button-save-route"
                           >
                               {isSavingRoute ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar
                           </button>
                           <button
-                              onClick={() => setIsEditingRoute(false)}
+                              onClick={() => { if (!isSavingRoute && !isUpdating) setIsEditingRoute(false); }}
+                              disabled={isSavingRoute || isUpdating}
                               className="flex items-center gap-1 px-3 py-1.5 text-gray-300 hover:text-white border border-white/20 rounded text-xs"
                           >
                               <X size={12} /> Cancelar
@@ -4658,7 +4777,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50 pb-4 sm:pb-6">
+        <fieldset disabled={isUpdating || isSavingRoute} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50 pb-4 sm:pb-6 border-0 min-w-0 m-0 disabled:opacity-100">
             <PaidInvoiceLockPanel
                 lock={paidInvoiceLock}
                 unlocked={paidUnlockOverride}
@@ -4965,7 +5084,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </div>
                                     <button
                                         onClick={() => applyOfficialTableToDb()}
-                                        disabled={isUpdating}
+                                        disabled={isUpdating || isSavingRoute}
                                         className="shrink-0 flex items-center gap-1.5 px-3 py-2 bg-amber-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-amber-700 transition-all shadow-sm disabled:opacity-50"
                                         data-testid="button-apply-official-table"
                                     >
@@ -5071,7 +5190,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {isEditingOpsData && (
                                             <div className="flex gap-2">
                                                 <button onClick={() => setIsEditingOpsData(false)} className="px-2 py-1 text-[9px] font-black text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 uppercase tracking-wider">Cancelar</button>
-                                                <button onClick={handleSaveOpsData} disabled={isUpdating} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-green-600 rounded-lg hover:bg-green-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
+                                                <button onClick={handleSaveOpsData} disabled={isUpdating || isSavingRoute} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-green-600 rounded-lg hover:bg-green-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
                                             </div>
                                         )}
                                     </div>
@@ -5154,7 +5273,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                         {isEditingProvOpsData && (
                                             <div className="flex gap-2">
                                                 <button onClick={() => setIsEditingProvOpsData(false)} className="px-2 py-1 text-[9px] font-black text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 uppercase tracking-wider">Cancelar</button>
-                                                <button onClick={handleSaveProvOpsData} disabled={isUpdating} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-blue-600 rounded-lg hover:bg-blue-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-prov-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
+                                                <button onClick={handleSaveProvOpsData} disabled={isUpdating || isSavingRoute} className="flex items-center gap-1 px-3 py-1 text-[9px] font-black text-white bg-blue-600 rounded-lg hover:bg-blue-700 uppercase tracking-wider disabled:opacity-50" data-testid="button-save-prov-ops-data">{isUpdating ? <Loader2 size={10} className="animate-spin"/> : <Save size={10}/>} Salvar</button>
                                             </div>
                                         )}
                                     </div>
@@ -5803,13 +5922,19 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                                         ) : prev);
                                                         setManualProviderTableId('');
                                                         if (mission) {
+                                                            if (isSavingRef.current) return;
                                                             const resetPayload = isProviderOnlyUser
                                                                 ? { cost_edit_reason: '' }
                                                                 : { revenue_edit_reason: '', cost_edit_reason: '', billing_verified_by: null };
-                                                            await supabase.from('missions').update(resetPayload).eq('id', mission.id);
+                                                            const gravadoReset = await gravarMissaoConfirmada(mission.id, resetPayload);
+                                                            if (gravadoReset.error) {
+                                                                showNotification('Erro', gravadoReset.error.message || 'O banco não confirmou a limpeza.', 'error');
+                                                                return;
+                                                            }
                                                             if (!isProviderOnlyUser) {
                                                                 await supabase.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', mission.id);
                                                             }
+                                                            window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: gravadoReset.data }));
                                                         }
                                                         setTimeout(() => {
                                                             setManualProviderTableId(currentTableId);
@@ -6831,7 +6956,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
                 </div>
             )}
-        </div>
+        </fieldset>
 
         {financialData && !isLoading && (
                     <div
@@ -6897,7 +7022,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   <button
                                     type="button"
                                     onClick={() => handleUpdate(true, { negativeMarginLock: true })}
-                                    disabled={isUpdating}
+                                    disabled={isUpdating || isSavingRoute}
                                     className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-slate-900 hover:bg-slate-800 text-white disabled:opacity-50"
                                     title="Confirma que o prejuízo foi analisado (fornecedor maior que o faturamento). Depois, somente a Diretoria altera a OS."
                                     data-testid="button-lock-negative-margin"
@@ -6929,7 +7054,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     <span className="truncate">Pedir Análise</span>
                                   </button>
                                 )}
-                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
+                                <button onClick={() => handleUpdate(false)} disabled={isUpdating || isSavingRoute || negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))} className={`flex-1 sm:flex-none px-2 sm:px-5 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 ${(negativeLockBlocks || (!canSaveProviderAdjustments && !reeditandoPedagio && ((currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) || isEffectivelyLocked))) ? 'bg-gray-200 text-gray-400 border border-gray-300 cursor-not-allowed' : 'bg-white text-slate-900 border border-slate-200 hover:bg-slate-50'}`} title={negativeLockBlocks ? 'Prejuízo analisado — somente a Diretoria altera' : isEffectivelyLocked && !canSaveProviderAdjustments ? 'Faturamento travado — destrave para editar' : canSaveProviderAdjustments ? 'Salvar somente o valor do fornecedor' : ''} data-testid="button-save-adjustments">
                                     {isUpdating ? <Loader2 size={14} className="animate-spin shrink-0" /> : (negativeLockBlocks || (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance)) ? <Lock size={14} className="shrink-0" /> : <Save size={14} className="shrink-0" />}
                                     <span className="truncate">{negativeLockBlocks ? 'Travada' : (!canSaveProviderAdjustments && currentApprovalStatus.lockedByDiretoria && !isBarbaraFinance) ? 'Bloqueado' : 'Salvar'}</span>
                                 </button>
@@ -6937,7 +7062,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                   <button
                                     type="button"
                                     onClick={() => { void desaprovarPelaDiretoria(); }}
-                                    disabled={isUpdating}
+                                    disabled={isUpdating || isSavingRoute}
                                     className="flex-1 sm:flex-none px-2 sm:px-4 py-2 rounded-lg sm:rounded-xl text-[9px] sm:text-xs font-black uppercase flex items-center justify-center gap-1 sm:gap-2 transition-all shadow-sm active:scale-95 h-9 sm:h-10 bg-white text-red-700 border border-red-300 hover:bg-red-50 disabled:opacity-50"
                                     title="Desaprovar pela Diretoria. Os valores salvos não mudam."
                                     data-testid="button-unapprove-diretoria"
@@ -7009,22 +7134,28 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-3">
             <h3 className="text-sm font-black uppercase text-slate-900">Confirmar reaprovação</h3>
             <p className="text-[11px] text-slate-600 leading-relaxed">
-              Escreva qual alteração está sendo feita e confirme com a senha do sistema. A Diretoria recebe o aviso com o seu nome, a hora e este texto.
+              Escreva a alteração e confirme com a senha de acesso de {nomeDeQuemConfirma}. A Giovanna usa a senha dela. A Ana usa a senha dela. A Diretoria recebe o aviso com o nome, a hora e este texto.
             </p>
             <textarea
               value={reaprovacaoTexto}
               onChange={(e) => setReaprovacaoTexto(e.target.value)}
               rows={4}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-              placeholder="Descreva a alteração"
+              placeholder="Descreva a alteração (mínimo de 8 caracteres)"
               data-testid="input-texto-reaprovacao"
             />
+            {!textoReaprovacaoValido(reaprovacaoTexto) && (
+              <p className="text-[10px] font-bold text-amber-700">
+                Faltam {Math.max(0, 8 - reaprovacaoTexto.trim().length)} caracteres na descrição para a reaprovação valer.
+              </p>
+            )}
             <input
               type="password"
               value={reaprovacaoSenha}
               onChange={(e) => setReaprovacaoSenha(e.target.value)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-              placeholder="Senha"
+              placeholder={`Senha de ${nomeDeQuemConfirma}`}
+              autoComplete="current-password"
               data-testid="input-senha-reaprovacao"
             />
             {reaprovacaoErro && <p className="text-[11px] font-bold text-red-600">{reaprovacaoErro}</p>}
@@ -7039,8 +7170,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               <button
                 type="button"
                 onClick={() => void confirmarReaprovacaoFinanceira()}
-                disabled={reaprovacaoChecando || !reaprovacaoSenha.trim() || !textoReaprovacaoValido(reaprovacaoTexto)}
-                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-40"
+                disabled={reaprovacaoChecando || !reaprovacaoSenha.trim()}
+                className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-[10px] font-black uppercase disabled:bg-gray-300 disabled:text-gray-500"
                 data-testid="button-confirmar-reaprovacao"
               >
                 {reaprovacaoChecando ? 'Conferindo...' : 'Reaprovar'}
@@ -7054,7 +7185,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-3">
             <h3 className="text-sm font-black uppercase text-slate-900">Confirmar alteração do pedágio</h3>
             <p className="text-[11px] text-slate-600 leading-relaxed">
-              Digite a senha do sistema. A gravação fica no histórico desta OS e gera uma ocorrência.
+              Digite a senha de acesso de {nomeDeQuemConfirma}. A gravação fica no histórico desta OS e gera uma ocorrência.
             </p>
             <input
               type="password"
@@ -7062,6 +7193,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               value={senhaPedagio}
               onChange={(e) => setSenhaPedagio(e.target.value)}
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              placeholder={`Senha de ${nomeDeQuemConfirma}`}
+              autoComplete="current-password"
               data-testid="input-senha-pedagio"
             />
             {senhaPedagioErro && <p className="text-[11px] font-bold text-red-600">{senhaPedagioErro}</p>}
@@ -7077,7 +7210,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 type="button"
                 onClick={confirmarSenhaPedagio}
                 disabled={senhaPedagioChecando || !senhaPedagio.trim()}
-                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-[10px] font-black uppercase disabled:opacity-40"
+                className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-[10px] font-black uppercase disabled:bg-gray-300 disabled:text-gray-500"
                 data-testid="button-confirmar-senha-pedagio"
               >
                 {senhaPedagioChecando ? 'Conferindo...' : 'Confirmar'}

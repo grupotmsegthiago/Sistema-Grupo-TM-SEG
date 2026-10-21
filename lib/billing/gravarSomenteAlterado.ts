@@ -1,7 +1,6 @@
 /**
  * Salvamento da auditoria de faturamento.
- * O UPDATE leva só a coluna que a pessoa editou. Receita, custo, pedágio
- * e deslocamento que não foram mexidos ficam como estão no banco.
+ * O formulário envia os valores que estão na tela, inclusive zero.
  * O motor da OS não entra neste patch.
  */
 
@@ -41,6 +40,53 @@ export function colunasDaEdicao(
   if (edicao.deslocamentoCliente) colunas.displacement_value = r2(valores.deslocamentoCliente);
   if (edicao.deslocamentoFornecedor) {
     colunas.displacement_value_provider = valores.mesmaOs ? 0 : r2(valores.deslocamentoFornecedor);
+  }
+  return colunas;
+}
+
+/** Valores atuais do formulário. Não consulta marca de campo alterado. */
+export function colunasDoFormulario(valores: ValoresEditadosAuditoria): Record<string, number> {
+  return {
+    revenue_value: r2(valores.receitaServico),
+    cost_value: valores.mesmaOs ? 0 : r2(valores.custoServico),
+    toll_value: r2(valores.pedagioCliente),
+    toll_value_provider: valores.mesmaOs ? 0 : r2(valores.pedagioFornecedor),
+    displacement_value: r2(valores.deslocamentoCliente),
+    displacement_value_provider: valores.mesmaOs ? 0 : r2(valores.deslocamentoFornecedor),
+  };
+}
+
+/**
+ * O que a tela mostra e o banco ainda não tem.
+ * Entra no UPDATE mesmo se a marca de edição se perdeu no recarregamento.
+ * Mesma OS não zera o fornecedor por esta comparação.
+ */
+export function colunasQueATelaMostraDiferente(
+  banco: {
+    revenue_value?: number | null;
+    cost_value?: number | null;
+    toll_value?: number | null;
+    toll_value_provider?: number | null;
+    displacement_value?: number | null;
+    displacement_value_provider?: number | null;
+  },
+  tela: ValoresEditadosAuditoria,
+): Record<string, number> {
+  const colunas: Record<string, number> = {};
+  const porCampo: Array<[string, number, unknown, boolean]> = [
+    ['revenue_value', tela.receitaServico, banco.revenue_value, true],
+    ['cost_value', tela.custoServico, banco.cost_value, !tela.mesmaOs],
+    ['toll_value', tela.pedagioCliente, banco.toll_value, true],
+    ['toll_value_provider', tela.pedagioFornecedor, banco.toll_value_provider, !tela.mesmaOs],
+    ['displacement_value', tela.deslocamentoCliente, banco.displacement_value, true],
+    ['displacement_value_provider', tela.deslocamentoFornecedor, banco.displacement_value_provider, !tela.mesmaOs],
+  ];
+  for (const [coluna, valorTela, valorBanco, compara] of porCampo) {
+    if (!compara) continue;
+    const novo = r2(valorTela);
+    const antigoBruto = Number(valorBanco ?? 0);
+    const antigo = Number.isFinite(antigoBruto) ? r2(antigoBruto) : 0;
+    if (Math.abs(novo - antigo) > 0.009) colunas[coluna] = novo;
   }
   return colunas;
 }

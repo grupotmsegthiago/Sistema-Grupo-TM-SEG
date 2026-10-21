@@ -935,7 +935,10 @@ export const calculateMissionFinancials = (
     let providerMultiplier = 1;
 
     const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string, agentAware?: { count: number, isSpecial: boolean }, originUFCode?: string, originAddress?: string) => {
-        if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Sem tabelas cadastradas' };
+        candidateTables = (candidateTables || []).filter(
+            (t) => !String(t?.operation_type || '').toUpperCase().includes('__AUTO_MASTER__'),
+        );
+        if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Tabela não encontrada' };
 
         const normalizedRegion = normalize(region);
         const normalizedCity = normalize(city);
@@ -1152,6 +1155,9 @@ export const calculateMissionFinancials = (
             clientTablesFiltered = macorTables;
         }
     }
+    clientTablesFiltered = clientTablesFiltered.filter(
+        (t) => !String(t.operation_type || '').toUpperCase().includes('__AUTO_MASTER__'),
+    );
 
     let isManualOverride = false;
     if (manualTableOverrides?.clientTableId) {
@@ -1160,7 +1166,8 @@ export const calculateMissionFinancials = (
         // Seleção explícita do auditor (dropdown / BillingAdjustment) sempre vence.
         // O filtro de região vale só para memória evolutiva de OUTRAS OS, não aqui —
         // senão a GTM-7714 (PA) ficava "sem tabela" mesmo com NÍVEL BRASIL escolhida.
-        if (manualTable) {
+        // A linha __AUTO_MASTER__ não é tabela contratual: um id salvo dela não substitui a tabela da OS.
+        if (manualTable && !String(manualTable.operation_type || '').toUpperCase().includes('__AUTO_MASTER__')) {
             appliedClientTable = manualTable;
             clientLog = 'Seleção Manual / Memória';
             isManualOverride = true;
@@ -1315,6 +1322,13 @@ export const calculateMissionFinancials = (
         }
     }
 
+    if (!appliedClientTable) {
+        console.warn(`Nenhuma tabela encontrada para o cliente ${missionClientRaw}. A tabela mestre genérica não é aplicada.`);
+        if (!clientLog || clientLog === 'Manual' || clientLog === 'Sem tabelas cadastradas') {
+            clientLog = 'Tabela não encontrada';
+        }
+    }
+
     let appliedProviderTable: any = null;
     let providerLog = 'Manual';
 
@@ -1350,12 +1364,24 @@ export const calculateMissionFinancials = (
     // manual salvo, então continuam usando o motor (ou o valor já salvo) sem regressão.
     // Normaliza o override de tabela do fornecedor UMA vez: um id sintético do
     // motor ("auto-...") nunca conta como seleção manual, em nenhum ramo abaixo.
-    const effectiveProviderTableId = (manualTableOverrides?.providerTableId
-        && !String(manualTableOverrides.providerTableId).startsWith('auto-'))
+    let effectiveProviderTableId = (manualTableOverrides?.providerTableId
+        && !String(manualTableOverrides.providerTableId).startsWith('auto-')
+        && !String(manualTableOverrides.providerTableId).startsWith('__auto_master__'))
         ? manualTableOverrides.providerTableId
         : undefined;
+    if (effectiveProviderTableId) {
+        const linhaSalva = providerTables.find((t) => String(t.id) === String(effectiveProviderTableId));
+        if (linhaSalva && isAutoMasterRow(linhaSalva)) {
+            effectiveProviderTableId = undefined;
+        }
+    }
     const hasManualProviderOverride = !!effectiveProviderTableId;
-    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches && !hasManualProviderOverride;
+    // __AUTO_MASTER__ não entra no preço da OS. Tabela já vinculada permanece.
+    // Sem correspondência, o custo fica sem tabela (zero para precificação manual).
+    const autoEngineActive = false;
+    void autoMasterConfig;
+    void autoRegionMatches;
+    void hasManualProviderOverride;
 
     // Quando o motor está ativo, esvazia a lista de tabelas regulares para que
     // a lógica de score abaixo não selecione nada — o `appliedProviderTable`
@@ -1581,6 +1607,13 @@ export const calculateMissionFinancials = (
             cancellation_fee: 0,
         };
         providerLog = `Motor Auto → Faixa ${autoBreakdown.bandKm}KM (${autoBreakdown.bandHours}h)`;
+    }
+
+    if (!appliedProviderTable) {
+        console.warn(`Nenhuma tabela de fornecedor encontrada para ${mission.provider || 'a OS'}. A tabela mestre genérica não é aplicada.`);
+        if (!providerLog || providerLog === 'Manual') {
+            providerLog = 'Tabela não encontrada';
+        }
     }
 
     const cBase = isRefused ? 0 : (manualTableOverrides?.customClientBase !== undefined 
