@@ -7,8 +7,7 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
-import { escolherTabelaProxima, escolherTabelasDaRotaAprovada, quilometragemRegistrada, type OsRotaAprovada } from '../lib/rotaAprovadaTabela';
-import { fetchAllPages } from '../lib/supabasePaging';
+import { escolherTabelaProxima, quilometragemRegistrada } from '../lib/rotaAprovadaTabela';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -501,6 +500,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [costInput, setCostInput] = useState('');
   const [tollInput, setTollInput] = useState('');
   const [tollProviderInput, setTollProviderInput] = useState('');
+  const [informarPedagioAberto, setInformarPedagioAberto] = useState(false);
+  const [pedagioInformado, setPedagioInformado] = useState('');
   const [displacementInput, setDisplacementInput] = useState('');
   const [displacementProviderInput, setDisplacementProviderInput] = useState('');
   // KM de deslocamento autorizado pela DHL (dhl_deslocamento_km, digitado no
@@ -839,7 +840,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const [paidUnlockOverride, setPaidUnlockOverride] = useState(false);
   const [paidUnlockReason, setPaidUnlockReason] = useState('');
   const [paidUnlocking, setPaidUnlocking] = useState(false);
-  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); setPaidInvoiceLock({ bloqueado: false }); setPaidUnlockOverride(false); setPaidUnlockReason(''); zeroFornecedorConfirmadoRef.current = false; setAvisoZeroFornecedor(null); }, [mission?.id]);
+  useEffect(() => { setUnlockOverride(false); setEditObservation(''); setAnalysisReason(''); setOpenAnalysisRequest(null); setFullEditMode(false); setTollConfirmAutoOpened(false); setDisableFixedKmRule(false); setPaidInvoiceLock({ bloqueado: false }); setPaidUnlockOverride(false); setPaidUnlockReason(''); zeroFornecedorConfirmadoRef.current = false; setAvisoZeroFornecedor(null); setInformarPedagioAberto(false); setPedagioInformado(''); }, [mission?.id]);
   useEffect(() => {
     if (!isOpen) {
       setFullEditMode(false);
@@ -1127,86 +1128,6 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   // Se não tem, busca via API ou histórico automaticamente.
   const rotaAprovadaAplicadaRef = useRef(false);
 
-  const aplicarRotaAprovada = async (currentMission: Mission, tabelasCliente: ClientPriceTable[], tabelasFornecedor: ProviderCostTable[]) => {
-    if (isDhlSupplyClient(currentMission.originalClientName || currentMission.client)) return;
-    const cliente = String(currentMission.originalClientName || currentMission.client || '');
-    const token = (cliente.split(/[\s,.\-/]+/).find((parte) => parte.length >= 6) || '').replace(/[^A-Za-z0-9]/g, '');
-    if (!token) return;
-    let pagina;
-    try {
-      pagina = await fetchAllPages<{
-        id: string;
-        origin: string | null;
-        destination: string | null;
-        client: string | null;
-        original_client_name: string | null;
-        provider: string | null;
-        snapshot_data: { clientTableId?: string; providerTableId?: string } | string | null;
-        snapshot_approved_at: string | null;
-        updated_at: string | null;
-        invoice_number: string | null;
-        start_km: number | null;
-        end_km: number | null;
-        total_distance: number | null;
-      }>((from, size) => supabase
-        .from('missions')
-        .select('id,origin,destination,client,original_client_name,provider,snapshot_data,snapshot_approved_at,updated_at,invoice_number,start_km,end_km,total_distance')
-        .eq('billing_approved', true)
-        .or(`client.ilike.%${token}%,original_client_name.ilike.%${token}%`)
-        .order('id')
-        .range(from, from + size - 1) as Promise<{ data: any; error: unknown; count?: number | null }>,
-      1000,
-      20000,
-      { getRowKey: (row) => row.id });
-    } catch (erro) {
-      console.warn('[Rota aprovada] Consulta incompleta. Nenhuma tabela foi trocada.', erro);
-      return;
-    }
-    if (!pagina.complete) return;
-    const historico: OsRotaAprovada[] = pagina.rows.map((row) => {
-      let snap = row.snapshot_data;
-      if (typeof snap === 'string') {
-        try { snap = JSON.parse(snap); } catch { snap = null; }
-      }
-      const nota = String(row.invoice_number || '').trim();
-      return {
-        id: String(row.id),
-        cliente: String(row.original_client_name || row.client || ''),
-        origem: String(row.origin || ''),
-        destino: String(row.destination || ''),
-        fornecedor: row.provider,
-        clientTableId: snap?.clientTableId ? String(snap.clientTableId) : null,
-        providerTableId: snap?.providerTableId ? String(snap.providerTableId) : null,
-        aprovadaEm: row.snapshot_approved_at || row.updated_at,
-        km: quilometragemRegistrada(row.start_km, row.end_km, row.total_distance),
-        faturada: nota.length > 0,
-      };
-    });
-    const ufOrigem = extractUF(currentMission.origin || '');
-    const escolha = escolherTabelasDaRotaAprovada({
-      osAtualId: String(currentMission.id),
-      cliente,
-      origem: currentMission.origin || '',
-      destino: currentMission.destination || '',
-      fornecedorAtual: currentMission.provider,
-      kmAtual: quilometragemRegistrada(currentMission.startKm, currentMission.endKm, currentMission.totalDistance),
-      regiao: UF_TO_REGION[ufOrigem] || '',
-      historico,
-      tabelasCliente: tabelasCliente.map((tabela) => ({ id: String(tabela.id), operation_type: tabela.operation_type, client: tabela.client })),
-      tabelasFornecedor: tabelasFornecedor.map((tabela) => ({ id: String(tabela.id), provider: tabela.provider })),
-    });
-    if (!escolha) return;
-    rotaAprovadaAplicadaRef.current = true;
-    setManualClientTableId(escolha.clientTableId);
-    if (escolha.providerTableId) setManualProviderTableId(escolha.providerTableId);
-    setMemoryLoaded(true);
-    showNotification(
-      'Rota aprovada',
-      `Rota ${escolha.rota}: ${escolha.votos} OS aprovada(s), ${escolha.faturadas} faturada(s). Exemplo ${escolha.osExemplo}. O pedágio continua desta OS.`,
-      'success',
-    );
-  };
-
   const fetchHistoricalPatterns = async (currentMission: Mission, allProviderTables?: ProviderCostTable[], tabelasClienteCarregadas?: ClientPriceTable[]) => {
       rotaAprovadaAplicadaRef.current = false;
       if (!currentMission.client || !currentMission.origin || isSavingRef.current) return;
@@ -1286,7 +1207,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           if (osTravada) return;
           if (hasSavedData) {
-              await aplicarRotaAprovada(currentMission, tabelasClienteCarregadas || clientTables, allProviderTables || providerTables);
+              // A busca da rota aprovada pedia uma coluna que não existe e não trocava a tabela.
               return;
           }
 
@@ -1355,13 +1276,10 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                  showNotification('Memória Evolutiva', `Tabela${extraInfo} aplicada (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}). Pedágio precisa ser confirmado manualmente.`, 'success');
              } catch (e) { console.error("Erro ao ler memória:", e); }
           }
-          if (!rotaAprovadaAplicadaRef.current) {
-              await aplicarRotaAprovada(currentMission, tabelasClienteCarregadas || clientTables, allProviderTables || providerTables);
-          }
       } catch (e) { console.error("Erro na IA de Padrões:", e); }
   };
 
-  const loadData = async () => {
+  const loadData = async (opcoes?: { reutilizar?: boolean }) => {
       if (!initialMission?.id || isSavingRef.current) return;
       userManuallyEditedRef.current = false;
       dbValuesLoadedRef.current = false;
@@ -1422,8 +1340,29 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               const firstToken = providerName.split(/[\s,.\-\/]+/).find((w: string) => w.length > 2) || providerName;
               ptQuery = ptQuery.ilike('provider', `%${firstToken}%`);
           }
+          const recebida = initialMission as any;
+          const osCompleta = recebida
+              && recebida.revenue_value !== undefined
+              && recebida.cost_value !== undefined
+              && recebida.toll_value !== undefined
+              && (recebida.start_km !== undefined || recebida.startKm !== undefined)
+              && recebida.status !== undefined;
+          const reutilizarOs = !!opcoes?.reutilizar && osCompleta;
+          const buscaDaOs = reutilizarOs
+              ? Promise.resolve({
+                  data: {
+                      ...recebida,
+                      start_km: recebida.start_km ?? recebida.startKm ?? null,
+                      end_km: recebida.end_km ?? recebida.endKm ?? null,
+                      start_time: recebida.start_time ?? recebida.startTime ?? null,
+                      end_time: recebida.end_time ?? recebida.endTime ?? null,
+                      total_distance: recebida.total_distance ?? recebida.totalDistance ?? null,
+                  },
+                  error: null,
+              })
+              : supabase.from('missions').select('*').eq('id', initialMission.id).single();
           const [mRes, ctRes, ptRes, clRes] = await Promise.all([
-              supabase.from('missions').select('*').eq('id', initialMission.id).single(),
+              buscaDaOs,
               fetchClientPriceTables(supabase, clientName).then((rows) => ({ data: rows, error: null })).catch((e: any) => ({ data: null, error: e })),
               ptQuery,
               supabase.from('clients').select('*').ilike('name', `%${ctShort}%`).single()
@@ -2161,7 +2100,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
       } finally { setIsUpdating(false); isSavingRef.current = false; }
   };
 
-  useEffect(() => { if (isOpen) loadData(); }, [isOpen, initialMission?.id]);
+  useEffect(() => { if (isOpen) loadData({ reutilizar: true }); }, [isOpen, initialMission?.id]);
 
   useRealtimeRefresh('missions', () => {
       if (isOpen && !isSavingRef.current) loadData();
@@ -2445,38 +2384,34 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     }, [manualClientTableId, manualProviderTableId, customClientBase, customClientKm, customClientHour, customProviderBase, customProviderKm, customProviderHour, iblEnabled, providerOpsOverride, isLoading, isEffectivelyLocked, lockAllowsRecalc, mission]);
 
 
-  const handleTollChange = (val: string) => {
-      pedagioClienteEditadoRef.current = true;
-      const oldToll = parseNumber(tollInput);
-      const newToll = parseNumber(val);
-      setTollInput(val);
-      setTollSource('MANUAL (Editando — confirme abaixo)');
-      // Edição manual NÃO conta como confirmação explícita: o usuário precisa
-      // responder Sim/Não no dialog para liberar a aprovação (Task #45).
-      setTollConfirmed(false);
-      if (!receitaEditadaRef.current) {
-          const currentRev = parseNumber(revenueInput);
-          const updatedRev = currentRev - oldToll + newToll;
-          setRevenueInput(updatedRev.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-      }
-      // Não espelha no fornecedor: pedágio cliente (com regra) ≠ valor real do fornecedor.
-      setUseSavedValues(true);
-  };
+  const podeInformarPedagio = !clientTollInputLocked || !providerTollInputLocked;
 
-  const handleTollProviderChange = (val: string) => {
-      if (mission?.is_same_os) return;
-      fornecedorPedagioEditadoRef.current = true;
-      const oldTollProv = parseNumber(tollProviderInput);
-      const newTollProv = parseNumber(val);
-      setTollProviderInput(val);
-      setTollSource('MANUAL (Editando — confirme abaixo)');
-      // Edição manual NÃO conta como confirmação (Task #45).
+  const aplicarPedagioInformado = () => {
+      if (!podeInformarPedagio) return;
+      const nomeCliente = String((mission as any)?.originalClientName || mission?.client || '');
+      const pair = tollPersistencePair(parseNumber(pedagioInformado), mission?.is_same_os === true, nomeCliente);
+      const fmt = (n: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      if (!clientTollInputLocked) {
+          const antigoCliente = parseNumber(tollInput);
+          if (!receitaEditadaRef.current) {
+              const receitaAtual = parseNumber(revenueInput);
+              setRevenueInput(fmt(receitaAtual - antigoCliente + pair.toll_value));
+          }
+          setTollInput(fmt(pair.toll_value));
+          pedagioClienteEditadoRef.current = true;
+      }
+      if (!providerTollInputLocked && mission?.is_same_os !== true) {
+          const antigoFornecedor = parseNumber(tollProviderInput);
+          const custoAtual = parseNumber(costInput);
+          setCostInput(fmt(custoAtual - antigoFornecedor + pair.toll_value_provider));
+          setTollProviderInput(fmt(pair.toll_value_provider));
+          fornecedorPedagioEditadoRef.current = true;
+      }
       setTollConfirmed(false);
-      const currentCost = parseNumber(costInput);
-      const updatedCost = currentCost - oldTollProv + newTollProv;
-      setCostInput(updatedCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+      setTollSource('INFORMADO');
       setUseSavedValues(true);
       userManuallyEditedRef.current = true;
+      setInformarPedagioAberto(false);
   };
 
   // Deslocamento Aprovado (Cobrado): valor aditivo que espelha o comportamento
@@ -6291,18 +6226,55 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                 Edição do pedágio liberada. Ao salvar, confirme com a senha do sistema. A mudança gera uma ocorrência nesta OS.
                             </p>
                         )}
+
+                        <div className="mb-3">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!podeInformarPedagio) return;
+                                    setPedagioInformado(tollProviderInput);
+                                    setInformarPedagioAberto(true);
+                                }}
+                                disabled={!podeInformarPedagio}
+                                className="inline-flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wide text-white bg-slate-800 hover:bg-slate-900 disabled:opacity-40 disabled:pointer-events-none px-3 py-2 rounded-lg"
+                                data-testid="button-informar-pedagio"
+                            >
+                                Informar Pedágio
+                            </button>
+                            {informarPedagioAberto && podeInformarPedagio && (
+                                <div className="mt-2 flex flex-wrap items-center gap-2" data-testid="painel-informar-pedagio">
+                                    <span className="text-[10px] font-black text-blue-800 uppercase">Valor do fornecedor</span>
+                                    <span className="text-sm font-bold text-gray-500">R$</span>
+                                    <input
+                                        type="text"
+                                        value={pedagioInformado}
+                                        onChange={(e) => setPedagioInformado(e.target.value)}
+                                        className="w-32 bg-white border border-gray-300 rounded-lg px-2 py-1.5 text-sm font-black text-gray-900 outline-none focus:border-slate-700"
+                                        data-testid="input-informar-pedagio"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={aplicarPedagioInformado}
+                                        className="text-[10px] font-black uppercase text-white bg-blue-700 hover:bg-blue-800 px-3 py-2 rounded-lg"
+                                        data-testid="button-aplicar-pedagio"
+                                    >
+                                        Aplicar
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-[9px] font-black text-green-700 uppercase mb-1 block">Pedágio Cliente</label>
-                                <div className={`relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center ${clientTollInputLocked ? 'opacity-70' : ''}`}>
+                                <div className="relative bg-green-50 border border-green-200 rounded-xl p-3 flex items-center opacity-70">
                                     <span className="text-sm font-bold text-green-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 ${clientTollInputLocked ? 'pointer-events-none' : ''}`}
+                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-green-900 pointer-events-none"
                                         value={tollInput} 
-                                        onChange={e => { if (!clientTollInputLocked) handleTollChange(e.target.value); }} 
-                                        readOnly={clientTollInputLocked}
+                                        readOnly
+                                        tabIndex={-1}
                                         data-testid="input-toll-client"
                                     />
                                     <Building2 size={16} className="text-green-300 ml-2" />
@@ -6313,7 +6285,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </p>
                                 )}
                                 {corrigirPedagio.cliente && (
-                                    <p className="text-[10px] font-black text-red-700 mt-1">Chegou um erro neste pedágio. Altere o valor e salve.</p>
+                                    <p className="text-[10px] font-black text-red-700 mt-1">Chegou um erro neste pedágio. Informe o valor no botão e salve.</p>
                                 )}
                                 {(isControllerRole || isProviderOnlyUser) && ultimoPedagioCliente && !cartaParaMim(ultimoPedagioCliente, String(currentUserIdentity.name || '')) && (
                                     <ReportarErroPedagio
@@ -6374,14 +6346,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                             </div>
                             <div>
                                 <label className="text-[9px] font-black text-blue-700 uppercase mb-1 block">Pedágio Fornecedor</label>
-                                <div className={`relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center ${providerTollInputLocked ? 'opacity-70' : ''}`}>
+                                <div className="relative bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center opacity-70">
                                     <span className="text-sm font-bold text-blue-500 mr-2">R$</span>
                                     <input 
                                         type="text" 
-                                        className={`flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900 ${providerTollInputLocked ? 'pointer-events-none' : ''}`}
+                                        className="flex-1 bg-transparent border-none outline-none font-black text-xl text-blue-900 pointer-events-none"
                                         value={tollProviderInput} 
-                                        onChange={e => { if (!providerTollInputLocked) handleTollProviderChange(e.target.value); }}
-                                        readOnly={providerTollInputLocked}
+                                        readOnly
+                                        tabIndex={-1}
                                         title={travaPedagioFornecedorFinanceiro && auditorPedagioFornecedor ? frasePedagioAuditadoPeloFinanceiro(auditorPedagioFornecedor) : undefined}
                                         data-testid="input-toll-provider"
                                     />
@@ -6393,7 +6365,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                                     </p>
                                 )}
                                 {corrigirPedagio.fornecedor && (
-                                    <p className="text-[10px] font-black text-red-700 mt-1">Chegou um erro neste pedágio. Altere o valor e salve.</p>
+                                    <p className="text-[10px] font-black text-red-700 mt-1">Chegou um erro neste pedágio. Informe o valor no botão e salve.</p>
                                 )}
                                 {(isControllerRole || isProviderOnlyUser) && ultimoPedagioFornecedor && !cartaParaMim(ultimoPedagioFornecedor, String(currentUserIdentity.name || '')) && (
                                     <ReportarErroPedagio

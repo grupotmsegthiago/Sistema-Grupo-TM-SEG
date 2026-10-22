@@ -1,5 +1,23 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Abertura da Auditoria sem leitura morta (22/10/2026)
+
+A Auditoria deixou de disparar a busca que pedia `original_client_name`. Essa consulta já falhava e não trocava tabela. Na primeira abertura, se a OS recebida já tem receita, custo, pedágio e status, a modal não baixa essa linha de novo. Um Controle Diário incompleto continua buscando a OS. Salvar, tempo real e o recarregar depois de gravar continuam lendo o banco. Na GTM-8765, fora do Cockpit, a abertura marcou reutilização, mostrou 2.398,00 e 700,00, e o aviso Sincronizando Dados ficou em cerca de 3,2 s. A linha dessa OS tem 722 bytes. Publicado nesta entrega.
+
+---
+
+## Informar Pedágio na Auditoria (22/10/2026)
+
+Os campos Pedágio Cliente e Pedágio Fornecedor da Auditoria de Faturamento ficaram bloqueados para digitação. O botão Informar Pedágio, logo acima, recebe o valor real: ele entra no fornecedor e o cliente é calculado pela regra que já existia (faixas, DHL sem acréscimo). A criação da OS já gravava assim. Deslocamento não mudou. Na GTM-8765, R$ 100 virou fornecedor R$ 100,00 e cliente R$ 120,00; em seguida os campos voltaram a R$ 0,00, sem Salvar. Sem mudança de fórmula. Publicado nesta entrega.
+
+---
+
+## Cockpit local quebrava o JSON (22/10/2026)
+
+O navegador não consulta as tabelas financeiras direto. Ele manda `POST /api/dados-protegidos` e espera JSON. Na Vercel essa função existe. No Express local a rota não estava ligada, então a resposta era a página HTML (`<!DOCTYPE`) e o Cockpit mostrava `Unexpected token '<'`. A rota local agora chama o mesmo handler. Sem sessão o teste devolveu JSON `sessao_invalida`, não HTML. Sem mudança de fórmula, de permissão ou de banco. Publicado nesta entrega.
+
+---
+
 ## Rolagem da Auditoria de Faturamento (22/10/2026)
 
 A publicação de 21/10 trocou a área que rola da auditoria por um `fieldset`, para travar os campos enquanto salva. Nesse elemento o navegador não desce a rolagem, então o restante da OS ficava cortado para quem abre a tela, não só para a Ana e a Giovanna. A rolagem voltou para o div de antes, sem mudar `min-height`. O fieldset continua só para desabilitar os campos durante o Salvando. A suíte agora recusa `overflow` na abertura de um `fieldset`, e o Cursor bloqueia essa edição. Sem mudança de valor, de gravação ou de permissão.

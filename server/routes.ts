@@ -20,6 +20,7 @@ import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
 import { handleFinancialTransactionPaymentsRequest } from "../api/financial-transaction-payments";
+import dadosProtegidosHandler from "../api/dados-protegidos";
 import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
@@ -452,6 +453,11 @@ export async function registerRoutes(
 
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
+  });
+
+  // Mesma função da Vercel. Sem esta rota o Express devolve o HTML do site e o Cockpit quebra o JSON.
+  app.post('/api/dados-protegidos', async (req, res) => {
+    await dadosProtegidosHandler(req, res);
   });
 
   registrarSessaoExpress(app);

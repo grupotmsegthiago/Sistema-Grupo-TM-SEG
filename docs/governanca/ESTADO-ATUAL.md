@@ -1,12 +1,12 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-22. A rolagem da Auditoria de Faturamento voltou para o div. O fieldset só desabilita os campos durante o Salvando, sem `overflow` nem `min-height`. Uma checagem impede de novo colocar rolagem em `fieldset`. Publicado nesta entrega, a partir da `dev`. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-22. A abertura da Auditoria não busca mais a coluna inexistente da rota aprovada e, na primeira carga, usa a OS que a tela chamadora já trouxe. Gravação e releitura depois de salvar continuam. Publicado nesta entrega. Na Auditoria, Pedágio Cliente e Pedágio Fornecedor ficaram só leitura. O botão Informar Pedágio grava o valor no fornecedor e o cliente segue a faixa já existente, sem acréscimo para DHL. Publicado nesta entrega. O localhost passou a atender `POST /api/dados-protegidos`, a mesma função da Vercel; sem isso o Cockpit local recebia o HTML do site e quebrava o JSON. Publicado nesta entrega. A rolagem da Auditoria de Faturamento voltou para o div. O fieldset só desabilita os campos durante o Salvando, sem `overflow` nem `min-height`. Uma checagem impede de novo colocar rolagem em `fieldset`. Publicado nesta entrega, a partir da `dev`. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
 
 | Campo | Valor |
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | escolha da tabela na `main`, projeto `sistema-grupo-tm-seg`. Conferir `/api/version` após o deploy |
+| Produção agora | pedágio informado na Auditoria, abertura sem a leitura morta e a rota local de dados protegidos, na `main`, projeto `sistema-grupo-tm-seg`. Conferir `/api/version` após o deploy |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
