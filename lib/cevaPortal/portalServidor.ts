@@ -114,6 +114,14 @@ export function mensagemDeErro(erro: unknown): string {
   return 'Erro desconhecido';
 }
 
+/** Tabela auxiliar do portal genérico ainda não criada. A lista de OS não depende dela. */
+export function tabelaAusenteNoBanco(erro: { code?: string; message?: string } | null | undefined): boolean {
+  if (!erro) return false;
+  const codigo = String(erro.code || '');
+  const mensagem = String(erro.message || '');
+  return codigo === '42P01' || codigo === 'PGRST205' || /Could not find the table/i.test(mensagem);
+}
+
 /** Coluna que o cadastro enviou e o banco ainda não tem. O código novo do PostgREST é PGRST204, não só 42703. */
 export function colunaAusenteNoBanco(erro: { code?: string; message?: string } | null | undefined): boolean {
   if (!erro) return false;

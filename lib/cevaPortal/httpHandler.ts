@@ -5,7 +5,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { carimboRecalculoAutomatico } from '../missionSnapshot.js';
 import { createSupabaseAdminClient } from '../supabaseAdmin.js';
-import { PORTAL_CEVA, PORTAL_IBL, portalGenerico, type PortalServidor } from './portalServidor.js';
+import { PORTAL_CEVA, PORTAL_IBL, portalGenerico, tabelaAusenteNoBanco, type PortalServidor } from './portalServidor.js';
 import {
   emailDeAcesso,
   gerarSenhaTemporaria,
@@ -1021,7 +1021,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         try {
           campos = await loadCamposCliente(sb, linhas.map((row) => String(row.id || '')));
         } catch (error) {
-          if (cfg().exigeLogin || !acessoNegado(error)) throw error;
+          if (!tabelaAusenteNoBanco(error as { code?: string; message?: string }) && (cfg().exigeLogin || !acessoNegado(error))) throw error;
         }
         const missoes = ordenarMissoesAoVivo(linhas.flatMap((row) => {
           if (!segueNoAoVivo(row)) return [];
@@ -1112,7 +1112,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
             loadCatalogo(sb),
           ]);
         } catch (error) {
-          if (cfg().exigeLogin || !acessoNegado(error)) throw error;
+          if (!tabelaAusenteNoBanco(error as { code?: string; message?: string }) && (cfg().exigeLogin || !acessoNegado(error))) throw error;
           console.error(`[${cfg().logPrefix}] campos do cliente sem leitura; o boletim segue só com as OS`);
           campos = new Map();
           catalogo = {
@@ -1601,6 +1601,67 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         const message = error instanceof Error ? error.message : 'falha';
         console.error(`[${cfg().logPrefix}] solicitação`, message);
         res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+      }
+      return;
+    }
+
+    if (op === 'cotacao' && method === 'GET') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Cotação indisponível.' });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { listarTabelasCotacao } = await import('../portalCliente/cotacaoHttp.js');
+        const resultado = await listarTabelasCotacao(sb, cliente);
+        res.status(resultado.status).json(resultado.corpo);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] cotacao`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível carregar a cotação.' });
+      }
+      return;
+    }
+
+    if (op === 'cotacao' && method === 'POST') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Cotação indisponível.' });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { salvarPropostaPortal, propostaParaEmail } = await import('../portalCliente/cotacaoHttp.js');
+        if (String(body?.acao || '') === 'email') {
+          const preparado = await propostaParaEmail(sb, cliente, body || {});
+          if (preparado.status !== 200 || !('ok' in preparado.corpo)) {
+            res.status(preparado.status).json(preparado.corpo);
+            return;
+          }
+          try {
+            const { sendMail, SMTP_FROM } = await import('../email/smtp.js');
+            await sendMail({
+              from: SMTP_FROM,
+              to: preparado.corpo.para,
+              subject: preparado.corpo.assunto,
+              text: preparado.corpo.texto,
+            });
+            res.status(200).json({ ok: true, enviado: true });
+          } catch (error) {
+            console.error(`[${cfg().logPrefix}] cotacao email`, error instanceof Error ? error.message : error);
+            res.status(200).json({ ok: true, enviado: false, aviso: 'O e-mail não saiu agora. A proposta continua disponível para o PDF.' });
+          }
+          return;
+        }
+        const gravado = await salvarPropostaPortal(sb, cliente, body || {});
+        res.status(gravado.status).json(gravado.corpo);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] cotacao`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível concluir a proposta.' });
       }
       return;
     }

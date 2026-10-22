@@ -37,6 +37,8 @@ export function registerIblPortalRoutes(app: Express): void {
   app.get('/api/ibl-portal/solicitacoes', withOp('solicitacoes'));
   app.post('/api/ibl-portal/solicitacoes', withOp('solicitacoes'));
   app.post('/api/ibl-portal/medicao', withOp('medicao'));
+  app.get('/api/ibl-portal/cotacao', withOp('cotacao'));
+  app.post('/api/ibl-portal/cotacao', withOp('cotacao'));
   app.get('/api/ibl-portal/fotos/:os', async (req, res) => {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
     await handleIblPortalHttp(req, res);
@@ -81,6 +83,8 @@ export function registerClientePortalRoutes(app: Express): void {
   app.get('/api/cliente-portal/solicitacoes', withCliente('solicitacoes'));
   app.post('/api/cliente-portal/solicitacoes', withCliente('solicitacoes'));
   app.post('/api/cliente-portal/medicao', withCliente('medicao'));
+  app.get('/api/cliente-portal/cotacao', withCliente('cotacao'));
+  app.post('/api/cliente-portal/cotacao', withCliente('cotacao'));
   app.get('/api/cliente-portal/fotos/:os', async (req, res) => {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
     await handleClientePortalHttp(req, res);

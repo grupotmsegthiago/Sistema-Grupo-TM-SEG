@@ -8,7 +8,7 @@ import { corpoTrazPreco, emailsDaSolicitacao, quantidadeDoPedido, validarPedidoP
 import { decidirNomeCatalogo, ehCampoLista } from '../lib/cevaPortal/camposCliente';
 import { dataHoraBrasil, mascaraDataHora, parseBrazilDateTime } from '../lib/cevaPortal/rules';
 import { lerMarcaDoHtml, urlDeSitePublico } from '../lib/portalCliente/marcaSite';
-import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalDaFicha, PORTAL_CEVA, PORTAL_IBL, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
+import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalDaFicha, PORTAL_CEVA, PORTAL_IBL, semColunasDePortal, tabelaAusenteNoBanco } from '../lib/cevaPortal/portalServidor';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -31,6 +31,9 @@ test('coluna de portal ausente não esconde a mensagem e não apaga o resto do c
   assert.equal(mensagemDeErro(erro), erro.message);
   assert.equal(colunaAusenteNoBanco({ code: '42703', message: 'column portal_site does not exist' }), true);
   assert.equal(colunaAusenteNoBanco({ code: '23505', message: 'duplicate' }), false);
+  assert.equal(tabelaAusenteNoBanco({ code: 'PGRST205', message: "Could not find the table 'public.portal_cliente_catalogo' in the schema cache" }), true);
+  assert.equal(tabelaAusenteNoBanco({ code: '42P01', message: 'relation "portal_cliente_os_campos" does not exist' }), true);
+  assert.equal(tabelaAusenteNoBanco({ code: '23505', message: 'duplicate' }), false);
   const limpo = semColunasDePortal({
     name: 'IBL',
     operational_email: 'a@b.com',

@@ -831,6 +831,10 @@
       "destination": "/api/ibl-portal?op=medicao"
     },
     {
+      "source": "/api/ibl-portal/cotacao",
+      "destination": "/api/ibl-portal?op=cotacao"
+    },
+    {
       "source": "/api/ibl-portal/fotos/:os",
       "destination": "/api/ibl-portal?op=fotos&os=:os"
     },
@@ -897,6 +901,10 @@
     {
       "source": "/api/ceva-portal/medicao",
       "destination": "/api/ceva-portal?op=medicao"
+    },
+    {
+      "source": "/api/ceva-portal/cotacao",
+      "destination": "/api/ceva-portal?op=cotacao"
     },
     {
       "source": "/api/ceva-portal/fotos/:os",
@@ -977,6 +985,10 @@
     {
       "source": "/api/cliente-portal/medicao",
       "destination": "/api/ibl-portal?op=medicao"
+    },
+    {
+      "source": "/api/cliente-portal/cotacao",
+      "destination": "/api/ibl-portal?op=cotacao"
     },
     {
       "source": "/api/cliente-portal/fotos/:os",

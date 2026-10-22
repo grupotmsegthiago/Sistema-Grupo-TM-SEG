@@ -19,15 +19,17 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
+    let ativo = true;
     const ac = new AbortController();
     const timer = window.setTimeout(() => ac.abort(), 20000);
-    fetch(portal.url('/acesso'), { signal: ac.signal })
+    fetch(portal.url('/acesso'), { headers: portal.cabecalhos(), signal: ac.signal })
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || 'Não foi possível abrir o acesso.');
-        setTemAdministrador(data.temAdministrador === true);
+        if (ativo) setTemAdministrador(data.temAdministrador === true);
       })
       .catch((err: Error) => {
+        if (!ativo) return;
         if (err.name === 'AbortError') {
           setErro('O servidor demorou demais para responder. Atualize a página.');
           return;
@@ -36,6 +38,7 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
       })
       .finally(() => window.clearTimeout(timer));
     return () => {
+      ativo = false;
       ac.abort();
       window.clearTimeout(timer);
     };
@@ -59,7 +62,7 @@ export const AcessoCeva: React.FC<{ onEntrar: (sessao: SessaoCeva) => void }> = 
       const primeiro = modo === 'primeiro';
       const response = await fetch(primeiro ? portal.url('/primeiro-acesso') : portal.url('/login'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...portal.cabecalhos() },
         body: JSON.stringify(primeiro ? { nome, email, senha, confirmacao } : { email, senha }),
         signal: ac.signal,
       });

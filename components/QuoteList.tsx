@@ -5,6 +5,7 @@ import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Quote } from '../types';
 import { Plus, Search, DollarSign, MapPin, RefreshCw, Loader2, Trash2, Pencil, Lock, CheckCircle2 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
+import { CotacaoPortal } from './ceva/CotacaoPortal';
 import CotacaoRapidaRegional from './CotacaoRapidaRegional';
 import {
   montarPayloadTabelaCliente,
@@ -175,6 +176,11 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
                 <button onClick={onAdd} className="flex items-center gap-2 bg-gray-900 hover:bg-gray-800 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm uppercase"><Plus size={18} /> Nova Cotação</button>
             </div>
           </div>
+      )}
+      {embedded && clientName?.trim() && (
+        <div className="rounded-xl border border-gray-200 bg-slate-50 p-4">
+          <CotacaoPortal clienteNome={clientName.trim()} />
+        </div>
       )}
       <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${embedded ? 'border-t' : ''}`}>

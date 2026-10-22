@@ -16,6 +16,7 @@ import { baixarExcelControle, baixarPdfControle } from '../lib/cevaPortal/baixar
 import { linhaControleExportavel, recortarColunasControle } from '../lib/cevaPortal/exportarControle';
 import { aplicarStatusOs, classeStatusSistema } from '../lib/cevaPortal/status';
 import { MedicaoPortal } from './ceva/MedicaoPortal';
+import { CotacaoPortal } from './ceva/CotacaoPortal';
 import type { MedicaoCliente } from '../lib/portalCliente/medicao';
 import type { FotoEvento } from '../lib/portalCliente/fotosMedicao';
 
@@ -248,7 +249,7 @@ const CevaPortal: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [sessao, setSessao] = useState<SessaoCeva | null>(() => (portal.marca.exigeLogin ? portal.ler() : sessaoAberta));
   const [pessoasAberto, setPessoasAberto] = useState(false);
-  const [visao, setVisao] = useState<'controle' | 'diretoria' | 'aovivo'>('controle');
+  const [visao, setVisao] = useState<'controle' | 'diretoria' | 'aovivo' | 'cotacao'>('controle');
   const [pedirAberto, setPedirAberto] = useState(false);
   const [recarga, setRecarga] = useState(0);
   const [loading, setLoading] = useState(() => !portal.marca.exigeLogin || Boolean(portal.ler()));
@@ -340,11 +341,19 @@ const CevaPortal: React.FC = () => {
     motorista: unicos(items, (row) => row.motorista),
   };
 
+  function abrirVisao(proxima: 'controle' | 'aovivo' | 'cotacao') {
+    setVisao(proxima);
+    setPedirAberto(false);
+    setPessoasAberto(false);
+  }
+
   function abrirDiretoria() {
     const mes = periodoMesAtualBrasil();
     setFiltro((atual) => ({ ...atual, dataInicial: mes.inicio, dataFinal: mes.fim }));
     setPagina(1);
     setVisao('diretoria');
+    setPedirAberto(false);
+    setPessoasAberto(false);
   }
 
   function mudarFiltro(campo: keyof Filtros, valor: string) {
@@ -446,13 +455,17 @@ const CevaPortal: React.FC = () => {
             <span className="inline-flex rounded-xl bg-white px-2.5 py-1">
               <LogoCeva />
             </span>
-            <h1 className="text-xl font-black">Controle de Escolta</h1>
+            <div>
+              <h1 className="text-xl font-black">Controle de Escolta</h1>
+              {visao === 'cotacao' && <p className="text-[11px] font-medium text-white/70">Cotação de Serviços</p>}
+            </div>
           </div>
           <nav className="flex justify-center">
             <div className="flex rounded-full bg-white/10 p-0.5">
               <button type="button" onClick={() => setPedirAberto(true)} className="h-8 rounded-full bg-[var(--portal-acao)] px-3 text-xs font-black text-[var(--portal-acao-texto)]">Solicitar</button>
-              <button type="button" onClick={() => setVisao('controle')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'controle' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Controle</button>
-              <button type="button" onClick={() => setVisao('aovivo')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'aovivo' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Ao vivo</button>
+              <button type="button" onClick={() => abrirVisao('cotacao')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'cotacao' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Cotação</button>
+              <button type="button" onClick={() => abrirVisao('controle')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'controle' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Controle</button>
+              <button type="button" onClick={() => abrirVisao('aovivo')} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'aovivo' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Ao vivo</button>
               <button type="button" onClick={abrirDiretoria} className={`h-8 rounded-full px-3 text-xs font-bold ${visao === 'diretoria' ? 'bg-white text-[var(--portal-marca)]' : 'text-white'}`}>Diretoria</button>
             </div>
           </nav>
@@ -472,7 +485,7 @@ const CevaPortal: React.FC = () => {
           </div>
         </div>
       </header>
-      <main className="p-4 md:p-6">
+      <main className={visao === 'cotacao' ? 'bg-[#e8eef5] p-3 md:p-4' : 'p-4 md:p-6'}>
         {pedirAberto && sessaoAtual && (
           <SolicitarEscolta
             onFechar={() => setPedirAberto(false)}
@@ -480,12 +493,13 @@ const CevaPortal: React.FC = () => {
           />
         )}
         {pessoasAberto && portal.marca.exigeLogin && sessaoAtual.user.perfil === 'administrador' && <PessoasCeva onFechar={() => setPessoasAberto(false)} />}
-        {!pedirAberto && visao !== 'aovivo' && loading && (
+        {!pedirAberto && visao === 'cotacao' && <CotacaoPortal />}
+        {!pedirAberto && (visao === 'controle' || visao === 'diretoria') && loading && (
           <p className="inline-flex items-center gap-2 rounded-3xl bg-white px-4 py-3 text-sm text-slate-500 shadow-sm"><Loader2 className="animate-spin" size={16} /> Carregando relatório...</p>
         )}
-        {!pedirAberto && visao !== 'aovivo' && error && <p className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm">{error}</p>}
+        {!pedirAberto && (visao === 'controle' || visao === 'diretoria') && error && <p className="rounded-3xl bg-red-50 px-4 py-3 text-sm text-red-800 shadow-sm">{error}</p>}
         {!pedirAberto && visao === 'aovivo' && <PainelAoVivo />}
-        {!pedirAberto && visao !== 'aovivo' && !loading && !error && (
+        {!pedirAberto && (visao === 'controle' || visao === 'diretoria') && !loading && !error && (
           <div className="mb-4 rounded-3xl bg-white shadow-sm">
             <div className={`${LINHA_FILTRO} border-b border-slate-100`}>
               <p className="inline-flex items-center gap-2 rounded-full bg-[var(--portal-marca)] px-3 py-1 text-xs font-bold text-white">

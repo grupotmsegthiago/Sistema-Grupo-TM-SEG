@@ -32,3 +32,6 @@ client/public/build-meta.json
 secrets/
 *.pfx
 *.p12
+public/caminhoes/gerados/*.png
+public/caminhoes/gerados/*.jpg
+public/caminhoes/gerados/*.webp
