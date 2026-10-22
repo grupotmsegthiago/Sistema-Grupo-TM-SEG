@@ -1,5 +1,11 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Leitura do site no cadastro do cliente (22/10/2026)
+
+O botão Ler respondia “Portal não encontrado” no localhost. O Express 5 recalcula `req.query` a cada leitura, então a marca da operação sumia e a rota procurava um portal sem slug. O endereço `/api/cliente-portal/...` agora entra no mesmo leitor. Na ficha da IBL, `https://ibllogistica.com.br/` devolveu o ícone do site e a cor `#f7941e`. A ficha ainda precisa ser salva para gravar. Publicado nesta entrega.
+
+---
+
 ## Abertura da Auditoria sem leitura morta (22/10/2026)
 
 A Auditoria deixou de disparar a busca que pedia `original_client_name`. Essa consulta já falhava e não trocava tabela. Na primeira abertura, se a OS recebida já tem receita, custo, pedágio e status, a modal não baixa essa linha de novo. Um Controle Diário incompleto continua buscando a OS. Salvar, tempo real e o recarregar depois de gravar continuam lendo o banco. Na GTM-8765, fora do Cockpit, a abertura marcou reutilização, mostrou 2.398,00 e 700,00, e o aviso Sincronizando Dados ficou em cerca de 3,2 s. A linha dessa OS tem 722 bytes. Publicado nesta entrega.

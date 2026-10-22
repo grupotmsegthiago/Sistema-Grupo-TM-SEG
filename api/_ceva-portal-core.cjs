@@ -4578,7 +4578,7 @@ function resolveOp(req) {
   if (fromQuery) return fromQuery;
   const url = String(req.url || "");
   const path = url.split("?")[0];
-  const match = path.match(/\/api\/(?:ceva|ibl)-portal\/([^/]+)(?:\/([^/]+))?/);
+  const match = path.match(/\/api\/(?:ceva|ibl|cliente)-portal\/([^/]+)(?:\/([^/]+))?/);
   if (!match) return "";
   const head = match[1];
   const tail = match[2];

@@ -108,6 +108,11 @@ test('leitura do site ignora rede interna e pega cor e ícone', () => {
   assert.equal(marca.logo, 'https://cliente.com.br/logo.png');
 });
 
+test('a rota local do site do cliente entra no mesmo leitor do portal', () => {
+  const fonte = readFileSync(join(root, 'lib/cevaPortal/httpHandler.ts'), 'utf8');
+  assert.match(fonte, /ceva\|ibl\|cliente/);
+});
+
 test('rewrite do portal genérico não cria function nova', () => {
   const vercel = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8'));
   assert.equal(Object.keys(vercel.functions || {}).length, 50);
