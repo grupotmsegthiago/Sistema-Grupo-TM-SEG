@@ -121,11 +121,12 @@ test('leitura do site ignora rede interna e pega cor e ícone', () => {
   assert.equal(urlDeSitePublico('http://127.0.0.1/admin'), null);
   assert.equal(urlDeSitePublico('https://cliente.com.br')?.hostname, 'cliente.com.br');
   const marca = lerMarcaDoHtml(
-    '<html><head><meta name="theme-color" content="#112233"><link rel="icon" href="/logo.png"></head></html>',
+    '<html><head><meta name="theme-color" content="#112233"><link rel="icon" href="/logo.png"><link rel="icon" type="image/svg+xml" href="/marca.svg"></head></html>',
     new URL('https://cliente.com.br/inicio'),
   );
   assert.equal(marca.cor, '#112233');
-  assert.equal(marca.logo, 'https://cliente.com.br/logo.png');
+  assert.equal(marca.logo, 'https://cliente.com.br/marca.svg');
+  assert.equal(lerMarcaDoHtml('<html><head><link rel="icon" href="/favicon.ico"></head></html>', new URL('https://cliente.com.br/')).logo, null);
 });
 
 test('a rota local do site do cliente entra no mesmo leitor do portal', () => {

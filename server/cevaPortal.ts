@@ -36,4 +36,9 @@ export function registerCevaPortalRoutes(app: Express): void {
   });
   app.get('/api/ceva-portal/solicitacoes', withOp('solicitacoes'));
   app.post('/api/ceva-portal/solicitacoes', withOp('solicitacoes'));
+  app.post('/api/ceva-portal/medicao', withOp('medicao'));
+  app.get('/api/ceva-portal/fotos/:os', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
+    await handleCevaPortalHttp(req, res);
+  });
 }

@@ -36,6 +36,11 @@ export function registerIblPortalRoutes(app: Express): void {
   });
   app.get('/api/ibl-portal/solicitacoes', withOp('solicitacoes'));
   app.post('/api/ibl-portal/solicitacoes', withOp('solicitacoes'));
+  app.post('/api/ibl-portal/medicao', withOp('medicao'));
+  app.get('/api/ibl-portal/fotos/:os', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
+    await handleIblPortalHttp(req, res);
+  });
 }
 
 function withCliente(op: string) {
@@ -49,6 +54,7 @@ function withCliente(op: string) {
 export function registerClientePortalRoutes(app: Express): void {
   app.get('/api/cliente-portal/marca', withCliente('marca'));
   app.post('/api/cliente-portal/marca-site', withCliente('marca-site'));
+  app.post('/api/cliente-portal/provisionar', withCliente('provisionar'));
   app.get('/api/cliente-portal/acesso', withCliente('acesso'));
   app.post('/api/cliente-portal/login', withCliente('login'));
   app.post('/api/cliente-portal/primeiro-acesso', withCliente('primeiro-acesso'));
@@ -74,4 +80,9 @@ export function registerClientePortalRoutes(app: Express): void {
   });
   app.get('/api/cliente-portal/solicitacoes', withCliente('solicitacoes'));
   app.post('/api/cliente-portal/solicitacoes', withCliente('solicitacoes'));
+  app.post('/api/cliente-portal/medicao', withCliente('medicao'));
+  app.get('/api/cliente-portal/fotos/:os', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
+    await handleClientePortalHttp(req, res);
+  });
 }

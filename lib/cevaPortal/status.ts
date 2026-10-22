@@ -24,23 +24,32 @@ export function classeStatusSistema(status: string): string {
 }
 
 /** Troca o status já exibido quando o sistema gravou outro. A lista só muda se houver diferença. */
-export function aplicarStatusOs<T extends { os: string; status: string }>(
+export function aplicarStatusOs<T extends { os: string; status: string; medicao?: unknown }>(
   linhas: T[],
-  atualizacoes: { os: string; status: string }[],
+  atualizacoes: { os: string; status: string; medicao?: unknown }[],
 ): T[] {
   if (atualizacoes.length === 0 || linhas.length === 0) return linhas;
-  const mapa = new Map<string, string>();
+  const mapa = new Map<string, { status: string; medicao?: unknown; trazMedicao: boolean }>();
   for (const item of atualizacoes) {
     const os = String(item.os || '').trim();
     const status = String(item.status || '').trim();
-    if (os && status) mapa.set(os, status);
+    if (os && status) {
+      mapa.set(os, {
+        status,
+        medicao: item.medicao,
+        trazMedicao: Object.prototype.hasOwnProperty.call(item, 'medicao'),
+      });
+    }
   }
   let mudou = false;
   const proximas = linhas.map((linha) => {
-    const status = mapa.get(linha.os);
-    if (!status || status === linha.status) return linha;
+    const atual = mapa.get(linha.os);
+    if (!atual) return linha;
+    const medicaoIgual = !atual.trazMedicao || JSON.stringify(atual.medicao ?? null) === JSON.stringify(linha.medicao ?? null);
+    if (atual.status === linha.status && medicaoIgual) return linha;
     mudou = true;
-    return { ...linha, status };
+    if (!atual.trazMedicao) return { ...linha, status: atual.status };
+    return { ...linha, status: atual.status, medicao: atual.medicao ?? null };
   });
   return mudou ? proximas : linhas;
 }

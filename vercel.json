@@ -827,6 +827,14 @@
       "destination": "/api/ibl-portal?op=solicitacoes"
     },
     {
+      "source": "/api/ibl-portal/medicao",
+      "destination": "/api/ibl-portal?op=medicao"
+    },
+    {
+      "source": "/api/ibl-portal/fotos/:os",
+      "destination": "/api/ibl-portal?op=fotos&os=:os"
+    },
+    {
       "source": "/api/ceva-portal/pessoas/:id",
       "destination": "/api/ceva-portal?op=pessoas-item&id=:id"
     },
@@ -887,6 +895,14 @@
       "destination": "/api/ceva-portal?op=solicitacoes"
     },
     {
+      "source": "/api/ceva-portal/medicao",
+      "destination": "/api/ceva-portal?op=medicao"
+    },
+    {
+      "source": "/api/ceva-portal/fotos/:os",
+      "destination": "/api/ceva-portal?op=fotos&os=:os"
+    },
+    {
       "source": "/api/cliente-portal/pessoas/:id",
       "destination": "/api/ibl-portal?op=pessoas-item&id=:id"
     },
@@ -901,6 +917,10 @@
     {
       "source": "/api/cliente-portal/marca-site",
       "destination": "/api/ibl-portal?op=marca-site"
+    },
+    {
+      "source": "/api/cliente-portal/provisionar",
+      "destination": "/api/ibl-portal?op=provisionar"
     },
     {
       "source": "/api/cliente-portal/acesso",
@@ -953,6 +973,14 @@
     {
       "source": "/api/cliente-portal/solicitacoes",
       "destination": "/api/ibl-portal?op=solicitacoes"
+    },
+    {
+      "source": "/api/cliente-portal/medicao",
+      "destination": "/api/ibl-portal?op=medicao"
+    },
+    {
+      "source": "/api/cliente-portal/fotos/:os",
+      "destination": "/api/ibl-portal?op=fotos&os=:os"
     },
     {
       "source": "/api/(.*)",

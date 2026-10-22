@@ -15,6 +15,9 @@ import type { SessaoCeva } from '../lib/cevaPortal/sessaoCliente';
 import { baixarExcelControle, baixarPdfControle } from '../lib/cevaPortal/baixarControle';
 import { linhaControleExportavel, recortarColunasControle } from '../lib/cevaPortal/exportarControle';
 import { aplicarStatusOs, classeStatusSistema } from '../lib/cevaPortal/status';
+import { MedicaoPortal } from './ceva/MedicaoPortal';
+import type { MedicaoCliente } from '../lib/portalCliente/medicao';
+import type { FotoEvento } from '../lib/portalCliente/fotosMedicao';
 
 type ReportRow = {
   os: string;
@@ -51,9 +54,12 @@ type ReportRow = {
   divergenciaDetalhamento?: string | null;
   homologadoPorPessoa?: boolean;
   local: string | null;
+  origem?: string | null;
+  destino?: string | null;
   obs: string | null;
   financeiro: 'ENCONTRADO' | 'NÃO CARREGADO';
   valores?: 'APROVADO' | 'AGUARDANDO';
+  medicao?: MedicaoCliente | null;
 };
 
 const CATALOGO_VAZIO: Record<CampoFiltroNome, string[]> = {
@@ -101,6 +107,7 @@ const COLUNAS_TABELA = [
   { nome: 'R$ hora excedente (tarifa)', grupo: 'sistema' },
   { nome: 'Local', grupo: 'sistema' },
   { nome: 'Obs', grupo: 'sistema' },
+  { nome: 'Medição', grupo: 'sistema' },
 ] as const;
 
 function when(value: string | null): string {
@@ -249,6 +256,8 @@ const CevaPortal: React.FC = () => {
   const [filtro, setFiltro] = useState<Filtros>(FILTRO_VAZIO);
   const [porTela, setPorTela] = useState<(typeof POR_TELA)[number]>(20);
   const [pagina, setPagina] = useState(1);
+  const [medicaoAberta, setMedicaoAberta] = useState<{ linha: ReportRow; modo: 'analise' | 'conferir' } | null>(null);
+  const [avisoMedicao, setAvisoMedicao] = useState('');
   const tabelaRef = useRef<HTMLDivElement>(null);
   const sessaoAtual = portal.marca.exigeLogin ? sessao : sessaoAberta;
 
@@ -346,6 +355,43 @@ const CevaPortal: React.FC = () => {
   function irPara(proxima: number) {
     setPagina(Math.min(paginas, Math.max(1, proxima)));
     tabelaRef.current?.scrollTo({ top: 0 });
+  }
+
+  async function buscarFotos(os: string): Promise<FotoEvento[]> {
+    const response = await fetch(portal.url(`/fotos/${encodeURIComponent(os)}`), { headers: portal.cabecalhos() });
+    const data = await response.json().catch(() => ({}));
+    return Array.isArray(data.fotos) ? data.fotos : [];
+  }
+
+  async function enviarMedicao(corpo: Record<string, unknown>) {
+    const response = await fetch(portal.url('/medicao'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...portal.cabecalhos() },
+      body: JSON.stringify(corpo),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401 && portal.marca.exigeLogin) {
+      portal.limpar();
+      setSessao(null);
+    }
+    return data as { ok?: boolean; error?: string; emailEnviado?: boolean; medicao?: MedicaoCliente | null };
+  }
+
+  function gravouMedicao(os: string, medicao: MedicaoCliente | null, aviso: string) {
+    setItems((atual) => atual.map((item) => item.os === os ? { ...item, medicao } : item));
+    setAvisoMedicao(aviso);
+    setMedicaoAberta(null);
+  }
+
+  async function voltarParaVerificar(linha: ReportRow) {
+    if (sessaoAtual?.user.equipeInterna !== true || linha.medicao?.status !== 'aprovado') return;
+    setAvisoMedicao('');
+    const data = await enviarMedicao({ os: linha.os, acao: 'reverter' });
+    if (!data.ok) {
+      setAvisoMedicao(data.error || 'Não foi possível voltar a OS para verificar.');
+      return;
+    }
+    gravouMedicao(linha.os, null, 'Aprovação retirada. A OS voltou para verificar.');
   }
 
   function incluirNoCatalogo(campo: 'operacao' | 'tsp', valor: string) {
@@ -503,6 +549,9 @@ const CevaPortal: React.FC = () => {
           </div>
         )}
         {sessao && !loading && !error && visao === 'diretoria' && <PainelDiretoria linhas={visiveis} />}
+        {avisoMedicao && (
+          <p className="mb-3 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-bold text-white">{avisoMedicao}</p>
+        )}
         {sessao && !loading && !error && visao === 'controle' && (
           <div ref={tabelaRef} className="max-h-[calc(100vh-280px)] overflow-auto rounded-3xl bg-white shadow-sm ring-1 ring-slate-200/80">
             <table className={`${colunasOcultas.length ? 'min-w-[2100px]' : 'min-w-[2500px]'} border-separate border-spacing-0 text-xs`}>
@@ -525,11 +574,14 @@ const CevaPortal: React.FC = () => {
                   </tr>
                 )}
                 {tela.map((item, index) => {
-                  const fundo = index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+                  const aprovada = item.medicao?.status === 'aprovado';
+                  const emConferencia = item.medicao?.status === 'conferir' || item.medicao?.status === 'modificado';
+                  const fundo = aprovada ? 'bg-green-100' : emConferencia ? 'bg-yellow-50' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+                  const hover = aprovada ? 'hover:bg-green-200/70' : emConferencia ? 'hover:bg-yellow-100/80' : 'hover:bg-slate-100/80';
                   const celula = `border-b border-slate-100 px-3 py-2.5 ${fundo} text-slate-700`;
                   const valorCls = `${celula} whitespace-nowrap tabular-nums`;
                   return (
-                  <tr key={item.os} title={item.divergenciaDetalhamento || (item.homologadoPorPessoa ? undefined : item.origemSnapshot === 'automatica' ? 'Detalhamento registrado pelo recálculo automático. Não é aprovação humana.' : undefined)} className="transition-colors hover:bg-slate-100/80">
+                  <tr key={item.os} title={item.divergenciaDetalhamento || (item.homologadoPorPessoa ? undefined : item.origemSnapshot === 'automatica' ? 'Detalhamento registrado pelo recálculo automático. Não é aprovação humana.' : undefined)} className={`transition-colors ${hover}`}>
                     <td className={`${celula} sticky left-0 z-10 font-black whitespace-nowrap shadow-[6px_0_10px_-8px_rgba(15,23,42,0.45)] text-[var(--portal-marca)] ${fundo}`}>{item.os}</td>
                     <td className={`${celula} whitespace-nowrap`}>
                       <span className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${classeStatusSistema(item.status)}`}>
@@ -566,6 +618,24 @@ const CevaPortal: React.FC = () => {
                     <td className={valorCls}>{celulaValor(item, item.tarifaHora)}</td>
                     <td className={`${celula} max-w-[280px] truncate`} title={item.local || ''}>{celulaSistema(item.local, text(item.local))}</td>
                     <td className={celula}>{item.valores === 'APROVADO' && item.valorTotal != null ? (item.obs || '') : celulaSistema(item.obs, text(item.obs))}</td>
+                    <td className={`${celula} whitespace-nowrap`}>
+                      <div className="flex flex-nowrap items-center gap-1">
+                        {item.medicao?.status === 'modificado' && <span className="text-[10px] font-black uppercase tracking-wide text-amber-700">Modificação realizada</span>}
+                        {item.medicao?.status === 'conferir' && <span className="text-[10px] font-black uppercase tracking-wide text-amber-700">Em conferência</span>}
+                        {item.valores === 'AGUARDANDO' ? (
+                          <AguardandoValidacao />
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => setMedicaoAberta({ linha: item, modo: 'analise' })} className="h-7 rounded-full bg-slate-900 px-2.5 text-[10px] font-black text-white">Analisar</button>
+                            <button type="button" disabled={item.medicao?.status === 'conferir' || aprovada} onClick={() => setMedicaoAberta({ linha: item, modo: 'analise' })} className="h-7 rounded-full bg-green-600 px-2.5 text-[10px] font-black text-white disabled:opacity-40">Aprovar</button>
+                            <button type="button" onClick={() => setMedicaoAberta({ linha: item, modo: 'conferir' })} className="h-7 rounded-full bg-amber-300 px-2.5 text-[10px] font-black text-slate-900">Conferir</button>
+                          </>
+                        )}
+                        {aprovada && sessaoAtual?.user.equipeInterna === true && (
+                          <button type="button" onClick={() => void voltarParaVerificar(item)} className="h-7 rounded-full bg-white px-2.5 text-[10px] font-black text-slate-900 ring-1 ring-slate-300">Voltar para verificar</button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                   );
                 })}
@@ -581,6 +651,18 @@ const CevaPortal: React.FC = () => {
           </div>
         )}
       </main>
+      {medicaoAberta && (
+        <MedicaoPortal
+          linha={medicaoAberta.linha}
+          modo={medicaoAberta.modo}
+          onFechar={() => setMedicaoAberta(null)}
+          onGravou={gravouMedicao}
+          enviar={enviarMedicao}
+          buscarFotos={buscarFotos}
+          podeReverter={sessaoAtual?.user.equipeInterna === true && medicaoAberta.linha.medicao?.status === 'aprovado'}
+          onReverter={() => void voltarParaVerificar(medicaoAberta.linha)}
+        />
+      )}
     </PortalCasca>
   );
 };

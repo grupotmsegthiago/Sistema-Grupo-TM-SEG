@@ -853,6 +853,17 @@ const ClientForm: React.FC<ClientFormProps> = ({
           'O restante do cliente foi salvo. Site, logotipo e cores não entraram: o banco ainda não tem essas colunas.',
           'warning',
         );
+      } else if (savedClientId && formData.portal_ativo && !portalPorNomeCliente(formData.name) && String(formData.status || '') === 'Ativo') {
+        const provisao = await authFetch('/api/cliente-portal/provisionar', {
+          method: 'POST',
+          body: JSON.stringify({ clientId: savedClientId }),
+        });
+        const acesso = await provisao.json().catch(() => ({}));
+        if (!provisao.ok) {
+          showNotification('Portal', acesso.error || 'O cliente foi salvo, mas o primeiro acesso não foi criado.', 'warning');
+        } else if (acesso.criado && acesso.email) {
+          showNotification('Portal', `Primeiro acesso: ${acesso.email}. A senha é o CNPJ, só os números. Na entrada ele troca o e-mail e a senha.`, 'success');
+        }
       }
 
       onBack();
@@ -1253,7 +1264,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         {portalPorNomeCliente(formData.name) ? (
                           <p className="text-xs text-slate-600">Este cliente já tem a página {portalPorNomeCliente(formData.name)?.caminho}. A CEVA permanece com o layout próprio. A IBL é o modelo dos demais.</p>
                         ) : formData.portal_ativo && (
-                          <p className="text-xs text-slate-600">A página fica no ar em /{formData.portal_slug || slugDeNome(formData.trading_name || formData.name)}, no mesmo modelo da IBL. O acesso de cada pessoa continua no cadastro de usuário.</p>
+                          <p className="text-xs text-slate-600">A página fica no ar em /{formData.portal_slug || slugDeNome(formData.trading_name || formData.name)}, no mesmo modelo da IBL. A equipe da TM SEG entra com o login interno. O primeiro acesso do cliente é portal@domínio do site, senha igual ao CNPJ, perfil administrador, e na entrada ele troca o e-mail e a senha. Quem ele cadastrar depois também entra no Cadastro de Usuário do cliente.</p>
                         )}
                         {!portalPorNomeCliente(formData.name) && formData.portal_ativo && (
                           <div className="space-y-1.5">
@@ -1283,20 +1294,25 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                   }
                                   setFormData((prev) => ({
                                     ...prev,
-                                    portal_logo_url: prev.portal_logo_url || corpo.logo || '',
+                                    portal_logo_url: corpo.logo || prev.portal_logo_url,
                                     portal_cor: corpo.cor || prev.portal_cor,
                                     portal_cor_acao: corpo.corAcao || prev.portal_cor_acao,
                                   }));
-                                  showNotification('Site', corpo.logo || corpo.cor ? 'Logotipo e cores lidos. Confira antes de salvar.' : 'O site não trouxe logotipo nem cor. Complete manualmente.', 'info');
+                                  showNotification('Site', corpo.logo ? 'Logotipo vetorizado e cores do site. Confira antes de salvar.' : 'O site não publicou um SVG sem fundo. Envie o arquivo vetorizado e confira as cores.', corpo.logo ? 'info' : 'warning');
                                 }}
                               >Ler</button>
                             </div>
                           </div>
                           <div className="space-y-1.5">
                             <label className={LABEL_CLASS}>Logotipo</label>
-                            <input type="file" accept="image/*" onChange={async (event) => {
+                            <input type="file" accept="image/svg+xml,.svg" onChange={async (event) => {
                               const arquivo = event.target.files?.[0];
                               if (!arquivo) return;
+                              const vetor = arquivo.type === 'image/svg+xml' || arquivo.name.toLowerCase().endsWith('.svg');
+                              if (!vetor) {
+                                showNotification('Logotipo', 'Envie um SVG, sem fundo.', 'warning');
+                                return;
+                              }
                               const destino = persistedId || id;
                               if (!destino) {
                                 showNotification('Logotipo', 'Salve o cliente antes de enviar o arquivo.', 'warning');

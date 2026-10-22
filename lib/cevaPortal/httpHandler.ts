@@ -104,27 +104,29 @@ function clearFailures(key: string): void {
   attempts.delete(key);
 }
 
-type PortalUser = CevaPortalSession & { perfil: PerfilCeva; trocarSenha: boolean; equipeInterna?: boolean };
+type PortalUser = CevaPortalSession & { perfil: PerfilCeva; trocarSenha: boolean; trocarEmail?: boolean; equipeInterna?: boolean };
 
-function usuarioPublico(row: { id: number | string; nome: string; email: string; perfil: PerfilCeva; trocarSenha?: boolean }) {
+function usuarioPublico(row: { id: number | string; nome: string; email: string; perfil: PerfilCeva; trocarSenha?: boolean; trocarEmail?: boolean }) {
   return {
     id: String(row.id),
     name: String(row.nome || '').trim(),
     email: String(row.email || '').trim().toLowerCase(),
     perfil: row.perfil,
     trocarSenha: row.trocarSenha === true,
+    trocarEmail: row.trocarEmail === true,
   };
 }
 
-function sessaoDe(row: { id: number | string; nome: string; email: string; perfil: string; trocar_senha?: boolean | null; senha_alterada_em?: string | null }): PortalUser | null {
+function sessaoDe(row: { id: number | string; nome: string; email: string; perfil: string; trocar_senha?: boolean | null; trocar_email?: boolean | null; senha_alterada_em?: string | null }): PortalUser | null {
   const perfil = perfilDeAcesso(row.perfil);
   if (!perfil) return null;
-  const trocarSenha = deveTrocarSenhaPortal({
+  const trocarEmail = row.trocar_email === true;
+  const trocarSenha = trocarEmail || deveTrocarSenhaPortal({
     trocarSenha: row.trocar_senha === true,
     senhaAlteradaEm: row.senha_alterada_em,
   });
-  const user = usuarioPublico({ ...row, perfil, trocarSenha });
-  return { ...user, perfil, trocarSenha };
+  const user = usuarioPublico({ ...row, perfil, trocarSenha, trocarEmail });
+  return { ...user, perfil, trocarSenha, trocarEmail };
 }
 
 async function lerUsuarioPortal(
@@ -142,7 +144,12 @@ async function lerUsuarioPortal(
     if (cfg().clientId != null) query = query.eq('client_id', cfg().clientId);
     return query.maybeSingle();
   };
-  const completo = await consulta(`${base}, senha_alterada_em`);
+  const completo = await consulta(`${base}, senha_alterada_em, trocar_email`);
+  if (!completo.error) return completo;
+  if (/trocar_email/i.test(String(completo.error.message || ''))) {
+    const semEmail = await consulta(`${base}, senha_alterada_em`);
+    if (!colunaSenhaAlteradaAusente(semEmail.error)) return semEmail;
+  }
   if (!colunaSenhaAlteradaAusente(completo.error)) return completo;
   return consulta(base);
 }
@@ -512,9 +519,9 @@ function resolveOp(req: any): string {
     anotarQuery(req, { id: tail });
     return 'pessoas-item';
   }
-  if (head === 'pgr' && tail) {
+  if ((head === 'pgr' || head === 'fotos') && tail) {
     anotarQuery(req, { os: tail });
-    return 'pgr';
+    return head;
   }
   return head;
 }
@@ -527,6 +534,11 @@ export async function handleClientePortalHttp(req: any, res: any): Promise<void>
   if (op === 'marca-site' && method === 'POST') {
     const { responderMarcaSite } = await import('../portalCliente/marcaSiteHttp.js');
     await responderMarcaSite(req, res);
+    return;
+  }
+  if (op === 'provisionar' && method === 'POST') {
+    const { responderProvisionar } = await import('../portalCliente/provisionarHttp.js');
+    await responderProvisionar(req, res);
     return;
   }
   const slug = String(req.headers?.['x-portal-slug'] || req.query?.slug || '').trim().toLowerCase();
@@ -740,28 +752,64 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         res.status(503).json({ error: 'Portal indisponível.' });
         return;
       }
-      const { data: user } = await sb.from(cfg().tabelas.usuarios).select('id, senha_hash').eq('id', session.id).maybeSingle();
+      let leituraUsuario = await sb.from(cfg().tabelas.usuarios).select('id, email, senha_hash, trocar_email').eq('id', session.id).maybeSingle();
+      if (leituraUsuario.error && /trocar_email/i.test(String(leituraUsuario.error.message || ''))) {
+        leituraUsuario = await sb.from(cfg().tabelas.usuarios).select('id, email, senha_hash').eq('id', session.id).maybeSingle();
+      }
+      const user = leituraUsuario.data;
       if (!user || !senhaConfere(senhaAtual, user.senha_hash)) {
         res.status(401).json({ error: 'A senha atual não confere.' });
         return;
       }
+      const precisaEmail = user.trocar_email === true;
+      const emailNovo = precisaEmail ? emailDeAcesso(body?.emailNovo) : null;
+      if (precisaEmail && (!emailNovo || emailNovo === String(user.email || '').trim().toLowerCase())) {
+        res.status(400).json({ error: 'Informe o e-mail definitivo, diferente do e-mail provisório.' });
+        return;
+      }
+      if (emailNovo) {
+        const ocupadoPortal = await sb.from(cfg().tabelas.usuarios).select('id').eq('email', emailNovo).neq('id', session.id).limit(1);
+        const ocupadoSistema = await sb.from('system_users').select('id').ilike('email', emailNovo).limit(1);
+        if (ocupadoPortal.error || ocupadoSistema.error) {
+          res.status(500).json({ error: 'Não foi possível conferir o e-mail.' });
+          return;
+        }
+        if ((ocupadoPortal.data || []).length > 0 || (ocupadoSistema.data || []).length > 0) {
+          res.status(409).json({ error: 'Este e-mail já está em uso.' });
+          return;
+        }
+      }
       const agora = new Date().toISOString();
-      const troca = {
+      const troca: Record<string, unknown> = {
         senha_hash: hashSenha(senhaNova),
         trocar_senha: false,
+        trocar_email: false,
         senha_alterada_em: agora,
         atualizado_em: agora,
       };
+      if (emailNovo) troca.email = emailNovo;
       let { error } = await sb.from(cfg().tabelas.usuarios).update(troca).eq('id', session.id);
-      if (colunaSenhaAlteradaAusente(error)) {
-        const { senha_alterada_em: _ignorado, ...semData } = troca;
-        ({ error } = await sb.from(cfg().tabelas.usuarios).update(semData).eq('id', session.id));
+      if (error && /trocar_email|senha_alterada_em|schema cache|does not exist|Could not find/i.test(String(error.message || ''))) {
+        const semColuna = { ...troca };
+        delete semColuna.trocar_email;
+        delete semColuna.senha_alterada_em;
+        ({ error } = await sb.from(cfg().tabelas.usuarios).update(semColuna).eq('id', session.id));
       }
       if (error) {
         res.status(500).json({ error: 'Não foi possível trocar a senha.' });
         return;
       }
-      res.status(200).json({ user: { ...session, trocarSenha: false } });
+      if (emailNovo) {
+        const cliente = await carregarClienteDoPortal(sb);
+        let sistema = sb.from('system_users').update({ email: emailNovo, name: session.name }).ilike('email', String(user.email || ''));
+        if (cliente?.id != null) sistema = sistema.eq('client_id', cliente.id);
+        const gravouSistema = await sistema.eq('user_type', 'client');
+        if (gravouSistema.error) {
+          res.status(500).json({ error: 'A senha mudou, mas o e-mail não entrou no Cadastro de Usuário.' });
+          return;
+        }
+      }
+      res.status(200).json({ user: { ...session, email: emailNovo || session.email, trocarSenha: false, trocarEmail: false } });
       return;
     }
 
@@ -1082,13 +1130,35 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           const salvo = campos.get(`GTM-${item.os}`);
           aplicarCamposCliente(item, salvo, servicoDoSistema);
           const mission = porOs.get(item.os) as { driver_phone?: string | null; reference_number?: string | null; origin?: string | null; destination?: string | null } | undefined;
-          const linha = item as typeof item & { telefone?: string | null; identificacao?: string | null };
+          const linha = item as typeof item & { telefone?: string | null; identificacao?: string | null; origem?: string | null; destino?: string | null };
           linha.telefone = String(mission?.driver_phone || '').trim() || null;
           linha.identificacao = String(mission?.reference_number || '').trim() || null;
+          linha.origem = String(mission?.origin || '').trim() || null;
+          linha.destino = String(mission?.destination || '').trim() || null;
           if (!item.placa && salvo?.placa) item.placa = String(salvo.placa);
           if (!item.local && mission?.origin && mission?.destination) {
             item.local = `${mission.origin} x ${mission.destination}`;
           }
+        }
+
+        try {
+          const { medicaoDaLinha } = await import('../portalCliente/medicao.js');
+          const medicoes = new Map<string, { status?: unknown; itens?: unknown; justificativa?: unknown; modificado_em?: unknown }>();
+          for (const part of chunks(missionIds, 200)) {
+            const { data, error } = await sb.from('portal_medicao_cliente').select('mission_id, status, itens, justificativa, modificado_em').in('mission_id', part);
+            if (error) {
+              const codigo = String((error as { code?: string }).code || '');
+              if (codigo === '42P01' || codigo === 'PGRST205' || codigo === 'PGRST204') break;
+              throw error;
+            }
+            for (const row of data || []) medicoes.set(String(row.mission_id), row);
+          }
+          for (const item of items) {
+            const medicao = medicaoDaLinha(medicoes.get(`GTM-${item.os}`));
+            if (medicao) (item as typeof item & { medicao?: typeof medicao }).medicao = medicao;
+          }
+        } catch (error) {
+          console.error(`[${cfg().logPrefix}] medicao`, error instanceof Error ? error.message : error);
         }
 
         res.status(200).json({
@@ -1371,7 +1441,27 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
               const status = String(row.status || '').trim() || 'Concluída';
               return [{ os, status }];
             });
-            res.status(200).json({ atualizadoEm: new Date().toISOString(), items });
+            let resposta: Array<{ os: string; status: string; medicao?: unknown }> = items;
+            try {
+              const { medicaoDaLinha } = await import('../portalCliente/medicao.js');
+              const medicoes = new Map<string, ReturnType<typeof medicaoDaLinha>>();
+              for (const part of chunks(items.map((item) => `GTM-${item.os}`), 200)) {
+                const leitura = await sb.from('portal_medicao_cliente').select('mission_id, status, itens, justificativa, modificado_em').in('mission_id', part);
+                if (leitura.error) {
+                  const codigo = String((leitura.error as { code?: string }).code || '');
+                  if (codigo === '42P01' || codigo === 'PGRST205' || codigo === 'PGRST204') break;
+                  throw leitura.error;
+                }
+                for (const row of leitura.data || []) {
+                  const medicao = medicaoDaLinha(row);
+                  if (medicao) medicoes.set(String(row.mission_id), medicao);
+                }
+              }
+              resposta = items.map((item) => ({ ...item, medicao: medicoes.get(`GTM-${item.os}`) || null }));
+            } catch (error) {
+              console.error(`[${cfg().logPrefix}] medicao`, error instanceof Error ? error.message : error);
+            }
+            res.status(200).json({ atualizadoEm: new Date().toISOString(), items: resposta });
             return;
           }
         }
@@ -1511,6 +1601,68 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         const message = error instanceof Error ? error.message : 'falha';
         console.error(`[${cfg().logPrefix}] solicitação`, message);
         res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+      }
+      return;
+    }
+
+    if (op === 'fotos' && method === 'GET') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Fotos indisponíveis.' });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { lerFotosEvento } = await import('../portalCliente/fotosMedicaoHttp.js');
+        const endereco = String(req.originalUrl || req.url || '');
+        const osNoCaminho = endereco.match(/\/fotos\/(\d+)/);
+        const resultado = await lerFotosEvento({ sb, os: String(req.query?.os || osNoCaminho?.[1] || ''), cliente });
+        res.status(resultado.status).json(resultado.corpo);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] fotos`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: 'Não foi possível carregar as fotos.' });
+      }
+      return;
+    }
+
+    if (op === 'medicao' && method === 'POST') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Medição indisponível.' });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { gravarMedicaoPortal } = await import('../portalCliente/medicaoHttp.js');
+        const { sendMail, SMTP_FROM } = await import('../email/smtp.js');
+        const { EMAIL_FINANCEIRO_MEDICAO } = await import('../portalCliente/medicao.js');
+        const resultado = await gravarMedicaoPortal({
+          sb,
+          os: String(body?.os || ''),
+          cliente,
+          autor: session.name || session.email,
+          acao: String(body?.acao || ''),
+          equipeInterna: session.equipeInterna === true,
+          body: body || {},
+          enviarEmail: async (texto, anexo) => {
+            await sendMail({
+              from: SMTP_FROM,
+              to: EMAIL_FINANCEIRO_MEDICAO,
+              subject: `Conferir medição GTM-${String(body?.os || '').replace(/\D/g, '')} — ${cliente?.trading_name || cliente?.name || cfg().rotulo}`,
+              text: texto,
+              attachments: anexo ? [anexo] : undefined,
+            });
+          },
+        });
+        res.status(resultado.status).json(resultado.corpo);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'falha';
+        console.error(`[${cfg().logPrefix}] medicao`, message);
+        res.status(500).json({ error: 'Não foi possível gravar a medição.' });
       }
       return;
     }

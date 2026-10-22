@@ -11,6 +11,8 @@ export type SessaoCeva = {
     email: string;
     perfil: PerfilCeva;
     trocarSenha?: boolean;
+    trocarEmail?: boolean;
+    equipeInterna?: boolean;
   };
 };
 

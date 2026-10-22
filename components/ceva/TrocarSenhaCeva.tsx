@@ -11,6 +11,8 @@ export const TrocarSenhaCeva: React.FC<{
   onSair: () => void;
 }> = ({ onTrocou, onSair }) => {
   const portal = usePortalCliente();
+  const trocarEmail = portal.ler()?.user.trocarEmail === true;
+  const [emailNovo, setEmailNovo] = useState('');
   const [senhaAtual, setSenhaAtual] = useState('');
   const [senhaNova, setSenhaNova] = useState('');
   const [confirmacao, setConfirmacao] = useState('');
@@ -25,7 +27,7 @@ export const TrocarSenhaCeva: React.FC<{
       const response = await fetch(portal.url('/trocar-senha'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...portal.cabecalhos() },
-        body: JSON.stringify({ senhaAtual, senhaNova, confirmacao }),
+        body: JSON.stringify({ senhaAtual, senhaNova, confirmacao, emailNovo }),
       });
       const data = await response.json().catch(() => ({}));
       if (response.status === 401 && !data.user) {
@@ -40,7 +42,7 @@ export const TrocarSenhaCeva: React.FC<{
         onSair();
         return;
       }
-      onTrocou({ ...atual, user: { ...atual.user, trocarSenha: false } });
+      onTrocou({ ...atual, user: { ...atual.user, email: emailNovo.trim().toLowerCase() || atual.user.email, trocarSenha: false, trocarEmail: false } });
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Falha de comunicação.');
     } finally {
@@ -53,8 +55,13 @@ export const TrocarSenhaCeva: React.FC<{
       <form onSubmit={(event) => void enviar(event)} className="w-full max-w-md rounded-[2rem] bg-[var(--portal-fundo)] p-8 text-slate-800 shadow-2xl">
         <LogoCeva tamanho="destaque" />
         <p className="mt-5 text-xs font-bold uppercase tracking-[0.22em] text-[var(--portal-destaque)]">Senha do portal</p>
-        <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--portal-marca)]">Troque a senha</h1>
-        <p className="mt-2 text-sm leading-relaxed text-slate-600">A senha temporária vale só para o primeiro acesso. Depois, ela precisa ser trocada a cada 30 dias para continuar no controle deste cliente.</p>
+        <h1 className="mt-2 text-3xl font-black tracking-tight text-[var(--portal-marca)]">{trocarEmail ? 'Troque o e-mail e a senha' : 'Troque a senha'}</h1>
+        <p className="mt-2 text-sm leading-relaxed text-slate-600">{trocarEmail ? 'O e-mail portal@ e a senha do CNPJ valem só neste primeiro acesso. Informe o e-mail real e uma senha nova para continuar.' : 'A senha temporária vale só para o primeiro acesso. Depois, ela precisa ser trocada a cada 30 dias para continuar no controle deste cliente.'}</p>
+        {trocarEmail && (
+          <label className={CAMPO}>E-mail definitivo
+            <input type="email" value={emailNovo} onChange={(event) => setEmailNovo(event.target.value)} className={CONTROLE} autoComplete="email" required />
+          </label>
+        )}
         <label className={CAMPO}>Senha atual
           <input type="password" value={senhaAtual} onChange={(event) => setSenhaAtual(event.target.value)} className={CONTROLE} autoComplete="current-password" required />
         </label>

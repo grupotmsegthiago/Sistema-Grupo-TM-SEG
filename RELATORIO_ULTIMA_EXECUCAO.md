@@ -1,5 +1,29 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Parceria e conta alinhada (22/10/2026)
+
+Ainda não publicado. A análise cabe em uma tela, sem barra de rolagem. No lugar da parceria, o cliente lê um relato de até cinco linhas com o que aconteceu na OS: serviço, rota, motorista, jornada, quilometragem e total. O relato fica por último na coluna esquerda, na faixa cinza, depois dos dados da OS. A análise também mostra as fotos de origem, fim, km inicial e km final. Fim e km final vêm das fotos já gravadas na OS. Origem só aparece quando existe o print de início. Km inicial não tem foto gravada no sistema, então o espaço fica vazio. A evidência da solicitação não entra no lugar da origem. As linhas cobrem serviço e número da OS, trajeto e trecho, motorista, tempo, percurso com a franquia de quilometragem, valores e tarifas. Solicitante, autorização, operação, contrato, PGR, TSP, identificação e observação só aparecem quando estão gravados. Hora extra e km excedente, com o valor, só entram quando são maiores que zero.
+
+## Conta da medição (22/10/2026)
+
+Ainda não publicado. A análise mostra a conta nesta ordem: acionamento, hora inicial / hora final = total = hora extra, km inicial / km final = km extra, pedágio e total. Os números continuam os gravados na OS.
+
+## Aprovar só com De acordo (22/10/2026)
+
+Ainda não publicado. O botão Aprovar abre a análise. A gravação só acontece depois do termo De acordo. O administrador interno vê Voltar para verificar numa OS já aprovada e a linha deixa de ficar verde. O administrador do cliente não desfaz a aprovação.
+
+## Medição só depois da validação (22/10/2026)
+
+Ainda não publicado. Na lista do portal, Analisar, Aprovar e Conferir ficam na última coluna, na mesma linha. Enquanto a OS mostra Aguardando validação, esses botões não aparecem e o servidor recusa a gravação. A análise aberta mostra os dados da OS e o mapa com o ponto A na origem e o ponto B no destino.
+
+## Primeiro acesso do portal novo (22/10/2026)
+
+Ainda não publicado. Ao salvar um cliente ativo com portal, nasce o administrador `portal@domínio` do site, com senha igual ao CNPJ e perfil administrador. No primeiro acesso ele troca o e-mail e a senha. A equipe interna continua entrando com o usuário do sistema. Quem o administrador cadastra no portal também entra no Cadastro de Usuário do cliente. O botão Ler prefere SVG e descarta o retângulo branco de fundo. A cor escura vira a marca e a cor viva vira o botão. CEVA e IBL não recebem esse e-mail automático.
+
+## Medição do portal do cliente (22/10/2026)
+
+Ainda não publicado. CEVA, IBL e o portal por slug usam a mesma lista. Cada OS ganhou Analisar medição, Aprovar e Conferir. Aprovar grava a decisão e a linha fica verde. Conferir pede os itens recusados, justificativa e anexo opcional; a linha fica amarela e o e-mail vai para financeiro@grupotmseg.com.br. Quando a equipe grava a OS depois desse pedido, a linha mostra Modificação realizada e o cliente pode aprovar. A tabela é `portal_medicao_cliente`. O gatilho na OS engole o próprio erro, então uma falha dessa tabela não impede salvar a OS. O cálculo da OS não mudou.
+
 ## Salvamento do cliente com site e logotipo (22/10/2026)
 
 O botão Finalizar e salvar respondia “Erro desconhecido”. O PostgREST devolve o erro como objeto simples, e o código só lia `instanceof Error`. Sem as colunas, o banco responde `PGRST204`, e o formulário só tentava de novo no código `42703`, então o cadastro inteiro era recusado. As colunas `portal_ativo`, `portal_slug`, `portal_site`, `portal_logo_url`, `portal_cor` e `portal_cor_acao` foram criadas em `clients`, com índice único do slug. O restante de `migrations/2026_10_21_portal_cliente.sql` não foi executado. Publicado nesta entrega.
