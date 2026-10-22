@@ -23,7 +23,7 @@ import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, eva
 import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
-import { historicoRecenteDoCliente } from '../lib/billing/tabelaNaCriacao';
+import { historicoDaMesmaRota } from '../lib/billing/tabelaNaCriacao';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
 import { escolherTabelaProxima } from '../lib/rotaAprovadaTabela';
@@ -1141,6 +1141,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           else {
               if (cstTableId) {
                   cstTable = providerCostTables.find(t => t.id.toString() === cstTableId);
+                  if (!cstTable && activeProvider) {
+                      const { data } = await supabase.from('provider_cost_tables').select('*').eq('id', cstTableId).eq('provider', activeProvider).maybeSingle();
+                      if (data) cstTable = data;
+                  }
                   if (cstTable) details.push(`CUSTO (MANUAL): ${cstTable.operation_type}`);
               } else if (activeProvider) {
                   let currentCostTables = providerCostTables;
@@ -1385,7 +1389,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const kmRota = parseFloat(String((route as any).distance || '0')) || Number((route as any)._googleDistKm) || 0;
       const escolha = await sugerirTabelaDaRota(route.origin, route.destination, formData.provider, kmRota);
-      await calculatePricing(route, undefined, escolha?.clientTableId, formData.provider ? escolha?.providerTableId : undefined);
+      await calculatePricing(route, undefined, escolha?.clientTableId, escolha?.providerTableId);
       await applyTollForRoute(route.origin, getTollDestination(route.destination));
 
       if (manualOverrides.toll) {
@@ -1401,7 +1405,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       if (!origin || !destination) return;
       if (/RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(destination)) return;
       if (selectedRouteId && clientRoutes.some(r => r.id.toString() === selectedRouteId)) return;
-      const key = `${origin}|||${destination}`;
+      const key = `${origin}|||${destination}|||${formData.provider}`;
       if (lastAutoRouteRef.current === key) return;
 
       const handle = setTimeout(async () => {
@@ -1417,11 +1421,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
           if (gResult && gResult.distKm > 0) virtualRoute._googleDistKm = gResult.distKm;
           const escolha = await sugerirTabelaDaRota(origin, destination, formData.provider, distKm);
-          await calculatePricing(virtualRoute, undefined, escolha?.clientTableId, formData.provider ? escolha?.providerTableId : undefined);
+          await calculatePricing(virtualRoute, undefined, escolha?.clientTableId, escolha?.providerTableId);
           await applyTollForRoute(origin, destination);
       }, 1200);
       return () => clearTimeout(handle);
-  }, [formData.origin, formData.destination, formData.client, selectedRouteId, clientRoutes]);
+  }, [formData.origin, formData.destination, formData.client, formData.provider, selectedRouteId, clientRoutes]);
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
@@ -1473,7 +1477,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const sugerirTabelaDaRota = async (origem: string, destino: string, fornecedor: string, km: number) => {
       if (!formData.client || !origem || !destino) return null;
       try {
-          const historico = await historicoRecenteDoCliente(supabase, formData.client);
+          const historico = await historicoDaMesmaRota(supabase, formData.client, origem, destino);
           return escolherTabelaProxima({
               cliente: formData.client,
               origem,
@@ -1495,7 +1499,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       if(route) {
           const km = parseFloat(formData.totalDistance) || parseFloat(String(route.distance || '0')) || 0;
           const escolha = await sugerirTabelaDaRota(route.origin, route.destination, newProviderName, km);
-          calculatePricing(route, newProviderName, manualRevenueTableId || escolha?.clientTableId, escolha?.providerTableId);
+          calculatePricing(route, newProviderName, escolha?.clientTableId || manualRevenueTableId, escolha?.providerTableId);
       }
       setFormData(prev => ({ ...prev, provider: newProviderName })); 
       setActiveDropdown(null);

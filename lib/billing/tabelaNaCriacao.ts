@@ -1,11 +1,11 @@
 /**
- * Na criação da OS, as últimas do mesmo cliente indicam a tabela.
- * A rota igual vem na frente. O km desempata. Sem fornecedor, só a tabela do cliente.
+ * Na criação da OS, as 10 mais recentes da mesma origem e do mesmo destino
+ * indicam a tabela. A que mais se repetiu é a escolhida. Sem fornecedor, só a do cliente.
  */
 
 import { calculateMissionFinancials } from '../financialUtils';
 import { computeRouteDistanceKm } from '../routeDistance';
-import { quilometragemRegistrada, type OsRotaAprovada } from '../rotaAprovadaTabela';
+import { osEstaNaRota, quilometragemRegistrada, rotaDaOs, type OsRotaAprovada } from '../rotaAprovadaTabela';
 
 type Consulta = { from: (tabela: string) => any };
 
@@ -26,21 +26,14 @@ function lerIds(snapshot: unknown): { clientTableId: string | null; providerTabl
   };
 }
 
-/** Até 10 OS recentes do cliente. Se essas 10 não tiverem tabela, usa as 10 recentes que tiverem. */
-export async function historicoRecenteDoCliente(sb: Consulta, cliente: string): Promise<OsRotaAprovada[]> {
-  const token = tokenDoCliente(cliente);
-  if (token.length < 4) return [];
-  const { data, error } = await sb.from('missions')
-    .select('id,origin,destination,client,original_client_name,provider,snapshot_data,created_at,total_distance,start_km,end_km')
-    .or(`client.ilike.%${token}%,original_client_name.ilike.%${token}%`)
-    .order('created_at', { ascending: false })
-    .limit(40);
-  if (error || !Array.isArray(data)) return [];
-  const linhas: OsRotaAprovada[] = data.map((row: any) => {
+const COLUNAS_HISTORICO = 'id,origin,destination,client,provider,snapshot_data,created_at,total_distance,start_km,end_km';
+
+function mapearHistorico(data: any[]): OsRotaAprovada[] {
+  return data.map((row: any) => {
     const ids = lerIds(row.snapshot_data);
     return {
       id: String(row.id),
-      cliente: String(row.original_client_name || row.client || ''),
+      cliente: String(row.client || ''),
       origem: String(row.origin || ''),
       destino: String(row.destination || ''),
       fornecedor: row.provider,
@@ -50,9 +43,40 @@ export async function historicoRecenteDoCliente(sb: Consulta, cliente: string): 
       km: quilometragemRegistrada(row.start_km, row.end_km, row.total_distance),
     };
   });
+}
+
+/** Até 10 OS recentes do cliente. Se essas 10 não tiverem tabela, usa as 10 recentes que tiverem. */
+export async function historicoRecenteDoCliente(sb: Consulta, cliente: string): Promise<OsRotaAprovada[]> {
+  const token = tokenDoCliente(cliente);
+  if (token.length < 4) return [];
+  const { data, error } = await sb.from('missions')
+    .select(COLUNAS_HISTORICO)
+    .ilike('client', `%${token}%`)
+    .order('created_at', { ascending: false })
+    .limit(40);
+  if (error || !Array.isArray(data)) return [];
+  const linhas = mapearHistorico(data);
   const dez = linhas.slice(0, 10);
   if (dez.some((os) => os.clientTableId)) return dez;
   return linhas.filter((os) => os.clientTableId).slice(0, 10);
+}
+
+/** As 10 OS mais recentes da mesma cidade de origem e de destino, com tabela gravada. */
+export async function historicoDaMesmaRota(sb: Consulta, cliente: string, origem: string, destino: string): Promise<OsRotaAprovada[]> {
+  const rota = rotaDaOs(origem, destino);
+  const token = tokenDoCliente(cliente);
+  if (!rota || token.length < 4) return historicoRecenteDoCliente(sb, cliente);
+  const { data, error } = await sb.from('missions')
+    .select(COLUNAS_HISTORICO)
+    .ilike('client', `%${token}%`)
+    .ilike('origin', `%${rota.origem}%`)
+    .ilike('destination', `%${rota.destino}%`)
+    .order('created_at', { ascending: false })
+    .limit(80);
+  if (error || !Array.isArray(data)) return [];
+  return mapearHistorico(data)
+    .filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, origem, destino))
+    .slice(0, 10);
 }
 
 /** Receita do serviço com a tabela do cliente. Sem fornecedor, o custo não entra. */

@@ -47,6 +47,20 @@ function normalizar(valor: string): string {
 
 const PREFIXO_LOGRADOURO = /^(RUA|AV|AVENIDA|ROD|RODOVIA|PASSAGEM|TRAVESSA|TV|ALAMEDA|ESTRADA|EST|PRACA|PCA)\b/;
 
+const NOME_DE_ESTADO = new Set([
+  'ACRE', 'ALAGOAS', 'AMAPA', 'AMAZONAS', 'BAHIA', 'CEARA', 'DISTRITO FEDERAL',
+  'ESPIRITO SANTO', 'GOIAS', 'MARANHAO', 'MATO GROSSO', 'MATO GROSSO DO SUL',
+  'MINAS GERAIS', 'PARA', 'PARAIBA', 'PARANA', 'PERNAMBUCO', 'PIAUI',
+  'RIO DE JANEIRO', 'RIO GRANDE DO NORTE', 'RIO GRANDE DO SUL', 'RONDONIA',
+  'RORAIMA', 'SANTA CATARINA', 'SAO PAULO', 'SERGIPE', 'TOCANTINS', 'BRASIL', 'BRAZIL',
+]);
+
+function pedacoDeCidade(pedaco: string): string {
+  const limpo = pedaco.replace(/\s*-\s*[A-Z]{2}$/, '').trim();
+  if (limpo.length <= 3 || limpo.length > 40 || /^\d/.test(limpo) || PREFIXO_LOGRADOURO.test(limpo) || NOME_DE_ESTADO.has(limpo)) return '';
+  return limpo;
+}
+
 /** Cidade conhecida no endereço. Prefere o nome mais longo que aparecer no texto. */
 export function cidadeNoEndereco(endereco: string): string {
   const texto = normalizar(endereco);
@@ -54,7 +68,14 @@ export function cidadeNoEndereco(endereco: string): string {
   const achou = conhecidas.find((cidade) => texto.includes(cidade));
   if (achou) return achou;
   const extraida = normalizar(extractCityFromAddress(endereco || ''));
-  if (extraida.length > 3 && extraida.length <= 40 && !/^\d/.test(extraida) && !PREFIXO_LOGRADOURO.test(extraida)) return extraida;
+  if (pedacoDeCidade(extraida)) return extraida;
+  const partes = texto.split(',').map((parte) => parte.trim()).filter(Boolean);
+  for (const parte of partes) {
+    const cidade = pedacoDeCidade(parte);
+    if (!cidade) continue;
+    if (cidade === 'SERRA' && texto.includes('TABOAO')) continue;
+    return cidade;
+  }
   return '';
 }
 
@@ -73,6 +94,29 @@ export function rotaDaOs(origem: string, destino: string): { origem: string; des
   }
   if (!cidadeDestino) return null;
   return { origem: cidadeOrigem, destino: cidadeDestino };
+}
+
+/** O endereço cita a cidade. Serra não absorve Taboão da Serra, e a UF separa homônimos. */
+export function enderecoNaCidade(endereco: string, cidade: string, uf?: string): boolean {
+  const texto = normalizar(endereco);
+  const alvo = normalizar(cidade);
+  if (!alvo) return false;
+  const palavra = new RegExp(`(?:^|[^A-Z])${alvo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:[^A-Z]|$)`);
+  if (!palavra.test(texto)) return false;
+  if (alvo === 'SERRA' && texto.includes('TABOAO')) return false;
+  const ufEndereco = extractUF(endereco);
+  if (uf && ufEndereco && ufEndereco !== uf) return false;
+  return true;
+}
+
+/** A OS antiga é a mesma rota da nova, mesmo quando o endereço vem completo. */
+export function osEstaNaRota(osOrigem: string, osDestino: string, origem: string, destino: string): boolean {
+  const rota = rotaDaOs(origem, destino);
+  if (!rota) return false;
+  const rotaOs = rotaDaOs(osOrigem, osDestino);
+  if (rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino) return true;
+  return enderecoNaCidade(osOrigem, rota.origem, extractUF(origem))
+    && enderecoNaCidade(osDestino, rota.destino, extractUF(destino));
 }
 
 export function algumaTabelaCobreCidade(tabelas: LinhaTabelaRota[], cidade: string): boolean {
@@ -235,12 +279,31 @@ export interface EscolhaTabelaProxima {
   mesmaRota: boolean;
 }
 
+function maisAplicada(lista: OsRotaAprovada[], campo: 'clientTableId' | 'providerTableId'): OsRotaAprovada | null {
+  const contagem = new Map<string, { vezes: number; recente: number; os: OsRotaAprovada }>();
+  for (const os of lista) {
+    const id = os[campo] ? String(os[campo]) : '';
+    if (!id) continue;
+    const recente = Date.parse(os.aprovadaEm || '') || 0;
+    const atual = contagem.get(id);
+    if (!atual) {
+      contagem.set(id, { vezes: 1, recente, os });
+      continue;
+    }
+    atual.vezes += 1;
+    if (recente >= atual.recente) {
+      atual.recente = recente;
+      atual.os = os;
+    }
+  }
+  return [...contagem.values()].sort((a, b) => b.vezes - a.vezes || b.recente - a.recente)[0]?.os || null;
+}
+
 /**
- * Nas últimas OS do mesmo cliente, a mais próxima do cenário novo.
- * Mesma origem e mesmo destino vencem. Se houver mais de uma tabela nessa
- * rota, a quilometragem mais parecida decide. Sem fornecedor na OS nova,
- * a tabela do fornecedor não entra. Com fornecedor, a tabela dele sai da
- * OS desse fornecedor com o km mais próximo.
+ * Nas últimas OS da mesma origem e do mesmo destino, a tabela que mais
+ * se repetiu é a escolhida. Empate fica com a mais recente. Sem fornecedor
+ * na OS nova, a tabela do fornecedor não entra. Com fornecedor, vale a
+ * tabela dele que mais se repetiu nessa mesma rota.
  */
 export function escolherTabelaProxima(entrada: {
   cliente: string;
@@ -252,51 +315,25 @@ export function escolherTabelaProxima(entrada: {
 }): EscolhaTabelaProxima | null {
   const rota = rotaDaOs(entrada.origem, entrada.destino);
   if (!rota) return null;
-  const kmAtual = Number(entrada.kmAtual) > 0 ? Number(entrada.kmAtual) : 0;
   const doCliente = entrada.historico.filter((os) => !!os.clientTableId && mesmoCliente(os.cliente, entrada.cliente));
   if (!doCliente.length) return null;
 
-  const nota = (os: OsRotaAprovada) => {
-    const rotaOs = rotaDaOs(os.origem, os.destino);
-    let pontos = 0;
-    const mesma = !!rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino;
-    if (mesma) pontos += 1000;
-    else if (rotaOs && (rotaOs.origem === rota.origem || rotaOs.destino === rota.destino)) pontos += 250;
-    if (kmAtual > 0 && os.km != null && os.km > 0) pontos += Math.max(0, 500 - Math.abs(os.km - kmAtual));
-    return { pontos, mesma, recente: Date.parse(os.aprovadaEm || '') || 0 };
-  };
-
-  const ordenadas = [...doCliente].sort((a, b) => {
-    const na = nota(a);
-    const nb = nota(b);
-    if (nb.pontos !== na.pontos) return nb.pontos - na.pontos;
-    return nb.recente - na.recente;
-  });
-  const escolhida = ordenadas[0];
-  if (!escolhida?.clientTableId) return null;
+  const daRota = doCliente.filter((os) => osEstaNaRota(os.origem, os.destino, entrada.origem, entrada.destino));
+  const vencedora = maisAplicada(daRota, 'clientTableId');
+  if (!vencedora?.clientTableId) return null;
 
   let providerTableId: string | undefined;
   const fornecedor = String(entrada.fornecedorAtual || '').trim();
   if (fornecedor) {
-    const doFornecedor = doCliente.filter((os) => !!os.providerTableId && mesmoFornecedor(os.fornecedor || '', fornecedor));
-    const naRota = doFornecedor.filter((os) => {
-      const rotaOs = rotaDaOs(os.origem, os.destino);
-      return !!rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino;
-    });
-    const pool = naRota.length ? naRota : doFornecedor;
-    if (pool.length) {
-      const porKm = [...pool].sort((a, b) => {
-        if (kmAtual > 0 && a.km && b.km) return Math.abs(a.km - kmAtual) - Math.abs(b.km - kmAtual);
-        return (Date.parse(b.aprovadaEm || '') || 0) - (Date.parse(a.aprovadaEm || '') || 0);
-      });
-      providerTableId = String(porKm[0].providerTableId);
-    }
+    const doFornecedor = daRota.filter((os) => String(os.clientTableId) === String(vencedora.clientTableId) && !!os.providerTableId && mesmoFornecedor(os.fornecedor || '', fornecedor));
+    const fornecedorVencedor = maisAplicada(doFornecedor, 'providerTableId');
+    if (fornecedorVencedor?.providerTableId) providerTableId = String(fornecedorVencedor.providerTableId);
   }
 
   return {
-    clientTableId: String(escolhida.clientTableId),
+    clientTableId: String(vencedora.clientTableId),
     providerTableId,
-    osExemplo: String(escolhida.id),
-    mesmaRota: nota(escolhida).mesma,
+    osExemplo: String(vencedora.id),
+    mesmaRota: true,
   };
 }

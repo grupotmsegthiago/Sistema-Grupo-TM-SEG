@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Tabela da mesma rota (22/10/2026)
+
+Publicado nesta entrega. A criação olhava as últimas OS do cliente, de qualquer rota. Guarulhos–Serra acabava em Guarulhos–Aparecida de Goiânia e o fornecedor caía na faixa de 1000KM. A consulta do histórico pedia `original_client_name`, coluna que não existe, e voltava vazia. Agora entram as 10 mais recentes da mesma cidade de origem e de destino. A tabela que mais se repetiu é a selecionada, no cliente e no fornecedor daquela OS. No localhost, DHL Guarulhos–Serra com a TORRES ficou em SUDESTE - GUARULHOS-SERRA 758KM e 800KM. Vale para a OS nova, o portal e a auditoria sem valor gravado. OS aprovada ou já faturada não muda.
+
 ## Ceslog sem as tabelas auxiliares (22/10/2026)
 
 Publicado nesta entrega. O Controle da Ceslog respondia “Não foi possível carregar as OS da CESLOG” porque `portal_cliente_catalogo` e `portal_cliente_os_campos` não existem no banco. Só `portal_cliente_usuarios` foi criada. As OS da Ceslog estão em `missions`. Quando essas tabelas auxiliares faltam, a lista e o Ao vivo seguem só com as OS. As tabelas não foram criadas.

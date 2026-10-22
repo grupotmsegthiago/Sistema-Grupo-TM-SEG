@@ -5,12 +5,21 @@ import {
   cidadeNoEndereco,
   escolherTabelaProxima,
   escolherTabelasDaRotaAprovada,
+  osEstaNaRota,
   quilometragemRegistrada,
   rotaDaOs,
 } from '../lib/rotaAprovadaTabela.ts';
 
 const origemBelem = 'PASSAGEM BARTOLOMEU DE GUSMÃO, 625 - CURIÓ-UTINGA, BELÉM - PA, 66610-190';
 const destinoBelem = 'ROD. ENG. AUGUSTO MEIRA FILHO, PARÁ, 66923-120';
+
+test('endereço completo de Guarulhos para Serra continua na mesma rota', () => {
+  const origem = 'AV. JÚLIA GAIOLI, 740 - ÁGUA CHATA, GUARULHOS - SP, 07251-500';
+  const destino = 'R. GERALDO DEL PUPO, 502 - CIVIT II, SERRA - ES, 29168-074';
+  assert.equal(osEstaNaRota(origem, destino, 'GUARULHOS - SP', 'SERRA, ES'), true);
+  assert.equal(osEstaNaRota(origem, destino, 'Guarulhos, São Paulo, Brasil', 'Serra, Espírito Santo, Brasil'), true);
+  assert.equal(osEstaNaRota('GUARULHOS - SP', 'TABOÃO DA SERRA - SP', 'GUARULHOS - SP', 'SERRA, ES'), false);
+});
 
 test('Belém no endereço e destino no mesmo estado fecham a rota Belém-Belém', () => {
   assert.equal(cidadeNoEndereco(origemBelem), 'BELEM');
@@ -166,7 +175,7 @@ test('criação: mesma origem e destino vencem outra rota mais recente', () => {
   assert.equal(escolha?.providerTableId, undefined);
 });
 
-test('criação: na mesma rota, o km mais próximo escolhe a tabela, não a que mais repetiu', () => {
+test('criação: na mesma rota, a tabela que mais se repetiu vence a de km mais próximo', () => {
   const escolha = escolherTabelaProxima({
     cliente: 'CEVA LOGISTICS LTDA',
     origem: 'GUARULHOS - SP',
@@ -178,10 +187,11 @@ test('criação: na mesma rota, o km mais próximo escolhe a tabela, não a que 
       { id: 'OS-3', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', clientTableId: 'tab-curta', aprovadaEm: '2026-07-01', km: 100 },
     ],
   });
-  assert.equal(escolha?.clientTableId, 'tab-curta');
+  assert.equal(escolha?.clientTableId, 'tab-longa');
+  assert.equal(escolha?.osExemplo, 'OS-1');
 });
 
-test('criação: sem fornecedor não grava tabela de fornecedor; com fornecedor segue o km dele', () => {
+test('criação: sem fornecedor não grava tabela de fornecedor; com fornecedor fica a mais repetida', () => {
   const historico = [
     { id: 'OS-A', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedor: 'ALFA ESCOLTA', clientTableId: 'tab-cli', providerTableId: 'prov-longe', aprovadaEm: '2026-10-01', km: 400 },
     { id: 'OS-B', cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedor: 'ALFA ESCOLTA', clientTableId: 'tab-cli', providerTableId: 'prov-perto', aprovadaEm: '2026-08-01', km: 90 },
@@ -194,5 +204,5 @@ test('criação: sem fornecedor não grava tabela de fornecedor; com fornecedor 
   const comFornecedor = escolherTabelaProxima({
     cliente: 'CEVA LOGISTICS LTDA', origem: 'GUARULHOS - SP', destino: 'CAMPINAS - SP', fornecedorAtual: 'ALFA ESCOLTA', kmAtual: 95, historico,
   });
-  assert.equal(comFornecedor?.providerTableId, 'prov-perto');
+  assert.equal(comFornecedor?.providerTableId, 'prov-longe');
 });

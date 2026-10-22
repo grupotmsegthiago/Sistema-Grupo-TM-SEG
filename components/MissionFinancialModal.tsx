@@ -52,7 +52,7 @@ import {
   shouldWriteBillingSnapshot,
   snapshotEhSoTabelaNaCriacao,
 } from '../lib/missionSnapshot';
-import { historicoRecenteDoCliente } from '../lib/billing/tabelaNaCriacao';
+import { historicoDaMesmaRota } from '../lib/billing/tabelaNaCriacao';
 import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -1180,7 +1180,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (currentMission.provider && tabelaCriacao.providerTableId) {
                   setManualProviderTableId(tabelaCriacao.providerTableId);
               } else if (currentMission.provider && !tabelaCriacao.providerTableId) {
-                  const historico = await historicoRecenteDoCliente(supabase, String(currentMission.originalClientName || currentMission.client || ''));
+                  const historico = await historicoDaMesmaRota(supabase, String(currentMission.originalClientName || currentMission.client || ''), currentMission.origin || '', currentMission.destination || '');
                   const escolha = escolherTabelaProxima({
                       cliente: String(currentMission.originalClientName || currentMission.client || ''),
                       origem: currentMission.origin || '',
@@ -1208,6 +1208,23 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           if (osTravada) return;
           if (hasSavedData) {
               // A busca da rota aprovada pedia uma coluna que não existe e não trocava a tabela.
+              return;
+          }
+
+          const clienteAtual = String(currentMission.originalClientName || currentMission.client || '');
+          const historicoRota = await historicoDaMesmaRota(supabase, clienteAtual, currentMission.origin || '', currentMission.destination || '');
+          const tabelaDaRota = escolherTabelaProxima({
+              cliente: clienteAtual,
+              origem: currentMission.origin || '',
+              destino: currentMission.destination || '',
+              fornecedorAtual: currentMission.provider,
+              kmAtual: quilometragemRegistrada(currentMission.startKm, currentMission.endKm, currentMission.totalDistance),
+              historico: historicoRota,
+          });
+          if (tabelaDaRota?.clientTableId) {
+              rotaAprovadaAplicadaRef.current = true;
+              setManualClientTableId(tabelaDaRota.clientTableId);
+              if (tabelaDaRota.providerTableId) setManualProviderTableId(tabelaDaRota.providerTableId);
               return;
           }
 

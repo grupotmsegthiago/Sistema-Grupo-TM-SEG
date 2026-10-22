@@ -2,7 +2,7 @@
 
 import type { PortalServidor } from '../cevaPortal/portalServidor';
 import { sendMail, SMTP_FROM } from '../email/smtp';
-import { historicoRecenteDoCliente, receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
+import { historicoDaMesmaRota, receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
 import { snapshotTabelaNaCriacao } from '../missionSnapshot';
 import { escolherTabelaProxima } from '../rotaAprovadaTabela';
 import type { PedidoPortal } from './pedido';
@@ -74,7 +74,7 @@ function payloadOs(
 
 async function tabelaEValorIniciais(sb: SupabaseAdmin, cliente: string, pedido: PedidoPortal) {
   try {
-    const historico = await historicoRecenteDoCliente(sb, cliente);
+    const historico = await historicoDaMesmaRota(sb, cliente, pedido.origem, pedido.destino);
     const escolha = escolherTabelaProxima({
       cliente,
       origem: pedido.origem,
