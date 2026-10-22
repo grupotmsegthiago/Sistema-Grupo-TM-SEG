@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-21. O botão Atualizar do Cockpit só relê o banco. Receita ou custo gravados, inclusive zero, aparecem no Cockpit e no relatório mesmo sem conferência. A estimativa fica só para coluna NULL. No boletim, os subitens de dinheiro fecham no valor gravado da OS. Publicado nesta entrega, a partir da `dev`. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
+Atualizado em 2026-10-22. A rolagem da Auditoria de Faturamento voltou para o div. O fieldset só desabilita os campos durante o Salvando, sem `overflow` nem `min-height`. Uma checagem impede de novo colocar rolagem em `fieldset`. Publicado nesta entrega, a partir da `dev`. O relatório longo é `RELATORIO_ULTIMA_EXECUCAO.md`.
 
 | Campo | Valor |
 | --- | --- |

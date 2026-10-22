@@ -7,6 +7,12 @@
         "matcher": "Write|StrReplace|Delete",
         "timeout": 60,
         "failClosed": true
+      },
+      {
+        "command": "node .cursor/hooks/fieldset-scroll.cjs",
+        "matcher": "Write|StrReplace",
+        "timeout": 15,
+        "failClosed": false
       }
     ]
   }

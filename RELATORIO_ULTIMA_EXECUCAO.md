@@ -1,5 +1,11 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Rolagem da Auditoria de Faturamento (22/10/2026)
+
+A publicação de 21/10 trocou a área que rola da auditoria por um `fieldset`, para travar os campos enquanto salva. Nesse elemento o navegador não desce a rolagem, então o restante da OS ficava cortado para quem abre a tela, não só para a Ana e a Giovanna. A rolagem voltou para o div de antes, sem mudar `min-height`. O fieldset continua só para desabilitar os campos durante o Salvando. A suíte agora recusa `overflow` na abertura de um `fieldset`, e o Cursor bloqueia essa edição. Sem mudança de valor, de gravação ou de permissão.
+
+---
+
 ## Cockpit lê, zero gravado vale e boletim fecha (21/10/2026)
 
 O Atualizar do Cockpit deixou de chamar o recálculo de hora extra. Ele só busca de novo o que já está no banco. Receita e custo gravados, inclusive 0, entram no Cockpit e no relatório de OS mesmo sem a OS estar conferida. Estimativa só quando a coluna está NULL. Deslocamento 0 também permanece 0. No boletim, se a fórmula de km extra e hora extra não soma o valor gravado, o serviço inteiro fica no valor da OS e os extras de dinheiro zeram, para a linha fechar. A rota `/api/recalculate-open` continua no servidor, fora do botão. Sem mudança da fórmula do motor e sem migration.

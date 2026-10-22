@@ -4777,7 +4777,9 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
         )}
 
-        <fieldset disabled={isUpdating || isSavingRoute} className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 bg-gray-50 pb-4 sm:pb-6 border-0 min-w-0 m-0 disabled:opacity-100">
+        {/* Rolagem no div: fieldset com overflow não desce no navegador. */}
+        <div className="flex-1 overflow-y-auto bg-gray-50">
+        <fieldset disabled={isUpdating || isSavingRoute} className="border-0 min-w-0 m-0 p-4 sm:p-6 space-y-6 pb-4 sm:pb-6 disabled:opacity-100">
             <PaidInvoiceLockPanel
                 lock={paidInvoiceLock}
                 unlocked={paidUnlockOverride}
@@ -6957,6 +6959,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 </div>
             )}
         </fieldset>
+        </div>
 
         {financialData && !isLoading && (
                     <div
