@@ -8,7 +8,7 @@ import { corpoTrazPreco, emailsDaSolicitacao, quantidadeDoPedido, validarPedidoP
 import { decidirNomeCatalogo, ehCampoLista } from '../lib/cevaPortal/camposCliente';
 import { dataHoraBrasil, mascaraDataHora, parseBrazilDateTime } from '../lib/cevaPortal/rules';
 import { lerMarcaDoHtml, urlDeSitePublico } from '../lib/portalCliente/marcaSite';
-import { portalDaFicha, PORTAL_CEVA, PORTAL_IBL } from '../lib/cevaPortal/portalServidor';
+import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalDaFicha, PORTAL_CEVA, PORTAL_IBL, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -22,6 +22,26 @@ test('slug sai do nome fantasia e não ocupa ceva, ibl ou dhl', () => {
   assert.equal(slugDeCaminho('/ibl'), null);
   assert.equal(slugDeCaminho('/dhl'), null);
   assert.equal(slugDeCaminho('/fornecedor/dhl'), null);
+});
+
+test('coluna de portal ausente não esconde a mensagem e não apaga o resto do cliente', () => {
+  const erro = { code: 'PGRST204', message: "Could not find the 'portal_ativo' column of 'clients' in the schema cache" };
+  assert.equal(colunaAusenteNoBanco(erro), true);
+  assert.equal(erroMencionaColunaPortal(erro), true);
+  assert.equal(mensagemDeErro(erro), erro.message);
+  assert.equal(colunaAusenteNoBanco({ code: '42703', message: 'column portal_site does not exist' }), true);
+  assert.equal(colunaAusenteNoBanco({ code: '23505', message: 'duplicate' }), false);
+  const limpo = semColunasDePortal({
+    name: 'IBL',
+    operational_email: 'a@b.com',
+    portal_site: 'https://ibllogistica.com.br/',
+    portal_logo_url: 'https://ibllogistica.com.br/favicon.ico',
+    portal_cor: '#f7941e',
+  });
+  assert.equal(limpo.name, 'IBL');
+  assert.equal(limpo.operational_email, 'a@b.com');
+  assert.equal('portal_site' in limpo, false);
+  assert.equal('portal_logo_url' in limpo, false);
 });
 
 test('CEVA e IBL ficam na página fixa; cliente novo usa o slug', () => {

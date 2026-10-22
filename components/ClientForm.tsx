@@ -28,7 +28,7 @@ import {
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
-import { portalPorNomeCliente } from '../lib/cevaPortal/portalServidor';
+import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalPorNomeCliente, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
 import { limparSlug, slugDeNome, slugPublico } from '../lib/portalCliente/slug';
 
 interface ClientFormProps {
@@ -764,32 +764,38 @@ const ClientForm: React.FC<ClientFormProps> = ({
       };
 
       let savedClientId: string | null = editingId;
+      let portalFicouDeFora = false;
+      const payloadSemColunaAusente = (erro: { message?: string }) => {
+        const copia = { ...semColunasDePortal(payload) };
+        if (!erroMencionaColunaPortal(erro)) {
+          delete copia.operational_email;
+          delete copia.ciclo_faturamento;
+          delete copia.whatsapp_group_link;
+          delete copia.whatsapp_desktop_group_name;
+          delete copia.whatsapp_desktop_vinculo;
+          delete copia.whatsapp_desktop_ativo;
+        }
+        return copia;
+      };
       if (editingId) {
           let { error: updErr } = await supabase.from('clients').update(payload).eq('id', editingId);
-          if (updErr && updErr.code === '42703') {
-            const faltaPortal = /portal_/i.test(updErr.message || '');
-            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, portal_ativo, portal_slug, portal_site, portal_logo_url, portal_cor, portal_cor_acao, ...safePayload } = payload;
-            const res2 = await supabase.from('clients').update(safePayload).eq('id', editingId);
+          if (updErr && colunaAusenteNoBanco(updErr)) {
+            const faltaPortal = erroMencionaColunaPortal(updErr);
+            const res2 = await supabase.from('clients').update(payloadSemColunaAusente(updErr)).eq('id', editingId);
             updErr = res2.error;
-            if (!updErr && faltaPortal) {
-              showNotification('Portal', 'O cliente foi salvo, mas o banco ainda não tem as colunas do portal. Falta aplicar migrations/2026_10_21_portal_cliente.sql.', 'warning');
-            }
+            portalFicouDeFora = !updErr && faltaPortal;
           }
           if (updErr) throw updErr;
           await logAction('UPDATE', 'Client', editingId, `Cliente atualizado: ${formData.name}`);
       } else {
           payload.created_by = currentUser?.name || 'SISTEMA';
           let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
-          if (insErr && insErr.code === '42703') {
-            const faltaPortal = /portal_/i.test(insErr.message || '');
-            const { operational_email, ciclo_faturamento, whatsapp_group_link, whatsapp_desktop_group_name, whatsapp_desktop_vinculo, whatsapp_desktop_ativo, portal_ativo, portal_slug, portal_site, portal_logo_url, portal_cor, portal_cor_acao, ...safePayload } = payload;
-            safePayload.created_by = currentUser?.name || 'SISTEMA';
-            const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
+          if (insErr && colunaAusenteNoBanco(insErr)) {
+            const faltaPortal = erroMencionaColunaPortal(insErr);
+            const res2 = await supabase.from('clients').insert([payloadSemColunaAusente(insErr)]).select('id').single();
             insErr = res2.error;
             inserted = res2.data;
-            if (!insErr && faltaPortal) {
-              showNotification('Portal', 'O cliente foi salvo, mas o banco ainda não tem as colunas do portal. Falta aplicar migrations/2026_10_21_portal_cliente.sql.', 'warning');
-            }
+            portalFicouDeFora = !insErr && faltaPortal;
           }
           if (insErr) throw insErr;
           savedClientId = inserted?.id != null ? String(inserted.id) : null;
@@ -832,17 +838,27 @@ const ClientForm: React.FC<ClientFormProps> = ({
             .join(' | ');
           throw new Error(`Salvo no sistema TM SEG, mas falhou no Asaas (${detail}). Ajuste e salve novamente — o mesmo cadastro será atualizado.`);
         }
+        if (!portalFicouDeFora) {
+          showNotification(
+            'Cliente sincronizado',
+            'Cadastro TM SEG salvo e enviado às 3 contas Asaas. Comissão usa este vínculo; Torres continua no sistema Torres.',
+            'success',
+          );
+        }
+      }
+
+      if (portalFicouDeFora) {
         showNotification(
-          'Cliente sincronizado',
-          'Cadastro TM SEG salvo e enviado às 3 contas Asaas. Comissão usa este vínculo; Torres continua no sistema Torres.',
-          'success',
+          'Portal não gravado',
+          'O restante do cliente foi salvo. Site, logotipo e cores não entraram: o banco ainda não tem essas colunas.',
+          'warning',
         );
       }
 
       onBack();
     } catch (error) { 
         console.error(error);
-        const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+        const msg = mensagemDeErro(error);
         showNotification('Erro', 'Erro ao salvar cliente: ' + msg, 'error');
     } finally { setIsSaving(false); }
   };

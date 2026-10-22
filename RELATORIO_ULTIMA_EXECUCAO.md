@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Salvamento do cliente com site e logotipo (22/10/2026)
+
+O botão Finalizar e salvar respondia “Erro desconhecido”. O PostgREST devolve o erro como objeto simples, e o código só lia `instanceof Error`. Sem as colunas, o banco responde `PGRST204`, e o formulário só tentava de novo no código `42703`, então o cadastro inteiro era recusado. As colunas `portal_ativo`, `portal_slug`, `portal_site`, `portal_logo_url`, `portal_cor` e `portal_cor_acao` foram criadas em `clients`, com índice único do slug. O restante de `migrations/2026_10_21_portal_cliente.sql` não foi executado. Publicado nesta entrega.
+
 ## Leitura do site no cadastro do cliente (22/10/2026)
 
 O botão Ler respondia “Portal não encontrado” no localhost. O Express 5 recalcula `req.query` a cada leitura, então a marca da operação sumia e a rota procurava um portal sem slug. O endereço `/api/cliente-portal/...` agora entra no mesmo leitor. Na ficha da IBL, `https://ibllogistica.com.br/` devolveu o ícone do site e a cor `#f7941e`. A ficha ainda precisa ser salva para gravar. Publicado nesta entrega.

@@ -105,6 +105,39 @@ export function portalPorNomeCliente(nome: string | null | undefined): PortalSer
   return null;
 }
 
+/** O PostgREST devolve objeto simples, não `Error`. A tela lia só `instanceof Error` e mostrava "Erro desconhecido". */
+export function mensagemDeErro(erro: unknown): string {
+  if (erro instanceof Error && erro.message) return erro.message;
+  if (erro && typeof erro === 'object' && 'message' in erro && (erro as { message?: unknown }).message) {
+    return String((erro as { message: unknown }).message);
+  }
+  return 'Erro desconhecido';
+}
+
+/** Coluna que o cadastro enviou e o banco ainda não tem. O código novo do PostgREST é PGRST204, não só 42703. */
+export function colunaAusenteNoBanco(erro: { code?: string; message?: string } | null | undefined): boolean {
+  if (!erro) return false;
+  const codigo = String(erro.code || '');
+  const mensagem = String(erro.message || '');
+  return codigo === '42703' || codigo === 'PGRST204' || /schema cache|does not exist|Could not find/i.test(mensagem);
+}
+
+export function erroMencionaColunaPortal(erro: { message?: string } | null | undefined): boolean {
+  return /portal_/i.test(String(erro?.message || ''));
+}
+
+/** Tira só site, logotipo e cores. O restante do cliente continua no payload. */
+export function semColunasDePortal<T extends Record<string, unknown>>(payload: T): T {
+  const copia = { ...payload };
+  delete copia.portal_ativo;
+  delete copia.portal_slug;
+  delete copia.portal_site;
+  delete copia.portal_logo_url;
+  delete copia.portal_cor;
+  delete copia.portal_cor_acao;
+  return copia;
+}
+
 /** CEVA e IBL continuam na página fixa. Os demais usam o slug do cadastro. */
 export function portalDaFicha(cliente: FichaPortal | null | undefined): PortalServidor | null {
   if (!cliente) return null;
