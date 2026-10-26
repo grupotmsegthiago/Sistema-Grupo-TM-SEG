@@ -184,3 +184,42 @@ export const ESTILO_MAPA_COTACAO: Array<{ featureType?: string; elementType?: st
 
 /** Gota do pin A/B. A ponta fica na coordenada. */
 export const TRACO_PIN = 'M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z';
+
+/** Cidade e UF para o painel do mapa. O texto longo do Google não entra no card. */
+export function rotuloCidadeUf(endereco: string | null | undefined): string {
+  const partes = String(endereco || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const cidade = partes[0] || '';
+  const uf = extrairUf(String(endereco || ''), '');
+  if (!cidade) return '—';
+  if (!uf || cidade.toUpperCase().includes(uf)) return cidade;
+  return `${cidade}, ${uf}`;
+}
+
+/** 1.608 min (26h 48m). Os números vêm da rota calculada, não de um exemplo fixo. */
+export function textoTempoMonitor(minutos: number | null | undefined): string {
+  if (minutos == null || !Number.isFinite(minutos) || minutos <= 0) return '—';
+  const total = Math.round(minutos);
+  const horas = Math.floor(total / 60);
+  const resto = total % 60;
+  return `${total.toLocaleString('pt-BR')} min (${horas}h ${String(resto).padStart(2, '0')}m)`;
+}
+
+export function textoKmMonitor(km: number | null | undefined): string {
+  if (km == null || !Number.isFinite(km) || km <= 0) return '—';
+  return `${km.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+}
+
+/** Fração do traçado onde o caminhão de monitoramento fica. 0 é a origem. */
+export function indiceNaRota(total: number, fracao = 0.22): number {
+  if (!Number.isFinite(total) || total <= 1) return 0;
+  const indice = Math.round((total - 1) * fracao);
+  return Math.min(total - 1, Math.max(0, indice));
+}
+
+/** Nome curto da marca no pin do caminhão. CEVA usa o nome institucional. */
+export function rotuloMarcaTransito(cliente: string | null | undefined): string {
+  const nome = String(cliente || '').trim();
+  if (!nome) return 'Cliente';
+  if (nome.toLowerCase().includes('ceva')) return 'CEVA Logistics';
+  return nome;
+}

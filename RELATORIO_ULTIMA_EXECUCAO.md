@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Ações do histórico e painel do mapa (26/10/2026)
+
+Ainda não publicado. Baseline `882cd3c1`. O histórico passa a mostrar o km e a hora extra gravados na cotação. O menu inativa na hora, pede confirmação para excluir, devolve origem, destino e paradas ao formulário e envia o PDF pelo SMTP que já existe. Não há coluna deleted_at e a migration não foi criada. Administrador, diretoria e o autor inativam e excluem; o servidor grava system_logs. O mapa usa o painel Informações da Rota com a cidade, a distância e o tempo da rota calculada, e o caminhão 3D fica sobre o traçado. O PDF preview não insere cotação. Sem função nova na Vercel e sem alteração em calculateMissionFinancials. Rollback: reverter este commit.
+
 ## Rota, mapa e caminhão da cotação (26/10/2026)
 
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Baseline `8fb79794`. Thiago validou Salvador, BA → São Paulo, SP: traçado, botão e PDF com mapa e caminhão. A cotação deixava de fechar quando o lugar não vinha da lista ou quando a leitura da polilinha quebrava o km já calculado. O campo agora guarda a coordenada do `place_changed` e, no Enter ou ao sair, consulta o Geocoder no Brasil. O Directions recebe a coordenada. Falha de rota longa mostra o motivo e não apaga um km que já fechou. O mapa ao vivo abre no tema escuro, com pinos A e B e a carreta 3D do cliente (CEVA usa a pintura e o logotipo da CEVA). O PDF não captura o canvas do Google: POST /api/proposta-escolta/mapa, na rota Express já existente, baixa o Static Maps em 640×360 scale 2 e devolve Base64. Rota longa demais para `enc:` segue por pontos. A tela de rota administrativa não envia origem, destino ou km vazio. Não grava `duration_minutes`. Sem migration, sem função nova na Vercel e sem alteração em `calculateMissionFinancials`. Rollback: reverter este commit.

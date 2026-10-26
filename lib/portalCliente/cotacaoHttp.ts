@@ -10,6 +10,7 @@ import {
   type LinhaHistoricoCotacao,
   type PedidoRegistroCotacao,
 } from './historicoCotacoes.js';
+import { cotacaoExcluida } from './gestaoCotacao.js';
 import type { VersaoTabelaRegional } from '../precificacao/tabela2027.js';
 
 type ClientePortal = { name?: string | null; trading_name?: string | null } | null;
@@ -129,7 +130,9 @@ export async function listarHistoricoCotacoes(
     }
     return { status: 500, corpo: { error: 'Não foi possível ler o histórico de cotações.' } };
   }
-  const lidas = ((data || []) as Record<string, unknown>[]).map((row) => normalizarLinhaHistorico(row));
+  const lidas = ((data || []) as Record<string, unknown>[])
+    .map((row) => normalizarLinhaHistorico(row))
+    .filter((linha) => !cotacaoExcluida(linha));
   const linhas = vigencia === '2026' || vigencia === '2027'
     ? lidas.filter((linha) => vigenciaDaCotacao(linha) === vigencia)
     : lidas;

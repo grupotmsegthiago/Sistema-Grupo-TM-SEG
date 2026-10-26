@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { textoHoraExtra, textoTarifaKm } from '../../lib/portalCliente/gestaoCotacao';
 import {
   extrairCep,
   getRegionFromLocation,
@@ -135,6 +136,12 @@ const QuoteCalculatorCard: React.FC<Props> = ({
           <div className="rounded-xl bg-slate-50 p-3">
             <p className="font-bold uppercase text-gray-400">KM faturado</p>
             <p className="mt-1 font-black text-gray-900">{conta ? `${conta.kmFaturado} km` : '—'}</p>
+            {textoTarifaKm(tarifaKm) !== '—' && (
+              <p className="mt-1 text-[10px] font-semibold normal-case text-slate-500" data-testid="tarifa-km-card">Tarifa: {textoTarifaKm(tarifaKm)}</p>
+            )}
+            {textoHoraExtra(horaExtra) !== '—' && (
+              <p className="text-[10px] font-semibold normal-case text-slate-500">Hora extra: {textoHoraExtra(horaExtra)}</p>
+            )}
             {conta?.usouMinimo && <p className="text-[10px] font-bold text-amber-700">Franquia de 100 km</p>}
           </div>
           <div className="rounded-xl bg-slate-50 p-3">

@@ -514,8 +514,9 @@ export function cotacaoVencida(cotacao: CotacaoPrazo | null | undefined, agora =
 /** Entra na busca de cotação para nova OS. Convertida não expira, mas não volta para seleção. */
 export function cotacaoSelecionavel(cotacao: CotacaoPrazo | null | undefined, agora = new Date()): boolean {
   if (!cotacao || cotacaoConvertida(cotacao)) return false;
+  const status = String(cotacao.status || '').trim().toLowerCase();
+  if (status === 'inativa' || status === 'excluida' || status === 'expirada') return false;
   if (cotacao.is_active === false) return false;
-  if (String(cotacao.status || '').trim().toLowerCase() === 'expirada') return false;
   if (cotacaoVencida(cotacao, agora)) return false;
   if (!cotacao.created_at) return false;
   return true;
@@ -525,7 +526,7 @@ export function cotacaoSelecionavel(cotacao: CotacaoPrazo | null | undefined, ag
 export function cotacaoContaComoAberta(cotacao: CotacaoPrazo | null | undefined, agora = new Date()): boolean {
   if (!cotacao || cotacaoConvertida(cotacao)) return false;
   const status = String(cotacao.status || '').trim().toLowerCase();
-  if (status === 'aprovada' || status === 'expirada') return false;
+  if (status === 'aprovada' || status === 'expirada' || status === 'inativa' || status === 'excluida') return false;
   if (cotacao.is_active === false) return false;
   if (cotacaoVencida(cotacao, agora)) return false;
   return true;

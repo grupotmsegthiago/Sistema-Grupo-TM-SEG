@@ -122,6 +122,18 @@ export function registerCevaPortalRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json(resultado);
   });
+  app.patch('/api/cotacoes/:id/inativar', async (req, res) => {
+    const { atenderGestaoCotacao } = await import('./cotacaoGestaoHttp.js');
+    await atenderGestaoCotacao(req, res, 'inativar');
+  });
+  app.delete('/api/cotacoes/:id', async (req, res) => {
+    const { atenderGestaoCotacao } = await import('./cotacaoGestaoHttp.js');
+    await atenderGestaoCotacao(req, res, 'excluir');
+  });
+  app.post('/api/cotacoes/:id/enviar-email', async (req, res) => {
+    const { atenderGestaoCotacao } = await import('./cotacaoGestaoHttp.js');
+    await atenderGestaoCotacao(req, res, 'email');
+  });
   app.post('/api/proposta-escolta/mapa', async (req, res) => {
     const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
     if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {

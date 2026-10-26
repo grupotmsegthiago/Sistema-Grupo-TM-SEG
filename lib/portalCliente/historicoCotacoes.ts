@@ -45,7 +45,7 @@ export type LinhaHistoricoCotacao = CotacaoPrazo & {
 };
 
 export type ValidadeCotacao = {
-  tom: 'ativa' | 'convertida' | 'expirada';
+  tom: 'ativa' | 'convertida' | 'expirada' | 'inativa';
   rotulo: string;
 };
 
@@ -131,6 +131,7 @@ export function diasRestantesCotacao(cotacao: CotacaoPrazo, agora = new Date()):
 export function rotuloValidade(cotacao: CotacaoPrazo, agora = new Date()): ValidadeCotacao {
   if (cotacaoConvertida(cotacao)) return { tom: 'convertida', rotulo: 'Convertida em OS' };
   const status = String(cotacao.status || '').trim().toLowerCase();
+  if (status === 'inativa') return { tom: 'inativa', rotulo: 'Inativa' };
   if (cotacaoVencida(cotacao, agora) || status === 'expirada' || cotacao.is_active === false) {
     return { tom: 'expirada', rotulo: 'Expirada' };
   }

@@ -1,19 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Autocomplete, GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
-import { ArrowLeftRight, ArrowRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Route, Satellite, Trash2 } from 'lucide-react';
+import { Autocomplete, GoogleMap, Marker, OverlayView, Polyline, useLoadScript } from '@react-google-maps/api';
+import { ArrowLeftRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Route, Satellite, Trash2 } from 'lucide-react';
 import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
 import { authFetch } from '../../lib/authFetch';
 import { logoConhecido, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
 import {
   destinoDirections,
   ESTILO_MAPA_COTACAO,
+  indiceNaRota,
   lerCoordenada,
   lugarComGeometria,
   lugarPreenchido,
   mensagemFalhaDirections,
   polylineCodificada,
   resumirPontos,
+  rotuloCidadeUf,
+  rotuloMarcaTransito,
   statusDaFalhaDirections,
+  textoKmMonitor,
+  textoTempoMonitor,
   TRACO_PIN,
   type Coordenada,
 } from '../../lib/portalCliente/rotaCotacao';
@@ -31,7 +36,7 @@ import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
 import { numerosDaCotacaoRegional, versaoDaLinhaTarifaria, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
-import { pedidoParaRegistro } from '../../lib/portalCliente/historicoCotacoes';
+import { nomePdfCotacao, pedidoParaRegistro } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
 
@@ -180,9 +185,24 @@ function pinDoMapa(cor: string, letra: string | null): google.maps.Symbol {
   };
 }
 
+async function geocodificarLugar(lugar: string | Coordenada): Promise<string | Coordenada> {
+  if (typeof lugar !== 'string') return lugar;
+  if (typeof google === 'undefined' || !google.maps?.Geocoder) return lugar;
+  try {
+    const resposta = await new google.maps.Geocoder().geocode({ address: lugar, componentRestrictions: { country: 'BR' } });
+    return lerCoordenada(resposta.results?.[0]?.geometry?.location) || lugar;
+  } catch {
+    return lugar;
+  }
+}
+
 function MapaCotacao(props: {
   origem: string | Coordenada;
   destino: string | Coordenada;
+  origemTexto: string;
+  destinoTexto: string;
+  km: number | null;
+  duracaoSeg: number | null;
   paradas: Array<string | Coordenada>;
   cliente: string;
   onRota: (km: number | null, segundos: number | null) => void;
@@ -192,6 +212,10 @@ function MapaCotacao(props: {
   mostrarCarreta: boolean;
   carreta: string | null;
   logo: string | null;
+  podeGerar: boolean;
+  gerando: boolean;
+  onGerar: () => void;
+  onPdf: () => void;
 }) {
   const mapa = useRef<google.maps.Map | null>(null);
   const [rota, setRota] = useState<google.maps.DirectionsResult | null>(null);
@@ -218,11 +242,17 @@ function MapaCotacao(props: {
     }
     let ativo = true;
     const espera = window.setTimeout(() => {
+      void (async () => {
+      const origemRota = await geocodificarLugar(props.origem);
+      const destinoRota = await geocodificarLugar(props.destino);
+      const vias: Array<string | Coordenada> = [];
+      for (const parada of paradas) vias.push(await geocodificarLugar(parada));
+      if (!ativo) return;
       const servico = new google.maps.DirectionsService();
       servico.route({
-        origin: props.origem,
-        destination: props.destino,
-        waypoints: paradas.map((location) => ({ location, stopover: true })),
+        origin: origemRota,
+        destination: destinoRota,
+        waypoints: vias.map((location) => ({ location, stopover: true })),
         travelMode: google.maps.TravelMode.DRIVING,
         region: 'BR',
       }).then((resultado) => {
@@ -262,6 +292,7 @@ function MapaCotacao(props: {
         props.onRota(null, null);
         props.onTrajeto(null);
       });
+      })();
     }, 400);
     return () => {
       ativo = false;
@@ -278,7 +309,7 @@ function MapaCotacao(props: {
   const carretaVisivel = Boolean(rota && props.mostrarCarreta);
 
   return (
-    <div className="relative h-[460px] overflow-hidden rounded-[28px] bg-slate-200 shadow-[0_22px_40px_rgba(15,23,42,0.18)] xl:h-[520px]">
+    <div className="relative h-[clamp(460px,52vw,640px)] w-full overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_22px_40px_rgba(15,23,42,0.18)]">
       {props.mapaErro ? (
         <p className="flex h-full items-center justify-center px-6 text-center text-sm font-bold text-slate-600">O mapa não carregou.</p>
       ) : !props.mapaPronto ? (
@@ -303,30 +334,61 @@ function MapaCotacao(props: {
             <Marker key={`parada-${indice}`} position={ponto} icon={pinDoMapa('#f59e0b', null)} />
           ))}
           {chegada && <Marker position={chegada} label={{ text: 'B', color: '#ffffff', fontSize: '12px', fontWeight: '800' }} title={nomeCurto(pernas[pernas.length - 1]?.end_address)} icon={pinDoMapa('#dc2626', 'B')} />}
+          {carretaVisivel && caminho.length > 1 && (
+            <OverlayView position={caminho[indiceNaRota(caminho.length)]} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+              <div className="pointer-events-none relative w-[210px] -translate-x-1/2 -translate-y-[78%]">
+                <span className="absolute left-1/2 top-[78%] h-16 w-16 -translate-x-1/2 rounded-full bg-sky-400/30 blur-md" />
+                <span className="absolute left-1/2 top-[82%] h-10 w-28 -translate-x-1/2 rounded-full border border-sky-200/50 bg-sky-300/15 shadow-[0_0_28px_rgba(56,189,248,0.55)]" />
+                <p className="relative z-10 mb-1 whitespace-nowrap rounded-full bg-[#0b1f3a]/90 px-3 py-1 text-[10px] font-black text-white shadow-lg ring-1 ring-sky-300/60">{rotuloMarcaTransito(props.cliente)} • Em Trânsito • {textoKmMonitor(props.km)}</p>
+                <div className="relative z-10 origin-center -rotate-6">
+                  <ClientTruckVisual cliente={props.cliente} src={props.carreta} logo={props.logo} className="h-24 w-auto max-w-none object-contain drop-shadow-[0_16px_14px_rgba(0,0,0,0.55)]" />
+                </div>
+              </div>
+            </OverlayView>
+          )}
         </GoogleMap>
       )}
-      <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(8,16,32,0.42)_100%)]" />
+      <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(8,16,32,0.5)_100%)]" />
+      <aside data-testid="painel-rota" className="absolute left-3 top-3 z-20 w-[min(320px,calc(100%-5.5rem))] rounded-3xl border border-white/20 bg-slate-950/55 p-4 text-white shadow-[0_18px_40px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-black">Informações da Rota</h3>
+          <button type="button" onClick={props.onPdf} disabled={!props.podeGerar || props.gerando} className="inline-flex h-7 items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 text-[10px] font-bold text-white disabled:opacity-40">
+            <FileText size={12} /> PDF preview
+          </button>
+        </div>
+        <div className="mt-3 grid gap-2 text-sm">
+          <p className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-[10px] font-black">A</span><span><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-300">Origem</span>{rotuloCidadeUf(props.origemTexto)}</span></p>
+          <p className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-red-600 text-[10px] font-black">B</span><span><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-300">Destino</span>{rotuloCidadeUf(props.destinoTexto)}</span></p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-300">Distância</p>
+            <p className="text-lg font-black">{textoKmMonitor(props.km)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-300">Est. Time</p>
+            <p className="text-sm font-black leading-snug">{textoTempoMonitor(props.duracaoSeg != null && props.duracaoSeg > 0 ? Math.round(props.duracaoSeg / 60) : null)}</p>
+          </div>
+        </div>
+        <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
+          <FileText size={16} /> Gerar proposta
+        </button>
+        {!props.podeGerar && <p className="mt-2 text-[11px] font-semibold text-slate-300">{props.km == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
+      </aside>
       <div className="absolute right-3 top-3 z-30 flex flex-col gap-2">
         <button type="button" onClick={() => setSatelite((atual) => !atual)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Trocar o tipo do mapa"><Satellite size={16} /></button>
         <button type="button" onClick={() => mapa.current?.setZoom((mapa.current.getZoom() || 4) + 1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Aproximar"><Plus size={16} /></button>
         <button type="button" onClick={() => mapa.current?.setZoom((mapa.current.getZoom() || 4) - 1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Afastar"><Minus size={16} /></button>
       </div>
-      {carretaVisivel && (
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex items-end justify-between gap-3">
-        <div className="rounded-[28px] bg-gradient-to-b from-white/25 to-slate-950/30 p-1 shadow-[0_22px_28px_rgba(0,0,0,0.5)] ring-1 ring-white/30">
-          <ClientTruckVisual cliente={props.cliente} src={props.carreta} logo={props.logo} className="h-40 w-auto max-w-none object-contain drop-shadow-[0_16px_14px_rgba(0,0,0,0.55)]" />
-        </div>
-        <div className="mb-2 hidden gap-2 sm:flex">
-          <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Escolta intermediada</p>
-          <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Acompanhamento da operação</p>
-          <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Atendimento 24/7</p>
-        </div>
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 hidden gap-2 sm:flex">
+        <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Escolta intermediada</p>
+        <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Acompanhamento da operação</p>
+        <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Atendimento 24/7</p>
       </div>
+      {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
+        <p className="pointer-events-none absolute bottom-2 left-3 z-10 text-[10px] font-semibold text-white/80">Ambiente de Testes / localhost</p>
       )}
-      {!lugarPreenchido(props.origem) || !lugarPreenchido(props.destino) ? (
-        <p className="pointer-events-none absolute left-4 top-4 rounded-2xl bg-white/90 px-3 py-2 text-xs font-bold text-slate-600 shadow">Escolha a origem e o destino no Google para ver o trajeto.</p>
-      ) : null}
-      {falha && <p className="absolute left-4 top-4 max-w-sm rounded-2xl bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow">{falha}</p>}
+      {falha && <p className="absolute bottom-14 left-3 z-20 max-w-sm rounded-2xl bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow">{falha}</p>}
     </div>
   );
 }
@@ -367,6 +429,7 @@ export const CotacaoPortal: React.FC<{
   const [operacoes, setOperacoes] = useState<string | null>(null);
   const [recargaHistorico, setRecargaHistorico] = useState(0);
   const [avisoHistorico, setAvisoHistorico] = useState('');
+  const [previewPdf, setPreviewPdf] = useState<PropostaPortal | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
     setEditando((atual) => (Boolean(atual[id]) === ativo ? atual : { ...atual, [id]: ativo }));
@@ -463,8 +526,8 @@ export const CotacaoPortal: React.FC<{
     return () => window.clearTimeout(espera);
   }, [etapa, passo, frases.length]);
 
-  const gerar = () => {
-    if (!tabela || kmRota == null) return;
+  const montarAtual = (): { nova: PropostaPortal; usouMinimo: boolean } | null => {
+    if (!tabela || kmRota == null) return null;
     const nova = montarProposta({
       tabelas,
       regiao,
@@ -493,10 +556,34 @@ export const CotacaoPortal: React.FC<{
       if (regional.nome) nova.regiao = regional.nome;
     }
     const usouMinimo = regional.aplicar ? Boolean(regional.conta.usouMinimo) : kmRota <= 100;
-    setProposta(nova);
+    return { nova, usouMinimo };
+  };
+
+  const gerar = () => {
+    const feito = montarAtual();
+    if (!feito) return;
+    setProposta(feito.nova);
     setPasso(0);
     setEtapa('animando');
-    void gravarNoHistorico(nova, usouMinimo);
+    void gravarNoHistorico(feito.nova, feito.usouMinimo);
+  };
+
+  const preverPdf = () => {
+    const feito = montarAtual();
+    if (!feito) return;
+    setPreviewPdf(feito.nova);
+  };
+
+  const editarCotacao = (edicao: { origem: string; destino: string; paradas: string[]; regiao?: string }) => {
+    setOrigem(edicao.origem);
+    setDestino(edicao.destino);
+    setCoordOrigem(null);
+    setCoordDestino(null);
+    setParadas(edicao.paradas.map((texto, indice) => ({ id: Date.now() + indice, texto, coordenada: null })));
+    if (edicao.regiao) setRegiao(edicao.regiao);
+    setEtapa('parada');
+    setProposta(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean) => {
@@ -547,6 +634,26 @@ export const CotacaoPortal: React.FC<{
       setAvisoHistorico(falha instanceof Error ? falha.message : 'A proposta abriu, mas o histórico não gravou.');
     }
   };
+
+  useEffect(() => {
+    if (!previewPdf) return;
+    let ativo = true;
+    const gerarPdf = async () => {
+      await new Promise((resolver) => window.setTimeout(resolver, 80));
+      const artigo = document.querySelector('[data-proposta-pdf="1"]');
+      if (!(artigo instanceof HTMLElement) || !ativo) return;
+      try {
+        const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
+        await abrirPdfDaProposta(artigo, nomePdfCotacao(clienteNome || portal.marca.rotulo, 'preview'), null);
+      } catch (falha) {
+        if (ativo) setAvisoHistorico(falha instanceof Error ? falha.message : 'Não foi possível abrir o PDF.');
+      } finally {
+        if (ativo) setPreviewPdf(null);
+      }
+    };
+    void gerarPdf();
+    return () => { ativo = false; };
+  }, [previewPdf, clienteNome, portal.marca.rotulo]);
 
   const clienteVisual = clienteNome || portal.marca.rotulo;
   const trechoCurto = origem.trim() && destino.trim() ? `${nomeCurto(origem)} → ${nomeCurto(destino)}` : 'Aguardando a rota';
@@ -690,18 +797,22 @@ export const CotacaoPortal: React.FC<{
           horaExtra={tabela?.horaExtra}
           ocultarCampos
         />
-        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} paradas={paradas.filter((item) => item.texto.trim()).map((item) => destinoDirections(item.coordenada, item.texto))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} />
-        <button
-          type="button"
-          onClick={gerar}
-          disabled={!podeGerar || etapa !== 'parada'}
-          className="flex h-14 items-center justify-center gap-3 rounded-2xl bg-[#10284f] text-sm font-black text-white shadow-[0_14px_28px_rgba(16,40,79,0.35)] motion-safe:transition hover:shadow-[0_16px_32px_rgba(56,189,248,0.28)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <FileText size={18} /> Gerar proposta <ArrowRight size={18} />
-        </button>
-        {!podeGerar && <p className="text-center text-xs font-semibold text-slate-500">{kmRota == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
-        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} />
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => destinoDirections(item.coordenada, item.texto))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} onGerar={gerar} onPdf={preverPdf} />
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} />
       </div>
+      {previewPdf && (
+        <ExperienciaProposta
+          modoCaptura
+          frase=""
+          mostrando
+          proposta={previewPdf}
+          pedido={{ regiao, origem, destino, paradas: paradas.map((item) => item.texto).filter(Boolean), km: kmRota || 0 }}
+          clienteInterno={clienteNome}
+          cena={cena}
+          operacoes={operacoes}
+          onFechar={() => setPreviewPdf(null)}
+        />
+      )}
       {etapa !== 'parada' && proposta && (
         <ExperienciaProposta
           frase={frases[Math.min(passo, frases.length - 1)] || ''}
