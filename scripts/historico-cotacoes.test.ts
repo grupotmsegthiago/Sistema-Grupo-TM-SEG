@@ -4,6 +4,8 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PRAZO_COTACAO_MS, cotacaoSelecionavel } from '../lib/precificacao/tabela2027';
 import {
+  TEXTO_ACEITE_OS,
+  exigeAceiteDoCliente,
   TEXTO_HISTORICO_VAZIO,
   formatarDataHoraCotacao,
   formatarValorCotacao,
@@ -26,6 +28,7 @@ import { AcoesDaLinha, HistoricoVazio } from '../components/ceva/HistoricoCotaco
 import { escalaDaCaptura } from '../components/ceva/abrirPdfCotacao';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
 import { cenaDaProposta } from '../components/ceva/ClientTruckVisual';
+import { AceiteClienteOs } from '../components/ceva/CotacaoPortal';
 
 const AGORA = new Date('2026-10-26T15:00:00.000Z');
 
@@ -457,5 +460,42 @@ describe('histórico de cotações do portal', () => {
     assert.match(tela, /data-proposta-mapa="1"/);
     assert.match(tela, /Mapa da rota na tela/);
     assert.match(tela, /PDF completo da proposta vai em anexo/);
+  });
+
+  it('o usuário do cliente marca o aceite antes de gerar a proposta', () => {
+    assert.equal(exigeAceiteDoCliente(false, false), true);
+    assert.equal(exigeAceiteDoCliente(true, false), false);
+    assert.equal(exigeAceiteDoCliente(false, true), false);
+    const html = renderToStaticMarkup(React.createElement(AceiteClienteOs, { marcado: false, onChange: () => undefined }));
+    assert.match(html, /Concordo com as informações acima para utilização em ordem de serviço/);
+    assert.match(html, /type="checkbox"/);
+    const registro = pedidoParaRegistro({
+      origem: 'Salvador, BA',
+      destino: 'São Paulo, SP',
+      km: 1986,
+      valor: 830,
+      horas: 3,
+      regiao: 'NORDESTE',
+      kmFranquia: 100,
+      kmExtra: 8.3,
+      horaExtra: 207.5,
+      acionamento: 830,
+      vigencia: '2027',
+      aceiteCliente: { texto: TEXTO_ACEITE_OS, em: '2026-10-26T18:00:00.000Z' },
+    }, { id: 9, name: 'CEVA' }, { name: 'Ana', email: 'ana@cliente.com' });
+    assert.equal(registro.ok, true);
+    if (!registro.ok) return;
+    const lido = lerSnapshot(JSON.stringify(registro.snapshot));
+    assert.equal(lido?.aceiteCliente?.texto, TEXTO_ACEITE_OS);
+    const semAceite = pedidoParaRegistro({
+      origem: 'Salvador, BA',
+      destino: 'São Paulo, SP',
+      km: 1986,
+      valor: 830,
+      aceiteCliente: { texto: 'outro texto', em: '2026-10-26T18:00:00.000Z' },
+    }, { id: 9, name: 'CEVA' }, { name: 'Ana', email: 'ana@cliente.com' });
+    assert.equal(semAceite.ok, true);
+    if (!semAceite.ok) return;
+    assert.equal(semAceite.snapshot.aceiteCliente, undefined);
   });
 });

@@ -45,7 +45,7 @@ import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
 import { getRegionFromLocation, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
-import { nomePdfCotacao, pedidoParaRegistro, reservarNumeroCotacao } from '../../lib/portalCliente/historicoCotacoes';
+import { exigeAceiteDoCliente, nomePdfCotacao, pedidoParaRegistro, reservarNumeroCotacao, TEXTO_ACEITE_OS } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
 
@@ -244,6 +244,15 @@ function esperarMapaParado(instancia: google.maps.Map): Promise<void> {
   });
 }
 
+export function AceiteClienteOs(props: { marcado: boolean; onChange: (marcado: boolean) => void }) {
+  return (
+    <label data-testid="aceite-cliente-os" className="mt-3 flex items-start gap-2 text-[11px] font-semibold leading-snug text-white">
+      <input type="checkbox" checked={props.marcado} onChange={(evento) => props.onChange(evento.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-sky-400" />
+      <span>Concordo com as informações acima para utilização em ordem de serviço.</span>
+    </label>
+  );
+}
+
 function MapaCotacao(props: {
   origem: string | Coordenada;
   destino: string | Coordenada;
@@ -264,6 +273,9 @@ function MapaCotacao(props: {
   logo: string | null;
   podeGerar: boolean;
   gerando: boolean;
+  exigirAceite: boolean;
+  aceite: boolean;
+  onAceite: (marcado: boolean) => void;
   onGerar: () => void;
   onPdf: () => void;
 }) {
@@ -454,10 +466,14 @@ function MapaCotacao(props: {
             <p className="text-sm font-black leading-snug">{textoTempoMonitor(props.duracaoSeg != null && props.duracaoSeg > 0 ? Math.round(props.duracaoSeg / 60) : null)}</p>
           </div>
         </div>
-        <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
+        {props.exigirAceite && (
+          <AceiteClienteOs marcado={props.aceite} onChange={props.onAceite} />
+        )}
+        <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando || (props.exigirAceite && !props.aceite)} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
           <FileText size={16} /> Gerar proposta
         </button>
         {!props.podeGerar && <p className="mt-2 text-[11px] font-semibold text-slate-300">{props.km == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
+        {props.exigirAceite && props.podeGerar && !props.aceite && <p className="mt-2 text-[11px] font-semibold text-slate-300">Marque o aceite para gerar a proposta.</p>}
       </aside>
       <div className="absolute right-3 top-3 z-30 flex flex-col gap-2">
         <button type="button" onClick={() => setSatelite((atual) => !atual)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Trocar o tipo do mapa"><Satellite size={16} /></button>
@@ -519,6 +535,7 @@ export const CotacaoPortal: React.FC<{
   const [previewPdf, setPreviewPdf] = useState<PropostaPortal | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [idCotacaoAberta, setIdCotacaoAberta] = useState<string | null>(null);
+  const [aceiteCliente, setAceiteCliente] = useState(false);
   const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
@@ -619,6 +636,11 @@ export const CotacaoPortal: React.FC<{
     origem.trim() && destino.trim() && kmRota != null && kmRota > 0
     && (tabela || getRegionFromLocation(origem, '', clienteDaRegiao).region),
   );
+  const exigirAceite = exigeAceiteDoCliente(Boolean(clienteNome), portal.ler()?.user.equipeInterna === true);
+
+  useEffect(() => {
+    setAceiteCliente(false);
+  }, [origem, destino, kmRota, paradas]);
 
   useEffect(() => {
     if (etapa !== 'animando') return;
@@ -696,6 +718,7 @@ export const CotacaoPortal: React.FC<{
   };
 
   const gerar = () => {
+    if (exigirAceite && !aceiteCliente) return;
     const feito = montarAtual();
     if (!feito) return;
     void (async () => {
@@ -761,6 +784,7 @@ export const CotacaoPortal: React.FC<{
       operacao: nova.operacao,
       usouMinimo,
       vigencia,
+      ...(exigirAceite && aceiteCliente ? { aceiteCliente: { texto: TEXTO_ACEITE_OS, em: new Date().toISOString() } } : {}),
     };
     try {
       if (clienteNome) {
@@ -960,7 +984,7 @@ export const CotacaoPortal: React.FC<{
           conta={contaAtual}
           ocultarCampos
         />
-        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} onGerar={gerar} onPdf={preverPdf} />
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onPdf={preverPdf} />
         <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} contaAtual={contaAtual} origemAtual={origem} destinoAtual={destino} kmAtual={kmRota} duracaoMinAtual={duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null} />
         {isGenerating && (
           <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">

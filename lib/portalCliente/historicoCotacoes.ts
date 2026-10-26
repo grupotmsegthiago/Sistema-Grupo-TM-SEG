@@ -33,6 +33,8 @@ export type SnapshotCotacaoPortal = {
   numero: number | null;
   /** Link de visualização. Some se o JSON for regravado sem este campo. */
   linkPublico?: { token: string; expiraEm: string } | null;
+  /** Aceite do usuário do cliente, antes de gerar a proposta. */
+  aceiteCliente?: { texto: string; em: string } | null;
 };
 
 export type LinhaHistoricoCotacao = CotacaoPrazo & {
@@ -71,7 +73,16 @@ export type PedidoRegistroCotacao = {
   usouMinimo?: unknown;
   vigencia?: unknown;
   numero?: unknown;
+  aceiteCliente?: { texto?: unknown; em?: unknown } | null;
 };
+
+/** Texto fixo do cliente antes de gerar a proposta. Vale se a cotação for usada numa OS. */
+export const TEXTO_ACEITE_OS = 'Concordo com as informações acima para utilização em ordem de serviço.';
+
+/** Equipe interna e quem cotação de dentro do sistema não marcam o aceite. */
+export function exigeAceiteDoCliente(interno: boolean, equipeInterna: boolean): boolean {
+  return !interno && !equipeInterna;
+}
 
 function numero(valor: unknown): number {
   const n = Number(valor);
@@ -452,6 +463,10 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
     const linkPublico = link && typeof link.token === 'string' && typeof link.expiraEm === 'string'
       ? { token: link.token, expiraEm: link.expiraEm }
       : null;
+    const aceiteBruto = dados.aceiteCliente;
+    const aceiteCliente = aceiteBruto && aceiteBruto.texto === TEXTO_ACEITE_OS && typeof aceiteBruto.em === 'string'
+      ? { texto: TEXTO_ACEITE_OS, em: aceiteBruto.em }
+      : null;
     return {
       ...montarSnapshot({
       duracaoMin: dados.duracaoMin,
@@ -470,6 +485,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       numero: numeroInformado(dados.numero),
     }),
       ...(linkPublico ? { linkPublico } : {}),
+      ...(aceiteCliente ? { aceiteCliente } : {}),
     };
   } catch {
     return null;
@@ -545,6 +561,10 @@ export function pedidoParaRegistro(
     vigencia: vigenciaInformada(pedido.vigencia) || '2026',
     numero: numeroInformado(pedido.numero),
   });
+  const aceite = pedido.aceiteCliente;
+  if (aceite && aceite.texto === TEXTO_ACEITE_OS && typeof aceite.em === 'string' && aceite.em.trim()) {
+    snapshot.aceiteCliente = { texto: TEXTO_ACEITE_OS, em: aceite.em.trim().slice(0, 40) };
+  }
   return {
     ok: true,
     snapshot,

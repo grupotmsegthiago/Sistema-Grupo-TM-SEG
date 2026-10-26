@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. Antes de gerar a proposta, o usuário do cliente marca o aceite para uso em ordem de serviço. A equipe interna não marca. O texto fica no snapshot da cotação. O motor da OS não mudou.
+
 Executado em 26/10/2026. O link público da proposta monta a mesma cena do PDF: mapa estático da rota e a carreta do cliente. O histórico, ao gerar PDF ou e-mail, usa essa mesma cena.
 
 Executado em 26/10/2026. O histórico da mesma rota passa a mostrar a faixa, a tarifa e o total do card. A gravação nova e a linha antiga dessa rota deixam de usar a tabela genérica SUDESTE. O motor da OS não mudou.
