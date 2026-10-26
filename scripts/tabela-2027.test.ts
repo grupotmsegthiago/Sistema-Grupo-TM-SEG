@@ -245,7 +245,8 @@ describe('validade da cotação', () => {
     assert.equal(filtros[0].ativa, true);
     assert.equal((filtros[0].valores as { status: string }).status, 'expirada');
     assert.equal((filtros[0].valores as { is_active: boolean }).is_active, false);
-    assert.ok(agora.getTime() - new Date(String(filtros[0].limite)).getTime() >= 30 * 24 * 60 * 60 * 1000 - 2000);
+    const decorrido = Date.now() - new Date(String(filtros[0].limite)).getTime();
+    assert.ok(Math.abs(decorrido - 30 * 24 * 60 * 60 * 1000) < 2000);
   });
 
   it('cotação vinculada a OS permanece convertida', async () => {

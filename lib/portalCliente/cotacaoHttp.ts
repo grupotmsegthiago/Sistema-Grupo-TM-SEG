@@ -2,12 +2,15 @@ import { colunaRegionalAusente } from '../precificacao/tabela2027.js';
 import { cartaDaProposta, marcoDeOperacoes } from './apresentacao.js';
 import { montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
 import {
+  JANELA_HISTORICO_VIGENCIA,
   TAMANHO_PAGINA_HISTORICO,
   normalizarLinhaHistorico,
   pedidoParaRegistro,
+  vigenciaDaCotacao,
   type LinhaHistoricoCotacao,
   type PedidoRegistroCotacao,
 } from './historicoCotacoes.js';
+import type { VersaoTabelaRegional } from '../precificacao/tabela2027.js';
 
 type ClientePortal = { name?: string | null; trading_name?: string | null } | null;
 
@@ -106,24 +109,37 @@ export async function listarHistoricoCotacoes(
   sb: { from: (tabela: string) => any },
   cliente: { id?: unknown; name?: string | null } | null,
   pagina = 0,
+  vigencia?: VersaoTabelaRegional | null,
 ): Promise<{ status: number; corpo: { cotacoes: LinhaHistoricoCotacao[]; temMais: boolean; aviso?: string } | { error: string } }> {
   const idCliente = Number(cliente?.id);
   if (!Number.isFinite(idCliente) || idCliente <= 0) return { status: 503, corpo: { error: 'Cliente do portal não encontrado.' } };
   const inicio = Math.max(0, Math.floor(Number(pagina) || 0)) * TAMANHO_PAGINA_HISTORICO;
+  const faixa = vigencia === '2026' || vigencia === '2027'
+    ? { de: 0, ate: JANELA_HISTORICO_VIGENCIA - 1 }
+    : { de: inicio, ate: inicio + TAMANHO_PAGINA_HISTORICO - 1 };
   const { data, error } = await sb
     .from('quotes')
     .select(COLUNAS_HISTORICO)
     .eq('client_id', idCliente)
     .order('created_at', { ascending: false })
-    .range(inicio, inicio + TAMANHO_PAGINA_HISTORICO - 1);
+    .range(faixa.de, faixa.ate);
   if (error) {
     if (colunaRegionalAusente(error)) {
       return { status: 200, corpo: { cotacoes: [], temMais: false, aviso: 'O histórico de cotações ainda não está disponível neste banco.' } };
     }
     return { status: 500, corpo: { error: 'Não foi possível ler o histórico de cotações.' } };
   }
-  const linhas = ((data || []) as Record<string, unknown>[]).map((row) => normalizarLinhaHistorico(row));
-  return { status: 200, corpo: { cotacoes: linhas, temMais: linhas.length === TAMANHO_PAGINA_HISTORICO } };
+  const lidas = ((data || []) as Record<string, unknown>[]).map((row) => normalizarLinhaHistorico(row));
+  const linhas = vigencia === '2026' || vigencia === '2027'
+    ? lidas.filter((linha) => vigenciaDaCotacao(linha) === vigencia)
+    : lidas;
+  const paginaLinhas = vigencia === '2026' || vigencia === '2027'
+    ? linhas.slice(inicio, inicio + TAMANHO_PAGINA_HISTORICO)
+    : linhas;
+  const temMais = vigencia === '2026' || vigencia === '2027'
+    ? linhas.length > inicio + TAMANHO_PAGINA_HISTORICO
+    : linhas.length === TAMANHO_PAGINA_HISTORICO;
+  return { status: 200, corpo: { cotacoes: paginaLinhas, temMais } };
 }
 
 export async function registrarCotacaoPortal(

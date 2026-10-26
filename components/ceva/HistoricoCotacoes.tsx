@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FileDown, Loader2, Plus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { cotacaoSelecionavel } from '../../lib/precificacao/tabela2027';
+import { cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import {
   TEXTO_HISTORICO_VAZIO,
   TAMANHO_PAGINA_HISTORICO,
+  JANELA_HISTORICO_VIGENCIA,
   dataLongaCotacao,
   formatarDataHoraCotacao,
   formatarValorCotacao,
@@ -16,17 +17,19 @@ import {
   rotuloValidade,
   textoDistanciaTempo,
   textoRegiaoFranquia,
+  vigenciaDaCotacao,
   type LinhaHistoricoCotacao,
 } from '../../lib/portalCliente/historicoCotacoes';
+import { SeletorVigencia } from '../precificacao/SeletorVigencia';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
 
 const COLUNAS = 'id, client_id, client_name, origin, destination, total_km, total_hours, total_value, created_at, created_by, status, is_active, converted_to_order_id, contract_details';
 
-export function HistoricoVazio() {
+export function HistoricoVazio({ texto = TEXTO_HISTORICO_VAZIO }: { texto?: string }) {
   return (
     <p data-testid="historico-vazio" className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-      {TEXTO_HISTORICO_VAZIO}
+      {texto}
     </p>
   );
 }
@@ -45,8 +48,12 @@ export const HistoricoCotacoes: React.FC<{
   clientId?: string | number | null;
   recarga: number;
   aviso?: string;
-}> = ({ clienteNome, clientId, recarga, aviso }) => {
+  versao?: VersaoTabelaRegional;
+  onVersao?: (versao: VersaoTabelaRegional) => void;
+}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao }) => {
   const portal = usePortalCliente();
+  const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
+  const versaoAtiva = versao ?? versaoLocal;
   const [linhas, setLinhas] = useState<LinhaHistoricoCotacao[]>([]);
   const [pagina, setPagina] = useState(0);
   const [temMais, setTemMais] = useState(false);
@@ -55,15 +62,31 @@ export const HistoricoCotacoes: React.FC<{
   const [erroPdf, setErroPdf] = useState('');
   const [captura, setCaptura] = useState<LinhaHistoricoCotacao | null>(null);
   const janelaPdf = useRef<Window | null>(null);
+  const versaoVista = useRef(versaoAtiva);
+
+  const trocarVersao = (proxima: VersaoTabelaRegional) => {
+    setLinhas([]);
+    setPagina(0);
+    if (onVersao) onVersao(proxima);
+    else setVersaoLocal(proxima);
+  };
+
+  useEffect(() => {
+    if (versaoVista.current === versaoAtiva) return;
+    versaoVista.current = versaoAtiva;
+    setLinhas([]);
+    setPagina(0);
+  }, [versaoAtiva]);
 
   useEffect(() => {
     let ativo = true;
+    setLinhas([]);
     setCarregando(true);
     setErro('');
     const ler = async () => {
       try {
         if (!clienteNome) {
-          const resposta = await fetch(portal.url(`/cotacao?lista=historico&pagina=${pagina}`), { headers: portal.cabecalhos() });
+          const resposta = await fetch(portal.url(`/cotacao?lista=historico&pagina=${pagina}&vigencia=${versaoAtiva}`), { headers: portal.cabecalhos() });
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível ler o histórico.');
           if (!ativo) return;
@@ -82,12 +105,14 @@ export const HistoricoCotacoes: React.FC<{
         const filtrada = Number.isFinite(idCliente) && idCliente > 0
           ? base.eq('client_id', idCliente)
           : base.eq('client_name', clienteNome);
-        const { data, error } = await filtrada.order('created_at', { ascending: false }).range(inicio, inicio + TAMANHO_PAGINA_HISTORICO - 1);
+        const { data, error } = await filtrada.order('created_at', { ascending: false }).range(0, JANELA_HISTORICO_VIGENCIA - 1);
         if (error) throw new Error(error.message || 'Não foi possível ler o histórico.');
         if (!ativo) return;
-        const lista = ((data || []) as Record<string, unknown>[]).map((item) => normalizarLinhaHistorico(item));
-        setLinhas(lista);
-        setTemMais(lista.length === TAMANHO_PAGINA_HISTORICO);
+        const daVigencia = ((data || []) as Record<string, unknown>[])
+          .map((item) => normalizarLinhaHistorico(item))
+          .filter((item) => vigenciaDaCotacao(item) === versaoAtiva);
+        setLinhas(daVigencia.slice(inicio, inicio + TAMANHO_PAGINA_HISTORICO));
+        setTemMais(daVigencia.length > inicio + TAMANHO_PAGINA_HISTORICO);
       } catch (falha) {
         if (!ativo) return;
         setLinhas([]);
@@ -99,7 +124,7 @@ export const HistoricoCotacoes: React.FC<{
     };
     void ler();
     return () => { ativo = false; };
-  }, [clienteNome, clientId, pagina, portal, recarga]);
+  }, [clienteNome, clientId, pagina, portal, recarga, versaoAtiva]);
 
   useEffect(() => {
     if (!captura) return;
@@ -144,16 +169,21 @@ export const HistoricoCotacoes: React.FC<{
 
   return (
     <section data-testid="historico-cotacoes" className="rounded-[28px] border border-white/80 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Cotações</p>
-      <h2 className="mt-1 text-lg font-black text-slate-900">Histórico de Cotações Recentes</h2>
-      <p className="mt-1 text-xs text-slate-500">As 10 mais recentes deste cliente. A validade é de 30 dias.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Cotações</p>
+          <h2 className="mt-1 text-lg font-black text-slate-900">Histórico de Cotações Recentes</h2>
+        </div>
+        <SeletorVigencia versao={versaoAtiva} onChange={trocarVersao} testId="seletor-vigencia-historico" />
+      </div>
+      <p className="mt-1 text-xs text-slate-500">As 10 mais recentes da Tabela {versaoAtiva}. A validade é de 30 dias.</p>
       {(aviso || erro || erroPdf) && (
         <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{erroPdf || aviso || erro}</p>
       )}
       {carregando && (
         <p className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500"><Loader2 className="animate-spin" size={16} /> Lendo cotações…</p>
       )}
-      {!carregando && linhas.length === 0 && <div className="mt-4"><HistoricoVazio /></div>}
+      {!carregando && linhas.length === 0 && <div className="mt-4"><HistoricoVazio texto={`Nenhuma cotação da Tabela ${versaoAtiva} deste cliente.`} /></div>}
       {!carregando && linhas.length > 0 && (
         <div className="mt-4 max-h-[420px] overflow-auto rounded-2xl border border-slate-100">
           <table className="min-w-[980px] w-full text-left text-xs text-slate-700">

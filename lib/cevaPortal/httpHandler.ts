@@ -1618,7 +1618,13 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         const { listarTabelasCotacao, listarHistoricoCotacoes } = await import('../portalCliente/cotacaoHttp.js');
         if (String(req.query?.lista || '') === 'historico') {
           const pagina = Number(req.query?.pagina);
-          const historico = await listarHistoricoCotacoes(sb, cliente, Number.isFinite(pagina) ? pagina : 0);
+          const vigencia = String(req.query?.vigencia || '');
+          const historico = await listarHistoricoCotacoes(
+            sb,
+            cliente,
+            Number.isFinite(pagina) ? pagina : 0,
+            vigencia === '2026' || vigencia === '2027' ? vigencia : null,
+          );
           res.status(historico.status).json(historico.corpo);
           return;
         }

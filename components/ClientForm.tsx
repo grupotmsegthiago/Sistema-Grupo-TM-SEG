@@ -38,10 +38,13 @@ import {
   FAIXAS_REGIONAIS,
   montarAplicacaoTabela,
   patchEdicaoRegional,
+  filtrarPorVigencia,
   perfilPodeAplicarTabelaRegional,
+  versaoDaLinhaTarifaria,
   type VersaoTabelaRegional,
 } from '../lib/precificacao/tabela2027';
 import QuoteCalculatorCard from './precificacao/QuoteCalculatorCard';
+import { SeletorVigencia } from './precificacao/SeletorVigencia';
 import ImagemSegura from './ImagemSegura';
 
 interface ClientFormProps {
@@ -1188,9 +1191,21 @@ const ClientForm: React.FC<ClientFormProps> = ({
       } finally { setIsBulkDeleting(false); }
   };
 
+  const tabelasDaVigencia = useMemo(
+      () => filtrarPorVigencia(priceTables, tabelaVigencia, (tabela) => versaoDaLinhaTarifaria(tabela.operation_type)),
+      [priceTables, tabelaVigencia],
+  );
+  useEffect(() => {
+      const visiveis = new Set(tabelasDaVigencia.map((tabela) => tabela.id));
+      setSelectedPriceIds((atual) => {
+          const proximo = atual.filter((id) => visiveis.has(id));
+          return proximo.length === atual.length ? atual : proximo;
+      });
+  }, [tabelasDaVigencia]);
+
   const handleSelectAllPrices = () => {
-      if (selectedPriceIds.length === priceTables.length && priceTables.length > 0) setSelectedPriceIds([]);
-      else setSelectedPriceIds(priceTables.map(t => t.id));
+      if (selectedPriceIds.length === tabelasDaVigencia.length && tabelasDaVigencia.length > 0) setSelectedPriceIds([]);
+      else setSelectedPriceIds(tabelasDaVigencia.map(t => t.id));
   };
 
   const handleSelectPriceRow = (id: string) => {
@@ -1219,8 +1234,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
             clientName={formData.trading_name || formData.name} 
             priceTables={
               selectedPriceIds.length > 0
-                ? priceTables.filter((t) => selectedPriceIds.includes(t.id))
-                : priceTables
+                ? tabelasDaVigencia.filter((t) => selectedPriceIds.includes(t.id))
+                : tabelasDaVigencia
             }
             contactName={formData.contact} 
             email={formData.email} 
@@ -2051,7 +2066,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
               <QuoteCalculatorCard
                   cliente={formData.name}
                   versao={tabelaVigencia}
-                  linhas={priceTables}
+                  linhas={tabelasDaVigencia}
                   origem={cotacaoOrigem}
                   destino={cotacaoDestino}
                   km={cotacaoKm}
@@ -2109,8 +2124,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 {priceSearch && (
                     <button onClick={() => setPriceSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-price-search">Limpar</button>
                 )}
+                <SeletorVigencia versao={tabelaVigencia} onChange={setTabelaVigencia} testId="seletor-vigencia-precos" />
                 <span className="text-[10px] font-bold text-gray-400 uppercase">
-                    {priceSearch ? `${priceTables.filter(t => (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length} / ${priceTables.length}` : `${priceTables.length} itens`}
+                    {priceSearch ? `${tabelasDaVigencia.filter(t => (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length} / ${tabelasDaVigencia.length}` : `${tabelasDaVigencia.length} itens`}
                 </span>
               </div>
 
@@ -2118,7 +2134,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 <table className="w-full text-left border-collapse table-auto">
                     <thead className="bg-gray-100 text-gray-600 font-bold uppercase">
                         <tr className="text-[10px]">
-                            <th className="pl-4 py-3 w-8"><button onClick={handleSelectAllPrices} className="flex items-center text-gray-400">{selectedPriceIds.length === priceTables.length && priceTables.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></th>
+                            <th className="pl-4 py-3 w-8"><button onClick={handleSelectAllPrices} className="flex items-center text-gray-400">{selectedPriceIds.length === tabelasDaVigencia.length && tabelasDaVigencia.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></th>
                             <th className="p-2">Operação / Rota</th>
                             <th className="p-2 text-right">Acionamento</th>
                             <th className="p-2 text-center">Franquia</th>
@@ -2129,10 +2145,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {priceTables.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length === 0 && priceSearch && (
-                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs">Nenhuma tabela encontrada para "{priceSearch}"</td></tr>
+                        {tabelasDaVigencia.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length === 0 && (
+                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs" data-testid="precos-vigencia-vazia">{priceSearch ? `Nenhuma tabela encontrada para "${priceSearch}"` : `Nenhuma linha da Tabela ${tabelaVigencia}.`}</td></tr>
                         )}
-                        {priceTables.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).map((table) => (
+                        {tabelasDaVigencia.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).map((table) => (
                             <tr key={table.id} className={`text-[11px] transition-all ${selectedPriceIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/30'}`}>
                                 <td className="pl-4 py-2"><button onClick={() => handleSelectPriceRow(table.id)}>{selectedPriceIds.includes(table.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></td>
                                 <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>{table.operation_type}</td>
@@ -2310,7 +2326,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           />
       )}
       {activeTab === 'routes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientRouteList onAdd={onAddRoute} onEdit={onEditRoute} clientName={formData.name} embedded={true} /></div>}
-      {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} clientId={id} embedded={true} /></div>}
+      {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} clientId={id} embedded={true} versao={tabelaVigencia} onVersao={setTabelaVigencia} /></div>}
     </div>
   );
 };

@@ -5,11 +5,13 @@ import {
   cotacaoConvertida,
   cotacaoVencida,
   type CotacaoPrazo,
+  type VersaoTabelaRegional,
 } from '../precificacao/tabela2027';
 import type { PropostaPortal } from './cotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
 export const TAMANHO_PAGINA_HISTORICO = 10;
+export const JANELA_HISTORICO_VIGENCIA = 100;
 export const KIND_PORTAL_COTACAO = 'PORTAL_COTACAO';
 
 export type SnapshotCotacaoPortal = {
@@ -26,6 +28,7 @@ export type SnapshotCotacaoPortal = {
   solicitanteEmail: string;
   acordada: boolean;
   operacao: string;
+  vigencia: VersaoTabelaRegional;
 };
 
 export type LinhaHistoricoCotacao = CotacaoPrazo & {
@@ -62,6 +65,7 @@ export type PedidoRegistroCotacao = {
   acordada?: unknown;
   operacao?: unknown;
   usouMinimo?: unknown;
+  vigencia?: unknown;
 };
 
 function numero(valor: unknown): number {
@@ -149,6 +153,24 @@ export function textoRegiaoFranquia(regiao: string, usouMinimo: boolean): string
   return usouMinimo ? `${nome} · franquia mínima` : nome;
 }
 
+export function vigenciaInformada(valor: unknown): VersaoTabelaRegional | null {
+  const marca = String(valor || '').trim();
+  if (marca === '2026' || marca === '2027') return marca;
+  return null;
+}
+
+/** Cotação sem marca foi feita antes da Tabela 2027 e permanece na vigência 2026. */
+export function vigenciaDaCotacao(cotacao: { contract_details?: string | null } | null | undefined): VersaoTabelaRegional {
+  const bruto = cotacao?.contract_details;
+  if (!bruto) return '2026';
+  try {
+    const dados = JSON.parse(bruto) as { vigencia?: unknown; pricing_version?: unknown };
+    return vigenciaInformada(dados?.vigencia) || vigenciaInformada(dados?.pricing_version) || '2026';
+  } catch {
+    return '2026';
+  }
+}
+
 export function formatarValorCotacao(valor: number): string {
   return numero(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -166,6 +188,7 @@ export function montarSnapshot(entrada: {
   solicitanteEmail?: string;
   acordada?: boolean;
   operacao?: string;
+  vigencia?: VersaoTabelaRegional | null;
 }): SnapshotCotacaoPortal {
   return {
     kind: KIND_PORTAL_COTACAO,
@@ -181,6 +204,7 @@ export function montarSnapshot(entrada: {
     solicitanteEmail: texto(entrada.solicitanteEmail, 160),
     acordada: Boolean(entrada.acordada),
     operacao: texto(entrada.operacao, 180),
+    vigencia: entrada.vigencia === '2027' ? '2027' : '2026',
   };
 }
 
@@ -202,6 +226,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       solicitanteEmail: dados.solicitanteEmail,
       acordada: dados.acordada,
       operacao: dados.operacao,
+      vigencia: vigenciaInformada(dados.vigencia),
     });
   } catch {
     return null;
@@ -267,6 +292,7 @@ export function pedidoParaRegistro(
     solicitanteEmail: texto(solicitante.email, 160),
     acordada: Boolean(pedido.acordada),
     operacao: texto(pedido.operacao, 180),
+    vigencia: vigenciaInformada(pedido.vigencia) || '2026',
   });
   return {
     ok: true,
