@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Tarifa do cliente na cotação do portal (26/10/2026)
+
+Ainda não publicado. A linha `TABELA 2027 - NORDESTE` deixava de ser Nordeste e o card usava a moda das rotas antigas, R$ 10,00/km e R$ 250,00/h. A vigência escolhida agora prefere a linha padrão do cliente. Na CEVA, o Nordeste fica em R$ 830,00, R$ 8,30/km e R$ 207,50/h. Sem essa linha, a faixa de `tabela2027.ts` entra. Sem migration e sem alteração em `calculateMissionFinancials`.
+
 ## Ações do histórico e painel do mapa (26/10/2026)
 
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou no localhost as colunas, o menu e o painel do mapa. Baseline `882cd3c1`. O histórico passa a mostrar o km e a hora extra gravados na cotação. O menu inativa na hora, pede confirmação para excluir, devolve origem, destino e paradas ao formulário e envia o PDF pelo SMTP que já existe. Não há coluna deleted_at e a migration não foi criada. Administrador, diretoria e o autor inativam e excluem; o servidor grava system_logs. O mapa usa o painel Informações da Rota com a cidade, a distância e o tempo da rota calculada, e o caminhão 3D fica sobre o traçado. O PDF preview não insere cotação. Sem função nova na Vercel e sem alteração em calculateMissionFinancials. Rollback: reverter este commit.

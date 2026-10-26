@@ -25,10 +25,11 @@ import {
 import {
   REGIOES_COTACAO,
   montarProposta,
+  primeiraRegiaoComTarifa,
   regiaoAcompanhaOrigem,
   tabelaDeLinha,
+  tarifaDaRegiao,
   textoCardRegiao,
-  valoresDaRegiao,
   type PropostaPortal,
   type TabelaCotacao,
 } from '../../lib/portalCliente/cotacao';
@@ -449,7 +450,7 @@ export const CotacaoPortal: React.FC<{
             .map((linha) => tabelaDeLinha(linha))
             .filter((linha): linha is TabelaCotacao => linha != null);
           setTabelas(lista);
-          const primeira = REGIOES_COTACAO.find((item) => valoresDaRegiao(lista.filter((tabela) => tabela.regiao === item))) || '';
+          const primeira = primeiraRegiaoComTarifa(lista, versaoAtiva);
           setRegiao((atual) => atual || primeira);
         })
         .then(() => {
@@ -479,7 +480,7 @@ export const CotacaoPortal: React.FC<{
       .then((lista) => {
         if (!ativo) return;
         setTabelas(lista);
-        const primeira = REGIOES_COTACAO.find((item) => valoresDaRegiao(lista.filter((tabela) => tabela.regiao === item))) || '';
+        const primeira = primeiraRegiaoComTarifa(lista, versaoAtiva);
         setRegiao((atual) => atual || primeira);
       })
       .catch((falha: unknown) => {
@@ -506,12 +507,12 @@ export const CotacaoPortal: React.FC<{
     [tabelas, versaoAtiva],
   );
   const regioes = useMemo(
-    () => REGIOES_COTACAO.filter((item) => valoresDaRegiao(tabelas.filter((tabela) => tabela.regiao === item))),
-    [tabelas],
+    () => (carregando ? [] : REGIOES_COTACAO.filter((item) => tarifaDaRegiao(tabelas, item, versaoAtiva))),
+    [carregando, tabelas, versaoAtiva],
   );
   const tabela = useMemo(
-    () => valoresDaRegiao(tabelas.filter((item) => item.regiao === regiao)),
-    [tabelas, regiao],
+    () => (carregando ? null : tarifaDaRegiao(tabelas, regiao, versaoAtiva, origem, clienteDaRegiao)),
+    [carregando, tabelas, regiao, versaoAtiva, origem, clienteDaRegiao],
   );
   const frases = proposta?.acordada ? FRASES_ACORDADA : FRASES_NOVA;
   const podeGerar = Boolean(tabela && origem.trim() && destino.trim() && kmRota != null && kmRota > 0);

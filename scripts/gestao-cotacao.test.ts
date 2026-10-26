@@ -116,6 +116,27 @@ describe('gestão da cotação', () => {
     }));
     assert.match(html, /Tarifa:/);
     assert.match(html, /8,30/);
+    const ceva = renderToStaticMarkup(React.createElement(QuoteCalculatorCard, {
+      cliente: 'CEVA LOGISTICS LTDA',
+      versao: '2027',
+      origem: 'Salvador, BA',
+      destino: 'Recife, PE',
+      km: '80',
+      onOrigem: () => undefined,
+      onDestino: () => undefined,
+      onKm: () => undefined,
+      ocultarCampos: true,
+      tarifaKm: 10,
+      horaExtra: 250,
+      linhas: [
+        { operation_type: 'NORDESTE - ESTADO DE BA', price_per_extra_km: 10, price_per_extra_hour: 250 },
+        { operation_type: 'TABELA 2027 - NORDESTE', price_per_extra_km: 8.3, price_per_extra_hour: 207.5 },
+      ],
+    }));
+    assert.match(ceva, /8,30/);
+    assert.match(ceva, /207,50/);
+    assert.match(ceva, /830,00/);
+    assert.doesNotMatch(ceva, /1\.000,00|250,00/);
   });
 
   it('preenche o painel do mapa com a rota da tela e não cria função nova', () => {

@@ -1,6 +1,18 @@
 /** Cotação do portal. Não entra em OS, NF, Asaas nem no motor de faturamento. */
 
-import { getRegionFromLocation, type RegiaoTabela } from '../precificacao/tabela2027';
+import {
+  ehLinhaPadraoRegional,
+  FAIXAS_REGIONAIS,
+  FRANQUIA_HORAS,
+  FRANQUIA_KM,
+  getRegionFromLocation,
+  nomeLinhaPadrao,
+  roundMoney,
+  valorKmDaFaixa,
+  versaoDaLinhaTarifaria,
+  type RegiaoTabela,
+  type VersaoTabelaRegional,
+} from '../precificacao/tabela2027';
 
 export const KM_MINIMO_COTACAO = 100;
 export const HORAS_MINIMAS_COTACAO = 3;
@@ -70,12 +82,76 @@ export type ResultadoCotacao = {
 
 export function regiaoDaOperacao(operacao: string): string {
   const nome = operacao.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  if (nome.startsWith('CENTRO-OESTE') || nome.startsWith('CENTRO OESTE')) return 'CENTRO-OESTE';
-  if (nome.startsWith('NORDESTE')) return 'NORDESTE';
-  if (nome.startsWith('SUDESTE')) return 'SUDESTE';
-  if (nome.startsWith('NORTE')) return 'NORTE';
-  if (nome.startsWith('SUL')) return 'SUL';
+  const padrao = nome.match(/^TABELA 20(?:26|27)\s*-\s*(.+)$/);
+  const alvo = (padrao?.[1] || nome).trim();
+  if (alvo.startsWith('CENTRO-OESTE') || alvo.startsWith('CENTRO OESTE')) return 'CENTRO-OESTE';
+  if (alvo.startsWith('NORDESTE')) return 'NORDESTE';
+  if (alvo.startsWith('SUDESTE')) return 'SUDESTE';
+  if (alvo.startsWith('NORTE')) return 'NORTE';
+  if (alvo.startsWith('SUL')) return 'SUL';
   return 'OUTRAS';
+}
+
+function faixaDaOrigem(origem: string, cliente: string) {
+  const local = getRegionFromLocation(origem, '', cliente);
+  if (!local.region) return null;
+  return FAIXAS_REGIONAIS.find((faixa) => faixa.region === local.region) || null;
+}
+
+/** Linha TABELA 20xx do cliente nessa região. Rota antiga de cidade não substitui a vigência. */
+export function linhaDoClienteNaRegiao(
+  lista: TabelaCotacao[],
+  regiaoBotao: string,
+  versao: VersaoTabelaRegional,
+  origem = '',
+  cliente = '',
+): TabelaCotacao | null {
+  const daVersao = lista.filter((item) => versaoDaLinhaTarifaria(item.operacao) === versao && regiaoDaOperacao(item.operacao) === regiaoBotao);
+  const padrao = daVersao.filter((item) => ehLinhaPadraoRegional(item.operacao));
+  const pool = padrao.length
+    ? padrao
+    : daVersao.filter((item) => item.franquiaKm === KM_MINIMO_COTACAO && item.franquiaHoras === HORAS_MINIMAS_COTACAO && !/AUTO_MASTER/i.test(item.operacao));
+  if (!pool.length) return null;
+  const faixa = faixaDaOrigem(origem, cliente);
+  if (faixa && botaoDaRegiaoTabela(faixa.region) === regiaoBotao) {
+    const nome = nomeLinhaPadrao(versao, faixa);
+    const exata = pool.find((item) => item.operacao.trim().toUpperCase() === nome);
+    if (exata) return exata;
+  }
+  return [...pool].sort((a, b) => a.operacao.localeCompare(b.operacao, 'pt-BR'))[0];
+}
+
+/** Sem a linha do cliente, a faixa de tabela2027 cobre só essa região. */
+export function tarifaDaRegiao(
+  lista: TabelaCotacao[],
+  regiaoBotao: string,
+  versao: VersaoTabelaRegional,
+  origem = '',
+  cliente = '',
+): TabelaCotacao | null {
+  const doCliente = linhaDoClienteNaRegiao(lista, regiaoBotao, versao, origem, cliente);
+  if (doCliente) return doCliente;
+  const faixas = FAIXAS_REGIONAIS.filter((faixa) => botaoDaRegiaoTabela(faixa.region) === regiaoBotao);
+  if (!faixas.length) return null;
+  const daOrigem = faixaDaOrigem(origem, cliente);
+  const faixa = daOrigem && faixas.some((item) => item.region === daOrigem.region) ? daOrigem : faixas[0];
+  const km = valorKmDaFaixa(faixa, versao);
+  return {
+    id: nomeLinhaPadrao(versao, faixa),
+    operacao: nomeLinhaPadrao(versao, faixa),
+    regiao: regiaoBotao,
+    acionamento: roundMoney(FRANQUIA_KM * km),
+    franquiaHoras: FRANQUIA_HORAS,
+    franquiaKm: FRANQUIA_KM,
+    kmExtra: km,
+    horaExtra: faixa.hora2026,
+  };
+}
+
+export function primeiraRegiaoComTarifa(lista: TabelaCotacao[], versao: VersaoTabelaRegional): string {
+  return REGIOES_COTACAO.find((item) => linhaDoClienteNaRegiao(lista, item, versao))
+    || REGIOES_COTACAO.find((item) => tarifaDaRegiao(lista, item, versao))
+    || '';
 }
 
 function numero(valor: unknown): number {

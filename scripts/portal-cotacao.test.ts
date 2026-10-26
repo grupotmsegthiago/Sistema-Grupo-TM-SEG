@@ -19,8 +19,10 @@ import {
 import {
   calcularCotacaoPortal,
   horasDaRota,
+  linhaDoClienteNaRegiao,
   regiaoDaOperacao,
   tabelaPadraoDaRegiao,
+  tarifaDaRegiao,
   cidadeDaRota,
   montarProposta,
   mesmaRota,
@@ -140,6 +142,26 @@ test('NORTE não absorve NORDESTE', () => {
   assert.equal(regiaoDaOperacao('NORDESTE - ESTADO DE PE'), 'NORDESTE');
   assert.equal(regiaoDaOperacao('NORTE - ESTADO DO PA'), 'NORTE');
   assert.equal(regiaoDaOperacao('CENTRO-OESTE - ESTADO DE DF'), 'CENTRO-OESTE');
+  assert.equal(regiaoDaOperacao('TABELA 2027 - NORDESTE'), 'NORDESTE');
+  assert.equal(regiaoDaOperacao('TABELA 2027 - SUDESTE SP/RJ'), 'SUDESTE');
+  assert.equal(regiaoDaOperacao('TABELA 2027 - NORTE'), 'NORTE');
+});
+
+test('a cotação da CEVA usa a linha 2027 do cliente e não a tarifa antiga', () => {
+  const lista = [
+    { id: 'antiga', operacao: 'NORDESTE - ESTADO DE BA', regiao: 'NORDESTE', acionamento: 1000, franquiaHoras: 3, franquiaKm: 100, kmExtra: 10, horaExtra: 250 },
+    { id: 'ceva', operacao: 'TABELA 2027 - NORDESTE', regiao: 'NORDESTE', acionamento: 830, franquiaHoras: 3, franquiaKm: 100, kmExtra: 8.3, horaExtra: 207.5 },
+  ];
+  const linha = linhaDoClienteNaRegiao(lista, 'NORDESTE', '2027');
+  assert.equal(linha?.id, 'ceva');
+  assert.equal(linha?.acionamento, 830);
+  assert.equal(linha?.kmExtra, 8.3);
+  assert.equal(linha?.horaExtra, 207.5);
+  const semLinha = tarifaDaRegiao([lista[0]], 'NORDESTE', '2027');
+  assert.equal(semLinha?.operacao, 'TABELA 2027 - NORDESTE');
+  assert.equal(semLinha?.kmExtra, 8.3);
+  assert.equal(semLinha?.acionamento, 830);
+  assert.equal(semLinha?.horaExtra, 169);
 });
 
 test('rota já cadastrada devolve a tabela acordada', () => {
