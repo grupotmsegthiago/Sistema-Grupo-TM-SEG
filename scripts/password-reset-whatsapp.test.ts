@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { mensagemNovaSenhaWhatsapp, normalizarTelefoneWhatsapp } from '../lib/cevaPortal/regrasAcesso';
 import { aplicarSenhaNoPortal, lerAcessoPortal } from '../lib/cevaPortal/cadastroSistema';
 import { hashSenha, senhaConfere } from '../lib/cevaPortal/acesso';
-import { handlePasswordResetRequest } from '../lib/passwordReset';
+import { handlePasswordResetRequest, redefinirComTextoDeCriacao } from '../lib/passwordReset';
 
 test('telefone do WhatsApp ganha DDI e recusa grupo', () => {
   assert.equal(normalizarTelefoneWhatsapp('(11) 98888-7777'), '5511988887777');
@@ -115,5 +115,112 @@ test('a função da Vercel usa o bundle e a tela do cliente tem o botão', () =>
   assert.doesNotMatch(api, /from ['"][^'"]*passwordReset/);
   assert.match(form, /button-reset-password-whatsapp/);
   assert.match(form, /canal: 'whatsapp'/);
+  assert.match(form, /button-reset-password-copy/);
+  assert.match(form, /canal: 'texto'/);
+  assert.match(form, /textoDaMensagem\(createdCredentials\)/);
+  assert.match(form, /foi criado com sucesso/);
   assert.match(form, /import React/);
+});
+
+function clienteDeTeste(
+  usuario: Record<string, unknown> | null,
+  cliente: Record<string, unknown> | null,
+  temPortal: boolean,
+) {
+  const gravacoes: { tabela: string; dados: Record<string, unknown> }[] = [];
+  const portal = { id: 14, senha_hash: 'antiga', trocar_senha: false };
+  const sb = {
+    from(tabela: string) {
+      const cadeia = {
+        select() { return cadeia; },
+        eq() { return cadeia; },
+        ilike() { return cadeia; },
+        update(dados: Record<string, unknown>) {
+          gravacoes.push({ tabela, dados: { ...dados } });
+          if (tabela !== 'system_users') Object.assign(portal, dados);
+          const resposta = Promise.resolve({ error: null });
+          return {
+            eq() {
+              return Object.assign(resposta, {
+                select() {
+                  return { single: async () => ({ data: { id: portal.id }, error: null }) };
+                },
+              });
+            },
+          };
+        },
+        async single() {
+          if (tabela !== 'system_users') return { data: null, error: { message: 'tabela inesperada' } };
+          if (!usuario) return { data: null, error: { message: 'ausente' } };
+          return { data: usuario, error: null };
+        },
+        async maybeSingle() {
+          if (tabela === 'clients') return { data: cliente, error: null };
+          if (tabela === 'ceva_portal_usuarios') return { data: temPortal ? { id: portal.id } : null, error: null };
+          return { data: null, error: null };
+        },
+      };
+      return cadeia;
+    },
+  };
+  return { sb, gravacoes, portal };
+}
+
+test('redefinir senha em texto grava a senha nova e não envia mensagem', async () => {
+  const { sb, gravacoes } = clienteDeTeste({
+    id: '9',
+    name: 'Ana',
+    email: 'ana@tmseg.com',
+    user_type: 'internal',
+    client_id: null,
+    permissions: [],
+  }, null, false);
+  const resultado = await redefinirComTextoDeCriacao(sb as never, '9');
+  assert.equal(resultado.status, 200);
+  assert.equal(resultado.body.success, true);
+  assert.equal(resultado.body.portal, false);
+  assert.equal(typeof resultado.body.senha, 'string');
+  assert.ok(String(resultado.body.senha).length >= 8);
+  const sistema = gravacoes.filter((item) => item.tabela === 'system_users');
+  assert.ok(sistema.some((item) => item.dados.force_password_change === true && typeof item.dados.password_hash === 'string'));
+  assert.equal(sistema.some((item) => item.tabela !== 'system_users'), false);
+});
+
+test('redefinir senha em texto do portal usa a mesma senha e pede a troca', async () => {
+  const { sb, portal } = clienteDeTeste({
+    id: '9',
+    name: 'Priscilla',
+    email: 'priscilla@cliente.com',
+    user_type: 'client',
+    client_id: 3,
+    permissions: ['portal-only'],
+  }, { id: 3, name: 'CEVA LOGISTICS LTDA' }, true);
+  const resultado = await redefinirComTextoDeCriacao(sb as never, '9');
+  assert.equal(resultado.status, 200);
+  assert.equal(resultado.body.portal, true);
+  assert.equal(resultado.body.rotulo, 'CEVA');
+  assert.equal(resultado.body.caminho, '/ceva');
+  assert.equal(portal.trocar_senha, true);
+  assert.equal(senhaConfere(String(resultado.body.senha), portal.senha_hash), true);
+});
+
+test('portal sem cadastro não troca a senha do sistema', async () => {
+  const { sb, gravacoes } = clienteDeTeste({
+    id: '9',
+    name: 'Priscilla',
+    email: 'priscilla@cliente.com',
+    user_type: 'client',
+    client_id: 3,
+    permissions: ['portal-only'],
+  }, { id: 3, name: 'CEVA LOGISTICS LTDA' }, false);
+  const resultado = await redefinirComTextoDeCriacao(sb as never, '9');
+  assert.equal(resultado.status, 409);
+  assert.equal(gravacoes.length, 0);
+});
+
+test('usuário ausente não gera senha', async () => {
+  const { sb, gravacoes } = clienteDeTeste(null, null, false);
+  const resultado = await redefinirComTextoDeCriacao(sb as never, '9');
+  assert.equal(resultado.status, 404);
+  assert.equal(gravacoes.length, 0);
 });

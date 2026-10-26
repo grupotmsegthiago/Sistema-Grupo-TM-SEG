@@ -2,9 +2,22 @@
 
 # Próxima Execução Proposta
 
-Plano aguardando aprovação. A próxima alteração de código só começa depois de "Fluxo aprovado, pode executar".
+O botão Redefinir senha e o print do mapa da proposta entram nesta publicação. O plano do PDF único continua só registrado: o código dele não foi executado.
+
+## Redefinir senha com o texto de usuário novo (26/10/2026)
+
+Baseline `fb58e567`. Na edição do usuário, abaixo da senha de acesso, o botão Redefinir senha gera a senha, grava no cadastro e abre a mesma mensagem da criação (`textoDaMensagem`: acesso criado, login, senha e link). No portal, a mensagem é a de acesso ao portal e a senha entra na tabela que a pessoa já usa. O e-mail com link e o WhatsApp com o texto de senha redefinida continuam nos botões que já existiam.
+
+- **Objetivo da Tarefa:** o operador copia a mensagem de acesso novo, com a senha que ficou gravada, sem depender do link de e-mail nem do texto de redefinição do WhatsApp.
+- **Passo a Passo Sequencial:** 1. O botão chama o pedido de senha que já existe, no canal `texto`. 2. O servidor gera a senha temporária e grava em `system_users`, com troca no próximo acesso. 3. Se a pessoa já tem linha no portal, a mesma senha entra nessa linha e pede a troca. 4. A tela abre o quadro de credenciais com `textoDaMensagem`. 5. Fechar o quadro permanece na ficha.
+- **Ficheiros Afetados:** `components/UserForm.tsx`, `lib/passwordReset.ts`, `scripts/password-reset-whatsapp.test.ts`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas. Sem migration. Sem tabela nova. A rota de e-mail e a de WhatsApp permanecem.
+
+Banco: nenhuma coluna nova. A escrita usa `system_users` e, quando a linha já existe, a tabela de usuários do portal.
 
 ## PDF único da cotação e mapa centrado em A e B (26/10/2026)
+
+Plano aguardando aprovação. A próxima alteração de código desse plano só começa depois de "Fluxo aprovado, pode executar". O print do mapa que já está na proposta entra nesta publicação. O restante deste plano não foi codificado.
 
 - **Objetivo da Tarefa:** o download, o Ver PDF e o anexo de e-mail saem do mesmo artigo oficial, sem corte no meio do bloco. Ao gerar a proposta, o mapa fica centrado com o ponto A na origem e o ponto B no destino, os dois dentro do quadro.
 - **Passo a Passo Sequencial:** 1. Marcar os blocos da proposta e completar rota, km faturado, tempo, acionamento, km extra, hora extra e pedágio à parte. 2. Antes da foto, enquadrar o mapa no retângulo da origem e do destino, com folga para o A e o B não ficarem sob o painel. 3. O mapa estático da proposta usa `visible` nesses dois pontos, para o centro da imagem ser o meio do trecho. 4. A espera do `idle` do mapa acontece antes da captura. 5. O PDF A4 empilha bloco inteiro, com margem, sem fatiar um card. 6. Salvar em PDF, preview, Ver PDF e os dois e-mails usam esse mesmo arquivo. 7. A OS nascida da cotação grava tabela e rota como `Origem x Destino (2026-)` ou `(2027-)`, pela vigência do snapshot.

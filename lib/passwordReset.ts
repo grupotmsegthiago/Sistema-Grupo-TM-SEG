@@ -46,8 +46,13 @@ export async function handlePasswordResetRequest(body: Record<string, unknown> |
   const dados = body || {};
   const userId = String(dados.userId || '').trim();
   const senderName = typeof dados.senderName === 'string' ? dados.senderName : undefined;
-  const canal = dados.canal === 'whatsapp' ? 'whatsapp' : 'email';
+  const canal = dados.canal === 'whatsapp' ? 'whatsapp' : dados.canal === 'texto' ? 'texto' : 'email';
   if (!userId) return { status: 400, body: { error: 'userId obrigatório' } };
+  if (canal === 'texto') {
+    const sb = clienteAdmin();
+    if (!sb) return { status: 503, body: { error: 'Servidor de usuários indisponível.' } };
+    return redefinirComTextoDeCriacao(sb, userId);
+  }
   if (canal === 'whatsapp') {
     const telefone = normalizarTelefoneWhatsapp(dados.telefone);
     if (!telefone) {
@@ -56,6 +61,89 @@ export async function handlePasswordResetRequest(body: Record<string, unknown> |
     return redefinirPorWhatsapp(userId, telefone);
   }
   return redefinirPorEmail(userId, senderName);
+}
+
+/**
+ * Gera a senha e grava no cadastro (e no portal, se a pessoa já entra por lá).
+ * Não envia e-mail nem WhatsApp: a tela mostra o mesmo texto da criação do usuário.
+ */
+export async function redefinirComTextoDeCriacao(sb: Cliente, userId: string): Promise<Resposta> {
+  const { data: userData, error: userErr } = await sb
+    .from('system_users')
+    .select('id, name, email, user_type, client_id, permissions')
+    .eq('id', userId)
+    .single();
+  if (userErr || !userData?.email) return { status: 404, body: { error: 'Usuário não encontrado' } };
+
+  const portal = userData.user_type === 'client' && userData.client_id
+    ? await portalDoCliente(sb, userData.client_id)
+    : null;
+  const soPortal = usuarioSoPortal(userData.permissions);
+  let acessoId: string | number | null = null;
+  if (portal) {
+    const acesso = await lerAcessoPortal(sb, {
+      tabela: portal.tabelas.usuarios,
+      email: String(userData.email),
+      clientId: userData.client_id,
+    });
+    if (!acesso.ok) return { status: 500, body: { error: acesso.error } };
+    acessoId = acesso.id;
+    if (soPortal && acessoId == null) {
+      return {
+        status: 409,
+        body: { error: 'O acesso ao portal deste e-mail não foi encontrado. Salve o usuário com Acesso ao portal e tente de novo.' },
+      };
+    }
+  }
+
+  const senha = gerarSenhaTemporaria();
+  if (portal && acessoId != null) {
+    const aplicado = await aplicarSenhaNoPortal(sb, {
+      tabela: portal.tabelas.usuarios,
+      email: String(userData.email),
+      clientId: userData.client_id,
+      senha,
+      trocarSenha: true,
+    });
+    if (!aplicado.ok || !aplicado.atualizado) {
+      return {
+        status: 500,
+        body: {
+          error: aplicado.ok
+            ? 'O acesso do portal não foi encontrado para gravar a senha. A senha atual foi mantida.'
+            : `A senha do portal não foi gravada. ${aplicado.error}`,
+        },
+      };
+    }
+  }
+
+  try {
+    await gravarSenhaNoServidor(sb, String(userData.id), senha, { force_password_change: true });
+    await exigirTrocaNoProximoAcesso(sb, String(userData.id));
+  } catch (erro: unknown) {
+    const texto = erro instanceof Error ? erro.message : 'Falha ao gravar a senha';
+    console.error('[PasswordReset] texto de criação', texto);
+    return {
+      status: 500,
+      body: {
+        error: portal && acessoId != null
+          ? 'A senha do portal foi gravada, mas o cadastro do sistema não. Clique de novo em Redefinir senha.'
+          : 'A senha não foi gravada. Tente de novo.',
+      },
+    };
+  }
+
+  return {
+    status: 200,
+    body: {
+      success: true,
+      senha,
+      message: 'Senha nova gerada. Copie a mensagem e envie ao usuário.',
+      ...(portal && acessoId != null
+        ? { portal: true, rotulo: portal.rotulo, caminho: portal.caminho }
+        : { portal: false }),
+    },
+  };
 }
 
 async function redefinirPorEmail(userId: string, senderName?: string): Promise<Resposta> {

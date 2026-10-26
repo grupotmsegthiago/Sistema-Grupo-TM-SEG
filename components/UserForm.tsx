@@ -109,6 +109,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [generatedPass, setGeneratedPass] = useState('');
   const [isSendingReset, setIsSendingReset] = useState(false);
   const [isSendingWhatsapp, setIsSendingWhatsapp] = useState(false);
+  const [isRedefinindoSenha, setIsRedefinindoSenha] = useState(false);
+  const [senhaRedefinidaNaFicha, setSenhaRedefinidaNaFicha] = useState(false);
   const [whatsappDestino, setWhatsappDestino] = useState('');
   const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string; link?: string; rotulo?: string; manteveSenha?: boolean } | null>(null);
   const [acessoPortal, setAcessoPortal] = useState(false);
@@ -857,7 +859,66 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   {id && formData.email && (
                       <button
                         type="button"
-                        disabled={isSendingReset || isSendingWhatsapp}
+                        disabled={isRedefinindoSenha || isSendingReset || isSendingWhatsapp}
+                        data-testid="button-reset-password-copy"
+                        onClick={async () => {
+                          if (!confirm(`Gerar uma senha nova para ${formData.name || 'este usuário'}? A mensagem fica igual à de um usuário recém-criado, para você copiar e enviar.`)) return;
+                          setIsRedefinindoSenha(true);
+                          try {
+                            const res = await authFetch('/api/password-reset/request', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ userId: id, canal: 'texto' }),
+                            });
+                            const data = await parseJsonResponse(res);
+                            const senha = String(data.senha || '');
+                            if (!res.ok || !data.success || !senha) {
+                              showNotification('Senha', data.error || 'Falha ao redefinir a senha', 'error');
+                              return;
+                            }
+                            setFormData((prev) => ({ ...prev, password: '' }));
+                            setGeneratedPass('');
+                            setShowPassword(false);
+                            const tipo = userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno';
+                            if (data.portal && data.rotulo && data.caminho) {
+                              setCreatedCredentials({
+                                name: formData.name,
+                                email: formData.email,
+                                password: senha,
+                                type: 'Portal do cliente',
+                                link: `${window.location.origin}${data.caminho}`,
+                                rotulo: String(data.rotulo),
+                              });
+                            } else {
+                              setCreatedCredentials({
+                                name: formData.name,
+                                email: formData.email,
+                                password: senha,
+                                type: tipo,
+                              });
+                            }
+                            setSenhaRedefinidaNaFicha(true);
+                            setCredentialsCopied(false);
+                            showNotification('Senha', 'Senha nova gerada. Copie a mensagem e envie ao usuário.', 'success');
+                          } catch (err: any) {
+                            showNotification('Senha', 'Erro ao redefinir a senha: ' + err.message, 'error');
+                          } finally {
+                            setIsRedefinindoSenha(false);
+                          }
+                        }}
+                        className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-800 hover:bg-gray-50 transition-colors uppercase tracking-wider disabled:opacity-50"
+                      >
+                        {isRedefinindoSenha ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
+                        Redefinir senha
+                      </button>
+                  )}
+                  {id && formData.email && (
+                      <p className="mt-1.5 text-[10px] text-gray-500">Gera uma senha nova e abre a mesma mensagem de quando o usuário é criado, para copiar e enviar.</p>
+                  )}
+                  {id && formData.email && (
+                      <button
+                        type="button"
+                        disabled={isSendingReset || isSendingWhatsapp || isRedefinindoSenha}
                         onClick={async () => {
                           if (!confirm(`Enviar e-mail de redefinição de senha para ${formData.email}?`)) return;
                           setIsSendingReset(true);
@@ -903,7 +964,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           </div>
                           <button
                               type="button"
-                              disabled={isSendingWhatsapp || isSendingReset}
+                              disabled={isSendingWhatsapp || isSendingReset || isRedefinindoSenha}
                               data-testid="button-reset-password-whatsapp"
                               onClick={async () => {
                                   const digitos = whatsappDestino.replace(/\D/g, '');
@@ -958,8 +1019,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                       <div className="flex items-center gap-3">
                           <div className="p-2 bg-white/20 rounded-xl"><CheckCircle2 size={24} /></div>
                           <div>
-                              <h3 className="text-lg font-black uppercase tracking-tight">Usuário Criado com Sucesso</h3>
-                              <p className="text-emerald-100 text-xs font-medium mt-0.5">Copie as credenciais abaixo para enviar ao usuário</p>
+                              <h3 className="text-lg font-black uppercase tracking-tight">{senhaRedefinidaNaFicha ? 'Senha redefinida' : 'Usuário Criado com Sucesso'}</h3>
+                              <p className="text-emerald-100 text-xs font-medium mt-0.5">{senhaRedefinidaNaFicha ? 'A mensagem é a mesma de um acesso novo. Copie e envie ao usuário.' : 'Copie as credenciais abaixo para enviar ao usuário'}</p>
                           </div>
                       </div>
                   </div>
@@ -999,7 +1060,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           </button>
                           <button
                               data-testid="button-close-credentials"
-                              onClick={() => { setCreatedCredentials(null); onBack(); }}
+                              onClick={() => { setCreatedCredentials(null); if (senhaRedefinidaNaFicha) { setSenhaRedefinidaNaFicha(false); return; } onBack(); }}
                               className="px-6 py-3 border border-gray-300 rounded-xl text-sm font-bold text-gray-600 uppercase hover:bg-gray-50 transition-all"
                           >
                               Fechar

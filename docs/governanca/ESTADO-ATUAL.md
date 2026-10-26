@@ -1,6 +1,8 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. Ainda nesta branch, sem publicar. Ao gerar a proposta ou o PDF, o quadro do mapa cola o print do mapa que está na tela (painel, rota e carreta). Se o canvas do Google não exportar, o mapa estático em Base64 fica por baixo e o restante do card entra por cima. A foto solta da carreta deixa de cobrir esse quadro quando o print existe. O motor da OS não mudou.
+Atualizado em 2026-10-26. Na edição do usuário, o botão Redefinir senha gera uma senha nova, grava no cadastro e abre a mesma mensagem de quando o usuário é criado. Se a pessoa já entra no portal, a mesma senha fica nessa linha. O e-mail com link e o WhatsApp continuam. O motor da OS não mudou.
+
+Atualizado em 2026-10-26. Ao gerar a proposta ou o PDF, o quadro do mapa cola o print do mapa que está na tela (painel, rota e carreta). Se o canvas do Google não exportar, o mapa estático em Base64 fica por baixo e o restante do card entra por cima. A foto solta da carreta deixa de cobrir esse quadro quando o print existe. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg: a Tabela 2027 com prioridade e a escolha manual da 2026, o fallback ", Brasil" na rota Salvador–São Paulo, a Nova Rota sem tipo e região, o fuso de Brasília em 24h e o gate de fluxo. A branch da tarifa duplicada do portal não entrou. O motor da OS não mudou.
 
