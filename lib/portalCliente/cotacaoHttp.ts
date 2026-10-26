@@ -1,6 +1,6 @@
 import { colunaRegionalAusente } from '../precificacao/tabela2027.js';
 import { cartaDaProposta, marcoDeOperacoes } from './apresentacao.js';
-import { montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
+import { consultaDoCliente, montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
 import {
   JANELA_HISTORICO_VIGENCIA,
   TAMANHO_PAGINA_HISTORICO,
@@ -27,15 +27,14 @@ export async function listarTabelasCotacao(
   sb: { from: (tabela: string) => any },
   cliente: ClientePortal,
 ): Promise<Resposta> {
-  const nomes = [...new Set(
-    [cliente?.name, cliente?.trading_name].map((nome) => String(nome || '').trim()).filter(Boolean),
-  )];
-  if (!nomes.length) return { status: 503, corpo: { error: 'Cliente do portal não encontrado.' } };
+  const nomeOficial = String(cliente?.name || cliente?.trading_name || '').trim();
+  const filtro = consultaDoCliente(nomeOficial);
+  if (!filtro) return { status: 503, corpo: { error: 'Cliente do portal não encontrado.' } };
 
   const { data, error } = await sb
     .from('client_price_tables')
-    .select('id, operation_type, activation_fee, franchise_hours, franchise_km, price_per_extra_km, price_per_extra_hour')
-    .in('client', nomes);
+    .select('id, client, operation_type, activation_fee, franchise_hours, franchise_km, price_per_extra_km, price_per_extra_hour')
+    .or(filtro);
   if (error) return { status: 500, corpo: { error: 'Não foi possível ler a tabela do cliente.' } };
 
   const tabelas = ((data || []) as Parameters<typeof tabelaDeLinha>[0][])

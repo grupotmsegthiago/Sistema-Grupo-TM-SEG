@@ -148,6 +148,20 @@ export function tarifaDaRegiao(
   };
 }
 
+const SUFIXOS_SOCIETARIOS = ['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'S/A.', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'];
+
+/** O mesmo recorte do cadastro: nome oficial e o começo "CEVA LOGIS", sem outra empresa. */
+export function consultaDoCliente(nome: string): string {
+  const limpo = String(nome || '').trim();
+  if (!limpo) return '';
+  const citar = (valor: string) => (/[(),.:]/.test(valor) ? `"${valor.replace(/"/g, '\\"')}"` : valor);
+  const palavras = limpo.split(/\s+/).filter((parte) => !SUFIXOS_SOCIETARIOS.includes(parte.toUpperCase()));
+  const curto = palavras.length >= 2
+    ? `${palavras[0]} ${palavras[1].slice(0, Math.min(6, palavras[1].length))}`
+    : palavras[0] || limpo;
+  return `client.eq.${citar(limpo)},client.ilike.${citar(`%${curto}%`)}`;
+}
+
 export function primeiraRegiaoComTarifa(lista: TabelaCotacao[], versao: VersaoTabelaRegional): string {
   return REGIOES_COTACAO.find((item) => linhaDoClienteNaRegiao(lista, item, versao))
     || REGIOES_COTACAO.find((item) => tarifaDaRegiao(lista, item, versao))

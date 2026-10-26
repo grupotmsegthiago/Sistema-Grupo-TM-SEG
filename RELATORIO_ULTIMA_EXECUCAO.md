@@ -2,7 +2,7 @@
 
 ## Tarifa do cliente na cotação do portal (26/10/2026)
 
-Ainda não publicado. A linha `TABELA 2027 - NORDESTE` deixava de ser Nordeste e o card usava a moda das rotas antigas, R$ 10,00/km e R$ 250,00/h. A vigência escolhida agora prefere a linha padrão do cliente. Na CEVA, o Nordeste fica em R$ 830,00, R$ 8,30/km e R$ 207,50/h. Sem essa linha, a faixa de `tabela2027.ts` entra. Sem migration e sem alteração em `calculateMissionFinancials`.
+Ainda não publicado. A linha `TABELA 2027 - NORDESTE` deixava de ser Nordeste e o card usava a moda das rotas antigas, R$ 10,00/km e R$ 250,00/h. A vigência escolhida agora prefere a linha padrão do cliente, lida pelo mesmo recorte de nome do cadastro. Na CEVA, o Nordeste fica em R$ 830,00, R$ 8,30/km e R$ 207,50/h, e o snapshot em `quotes` grava esses valores. Sem essa linha, a faixa de `tabela2027.ts` entra. Sem migration e sem alteração em `calculateMissionFinancials`.
 
 ## Ações do histórico e painel do mapa (26/10/2026)
 

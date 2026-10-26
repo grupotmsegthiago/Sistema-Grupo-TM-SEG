@@ -18,6 +18,7 @@ import {
 } from '../lib/portalCliente/rotaCotacao.ts';
 import {
   calcularCotacaoPortal,
+  consultaDoCliente,
   horasDaRota,
   linhaDoClienteNaRegiao,
   regiaoDaOperacao,
@@ -162,6 +163,10 @@ test('a cotação da CEVA usa a linha 2027 do cliente e não a tarifa antiga', (
   assert.equal(semLinha?.kmExtra, 8.3);
   assert.equal(semLinha?.acionamento, 830);
   assert.equal(semLinha?.horaExtra, 169);
+  assert.match(consultaDoCliente('CEVA LOGISTICS LTDA'), /client\.eq\.CEVA LOGISTICS LTDA/);
+  assert.match(consultaDoCliente('CEVA LOGISTICS LTDA'), /%CEVA LOGIST%/);
+  const http = readFileSync(new URL('../lib/portalCliente/cotacaoHttp.ts', import.meta.url), 'utf8');
+  assert.match(http, /consultaDoCliente/);
 });
 
 test('rota já cadastrada devolve a tabela acordada', () => {
