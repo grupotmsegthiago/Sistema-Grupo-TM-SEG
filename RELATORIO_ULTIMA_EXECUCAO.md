@@ -2,7 +2,7 @@
 
 ## Vigência da tabela regional sem RLS no navegador (26/10/2026)
 
-Não publicado. Baseline `24da7d9b`. O clique em Aplicar valor por região fazia upsert de system_settings com a chave anon e o Postgres recusava a linha nova. A gravação passou para POST /api/pricing/tabela-regional-vigente, no Express que já existe, sem função nova na Vercel. O servidor exige o perfil diretoria, administrador ou admin em system_users e grava com createSupabaseAdminClient. Linhas de preço, rotas e regional_rates continuam no fluxo que já existia. migrations/2026_10_26_fix_system_settings_rls.sql ficou só no repositório: não consulta users, não abre todas as chaves e não foi executada. O motor calculateMissionFinancials não foi alterado. Rollback: voltar o botão ao upsert do navegador e remover a rota.
+Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Baseline `24da7d9b`. Thiago validou o botão Aplicar valor por região na Tabela 2027, sem o erro de RLS. O clique fazia upsert de system_settings com a chave anon e o Postgres recusava a linha nova. A gravação passou para POST /api/pricing/tabela-regional-vigente, no Express que já existe, sem função nova na Vercel. O servidor exige o perfil diretoria, administrador ou admin em system_users e grava com createSupabaseAdminClient. Linhas de preço, rotas e regional_rates continuam no fluxo que já existia. migrations/2026_10_26_fix_system_settings_rls.sql ficou só no repositório: não consulta users, não abre todas as chaves e não foi executada. O motor calculateMissionFinancials não foi alterado. Rollback: voltar o botão ao upsert do navegador e remover a rota.
 
 ## Publicação de 26/10/2026
 
