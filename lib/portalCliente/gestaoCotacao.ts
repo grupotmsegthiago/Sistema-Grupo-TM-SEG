@@ -72,6 +72,37 @@ export function autorDaCotacao(ator: AtorCotacao, cotacao: CotacaoGestao): boole
   return Boolean(email && emailAutor && email === emailAutor);
 }
 
+/** Quem usa o sistema interno, sem ser pessoa do portal do cliente. */
+export function usuarioInternoCotacao(ator: AtorCotacao): boolean {
+  return !String(ator.portalCliente || '').trim();
+}
+
+export function ehDiretoria(perfil: string | null | undefined): boolean {
+  return normalizar(perfil) === 'diretoria';
+}
+
+/** Desativar fica com a equipe interna. Excluir fica só com a diretoria. */
+export function podeDesativarCotacao(ator: AtorCotacao): boolean {
+  return usuarioInternoCotacao(ator);
+}
+
+export function podeExcluirCotacao(ator: AtorCotacao): boolean {
+  return ehDiretoria(ator.perfil);
+}
+
+export function mostrarDesativarCotacao(ator: AtorCotacao, cotacao: CotacaoGestao): boolean {
+  if (!podeDesativarCotacao(ator)) return false;
+  if (cotacaoConvertidaEmOs(cotacao) || cotacaoExcluida(cotacao)) return false;
+  if (cotacao.is_active === false || normalizar(cotacao.status) === 'inativa') return false;
+  return true;
+}
+
+export function mostrarExcluirCotacao(ator: AtorCotacao, cotacao: CotacaoGestao): boolean {
+  if (!podeExcluirCotacao(ator)) return false;
+  if (cotacaoConvertidaEmOs(cotacao) || cotacaoExcluida(cotacao)) return false;
+  return true;
+}
+
 /** Administrador e diretoria gerem. No portal, só as cotações daquele cliente. O autor gerencia a própria. */
 export function podeGerirCotacao(ator: AtorCotacao, cotacao: CotacaoGestao): boolean {
   if (perfilPodeGerirCotacao(ator.perfil)) {
@@ -91,14 +122,14 @@ export function cotacaoExcluida(cotacao: { status?: string | null }): boolean {
 
 export function decisaoInativar(ator: AtorCotacao, cotacao: CotacaoGestao | null): { ok: true; dados: { is_active: false; status: string } } | { ok: false; status: number; error: string } {
   if (!cotacao?.id) return { ok: false, status: 404, error: 'Cotação não encontrada.' };
-  if (!podeGerirCotacao(ator, cotacao)) return { ok: false, status: 403, error: 'Você não pode inativar esta cotação.' };
+  if (!podeDesativarCotacao(ator)) return { ok: false, status: 403, error: 'Você não pode desativar esta cotação.' };
   if (cotacaoConvertidaEmOs(cotacao)) return { ok: false, status: 409, error: 'Essa cotação já virou OS e não pode ser inativada.' };
   return { ok: true, dados: { is_active: false, status: STATUS_INATIVA } };
 }
 
 export function decisaoExcluir(ator: AtorCotacao, cotacao: CotacaoGestao | null): { ok: true; dados: { is_active: false; status: string } } | { ok: false; status: number; error: string } {
   if (!cotacao?.id) return { ok: false, status: 404, error: 'Cotação não encontrada.' };
-  if (!podeGerirCotacao(ator, cotacao)) return { ok: false, status: 403, error: 'Você não pode excluir esta cotação.' };
+  if (!podeExcluirCotacao(ator)) return { ok: false, status: 403, error: 'Só a diretoria pode excluir esta cotação.' };
   if (cotacaoConvertidaEmOs(cotacao)) return { ok: false, status: 409, error: 'Essa cotação já virou OS e não pode ser excluída.' };
   return { ok: true, dados: { is_active: false, status: STATUS_EXCLUIDA } };
 }

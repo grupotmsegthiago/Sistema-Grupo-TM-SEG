@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { FileDown, Loader2, Mail, MoreHorizontal, Pencil, Plus, Power, Trash2 } from 'lucide-react';
+import { Copy, FileDown, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
-import { cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
-import { cartaEmailCotacao, cotacaoExcluida, podeGerirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao } from '../../lib/portalCliente/gestaoCotacao';
+import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
+import { cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
 import { nomesDaVigencia } from '../../lib/portalCliente/cotacao';
 import {
   TEXTO_HISTORICO_VAZIO,
@@ -13,6 +13,7 @@ import {
   formatarDataHoraCotacao,
   formatarValorCotacao,
   lerSnapshot,
+  mensagemCompletaCotacao,
   nomePdfCotacao,
   normalizarLinhaHistorico,
   reservarNumeroCotacao,
@@ -38,6 +39,18 @@ export function HistoricoVazio({ texto = TEXTO_HISTORICO_VAZIO }: { texto?: stri
   );
 }
 
+function gestaoDaLinha(linha: LinhaHistoricoCotacao, email?: string): CotacaoGestao {
+  return {
+    id: linha.id,
+    client_name: linha.client_name,
+    created_by: linha.created_by,
+    solicitanteEmail: email,
+    status: linha.status,
+    is_active: linha.is_active,
+    converted_to_order_id: linha.converted_to_order_id,
+  };
+}
+
 function selo(tom: 'ativa' | 'convertida' | 'expirada' | 'inativa', rotulo: string) {
   const classe = tom === 'ativa'
     ? 'bg-emerald-50 text-emerald-800'
@@ -49,12 +62,62 @@ function selo(tom: 'ativa' | 'convertida' | 'expirada' | 'inativa', rotulo: stri
   return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-black ${classe}`}>{rotulo}</span>;
 }
 
+const BOTAO = 'inline-flex h-8 items-center gap-1 rounded-full border px-2.5 text-[10px] font-black whitespace-nowrap';
+
 export type EdicaoCotacao = {
   origem: string;
   destino: string;
   paradas: string[];
   regiao?: string;
 };
+
+export function AcoesDaLinha({
+  id,
+  mostrarDesativar,
+  mostrarExcluir,
+  mostrarCriarOs,
+  mostrarAlterar,
+  onPdf,
+  onEmail,
+  onCopiar,
+  onDesativar,
+  onExcluir,
+  onCriarOs,
+  onAlterar,
+}: {
+  id: string;
+  mostrarDesativar: boolean;
+  mostrarExcluir: boolean;
+  mostrarCriarOs?: boolean;
+  mostrarAlterar?: boolean;
+  onPdf?: () => void;
+  onEmail?: () => void;
+  onCopiar?: () => void;
+  onDesativar?: () => void;
+  onExcluir?: () => void;
+  onCriarOs?: () => void;
+  onAlterar?: () => void;
+}) {
+  return (
+    <div className="flex max-w-[320px] flex-wrap gap-1" data-testid={`acoes-linha-${id}`}>
+      <button type="button" onClick={onPdf} data-testid={`ver-pdf-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><FileDown size={13} /> PDF</button>
+      <button type="button" onClick={onEmail} data-testid={`email-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Mail size={13} /> E-mail</button>
+      <button type="button" onClick={onCopiar} data-testid={`copiar-msg-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Copy size={13} /> Copiar MSG</button>
+      {mostrarCriarOs && (
+        <button type="button" onClick={onCriarOs} data-testid={`criar-os-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Plus size={13} /> Criar OS</button>
+      )}
+      {mostrarAlterar && (
+        <button type="button" onClick={onAlterar} data-testid={`alterar-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Pencil size={13} /> Alterar</button>
+      )}
+      {mostrarDesativar && (
+        <button type="button" onClick={onDesativar} data-testid={`desativar-${id}`} className={`${BOTAO} border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100`}><Power size={13} /> Desativar</button>
+      )}
+      {mostrarExcluir && (
+        <button type="button" onClick={onExcluir} data-testid={`excluir-${id}`} className={`${BOTAO} border-red-200 bg-red-50 text-red-800 hover:bg-red-100`}><Trash2 size={13} /> Excluir</button>
+      )}
+    </div>
+  );
+}
 
 async function esperarPropostaHistorico(aindaAtivo: () => boolean): Promise<HTMLElement | null> {
   const prazo = Date.now() + 4000;
@@ -134,7 +197,6 @@ export const HistoricoCotacoes: React.FC<{
   const [erroPdf, setErroPdf] = useState('');
   const [captura, setCaptura] = useState<{ linha: LinhaHistoricoCotacao; modo: 'pdf' | 'email' } | null>(null);
   const [mapaCaptura, setMapaCaptura] = useState<string | null>(null);
-  const [menuId, setMenuId] = useState<string | null>(null);
   const [excluir, setExcluir] = useState<LinhaHistoricoCotacao | null>(null);
   const [email, setEmail] = useState<{ linha: LinhaHistoricoCotacao; para: string; cc: string; mensagem: string } | null>(null);
   const [enviando, setEnviando] = useState(false);
@@ -302,7 +364,6 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const verPdf = (linha: LinhaHistoricoCotacao) => {
-    setMenuId(null);
     janelaPdf.current = window.open('', '_blank');
     try {
       janelaPdf.current?.document.write('<!DOCTYPE html><title>Cotação</title><p style="font-family:sans-serif;padding:24px">Gerando o PDF da cotação…</p>');
@@ -317,7 +378,6 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const inativar = async (linha: LinhaHistoricoCotacao) => {
-    setMenuId(null);
     setErro('');
     const resposta = await chamar(`/api/cotacoes/${linha.id}/inativar`, 'PATCH');
     const corpo = await resposta.json().catch(() => ({}));
@@ -345,7 +405,6 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const abrirEmail = (linha: LinhaHistoricoCotacao) => {
-    setMenuId(null);
     const salvo = lerSnapshot(linha.contract_details);
     const para = salvo?.solicitanteEmail || ator.email || '';
     setEmail({
@@ -367,7 +426,6 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const criarOs = (linha: LinhaHistoricoCotacao) => {
-    setMenuId(null);
     try {
       const salvo = lerSnapshot(linha.contract_details);
       const nomes = nomesDaVigencia(linha.origin, linha.destination, salvo?.vigencia);
@@ -382,9 +440,19 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const editar = (linha: LinhaHistoricoCotacao) => {
-    setMenuId(null);
     const salvo = lerSnapshot(linha.contract_details);
     onEditar?.({ origem: linha.origin, destino: linha.destination, paradas: salvo?.paradas || [], regiao: salvo?.regiao });
+  };
+
+  const copiarMsg = async (linha: LinhaHistoricoCotacao) => {
+    const texto = mensagemCompletaCotacao(linha);
+    try {
+      await navigator.clipboard.writeText(texto);
+      setErro('');
+      setToast('Mensagem copiada.');
+    } catch {
+      setErro('Não foi possível copiar a mensagem.');
+    }
   };
 
   const propostaCaptura = captura ? propostaDoHistorico(captura.linha) : null;
@@ -399,7 +467,7 @@ export const HistoricoCotacoes: React.FC<{
         </div>
         <SeletorVigencia versao={versaoAtiva} onChange={trocarVersao} testId="seletor-vigencia-historico" />
       </div>
-      <p className="mt-1 text-xs text-slate-500">As 10 mais recentes da Tabela {versaoAtiva}. A validade é de 30 dias.</p>
+      <p className="mt-1 text-xs text-slate-500">As 10 mais recentes da Tabela {versaoAtiva}. A validade é de {PRAZO_COTACAO_DIAS} dias.</p>
       {toast && <p className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-testid="toast-cotacao">{toast}</p>}
       {(aviso || erro || erroPdf) && (
         <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{erroPdf || aviso || erro}</p>
@@ -423,7 +491,7 @@ export const HistoricoCotacoes: React.FC<{
                 <th className="px-3 py-2">Hora Extra</th>
                 <th className="px-3 py-2">Valor Total</th>
                 <th className="px-3 py-2">Status / Validade</th>
-                <th className="px-3 py-2">Ações</th>
+                <th className="px-3 py-2"> </th>
               </tr>
             </thead>
             <tbody>
@@ -447,26 +515,21 @@ export const HistoricoCotacoes: React.FC<{
                     <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(salvo?.horaExtra)}</td>
                     <td className="px-3 py-3 font-black text-slate-900">{formatarValorCotacao(linha.total_value)}</td>
                     <td className="px-3 py-3">{selo(validade.tom, validade.rotulo)}</td>
-                    <td className="relative px-3 py-3">
-                      <button type="button" aria-label="Ações da cotação" data-testid={`acoes-${linha.id}`} onClick={() => setMenuId((atual) => atual === linha.id ? null : linha.id)} className="grid h-8 w-8 place-items-center rounded-full border border-slate-200 text-slate-600">
-                        <MoreHorizontal size={16} />
-                      </button>
-                      {menuId === linha.id && (
-                        <div className="absolute right-2 z-20 mt-1 w-44 rounded-2xl border border-slate-100 bg-white p-1 shadow-xl">
-                          <button type="button" onClick={() => verPdf(linha)} data-testid={`ver-pdf-${linha.id}`} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"><FileDown size={14} /> Ver PDF</button>
-                          {!clienteNome && cotacaoSelecionavel(linha) && (
-                            <button type="button" onClick={() => criarOs(linha)} data-testid={`criar-os-${linha.id}`} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"><Plus size={14} /> Criar OS</button>
-                          )}
-                          <button type="button" onClick={() => editar(linha)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"><Pencil size={14} /> Alterar</button>
-                          <button type="button" onClick={() => abrirEmail(linha)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold text-slate-700 hover:bg-slate-50"><Mail size={14} /> Enviar por e-mail</button>
-                          {podeGerirCotacao(ator, { id: linha.id, client_name: linha.client_name, created_by: linha.created_by, solicitanteEmail: salvo?.solicitanteEmail }) && (
-                            <>
-                              <button type="button" onClick={() => { void inativar(linha); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold text-amber-800 hover:bg-amber-50"><Power size={14} /> Inativar</button>
-                              <button type="button" onClick={() => { setMenuId(null); setExcluir(linha); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[11px] font-bold text-red-700 hover:bg-red-50"><Trash2 size={14} /> Excluir</button>
-                            </>
-                          )}
-                        </div>
-                      )}
+                    <td className="px-3 py-3">
+                      <AcoesDaLinha
+                        id={linha.id}
+                        mostrarDesativar={mostrarDesativarCotacao(ator, gestaoDaLinha(linha, salvo?.solicitanteEmail))}
+                        mostrarExcluir={mostrarExcluirCotacao(ator, gestaoDaLinha(linha, salvo?.solicitanteEmail))}
+                        mostrarCriarOs={!clienteNome && cotacaoSelecionavel(linha)}
+                        mostrarAlterar={Boolean(onEditar)}
+                        onPdf={() => verPdf(linha)}
+                        onEmail={() => abrirEmail(linha)}
+                        onCopiar={() => { void copiarMsg(linha); }}
+                        onCriarOs={() => criarOs(linha)}
+                        onAlterar={() => editar(linha)}
+                        onDesativar={() => { void inativar(linha); }}
+                        onExcluir={() => setExcluir(linha)}
+                      />
                     </td>
                   </tr>
                 );

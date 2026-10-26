@@ -197,10 +197,10 @@ describe('validade da cotação', () => {
   const agora = new Date('2026-10-26T15:00:00.000Z');
   const dias = (quantidade: number) => new Date(agora.getTime() - quantidade * 24 * 60 * 60 * 1000).toISOString();
 
-  it('cotação com mais de 30 dias volta inativa e fora da busca', async () => {
+  it('cotação com mais de 10 dias volta inativa e fora da busca', async () => {
     const velha = {
       id: 'q-velha',
-      created_at: dias(31),
+      created_at: dias(11),
       status: 'Enviada',
       is_active: true,
       converted_to_order_id: null as string | null,
@@ -208,7 +208,7 @@ describe('validade da cotação', () => {
     assert.equal(cotacaoVencida(velha, agora), true);
     assert.equal(cotacaoSelecionavel(velha, agora), false);
     assert.deepEqual(patchExpiracaoCotacao(velha, agora), { is_active: false, status: 'expirada' });
-    const noLimite = { ...velha, created_at: dias(30) };
+    const noLimite = { ...velha, created_at: dias(10) };
     assert.equal(cotacaoVencida(noLimite, agora), false);
     assert.equal(cotacaoSelecionavel(noLimite, agora), true);
 
@@ -249,7 +249,7 @@ describe('validade da cotação', () => {
     assert.equal((filtros[0].valores as { status: string }).status, 'expirada');
     assert.equal((filtros[0].valores as { is_active: boolean }).is_active, false);
     const decorrido = Date.now() - new Date(String(filtros[0].limite)).getTime();
-    assert.ok(Math.abs(decorrido - 30 * 24 * 60 * 60 * 1000) < 2000);
+    assert.ok(Math.abs(decorrido - 10 * 24 * 60 * 60 * 1000) < 2000);
   });
 
   it('cotação vinculada a OS permanece convertida', async () => {

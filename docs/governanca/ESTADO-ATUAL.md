@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. No histórico, o menu de ações virou botões: PDF, e-mail e copiar a mensagem. Desativar aparece para usuário interno. Excluir aparece só para a diretoria. A validade da cotação passou de 30 para 10 dias. Criar OS, no portal, e Alterar continuam na linha. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. O PDF salvo passa a se chamar `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`. O ano `(2026-)` e `(2027-)` sai do texto da folha. O número entra no snapshot da cotação, sem coluna nova. A OS nascida da cotação continua com o sufixo no nome da tabela e da rota. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O botão Ver PDF do histórico usa o mesmo desenho do Salvar em PDF. A proposta salva fica fora da tela e, na hora da foto, volta para a esquerda da janela. O PDF é uma imagem do artigo inteiro, cortada só no vão entre as faixas, então os cards lado a lado não viram página cheia e nenhum bloco parte no meio. Se o artigo não montar, a janela "Gerando o PDF" fecha e a tela avisa. O motor da OS não mudou.

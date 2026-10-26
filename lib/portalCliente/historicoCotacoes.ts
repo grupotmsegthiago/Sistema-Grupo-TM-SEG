@@ -8,6 +8,7 @@ import {
   type VersaoTabelaRegional,
 } from '../precificacao/tabela2027';
 import type { PropostaPortal } from './cotacao';
+import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
 import { cidadeUfTraco } from './rotaCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
@@ -258,6 +259,37 @@ export function vigenciaDaCotacao(cotacao: { contract_details?: string | null } 
 
 export function formatarValorCotacao(valor: number): string {
   return numero(valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+/** Texto para colar no WhatsApp. Não grava e não envia. */
+export function mensagemCompletaCotacao(linha: LinhaHistoricoCotacao, agora = new Date()): string {
+  const salvo = lerSnapshot(linha.contract_details);
+  const numeroLinha = salvo?.numero || (/^\d+$/.test(String(linha.id || '')) ? Number(linha.id) : null);
+  const validade = rotuloValidade(linha, agora);
+  const horas = Number(linha.total_hours);
+  const km = Number(linha.total_km);
+  const franquiaMinima = salvo ? Boolean(salvo.usouMinimo) : km > 0 && km <= 100;
+  const partes = [
+    `Cotação${numeroLinha ? ` ${numeroLinha}` : ''} — ${String(linha.client_name || '').trim() || 'Cliente'}`,
+    `Tabela ${salvo?.vigencia || vigenciaDaCotacao(linha)}`,
+    `Data: ${formatarDataHoraCotacao(linha.created_at)}`,
+    `Solicitante: ${String(linha.created_by || '').trim() || '—'}`,
+    salvo?.solicitanteEmail ? `E-mail: ${salvo.solicitanteEmail}` : '',
+    `Origem: ${String(linha.origin || '').trim() || '—'}`,
+    `Destino: ${String(linha.destination || '').trim() || '—'}`,
+    salvo?.paradas?.length ? `Paradas: ${salvo.paradas.join(' | ')}` : '',
+    `Distância / tempo: ${textoDistanciaTempo(linha.total_km, salvo?.duracaoMin ?? null)}`,
+    `Horas faturadas: ${Number.isFinite(horas) && horas > 0 ? horas.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}`,
+    `Região: ${textoRegiaoFranquia(salvo?.regiao || '—', franquiaMinima)}`,
+    salvo && (salvo.kmFranquia > 0 || salvo.horasFranquia > 0) ? `Franquia: ${salvo.kmFranquia.toLocaleString('pt-BR')} km / ${salvo.horasFranquia.toLocaleString('pt-BR')} h` : '',
+    `Valor KM: ${textoTarifaKm(salvo?.kmExtra)}`,
+    `Hora extra: ${textoHoraExtra(salvo?.horaExtra)}`,
+    salvo && salvo.acionamento > 0 ? `Acionamento: ${formatarValorCotacao(salvo.acionamento)}` : '',
+    `Valor total: ${formatarValorCotacao(linha.total_value)}`,
+    `Status: ${validade.rotulo}`,
+    'Pedágio cobrado à parte.',
+  ];
+  return partes.filter(Boolean).join('\n');
 }
 
 export function montarSnapshot(entrada: {

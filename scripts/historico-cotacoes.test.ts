@@ -8,6 +8,7 @@ import {
   formatarDataHoraCotacao,
   formatarValorCotacao,
   lerSnapshot,
+  mensagemCompletaCotacao,
   nomePdfCotacao,
   pedidoParaRegistro,
   propostaDoHistorico,
@@ -17,12 +18,61 @@ import {
   textoRegiaoFranquia,
 } from '../lib/portalCliente/historicoCotacoes';
 import { listarHistoricoCotacoes, registrarCotacaoPortal } from '../lib/portalCliente/cotacaoHttp';
-import { HistoricoVazio } from '../components/ceva/HistoricoCotacoes';
+import { AcoesDaLinha, HistoricoVazio } from '../components/ceva/HistoricoCotacoes';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
 
 const AGORA = new Date('2026-10-26T15:00:00.000Z');
 
 describe('histórico de cotações do portal', () => {
+  it('troca o menu por PDF, e-mail e copiar a mensagem', () => {
+    const interno = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q1', mostrarDesativar: true, mostrarExcluir: false }));
+    assert.match(interno, /PDF/);
+    assert.match(interno, /E-mail/);
+    assert.match(interno, /Copiar MSG/);
+    assert.match(interno, /Desativar/);
+    assert.doesNotMatch(interno, /Excluir/);
+    assert.doesNotMatch(interno, /Ações da cotação/);
+    const diretoria = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q2', mostrarDesativar: true, mostrarExcluir: true }));
+    assert.match(diretoria, /desativar-q2/);
+    assert.match(diretoria, /excluir-q2/);
+    const portal = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q3', mostrarDesativar: false, mostrarExcluir: false }));
+    assert.doesNotMatch(portal, /Desativar/);
+    assert.doesNotMatch(portal, /Excluir/);
+    const texto = mensagemCompletaCotacao({
+      id: 'q1',
+      client_name: 'CEVA LOGISTICS LTDA',
+      origin: 'Avenida Talma Rodrigues Ribeiro, Salvador, BA',
+      destination: 'Rodovia Presidente Dutra, São Paulo, SP',
+      total_km: 912.5,
+      total_hours: 12,
+      total_value: 9583.8,
+      created_at: '2026-10-24T20:13:00.000Z',
+      created_by: 'THIAGO MOREIRA DOS SANTOS',
+      status: 'Enviada',
+      is_active: true,
+      contract_details: JSON.stringify({
+        kind: 'PORTAL_COTACAO',
+        numero: 42,
+        vigencia: '2027',
+        regiao: 'SUDESTE',
+        usouMinimo: false,
+        kmExtra: 4.6,
+        horaExtra: 140,
+        acionamento: 830,
+        kmFranquia: 100,
+        horasFranquia: 3,
+        duracaoMin: 760,
+        paradas: [],
+        solicitanteEmail: 'thiago@grupotmseg.com.br',
+      }),
+    }, AGORA);
+    assert.match(texto, /Cotação 42 — CEVA LOGISTICS LTDA/);
+    assert.match(texto, /Tabela 2027/);
+    assert.match(texto, /Salvador, BA/);
+    assert.match(texto, /Pedágio cobrado à parte/);
+    assert.doesNotMatch(texto, /\(2027-\)/);
+  });
+
   it('mostra vazio quando o cliente não tem cotação', () => {
     const html = renderToStaticMarkup(React.createElement(HistoricoVazio));
     assert.match(html, new RegExp(TEXTO_HISTORICO_VAZIO));
@@ -48,7 +98,7 @@ describe('histórico de cotações do portal', () => {
     assert.equal(formatarDataHoraCotacao('2026-10-26T14:41:00.000Z'), '26/10/2026 11:41');
   });
 
-  it('mantém ativa no 30º dia, expira no 31º e não reabre cotação convertida', () => {
+  it('mantém ativa no 10º dia, expira no 11º e não reabre cotação convertida', () => {
     const noLimite = { created_at: new Date(AGORA.getTime() - PRAZO_COTACAO_MS).toISOString(), status: 'Enviada', is_active: true };
     const vencida = { created_at: new Date(AGORA.getTime() - PRAZO_COTACAO_MS - 1000).toISOString(), status: 'Enviada', is_active: true };
     const convertida = { created_at: vencida.created_at, status: 'convertida', is_active: true, converted_to_order_id: 'OS-1' };

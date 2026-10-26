@@ -488,7 +488,8 @@ export function camposAoSalvarRota(input: {
   return { route_type: 'esporadica', is_active: true, region: input.region, consumed_in_order_id: null };
 }
 
-export const PRAZO_COTACAO_MS = 30 * 24 * 60 * 60 * 1000;
+export const PRAZO_COTACAO_DIAS = 10;
+export const PRAZO_COTACAO_MS = PRAZO_COTACAO_DIAS * 24 * 60 * 60 * 1000;
 
 export type CotacaoPrazo = {
   id?: string;
@@ -522,7 +523,7 @@ export function cotacaoSelecionavel(cotacao: CotacaoPrazo | null | undefined, ag
   return true;
 }
 
-/** Proposta ainda sem OS e dentro dos 30 dias. Aprovada, convertida e expirada ficam de fora. */
+/** Proposta ainda sem OS e dentro dos 10 dias. Aprovada, convertida e expirada ficam de fora. */
 export function cotacaoContaComoAberta(cotacao: CotacaoPrazo | null | undefined, agora = new Date()): boolean {
   if (!cotacao || cotacaoConvertida(cotacao)) return false;
   const status = String(cotacao.status || '').trim().toLowerCase();

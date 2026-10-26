@@ -1,6 +1,4 @@
-import { colunaRegionalAusente } from './tabela2027';
-
-const PRAZO_DIAS = 30;
+import { colunaRegionalAusente, PRAZO_COTACAO_MS } from './tabela2027';
 
 type ClienteCotacao = {
   from: (tabela: string) => {
@@ -16,9 +14,9 @@ type ClienteCotacao = {
   };
 };
 
-/** Marca como expirada a cotação sem OS e com mais de 30 dias. Não mexe em cotação convertida. */
+/** Marca como expirada a cotação sem OS e com mais de 10 dias. Não mexe em cotação convertida. */
 export async function checkAndExpireQuotations(db: ClienteCotacao): Promise<{ expiradas: boolean; colunaAusente: boolean; erro?: string }> {
-  const limite = new Date(Date.now() - PRAZO_DIAS * 24 * 60 * 60 * 1000).toISOString();
+  const limite = new Date(Date.now() - PRAZO_COTACAO_MS).toISOString();
   const resultado = await db
     .from('quotes')
     .update({ is_active: false, status: 'expirada' })

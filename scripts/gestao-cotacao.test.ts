@@ -11,6 +11,8 @@ import {
   decisaoExcluir,
   decisaoInativar,
   pdfAnexoAceito,
+  mostrarDesativarCotacao,
+  mostrarExcluirCotacao,
   podeEnviarCotacao,
   podeGerirCotacao,
   registroAuditoriaCotacao,
@@ -49,20 +51,34 @@ describe('gestão da cotação', () => {
     assert.equal(cotacaoSelecionavel(ativa, AGORA), true);
   });
 
-  it('inativa e exclui só para administrador, diretoria ou autor, e recusa cotação já virada em OS', () => {
+  it('desativa para usuário interno e exclui só a diretoria', () => {
+    const operacional = { nome: 'Operação', email: 'op@grupotmseg.com.br', perfil: 'Operacional' };
+    const diretoria = { ...admin, perfil: 'Diretoria' };
     assert.equal(decisaoInativar(admin, cotacao).ok, true);
-    assert.equal(decisaoExcluir(analista, cotacao).ok, true);
-    const alheia = decisaoExcluir({ nome: 'Bia', email: 'bia@cliente.com', perfil: 'analista', portalCliente: 'CEVA' }, cotacao);
-    assert.equal(alheia.ok, false);
-    if (alheia.ok) return;
-    assert.equal(alheia.status, 403);
+    assert.equal(decisaoInativar(operacional, cotacao).ok, true);
+    const portal = decisaoInativar(analista, cotacao);
+    assert.equal(portal.ok, false);
+    if (portal.ok) return;
+    assert.equal(portal.status, 403);
+    assert.equal(decisaoExcluir(diretoria, cotacao).ok, true);
+    const adminExclui = decisaoExcluir(admin, cotacao);
+    assert.equal(adminExclui.ok, false);
+    if (adminExclui.ok) return;
+    assert.equal(adminExclui.status, 403);
+    const autorExclui = decisaoExcluir(analista, cotacao);
+    assert.equal(autorExclui.ok, false);
     const virada = decisaoInativar(admin, { ...cotacao, converted_to_order_id: 'OS-9' });
     assert.equal(virada.ok, false);
     if (virada.ok) return;
     assert.equal(virada.status, 409);
     assert.equal(decisaoExcluir(admin, null).ok, false);
-    assert.equal(podeGerirCotacao({ ...admin, perfil: 'Diretoria' }, cotacao), true);
-    const log = registroAuditoriaCotacao({ acao: 'cotacao_excluir', ator: admin, cotacao });
+    assert.equal(mostrarDesativarCotacao(operacional, cotacao), true);
+    assert.equal(mostrarDesativarCotacao(analista, cotacao), false);
+    assert.equal(mostrarDesativarCotacao(diretoria, { ...cotacao, is_active: false, status: 'Inativa' }), false);
+    assert.equal(mostrarExcluirCotacao(diretoria, cotacao), true);
+    assert.equal(mostrarExcluirCotacao(admin, cotacao), false);
+    assert.equal(podeGerirCotacao(diretoria, cotacao), true);
+    const log = registroAuditoriaCotacao({ acao: 'cotacao_excluir', ator: diretoria, cotacao });
     assert.equal(log.action_type, 'cotacao_excluir');
     assert.equal(log.entity, 'quotes');
   });
