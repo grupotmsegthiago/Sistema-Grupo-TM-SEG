@@ -3,8 +3,11 @@
 import {
   ehLinhaPadraoRegional,
   FAIXAS_REGIONAIS,
+  FRANQUIA_HORAS,
+  FRANQUIA_KM,
   getRegionFromLocation,
   nomeLinhaPadrao,
+  numerosDaCotacaoRegional,
   valorKmDaFaixa,
   versaoDaLinhaTarifaria,
   type RegiaoTabela,
@@ -259,7 +262,81 @@ export type PropostaPortal = {
   duracaoMin?: number | null;
   /** Número visível da cotação. Não substitui o id técnico da linha. */
   numero?: number | null;
+  /** Km que o card chama de faturado. A franquia incluída continua em kmFranquia. */
+  kmFaturado?: number | null;
+  /** Horas que o card mostra. A franquia incluída continua em horasFranquia. */
+  horasContadas?: number | null;
 };
+
+export type ContaVisivelCotacao =
+  | { aplicar: false }
+  | {
+      aplicar: true;
+      kmRodado: number;
+      kmFaturado: number;
+      horasFaturadas: number;
+      franquiaKm: number;
+      franquiaHoras: number;
+      tarifaKm: number;
+      horaExtra: number;
+      total: number;
+      usouMinimo: boolean;
+      regiao: string;
+      vigencia: VersaoTabelaRegional;
+    };
+
+type LinhaParaConta = { operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null };
+
+/**
+ * A mesma conta do card de cima: km faturado, tarifa, hora extra, horas e total.
+ * Quando a origem tem linha do cliente, o total é o do card, sem a conta antiga da franquia.
+ */
+export function contaVisivelDaCotacao(input: {
+  cliente: string;
+  origem: string;
+  km: number;
+  versao: VersaoTabelaRegional;
+  linhas: LinhaParaConta[];
+  tarifaKmFallback?: number | null;
+  horaExtraFallback?: number | null;
+  vigenciaFallback?: VersaoTabelaRegional | null;
+  acordada?: boolean;
+}): ContaVisivelCotacao {
+  const regional = numerosDaCotacaoRegional(input);
+  if (!regional.aplicar) return { aplicar: false };
+  return {
+    aplicar: true,
+    kmRodado: Math.max(0, Number(input.km) || 0),
+    kmFaturado: regional.conta.kmFaturado,
+    horasFaturadas: regional.conta.horasFaturadas,
+    franquiaKm: FRANQUIA_KM,
+    franquiaHoras: FRANQUIA_HORAS,
+    tarifaKm: regional.tarifaKm,
+    horaExtra: regional.horaExtra ?? 0,
+    total: regional.conta.valor,
+    usouMinimo: regional.conta.usouMinimo,
+    regiao: rotuloRegiaoVisivel(regional.region) || regional.nome,
+    vigencia: regional.vigenciaUsada,
+  };
+}
+
+/** A proposta, o PDF e o e-mail passam a levar os números do card. */
+export function aplicarContaNaProposta(proposta: PropostaPortal, conta: ContaVisivelCotacao): PropostaPortal {
+  if (!conta.aplicar || proposta.acordada) return proposta;
+  return {
+    ...proposta,
+    acionamento: conta.total,
+    kmFranquia: conta.franquiaKm,
+    horasFranquia: conta.franquiaHoras,
+    kmExtra: conta.tarifaKm,
+    horaExtra: conta.horaExtra,
+    kmFaturado: conta.kmFaturado,
+    horasContadas: conta.horasFaturadas,
+    regiao: conta.regiao || proposta.regiao,
+    vigencia: conta.vigencia,
+    kmRota: conta.kmRodado,
+  };
+}
 
 /** Primeiro trecho do endereço, como a pessoa vê na proposta. */
 export function lugarDaProposta(endereco: string): string {

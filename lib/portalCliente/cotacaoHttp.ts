@@ -1,6 +1,6 @@
 import { colunaRegionalAusente } from '../precificacao/tabela2027.js';
-import { cartaDaProposta, marcoDeOperacoes } from './apresentacao.js';
-import { consultaDoCliente, montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
+import { cartaDaProposta, htmlDaProposta, marcoDeOperacoes } from './apresentacao.js';
+import { aplicarContaNaProposta, consultaDoCliente, contaVisivelDaCotacao, montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
 import {
   JANELA_HISTORICO_VIGENCIA,
   TAMANHO_PAGINA_HISTORICO,
@@ -61,6 +61,7 @@ async function tabelasDoCliente(sb: { from: (tabela: string) => any }, cliente: 
 export function montarPropostaDoPedido(
   tabelas: TabelaCotacao[],
   pedido: { regiao?: unknown; origem?: unknown; destino?: unknown; paradas?: unknown; km?: unknown },
+  clienteNome = '',
 ): PropostaPortal | { error: string } {
   const regiao = String(pedido.regiao || '').trim();
   const origem = String(pedido.origem || '').trim();
@@ -69,7 +70,21 @@ export function montarPropostaDoPedido(
   const km = numero(pedido.km);
   const tabelaRegiao = valoresDaRegiao(tabelas.filter((item) => item.regiao === regiao));
   if (!regiao || !origem || !destino || !tabelaRegiao || km <= 0) return { error: 'Faltam região, origem, destino ou a rota.' };
-  return montarProposta({ tabelas, regiao, origem, destino, paradas, kmRota: km, tabelaRegiao });
+  const base = montarProposta({ tabelas, regiao, origem, destino, paradas, kmRota: km, tabelaRegiao });
+  const conta = contaVisivelDaCotacao({
+    cliente: clienteNome,
+    origem,
+    km,
+    versao: '2027',
+    linhas: tabelas.map((item) => ({
+      operation_type: item.operacao,
+      price_per_extra_km: item.kmExtra,
+      price_per_extra_hour: item.horaExtra,
+    })),
+    tarifaKmFallback: tabelaRegiao.kmExtra,
+    horaExtraFallback: tabelaRegiao.horaExtra,
+  });
+  return aplicarContaNaProposta(base, conta);
 }
 
 export function textoDaProposta(proposta: PropostaPortal, operacoes?: string | null): string {
@@ -83,7 +98,7 @@ export async function salvarPropostaPortal(
 ): Promise<{ status: number; corpo: { ok: true; operacao: string } | { error: string } }> {
   const tabelas = await tabelasDoCliente(sb, cliente);
   if (!Array.isArray(tabelas)) return { status: tabelas.status, corpo: { error: tabelas.error } };
-  const proposta = montarPropostaDoPedido(tabelas, pedido);
+  const proposta = montarPropostaDoPedido(tabelas, pedido, String(cliente?.name || cliente?.trading_name || ''));
   if ('error' in proposta) return { status: 400, corpo: proposta };
   if (proposta.acordada) return { status: 409, corpo: { error: 'Essa rota já está acordada na tabela do cliente.' } };
   const regiao = valoresDaRegiao(tabelas.filter((item) => item.regiao === proposta.regiao));
@@ -167,7 +182,7 @@ export async function propostaParaEmail(
   sb: { from: (tabela: string) => any },
   cliente: ClientePortal,
   pedido: { para?: unknown; autor?: unknown; regiao?: unknown; origem?: unknown; destino?: unknown; paradas?: unknown; km?: unknown },
-): Promise<{ status: number; corpo: { error: string } | { ok: true; para: string; copias: string[]; assunto: string; texto: string } }> {
+): Promise<{ status: number; corpo: { error: string } | { ok: true; para: string; copias: string[]; assunto: string; texto: string; html: string } }> {
   const destinos = montarDestinatariosEnvio({
     selecionados: String(pedido.para || ''),
     autor: String(pedido.autor || ''),
@@ -175,8 +190,9 @@ export async function propostaParaEmail(
   if (!destinos.ok) return { status: 400, corpo: { error: destinos.error } };
   const tabelas = await tabelasDoCliente(sb, cliente);
   if (!Array.isArray(tabelas)) return { status: tabelas.status, corpo: { error: tabelas.error } };
-  const proposta = montarPropostaDoPedido(tabelas, pedido);
+  const proposta = montarPropostaDoPedido(tabelas, pedido, String(cliente?.name || cliente?.trading_name || ''));
   if ('error' in proposta) return { status: 400, corpo: proposta };
+  const operacoes = await rotuloDeOperacoes(sb);
   return {
     status: 200,
     corpo: {
@@ -184,7 +200,8 @@ export async function propostaParaEmail(
       para: destinos.para,
       copias: destinos.copias,
       assunto: `Proposta Grupo TM SEG — ${proposta.operacao}`,
-      texto: textoDaProposta(proposta, await rotuloDeOperacoes(sb)),
+      texto: textoDaProposta(proposta, operacoes),
+      html: htmlDaProposta(proposta, operacoes),
     },
   };
 }

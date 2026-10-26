@@ -66,6 +66,44 @@ export const CLIENTES_TMSEG = [
 
 export const AVISO_PEDAGIO = 'O custo do pedágio será cobrado à parte, conforme o percurso realizado.';
 
+export const CONDICAO_PAGAMENTO = '15 dias após o término da quinzena, com nota fiscal e boleto.';
+
+function escaparHtml(valor: string): string {
+  return valor
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Tabela da proposta no e-mail. Pernoite só entra quando a proposta traz o valor. */
+export function linhasDaTabelaEmail(proposta: PropostaPortal): Array<{ rotulo: string; valor: string }> {
+  const linhas: Array<{ rotulo: string; valor: string }> = [
+    { rotulo: 'Origem', valor: proposta.origem || '—' },
+    { rotulo: 'Destino', valor: proposta.destino || '—' },
+    { rotulo: 'Veículo / tipo de operação', valor: proposta.operacao || '—' },
+    { rotulo: 'Franquia de horas incluída', valor: `${quantidade(proposta.horasFranquia)} h` },
+    { rotulo: 'Franquia de km incluída', valor: `${quantidade(proposta.kmFranquia)} km` },
+  ];
+  if (proposta.kmRota != null && proposta.kmRota > 0) {
+    linhas.push({ rotulo: 'Km rodado', valor: `${quantidade(proposta.kmRota)} km` });
+  }
+  if (proposta.kmFaturado != null && proposta.kmFaturado > 0) {
+    linhas.push({ rotulo: 'Km faturado', valor: `${quantidade(proposta.kmFaturado)} km` });
+  }
+  if (proposta.horasContadas != null && proposta.horasContadas > 0) {
+    linhas.push({ rotulo: 'Horas consideradas', valor: `${quantidade(proposta.horasContadas)} h` });
+  }
+  linhas.push(
+    { rotulo: 'Valor do km extra', valor: moeda(proposta.kmExtra) },
+    { rotulo: 'Valor da hora extra', valor: moeda(proposta.horaExtra) },
+    { rotulo: 'Valor total da proposta', valor: moeda(proposta.acionamento) },
+    { rotulo: 'Condições de pagamento', valor: CONDICAO_PAGAMENTO },
+    { rotulo: 'Pedágio', valor: AVISO_PEDAGIO },
+  );
+  return linhas;
+}
+
 export function regiaoLegivel(regiao: string): string {
   const nome = regiao.trim().toLowerCase();
   if (nome === 'sudeste') return 'Sudeste';
@@ -133,8 +171,60 @@ export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | n
     '',
     'A proposta completa segue em anexo, com o mapa da rota.',
     '',
+    'Acionamento da rota',
+    ...linhasDaTabelaEmail(proposta).map((item) => `${item.rotulo}: ${item.valor}`),
+    '',
     MARCA_TMSEG.telefone,
     MARCA_TMSEG.endereco,
     MARCA_TMSEG.sitio,
   ].join('\n');
+}
+
+/** Aceita a proposta enviada pela tela quando os números fecham. */
+export function propostaRecebida(bruto: unknown): PropostaPortal | null {
+  if (!bruto || typeof bruto !== 'object') return null;
+  const item = bruto as Record<string, unknown>;
+  const numeros = [item.acionamento, item.kmFranquia, item.horasFranquia, item.kmExtra, item.horaExtra].map(Number);
+  if (numeros.some((valor) => !Number.isFinite(valor))) return null;
+  const kmFaturado = Number(item.kmFaturado);
+  const horasContadas = Number(item.horasContadas);
+  const kmRota = Number(item.kmRota);
+  return {
+    acordada: Boolean(item.acordada),
+    regiao: String(item.regiao || '').slice(0, 80),
+    origem: String(item.origem || '').slice(0, 300),
+    destino: String(item.destino || '').slice(0, 300),
+    paradas: Array.isArray(item.paradas) ? item.paradas.map((parada) => String(parada || '')).slice(0, 8) : [],
+    acionamento: numeros[0],
+    kmFranquia: numeros[1],
+    horasFranquia: numeros[2],
+    kmExtra: numeros[3],
+    horaExtra: numeros[4],
+    operacao: String(item.operacao || 'escolta').slice(0, 160),
+    vigencia: item.vigencia === '2027' ? '2027' : '2026',
+    kmRota: Number.isFinite(kmRota) && kmRota > 0 ? kmRota : null,
+    duracaoMin: Number(item.duracaoMin) > 0 ? Number(item.duracaoMin) : null,
+    kmFaturado: Number.isFinite(kmFaturado) && kmFaturado > 0 ? kmFaturado : null,
+    horasContadas: Number.isFinite(horasContadas) && horasContadas > 0 ? horasContadas : null,
+    numero: Number.isInteger(Number(item.numero)) && Number(item.numero) > 0 ? Number(item.numero) : null,
+  };
+}
+
+/** O mesmo texto da carta, em HTML, com a tabela do acionamento. */
+export function htmlDaProposta(proposta: PropostaPortal, operacoes?: string | null): string {
+  const linhas = linhasDaTabelaEmail(proposta).map((item) => (
+    `<tr><td style="padding:8px 10px;border-bottom:1px solid #e7e1d6;color:#5c564e;">${escaparHtml(item.rotulo)}</td><td style="padding:8px 10px;border-bottom:1px solid #e7e1d6;font-weight:700;color:#161513;">${escaparHtml(item.valor)}</td></tr>`
+  )).join('');
+  const texto = escaparHtml(cartaDaProposta(proposta, operacoes)).replace(/\n/g, '<br>');
+  return [
+    '<!DOCTYPE html><html lang="pt-BR"><body style="margin:0;background:#f7f5f2;color:#161513;">',
+    '<div style="max-width:640px;margin:0 auto;padding:24px;font-family:Arial,sans-serif;">',
+    `<p style="margin:0 0 8px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#d0121a;">${escaparHtml(MARCA_TMSEG.nome)}</p>`,
+    '<h1 style="margin:0 0 16px;font-size:22px;">Proposta comercial de escolta</h1>',
+    '<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:12px;">',
+    linhas,
+    '</table>',
+    `<div style="margin-top:20px;font-size:14px;line-height:1.5;">${texto}</div>`,
+    '</div></body></html>',
+  ].join('');
 }

@@ -8,6 +8,7 @@ import {
   formatarDataHoraCotacao,
   formatarValorCotacao,
   lerSnapshot,
+  linhaConfereComTela,
   mensagemCompletaCotacao,
   nomePdfCotacao,
   pedidoParaRegistro,
@@ -17,6 +18,7 @@ import {
   textoDistanciaTempo,
   textoRegiaoFranquia,
 } from '../lib/portalCliente/historicoCotacoes';
+import { aplicarContaNaProposta, contaVisivelDaCotacao } from '../lib/portalCliente/cotacao';
 import { listarHistoricoCotacoes, registrarCotacaoPortal } from '../lib/portalCliente/cotacaoHttp';
 import { AcoesDaLinha, HistoricoVazio } from '../components/ceva/HistoricoCotacoes';
 import { escalaDaCaptura } from '../components/ceva/abrirPdfCotacao';
@@ -102,13 +104,53 @@ describe('histórico de cotações do portal', () => {
       origem: 'Salvador, BA, Brasil',
       destino: 'São Paulo, SP, Brasil',
       numero: 42,
-    }), 'Cotação CEVA LOGISTICS LTDA - Salvador-BA x São Paulo-SP - 42.pdf');
+      data: '2026-10-26T14:41:00.000Z',
+    }), 'Cotacao_42_CEVA_LOGISTICS_LTDA_26-10-2026.pdf');
     assert.equal(nomePdfCotacao({
-      cliente: 'CEVA',
-      origem: 'Santos, SP',
-      destino: 'Diadema, SP',
-    }), 'Cotação CEVA - Santos-SP x Diadema-SP.pdf');
+      cliente: 'CEVA / São Paulo',
+      data: '26-10-2026',
+    }), 'Cotacao_sem_numero_CEVA_Sao_Paulo_26-10-2026.pdf');
     assert.equal(formatarDataHoraCotacao('2026-10-26T14:41:00.000Z'), '26/10/2026 11:41');
+    assert.equal(linhaConfereComTela(
+      { origin: 'Avenida Talma Rodrigues Ribeiro, Vitória - ES', destination: 'Rodovia Presidente Dutra, SP', total_km: 942.5 },
+      { origem: 'Avenida Talma Rodrigues Ribeiro', destino: 'Rodovia Presidente Dutra, 17744', km: 942.5 },
+    ), true);
+  });
+
+  it('o histórico da rota na tela usa a mesma conta do card', () => {
+    const conta = contaVisivelDaCotacao({
+      cliente: 'CEVA LOGISTICS',
+      origem: 'Avenida Talma Rodrigues Ribeiro, Vitória - ES',
+      km: 942.5,
+      versao: '2027',
+      linhas: [{ operation_type: 'TABELA 2027 - SUDESTE MG/ES', price_per_extra_km: 7.3, price_per_extra_hour: 180 }],
+    });
+    assert.equal(conta.aplicar, true);
+    if (!conta.aplicar) return;
+    assert.equal(conta.tarifaKm, 7.3);
+    assert.equal(conta.horaExtra, 180);
+    assert.equal(conta.kmFaturado, 942.5);
+    assert.equal(conta.horasFaturadas, 23);
+    assert.equal(conta.total, 6880.25);
+    assert.equal(conta.franquiaKm, 100);
+    assert.equal(conta.franquiaHoras, 3);
+    const proposta = aplicarContaNaProposta({
+      acordada: false,
+      regiao: 'SUDESTE',
+      origem: 'Avenida Talma Rodrigues Ribeiro, Vitória - ES',
+      destino: 'Rodovia Presidente Dutra, SP',
+      paradas: [],
+      acionamento: 9583.8,
+      kmFranquia: 943,
+      horasFranquia: 24,
+      kmExtra: 6.6,
+      horaExtra: 160,
+      operacao: 'SUDESTE - ROTA ANTIGA',
+    }, conta);
+    assert.equal(proposta.acionamento, 6880.25);
+    assert.equal(proposta.kmExtra, 7.3);
+    assert.equal(proposta.horaExtra, 180);
+    assert.notEqual(proposta.acionamento, 9583.8);
   });
 
   it('mantém ativa no 10º dia, expira no 11º e não reabre cotação convertida', () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { cartaDaProposta, marcoDeOperacoes, SERVICOS_TMSEG } from '../lib/portalCliente/apresentacao.ts';
+import { cartaDaProposta, htmlDaProposta, marcoDeOperacoes, SERVICOS_TMSEG } from '../lib/portalCliente/apresentacao.ts';
 import { logoConhecido, pedidoDaCarreta, slugVisual, urlMapaEstatico, urlMapaPorEnderecos } from '../lib/portalCliente/frotaVisual.ts';
 import { nomesDaVigencia } from '../lib/portalCliente/cotacao.ts';
 import { faixasCobertas, faixasVerticais, gruposNaFolha, paginasDosBlocos } from '../lib/portalCliente/pdfBlocos.ts';
@@ -98,6 +98,28 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.match(carta, /www\.grupotmseg\.com\.br/);
   assert.match(carta, /pedágio será cobrado à parte/);
   assert.match(carta, /proposta completa segue em anexo/);
+  assert.match(carta, /Franquia de horas incluída/);
+  assert.match(carta, /Franquia de km incluída/);
+  assert.match(carta, /Valor do km extra/);
+  assert.match(carta, /Valor da hora extra/);
+  assert.match(carta, /Valor total da proposta/);
+  assert.match(carta, /Condições de pagamento/);
+  assert.doesNotMatch(carta, /Pernoite/);
+  const html = htmlDaProposta({
+    acordada: false,
+    regiao: 'SUDESTE',
+    origem: 'Santos, SP',
+    destino: 'Diadema, SP',
+    paradas: [],
+    acionamento: 650,
+    kmFranquia: 100,
+    horasFranquia: 3,
+    kmExtra: 7.1,
+    horaExtra: 160,
+    operacao: 'SUDESTE - SANTOS X DIADEMA',
+  });
+  assert.match(html, /<table/);
+  assert.match(html, /Valor total da proposta/);
   assert.match(carta, /Tabela: Santos x Diadema/);
   assert.match(carta, /Rota: Santos x Diadema/);
   assert.doesNotMatch(carta, /\(2026-\)/);

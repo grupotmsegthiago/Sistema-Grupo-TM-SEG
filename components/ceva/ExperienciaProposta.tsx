@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, X } from 'lucide-react';
+import { Loader2, Mail, X } from 'lucide-react';
 import {
   AVISO_PEDAGIO,
   CLIENTES_TMSEG,
@@ -144,6 +144,14 @@ export const ExperienciaProposta: React.FC<{
 
   return (
     <div data-captura-proposta={modoCaptura ? marcaPdf : undefined} className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
+      {!modoCaptura && ocupado && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/45" role="status" data-testid="overlay-pdf-proposta">
+          <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
+            <Loader2 className="animate-spin text-slate-900" size={22} />
+            <p className="text-sm font-semibold text-slate-900">Gerando PDF da proposta, aguarde...</p>
+          </div>
+        </div>
+      )}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Outfit:wght@400;500;600&display=swap');
         @keyframes tmseg-subir { from { opacity: 0; transform: translateY(36px) rotateX(8deg); } to { opacity: 1; transform: translateY(0) rotateX(0); } }
@@ -300,6 +308,12 @@ export const ExperienciaProposta: React.FC<{
                 {proposta.kmRota != null && proposta.kmRota > 0 && (
                   <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km da rota</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.kmRota)} km</span></p>
                 )}
+              {proposta.kmFaturado != null && proposta.kmFaturado > 0 && (
+                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km faturado</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.kmFaturado)} km</span></p>
+              )}
+              {proposta.horasContadas != null && proposta.horasContadas > 0 && (
+                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Horas consideradas</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.horasContadas)} h</span></p>
+              )}
                 {proposta.duracaoMin != null && proposta.duracaoMin > 0 && (
                   <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Tempo</span><span className="mt-1 block text-3xl font-semibold">{Math.round(proposta.duracaoMin)} min</span></p>
                 )}

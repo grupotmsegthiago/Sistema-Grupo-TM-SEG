@@ -9,7 +9,6 @@ import {
 } from '../precificacao/tabela2027';
 import type { PropostaPortal } from './cotacao';
 import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
-import { cidadeUfTraco } from './rotaCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
 export const TAMANHO_PAGINA_HISTORICO = 10;
@@ -117,40 +116,75 @@ export function dataLongaCotacao(iso: string | null | undefined): string {
   });
 }
 
-function limparTrechoArquivo(valor: string, limite: number): string {
-  return valor.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limite);
+function limparParteArquivo(valor: string): string {
+  const limpo = String(valor || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  return (limpo || 'Cliente').slice(0, 60);
 }
 
-/** Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf */
+/** Data do arquivo em DD-MM-AAAA, no horário de Brasília, sem barra. */
+export function dataArquivoCotacao(valor?: string | Date | null): string {
+  if (typeof valor === 'string' && /^\d{2}-\d{2}-\d{4}$/.test(valor)) return valor;
+  const candidata = valor instanceof Date ? valor : (valor ? new Date(valor) : new Date());
+  const data = Number.isNaN(candidata.getTime()) ? new Date() : candidata;
+  const partes = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).formatToParts(data);
+  const pegar = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((item) => item.type === tipo)?.value || '';
+  return `${pegar('day')}-${pegar('month')}-${pegar('year')}`;
+}
+
+/** Cotacao_NUMERO_CLIENTE_DATA.pdf */
 export function nomePdfCotacao(entrada: {
   cliente: string;
-  origem: string;
-  destino: string;
+  origem?: string;
+  destino?: string;
   numero?: number | string | null;
+  data?: string | Date | null;
 }): string {
-  const cliente = limparTrechoArquivo(String(entrada.cliente || ''), 80) || 'Cliente';
-  const origem = cidadeUfTraco(entrada.origem);
-  const destino = cidadeUfTraco(entrada.destino);
-  const bruto = Number(entrada.numero);
-  const numero = Number.isInteger(bruto) && bruto > 0 ? String(bruto) : '';
-  const base = `Cotação ${cliente} - ${origem} x ${destino}`;
-  const nome = numero ? `${base} - ${numero}.pdf` : `${base}.pdf`;
-  return nome.length <= 180 ? nome : `${nome.slice(0, 176).trimEnd()}.pdf`;
+  const numero = numeroInformado(entrada.numero);
+  const cliente = limparParteArquivo(entrada.cliente);
+  const data = dataArquivoCotacao(entrada.data);
+  const nome = `Cotacao_${numero ? String(numero) : 'sem_numero'}_${cliente}_${data}.pdf`;
+  return nome.length <= 180 ? nome : `${nome.slice(0, 176).replace(/_+$/g, '')}.pdf`;
 }
 
 /** O anexo usa o nome enviado pela tela quando ele segue o padrão. Senão monta de novo. */
 export function nomeAnexoPdf(
   pedido: unknown,
-  reserva: { cliente?: string | null; origem?: string | null; destino?: string | null; numero?: unknown },
+  reserva: { cliente?: string | null; origem?: string | null; destino?: string | null; numero?: unknown; data?: string | Date | null },
 ): string {
   const nome = String(pedido || '').trim();
-  if (nome.startsWith('Cotação ') && nome.endsWith('.pdf') && nome.length <= 180 && !/[\\/:*?"<>|]/.test(nome)) return nome;
+  if (/^Cotacao_[A-Za-z0-9_]+_\d{2}-\d{2}-\d{4}\.pdf$/.test(nome) && nome.length <= 180) return nome;
   return nomePdfCotacao({
     cliente: String(reserva.cliente || 'Cliente'),
-    origem: String(reserva.origem || ''),
-    destino: String(reserva.destino || ''),
     numero: numeroInformado(reserva.numero),
+    data: reserva.data,
   });
+}
+
+/** A linha do histórico é a rota que está no card quando o km e o endereço batem. */
+export function linhaConfereComTela(
+  linha: { origin?: string | null; destination?: string | null; total_km?: number | null },
+  tela: { origem?: string | null; destino?: string | null; km?: number | null },
+): boolean {
+  const kmTela = Number(tela.km);
+  const kmLinha = Number(linha.total_km);
+  if (!Number.isFinite(kmTela) || kmTela <= 0 || !Number.isFinite(kmLinha)) return false;
+  if (Math.abs(kmLinha - kmTela) >= 0.2) return false;
+  const origemTela = String(tela.origem || '').trim();
+  const origemLinha = String(linha.origin || '').trim();
+  if (!origemTela || !origemLinha) return false;
+  if (origemLinha === origemTela) return true;
+  return resumirEndereco(origemLinha) === resumirEndereco(origemTela)
+    && resumirEndereco(linha.destination) === resumirEndereco(tela.destino);
 }
 
 export function numeroInformado(valor: unknown): number | null {

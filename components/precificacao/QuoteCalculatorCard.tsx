@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
+import { contaVisivelDaCotacao, type ContaVisivelCotacao } from '../../lib/portalCliente/cotacao';
 import { textoHoraExtra, textoTarifaKm } from '../../lib/portalCliente/gestaoCotacao';
 import {
   extrairCep,
   getRegionFromLocation,
   nomeRegiao,
-  numerosDaCotacaoRegional,
   type VersaoTabelaRegional,
 } from '../../lib/precificacao/tabela2027';
 
@@ -27,6 +27,8 @@ type Props = {
   tarifaKm?: number | null;
   horaExtra?: number | null;
   ocultarCampos?: boolean;
+  /** Conta já montada pela tela. O card não recalcula por cima dela. */
+  conta?: ContaVisivelCotacao | null;
 };
 
 const reais = (valor: number) => valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -44,11 +46,12 @@ const QuoteCalculatorCard: React.FC<Props> = ({
   tarifaKm,
   horaExtra,
   ocultarCampos = false,
+  conta: contaRecebida = null,
 }) => {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const local = getRegionFromLocation(origem, '', cliente);
   const kmNumero = Number(String(km).replace(',', '.'));
-  const regional = numerosDaCotacaoRegional({
+  const visivel = contaRecebida ?? contaVisivelDaCotacao({
     cliente,
     origem,
     km: kmNumero,
@@ -57,9 +60,8 @@ const QuoteCalculatorCard: React.FC<Props> = ({
     tarifaKmFallback: tarifaKm,
     horaExtraFallback: horaExtra,
   });
-  const conta = regional.aplicar ? regional.conta : null;
-  const taxaVisivel = regional.aplicar ? regional.tarifaKm : tarifaKm;
-  const horaVisivel = regional.aplicar ? regional.horaExtra : horaExtra;
+  const taxaVisivel = visivel.aplicar ? visivel.tarifaKm : tarifaKm;
+  const horaVisivel = visivel.aplicar ? visivel.horaExtra : horaExtra;
 
   const resolverCep = async () => {
     const cep = extrairCep(origem);
@@ -137,22 +139,22 @@ const QuoteCalculatorCard: React.FC<Props> = ({
           </div>
           <div className="rounded-xl bg-slate-50 p-3">
             <p className="font-bold uppercase text-gray-400">KM faturado</p>
-            <p className="mt-1 font-black text-gray-900">{conta ? `${conta.kmFaturado} km` : '—'}</p>
+            <p className="mt-1 font-black text-gray-900">{visivel.aplicar ? `${visivel.kmFaturado} km` : '—'}</p>
             {textoTarifaKm(taxaVisivel) !== '—' && (
               <p className="mt-1 text-[10px] font-semibold normal-case text-slate-500" data-testid="tarifa-km-card">Tarifa: {textoTarifaKm(taxaVisivel)}</p>
             )}
             {textoHoraExtra(horaVisivel) !== '—' && (
               <p className="text-[10px] font-semibold normal-case text-slate-500">Hora extra: {textoHoraExtra(horaVisivel)}</p>
             )}
-            {conta?.usouMinimo && <p className="text-[10px] font-bold text-amber-700">Franquia de 100 km</p>}
+            {visivel.aplicar && visivel.usouMinimo && <p className="text-[10px] font-bold text-amber-700">Franquia de 100 km</p>}
           </div>
           <div className="rounded-xl bg-slate-50 p-3">
             <p className="font-bold uppercase text-gray-400">Horas</p>
-            <p className="mt-1 font-black text-gray-900" data-testid="cotacao-horas">{conta ? `${conta.horasFaturadas} h` : '—'}</p>
+            <p className="mt-1 font-black text-gray-900" data-testid="cotacao-horas">{visivel.aplicar ? `${visivel.horasFaturadas} h` : '—'}</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-3">
             <p className="font-bold uppercase text-gray-400">Total</p>
-            <p className="mt-1 font-black text-gray-900" data-testid="cotacao-total">{conta ? reais(conta.valor) : '—'}</p>
+            <p className="mt-1 font-black text-gray-900" data-testid="cotacao-total">{visivel.aplicar ? reais(visivel.total) : '—'}</p>
           </div>
         </div>
       )}

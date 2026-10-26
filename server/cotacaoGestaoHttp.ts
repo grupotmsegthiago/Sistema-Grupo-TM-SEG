@@ -16,6 +16,7 @@ import {
   type CotacaoGestao,
 } from '../lib/portalCliente/gestaoCotacao.js';
 import { lerSnapshot, nomePdfCotacao } from '../lib/portalCliente/historicoCotacoes.js';
+import { cartaDaProposta, htmlDaProposta, propostaRecebida } from '../lib/portalCliente/apresentacao.js';
 
 type Banco = {
   from: (tabela: string) => any;
@@ -87,7 +88,7 @@ export async function atorDaRequisicao(sb: Banco, headers: Record<string, unknow
 async function lerCotacao(sb: Banco, id: string): Promise<CotacaoGestao | null> {
   const { data, error } = await sb
     .from('quotes')
-    .select('id, client_name, origin, destination, total_km, total_value, created_by, status, is_active, converted_to_order_id, contract_details')
+    .select('id, client_name, origin, destination, total_km, total_value, created_at, created_by, status, is_active, converted_to_order_id, contract_details')
     .eq('id', id)
     .maybeSingle();
   if (error || !data) return null;
@@ -104,6 +105,7 @@ async function lerCotacao(sb: Banco, id: string): Promise<CotacaoGestao | null> 
     destination: data.destination,
     total_km: Number(data.total_km),
     total_value: Number(data.total_value),
+    created_at: data.created_at ? String(data.created_at) : null,
   };
 }
 
@@ -182,13 +184,17 @@ export async function atenderGestaoCotacao(req: Request, res: Response, acao: 'i
     res.status(400).json({ error: 'O anexo não é um PDF.' });
     return;
   }
-  const texto = cartaEmailCotacao({
-    origem: cotacao.origin,
-    destino: cotacao.destination,
-    km: cotacao.total_km,
-    valor: cotacao.total_value,
-    mensagem: String(req.body?.mensagem || ''),
-  });
+  const recebida = propostaRecebida(req.body?.proposta);
+  const mensagem = String(req.body?.mensagem || '').trim();
+  const texto = recebida
+    ? (mensagem || cartaDaProposta(recebida))
+    : cartaEmailCotacao({
+      origem: cotacao.origin,
+      destino: cotacao.destination,
+      km: cotacao.total_km,
+      valor: cotacao.total_value,
+      mensagem,
+    });
   try {
     const { sendMail, SMTP_FROM } = await import('../lib/email/smtp.js');
     await sendMail({
@@ -197,12 +203,12 @@ export async function atenderGestaoCotacao(req: Request, res: Response, acao: 'i
       cc: destinos.copias.length ? destinos.copias : undefined,
       subject: `Proposta Grupo TM SEG — ${cotacao.origin || 'Cotação'}`,
       text: texto,
+      html: recebida ? htmlDaProposta(recebida) : undefined,
       attachments: [{
         filename: nomePdfCotacao({
           cliente: String(cotacao.client_name || 'Cliente'),
-          origem: String(cotacao.origin || ''),
-          destino: String(cotacao.destination || ''),
-          numero: lerSnapshot(cotacao.contract_details)?.numero ?? null,
+          numero: recebida?.numero ?? lerSnapshot(cotacao.contract_details)?.numero ?? null,
+          data: cotacao.created_at,
         }),
         content: conteudo,
         contentType: 'application/pdf',

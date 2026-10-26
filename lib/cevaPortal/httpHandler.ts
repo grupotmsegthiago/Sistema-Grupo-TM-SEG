@@ -1816,6 +1816,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
               cc: preparado.corpo.copias.length ? preparado.corpo.copias : undefined,
               subject: preparado.corpo.assunto,
               text: preparado.corpo.texto,
+              html: preparado.corpo.html,
               attachments: [{
                 filename: nomeAnexoPdf(body?.nomePdf, {
                   origem: String(body?.origem || ''),

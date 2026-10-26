@@ -231,6 +231,7 @@ async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
       allowTaint: false,
       backgroundColor: '#f7f5f2',
       logging: false,
+      imageTimeout: 2500,
       windowWidth: Math.max(window.innerWidth, Math.ceil(artigo.scrollWidth), 960),
       windowHeight: Math.max(window.innerHeight, Math.ceil(artigo.scrollHeight)),
       onclone: (documento, clonado) => {
@@ -396,6 +397,7 @@ export async function printDoMapaVisivel(raiz: HTMLElement, mapaFundo: string | 
       allowTaint: false,
       backgroundColor: '#0f172a',
       logging: false,
+      imageTimeout: 2500,
     });
     const url = shot.toDataURL('image/jpeg', 0.82);
     if (!url.startsWith('data:image/') || url.length < 5000) return null;

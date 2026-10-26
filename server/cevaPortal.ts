@@ -76,35 +76,14 @@ export function registerCevaPortalRoutes(app: Express): void {
       res.status(400).json({ error: destinos.error });
       return;
     }
-    const bruto = req.body?.proposta;
-    if (!bruto || typeof bruto !== 'object') {
+    const { cartaDaProposta, htmlDaProposta, propostaRecebida } = await import('../lib/portalCliente/apresentacao.js');
+    const proposta = propostaRecebida(req.body?.proposta);
+    if (!proposta) {
       res.status(400).json({ error: 'Proposta incompleta.' });
       return;
     }
-    const numeros = [bruto.acionamento, bruto.kmFranquia, bruto.horasFranquia, bruto.kmExtra, bruto.horaExtra].map(Number);
-    if (numeros.some((valor) => !Number.isFinite(valor))) {
-      res.status(400).json({ error: 'Proposta incompleta.' });
-      return;
-    }
-    const { cartaDaProposta } = await import('../lib/portalCliente/apresentacao.js');
     const { rotuloDeOperacoes } = await import('../lib/portalCliente/cotacaoHttp.js');
     const operacoes = bancoAtor ? await rotuloDeOperacoes(bancoAtor) : null;
-    const proposta = {
-      acordada: Boolean(bruto.acordada),
-      regiao: String(bruto.regiao || ''),
-      origem: String(bruto.origem || ''),
-      destino: String(bruto.destino || ''),
-      paradas: Array.isArray(bruto.paradas) ? bruto.paradas.map((item: unknown) => String(item || '')) : [],
-      acionamento: numeros[0],
-      kmFranquia: numeros[1],
-      horasFranquia: numeros[2],
-      kmExtra: numeros[3],
-      horaExtra: numeros[4],
-      operacao: String(bruto.operacao || 'escolta').slice(0, 160),
-      vigencia: bruto.vigencia === '2027' ? '2027' as const : '2026' as const,
-      kmRota: Number(bruto.kmRota) > 0 ? Number(bruto.kmRota) : null,
-      duracaoMin: Number(bruto.duracaoMin) > 0 ? Number(bruto.duracaoMin) : null,
-    };
     try {
       const { pdfAnexoAceito } = await import('../lib/portalCliente/gestaoCotacao.js');
       const { nomeAnexoPdf } = await import('../lib/portalCliente/historicoCotacoes.js');
@@ -120,6 +99,7 @@ export function registerCevaPortalRoutes(app: Express): void {
         cc: destinos.copias.length ? destinos.copias : undefined,
         subject: `Proposta Grupo TM SEG — ${proposta.operacao}`,
         text: cartaDaProposta(proposta, operacoes),
+        html: htmlDaProposta(proposta, operacoes),
         attachments: [{
           filename: nomeAnexoPdf(req.body?.nomePdf, {
             cliente: '',

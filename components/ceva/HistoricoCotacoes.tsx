@@ -5,7 +5,8 @@ import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
 import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { COPIA_FIXA_COTACAO, cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
-import { nomesDaVigencia } from '../../lib/portalCliente/cotacao';
+import { aplicarContaNaProposta, nomesDaVigencia, type ContaVisivelCotacao } from '../../lib/portalCliente/cotacao';
+import { cartaDaProposta } from '../../lib/portalCliente/apresentacao';
 import {
   TEXTO_HISTORICO_VAZIO,
   TAMANHO_PAGINA_HISTORICO,
@@ -15,6 +16,7 @@ import {
   formatarValorCotacao,
   lerSnapshot,
   mensagemCompletaCotacao,
+  linhaConfereComTela,
   nomePdfCotacao,
   normalizarLinhaHistorico,
   reservarNumeroCotacao,
@@ -210,7 +212,11 @@ export const HistoricoCotacoes: React.FC<{
   versao?: VersaoTabelaRegional;
   onVersao?: (versao: VersaoTabelaRegional) => void;
   onEditar?: (edicao: EdicaoCotacao) => void;
-}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar }) => {
+  contaAtual?: ContaVisivelCotacao | null;
+  origemAtual?: string;
+  destinoAtual?: string;
+  kmAtual?: number | null;
+}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar, contaAtual = null, origemAtual = '', destinoAtual = '', kmAtual = null }) => {
   const portal = usePortalCliente();
   const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
   const versaoAtiva = versao ?? versaoLocal;
@@ -329,6 +335,19 @@ export const HistoricoCotacoes: React.FC<{
     return reservado;
   };
 
+  const contaDaLinha = (linha: LinhaHistoricoCotacao): ContaVisivelCotacao | null => {
+    if (!contaAtual?.aplicar) return null;
+    if (lerSnapshot(linha.contract_details)?.acordada) return null;
+    if (!linhaConfereComTela(linha, { origem: origemAtual, destino: destinoAtual, km: kmAtual })) return null;
+    return contaAtual;
+  };
+
+  const propostaDaLinha = (linha: LinhaHistoricoCotacao) => {
+    const base = propostaDoHistorico(linha);
+    const conta = contaDaLinha(linha);
+    return conta ? aplicarContaNaProposta(base, conta) : base;
+  };
+
   useEffect(() => {
     if (!captura) return;
     const linha = captura.linha;
@@ -350,7 +369,7 @@ export const HistoricoCotacoes: React.FC<{
           const { pdfBase64DaProposta } = await import('./abrirPdfCotacao');
           const pdf = await pdfBase64DaProposta(artigo);
           const pendente = emailPendente.current;
-          const init = { method: 'POST', body: JSON.stringify({ para: pendente?.para || '', cc: pendente?.cc || '', mensagem: pendente?.mensagem || '', pdf }) };
+          const init = { method: 'POST', body: JSON.stringify({ para: pendente?.para || '', cc: pendente?.cc || '', mensagem: pendente?.mensagem || '', pdf, proposta: propostaDaLinha(linha) }) };
           const resposta = clienteNome
             ? await authFetch(`/api/cotacoes/${linha.id}/enviar-email`, init)
             : await fetch(`/api/cotacoes/${linha.id}/enviar-email`, { ...init, headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' } });
@@ -365,9 +384,8 @@ export const HistoricoCotacoes: React.FC<{
           const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
           await abrirPdfDaProposta(artigo, nomePdfCotacao({
             cliente: linha.client_name || 'Cliente',
-            origem: linha.origin,
-            destino: linha.destination,
             numero,
+            data: linha.created_at,
           }), janela);
         }
       } catch (falha) {
@@ -383,7 +401,7 @@ export const HistoricoCotacoes: React.FC<{
     };
     void gerar();
     return () => { ativo = false; };
-  }, [captura, clienteNome, portal]);
+  }, [captura, clienteNome, portal, contaAtual, origemAtual, destinoAtual, kmAtual]);
 
   const abrirCaptura = async (linha: LinhaHistoricoCotacao, modo: 'pdf' | 'email') => {
     const mapa = await mapaEstaticoDaLinha(linha, clienteNome, portal);
@@ -392,6 +410,7 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const verPdf = (linha: LinhaHistoricoCotacao) => {
+    if (captura) return;
     janelaPdf.current = window.open('', '_blank');
     try {
       janelaPdf.current?.document.write('<!DOCTYPE html><title>Cotação</title><p style="font-family:sans-serif;padding:24px">Gerando o PDF da cotação…</p>');
@@ -433,13 +452,15 @@ export const HistoricoCotacoes: React.FC<{
   };
 
   const abrirEmail = (linha: LinhaHistoricoCotacao) => {
+    if (captura) return;
     const salvo = lerSnapshot(linha.contract_details);
     const para = salvo?.solicitanteEmail || ator.email || '';
+    const proposta = propostaDaLinha(linha);
     setEmail({
       linha,
       para,
       cc: '',
-      mensagem: cartaEmailCotacao({ origem: linha.origin, destino: linha.destination, km: linha.total_km, valor: linha.total_value }),
+      mensagem: cartaDaProposta(proposta),
     });
   };
 
@@ -483,7 +504,7 @@ export const HistoricoCotacoes: React.FC<{
     }
   };
 
-  const propostaCaptura = captura ? propostaDoHistorico(captura.linha) : null;
+  const propostaCaptura = captura ? propostaDaLinha(captura.linha) : null;
   const linhaCaptura = captura?.linha;
 
   return (
@@ -526,7 +547,8 @@ export const HistoricoCotacoes: React.FC<{
               {linhas.map((linha) => {
                 const salvo = lerSnapshot(linha.contract_details);
                 const validade = rotuloValidade(linha);
-                const regiao = salvo?.regiao || '—';
+                const contaLinha = contaDaLinha(linha);
+                const regiao = contaLinha?.aplicar ? (contaLinha.regiao || salvo?.regiao || '—') : (salvo?.regiao || '—');
                 const franquia = salvo ? Boolean(salvo.usouMinimo) : linha.total_km > 0 && linha.total_km <= 100;
                 return (
                   <tr key={linha.id} className="border-t border-slate-100 align-top">
@@ -539,9 +561,9 @@ export const HistoricoCotacoes: React.FC<{
                     <td className="px-3 py-3">{resumirEndereco(linha.destination)}</td>
                     <td className="px-3 py-3 whitespace-nowrap">{textoDistanciaTempo(linha.total_km, salvo?.duracaoMin ?? null)}</td>
                     <td className="px-3 py-3">{textoRegiaoFranquia(regiao, franquia)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`valor-km-${linha.id}`}>{textoTarifaKm(salvo?.kmExtra)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(salvo?.horaExtra)}</td>
-                    <td className="px-3 py-3 font-black text-slate-900">{formatarValorCotacao(linha.total_value)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`valor-km-${linha.id}`}>{textoTarifaKm(contaLinha?.aplicar ? contaLinha.tarifaKm : salvo?.kmExtra)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(contaLinha?.aplicar ? contaLinha.horaExtra : salvo?.horaExtra)}</td>
+                    <td className="px-3 py-3 font-black text-slate-900">{formatarValorCotacao(contaLinha?.aplicar ? contaLinha.total : linha.total_value)}</td>
                     <td className="px-3 py-3">{selo(validade.tom, validade.rotulo)}</td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <AcoesDaLinha
@@ -602,6 +624,14 @@ export const HistoricoCotacoes: React.FC<{
               <button type="submit" disabled={enviando} className="h-10 rounded-full bg-[#10284f] px-4 text-xs font-black text-white disabled:opacity-40">Enviar</button>
             </div>
           </form>
+        </div>
+      )}
+      {captura && (
+        <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" role="status" data-testid="overlay-pdf-historico">
+          <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
+            <Loader2 className="animate-spin text-slate-900" size={22} />
+            <p className="text-sm font-semibold text-slate-900">Gerando PDF da proposta, aguarde...</p>
+          </div>
         </div>
       )}
       {linhaCaptura && propostaCaptura && (

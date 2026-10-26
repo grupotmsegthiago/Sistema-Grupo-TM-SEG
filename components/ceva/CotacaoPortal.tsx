@@ -30,6 +30,8 @@ import {
 import {
   REGIOES_COTACAO,
   consultaDoCliente,
+  aplicarContaNaProposta,
+  contaVisivelDaCotacao,
   montarProposta,
   primeiraRegiaoComTarifa,
   regiaoAcompanhaOrigem,
@@ -43,7 +45,7 @@ import {
 import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
-import { getRegionFromLocation, numerosDaCotacaoRegional, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
+import { getRegionFromLocation, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { nomePdfCotacao, pedidoParaRegistro, reservarNumeroCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
@@ -516,6 +518,8 @@ export const CotacaoPortal: React.FC<{
   const [recargaHistorico, setRecargaHistorico] = useState(0);
   const [avisoHistorico, setAvisoHistorico] = useState('');
   const [previewPdf, setPreviewPdf] = useState<PropostaPortal | null>(null);
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
     setEditando((atual) => (Boolean(atual[id]) === ativo ? atual : { ...atual, [id]: ativo }));
@@ -600,6 +604,16 @@ export const CotacaoPortal: React.FC<{
     [tabelas, regiao, versaoAtiva],
   );
   const tabela = resolvida?.tabela ?? null;
+  const contaAtual = useMemo(() => contaVisivelDaCotacao({
+    cliente: clienteDaRegiao,
+    origem,
+    km: kmRota ?? -1,
+    versao: versaoAtiva,
+    linhas: linhasTarifa,
+    tarifaKmFallback: tabela?.kmExtra,
+    horaExtraFallback: tabela?.horaExtra,
+    vigenciaFallback: resolvida?.vigencia,
+  }), [clienteDaRegiao, origem, kmRota, versaoAtiva, linhasTarifa, tabela, resolvida?.vigencia]);
   const frases = proposta?.acordada ? FRASES_ACORDADA : FRASES_NOVA;
   const podeGerar = Boolean(
     origem.trim() && destino.trim() && kmRota != null && kmRota > 0
@@ -618,26 +632,27 @@ export const CotacaoPortal: React.FC<{
 
   const montarAtual = (): { nova: PropostaPortal; usouMinimo: boolean; vigencia: VersaoTabelaRegional } | null => {
     if (kmRota == null) return null;
-    const regional = numerosDaCotacaoRegional({
-      cliente: clienteNome || portal.marca.rotulo,
-      origem,
-      km: kmRota,
-      versao: versaoAtiva,
-      linhas: linhasTarifa,
-      tarifaKmFallback: tabela?.kmExtra,
-      horaExtraFallback: tabela?.horaExtra,
-      vigenciaFallback: resolvida?.vigencia,
-      acordada: false,
-    });
-    const tabelaRegiao = tabela ?? (regional.aplicar ? {
-      acionamento: regional.conta.valor,
-      franquiaHoras: regional.conta.horasFaturadas,
-      franquiaKm: regional.conta.kmFaturado,
-      kmExtra: regional.tarifaKm,
-      horaExtra: regional.horaExtra ?? 0,
+    const conta = contaAtual.aplicar && Math.abs(contaAtual.kmRodado - kmRota) < 0.001
+      ? contaAtual
+      : contaVisivelDaCotacao({
+        cliente: clienteNome || portal.marca.rotulo,
+        origem,
+        km: kmRota,
+        versao: versaoAtiva,
+        linhas: linhasTarifa,
+        tarifaKmFallback: tabela?.kmExtra,
+        horaExtraFallback: tabela?.horaExtra,
+        vigenciaFallback: resolvida?.vigencia,
+      });
+    const tabelaRegiao = tabela ?? (conta.aplicar ? {
+      acionamento: conta.total,
+      franquiaHoras: conta.franquiaHoras,
+      franquiaKm: conta.franquiaKm,
+      kmExtra: conta.tarifaKm,
+      horaExtra: conta.horaExtra,
     } : null);
     if (!tabelaRegiao) return null;
-    const nova = montarProposta({
+    const nova = aplicarContaNaProposta(montarProposta({
       tabelas,
       regiao,
       origem,
@@ -645,30 +660,24 @@ export const CotacaoPortal: React.FC<{
       paradas: paradas.map((item) => item.texto),
       kmRota,
       tabelaRegiao,
-    });
+    }), conta);
     if (nova.acordada) {
       nova.vigencia = versaoAtiva;
       nova.kmRota = kmRota;
       nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
       return { nova, usouMinimo: kmRota <= 100, vigencia: versaoAtiva };
     }
-    if (regional.aplicar) {
-      nova.acionamento = regional.conta.valor;
-      nova.kmFranquia = regional.conta.kmFaturado;
-      nova.horasFranquia = regional.conta.horasFaturadas;
-      nova.kmExtra = regional.tarifaKm;
-      if (regional.horaExtra != null) nova.horaExtra = regional.horaExtra;
-      if (regional.nome) nova.regiao = regional.nome;
-    }
-    const vigente = regional.aplicar ? regional.vigenciaUsada : versaoAtiva;
-    nova.vigencia = vigente;
+    const vigente = conta.aplicar ? conta.vigencia : versaoAtiva;
+    nova.vigencia = nova.vigencia || vigente;
     nova.kmRota = kmRota;
     nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
-    const usouMinimo = regional.aplicar ? Boolean(regional.conta.usouMinimo) : kmRota <= 100;
+    const usouMinimo = conta.aplicar ? conta.usouMinimo : kmRota <= 100;
     return { nova, usouMinimo, vigencia: vigente };
   };
 
   const colarPrintDoMapa = async (): Promise<string | null> => {
+    const chave = `${origem}|${destino}|${kmRota ?? ''}|${trajeto?.polyline || ''}`;
+    if (printGuardado.current?.chave === chave && printGuardado.current.foto) return printGuardado.current.foto;
     const raiz = document.querySelector('[data-mapa-cotacao="1"]');
     if (!(raiz instanceof HTMLElement) || !trajeto) return null;
     const fundo = cena?.mapa?.startsWith('data:image/') ? cena.mapa : await pedirMapaBase64(trajeto, (corpo) => (
@@ -679,7 +688,9 @@ export const CotacaoPortal: React.FC<{
     const enquadrar = (raiz as HTMLElement & { enquadrarParaProposta?: () => Promise<void> }).enquadrarParaProposta;
     if (enquadrar) await enquadrar();
     const { printDoMapaVisivel } = await import('./abrirPdfCotacao');
-    return printDoMapaVisivel(raiz, fundo.startsWith('data:image/') ? fundo : null);
+    const foto = await printDoMapaVisivel(raiz, fundo.startsWith('data:image/') ? fundo : null);
+    printGuardado.current = { chave, foto };
+    return foto;
   };
 
   const gerar = () => {
@@ -697,12 +708,19 @@ export const CotacaoPortal: React.FC<{
   };
 
   const preverPdf = () => {
+    if (gerandoPdf) return;
     const feito = montarAtual();
     if (!feito) return;
+    setGerandoPdf(true);
     void (async () => {
-      const print = await colarPrintDoMapa();
-      setPrintMapa(print);
-      setPreviewPdf(feito.nova);
+      try {
+        const print = await colarPrintDoMapa();
+        setPrintMapa(print);
+        setPreviewPdf(feito.nova);
+      } catch {
+        setGerandoPdf(false);
+        setAvisoHistorico('Não foi possível abrir o PDF.');
+      }
     })();
   };
 
@@ -729,9 +747,9 @@ export const CotacaoPortal: React.FC<{
       km: kmRota,
       duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
       valor: nova.acionamento,
-      horas: nova.horasFranquia,
+      horas: nova.horasContadas ?? nova.horasFranquia,
       regiao: nova.regiao,
-      kmFranquia: nova.kmFranquia,
+      kmFranquia: nova.kmFaturado ?? nova.kmFranquia,
       kmExtra: nova.kmExtra,
       horaExtra: nova.horaExtra,
       acionamento: nova.acionamento,
@@ -800,7 +818,10 @@ export const CotacaoPortal: React.FC<{
       } catch (falha) {
         if (ativo) setAvisoHistorico(falha instanceof Error ? falha.message : 'Não foi possível abrir o PDF.');
       } finally {
-        if (ativo) setPreviewPdf(null);
+        if (ativo) {
+          setPreviewPdf(null);
+          setGerandoPdf(false);
+        }
       }
     };
     void gerarPdf();
@@ -928,10 +949,19 @@ export const CotacaoPortal: React.FC<{
           onKm={() => undefined}
           tarifaKm={tabela?.kmExtra}
           horaExtra={tabela?.horaExtra}
+          conta={contaAtual}
           ocultarCampos
         />
         <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} onGerar={gerar} onPdf={preverPdf} />
-        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} />
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} contaAtual={contaAtual} origemAtual={origem} destinoAtual={destino} kmAtual={kmRota} />
+        {gerandoPdf && (
+          <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">
+            <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
+              <Loader2 className="animate-spin text-slate-900" size={22} />
+              <p className="text-sm font-semibold text-slate-900">Gerando PDF da proposta, aguarde...</p>
+            </div>
+          </div>
+        )}
       </div>
       {previewPdf && (
         <ExperienciaProposta

@@ -215,10 +215,15 @@ describe('gestão da cotação', () => {
     assert.match(proposta, /data-captura-proposta/);
     assert.match(proposta, /page-break-inside: avoid/);
     assert.match(proposta, /pdfBase64DaProposta/);
+    assert.match(proposta, /Gerando PDF da proposta, aguarde/);
+    assert.match(tela, /Gerando PDF da proposta, aguarde/);
+    const historico = readFileSync(new URL('../components/ceva/HistoricoCotacoes.tsx', import.meta.url), 'utf8');
+    assert.match(historico, /pdfBase64DaProposta/);
+    assert.match(historico, /abrirPdfDaProposta/);
+    assert.match(historico, /Gerando PDF da proposta, aguarde/);
     assert.match(tela, /enquadrarParaProposta/);
     assert.match(tela, /esperarMapaParado/);
     assert.match(tela, /left: 300/);
-    const historico = readFileSync(new URL('../components/ceva/HistoricoCotacoes.tsx', import.meta.url), 'utf8');
     assert.match(historico, /data-proposta-pdf="historico"/);
     assert.match(historico, /printMapa=\{mapaCaptura\}/);
     assert.match(tela, /data-fora-pdf="painel"/);
