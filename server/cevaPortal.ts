@@ -217,8 +217,7 @@ export function registerCevaPortalRoutes(app: Express): void {
       res.status(503).json({ error: 'Cotação indisponível.' });
       return;
     }
-    const linhas = await linhasDePreco(sb, String(req.params.id || ''));
-    const resultado = await lerPropostaPublica(banco, String(req.params.id || ''), String(req.params.token || ''), new Date(), linhas);
+    const resultado = await lerPropostaPublica(banco, String(req.params.id || ''), String(req.params.token || ''), new Date());
     res.setHeader('Cache-Control', 'private, no-store');
     if (resultado.status !== 200 || !('proposta' in resultado.corpo) || !resultado.corpo.proposta) {
       res.status(resultado.status).json(resultado.corpo);
@@ -255,16 +254,6 @@ async function mapaPorEndereco(origem: string, destino: string, paradas: string[
     console.error('[proposta-publica] mapa', error instanceof Error ? error.message : error);
     return null;
   }
-}
-
-async function linhasDePreco(sb: { from: (tabela: string) => any }, id: string): Promise<Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }>> {
-  const { consultaDoCliente } = await import('../lib/portalCliente/cotacao.js');
-  const { data: cotacao } = await sb.from('quotes').select('client_name').eq('id', id).maybeSingle();
-  const cliente = String(cotacao?.client_name || '').trim();
-  if (!cliente) return [];
-  const { data, error } = await sb.from('client_price_tables').select('operation_type, price_per_extra_km, price_per_extra_hour').or(consultaDoCliente(cliente)).limit(200);
-  if (error || !Array.isArray(data)) return [];
-  return data;
 }
 
 function bancoDoLink(sb: { from: (tabela: string) => any }) {

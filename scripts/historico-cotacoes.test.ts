@@ -20,6 +20,7 @@ import {
   resumirEndereco,
   rotuloValidade,
   textoDistanciaTempo,
+  textoKmFaturadoSalvo,
   textoRegiaoFranquia,
 } from '../lib/portalCliente/historicoCotacoes';
 import { aplicarContaNaProposta, contaVisivelDaCotacao } from '../lib/portalCliente/cotacao';
@@ -123,7 +124,7 @@ describe('histórico de cotações do portal', () => {
     ), true);
   });
 
-  it('o histórico da rota na tela usa a mesma conta do card', () => {
+  it('a cotação nova usa o card e a linha salva mantém o km faturado', () => {
     const conta = contaVisivelDaCotacao({
       cliente: 'CEVA LOGISTICS',
       origem: 'Avenida Talma Rodrigues Ribeiro, Vitória - ES',
@@ -161,7 +162,8 @@ describe('histórico de cotações do portal', () => {
     const antigo = {
       origin: 'Avenida Talma Rodrigues Ribeiro, Vitória - ES',
       destination: 'Rodovia Presidente Dutra, SP',
-      total_km: 943,
+      total_km: 942.5,
+      total_hours: 24,
       total_value: 9583.8,
       contract_details: JSON.stringify({
         kind: 'PORTAL_COTACAO',
@@ -169,7 +171,11 @@ describe('histórico de cotações do portal', () => {
         kmExtra: 6.6,
         horaExtra: 160,
         acionamento: 9583.8,
-        acordada: false,
+        kmFranquia: 943,
+        horasFranquia: 24,
+        duracaoMin: 760,
+        acordada: true,
+        usouMinimo: false,
         vigencia: '2027',
       }),
     };
@@ -186,16 +192,40 @@ describe('histórico de cotações do portal', () => {
       usouMinimo: false,
       vigencia: '2027' as const,
     };
-    const exibido = valoresExibidosDaLinha(antigo, tela);
-    assert.equal(exibido.daTela, true);
-    assert.equal(exibido.regiao, 'SUDESTE MG/ES');
-    assert.equal(exibido.tarifaKm, 7.3);
-    assert.equal(exibido.horaExtra, 169);
-    assert.equal(exibido.total, 6880.25);
+    const exibido = valoresExibidosDaLinha(antigo);
+    assert.equal(exibido.regiao, 'SUDESTE');
+    assert.equal(exibido.tarifaKm, 6.6);
+    assert.equal(exibido.horaExtra, 160);
+    assert.equal(exibido.total, 9583.8);
+    assert.equal(exibido.km, 943);
+    assert.equal(exibido.horas, 24);
+    assert.equal(textoKmFaturadoSalvo(exibido.km, exibido.horas), '943,0 km | 24 h');
+    assert.doesNotMatch(textoKmFaturadoSalvo(exibido.km, exibido.horas), /12h|40min/);
+    const explicito = valoresExibidosDaLinha({
+      total_km: 942.5,
+      total_hours: 24,
+      total_value: 6880.25,
+      contract_details: JSON.stringify({
+        kind: 'PORTAL_COTACAO',
+        regiao: 'SUDESTE MG/ES',
+        kmExtra: 7.3,
+        horaExtra: 169,
+        acionamento: 6880.25,
+        kmFranquia: 100,
+        horasFranquia: 3,
+        kmFaturado: 942.5,
+        horasContadas: 23,
+        duracaoMin: 760,
+        usouMinimo: false,
+      }),
+    });
+    assert.equal(explicito.km, 942.5);
+    assert.equal(explicito.horas, 23);
+    assert.equal(explicito.tarifaKm, 7.3);
+    assert.equal(explicito.total, 6880.25);
+    assert.equal(textoKmFaturadoSalvo(explicito.km, explicito.horas), '942,5 km | 23 h');
     const patch = patchDaTelaNoSnapshot(antigo.contract_details, tela);
-    assert.equal(patch?.total_value, 6880.25);
-    assert.equal(JSON.parse(String(patch?.contract_details)).regiao, 'SUDESTE MG/ES');
-    assert.equal(JSON.parse(String(patch?.contract_details)).kmExtra, 7.3);
+    assert.equal(patch, null);
     assert.equal(patchDaTelaNoSnapshot('Validade: 5 dias.', tela), null);
   });
 
@@ -270,6 +300,8 @@ describe('histórico de cotações do portal', () => {
       operacao: 'TABELA 2027 - NORDESTE',
       usouMinimo: true,
       vigencia: '2027',
+      kmFaturado: 80,
+      horasContadas: 3,
     }, { id: 4, name: 'CEVA LOGISTICS LTDA' }, { name: 'Portal CEVA', email: 'portal@ceva.com' });
     assert.equal(registro.ok, true);
     if (!registro.ok) return;
@@ -280,6 +312,8 @@ describe('histórico de cotações do portal', () => {
     assert.equal(salvo?.horaExtra, 207.5);
     assert.equal(salvo?.acionamento, 830);
     assert.equal(salvo?.vigencia, '2027');
+    assert.equal(salvo?.kmFaturado, 80);
+    assert.equal(salvo?.horasContadas, 3);
     const proposta = propostaDoHistorico({
       origin: 'Salvador, BA',
       destination: 'Recife, PE',

@@ -1,13 +1,15 @@
 /** Histórico da cotação do portal. A OS continua em missions; esta gravação não recalcula valor aprovado. */
 
 import {
+  FRANQUIA_HORAS,
+  FRANQUIA_KM,
   PRAZO_COTACAO_MS,
   cotacaoConvertida,
   cotacaoVencida,
   type CotacaoPrazo,
   type VersaoTabelaRegional,
 } from '../precificacao/tabela2027';
-import { cidadeDaRota, propostaNoPadraoDoCard, type PropostaPortal } from './cotacao';
+import { cidadeDaRota, type PropostaPortal } from './cotacao';
 import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
@@ -31,6 +33,10 @@ export type SnapshotCotacaoPortal = {
   operacao: string;
   vigencia: VersaoTabelaRegional;
   numero: number | null;
+  /** Km faturado gravado na hora da cotação. Depois de salvo, não muda. */
+  kmFaturado?: number | null;
+  /** Horas faturadas gravadas na hora da cotação. Depois de salvas, não mudam. */
+  horasContadas?: number | null;
   /** Link de visualização. Some se o JSON for regravado sem este campo. */
   linkPublico?: { token: string; expiraEm: string } | null;
   /** Aceite do usuário do cliente, antes de gerar a proposta. */
@@ -74,6 +80,8 @@ export type PedidoRegistroCotacao = {
   vigencia?: unknown;
   numero?: unknown;
   aceiteCliente?: { texto?: unknown; em?: unknown } | null;
+  kmFaturado?: unknown;
+  horasContadas?: unknown;
 };
 
 /** Texto fixo do cliente antes de gerar a proposta. Vale se a cotação for usada numa OS. */
@@ -220,30 +228,49 @@ export type TelaCotacao = {
   vigencia: VersaoTabelaRegional;
 };
 
-export function valoresExibidosDaLinha(
-  linha: Pick<LinhaHistoricoCotacao, 'origin' | 'destination' | 'total_km' | 'total_value' | 'contract_details'> & { client_name?: string | null },
-  tela: TelaCotacao | null,
-): { regiao: string; tarifaKm: number; horaExtra: number; total: number; km: number; duracaoMin: number | null; daTela: boolean } {
+function franquiaIncluidaSeparada(valor: number, padrao: number, usouMinimo: boolean, percorrido: number): boolean {
+  return valor === padrao && !usouMinimo && percorrido > padrao;
+}
+
+/** Km e horas faturados que foram gravados. A rota do Google e a tela aberta não substituem. */
+export function kmTempoFaturadoSalvo(linha: { total_km?: number | null; total_hours?: number | null; contract_details?: string | null }): { km: number; horas: number | null } {
   const salvo = lerSnapshot(linha.contract_details);
-  const alinhada = propostaNoPadraoDoCard(propostaDoHistorico(linha), String(linha.client_name || ''));
-  const gravado = {
-    regiao: alinhada.regiao || salvo?.regiao || '—',
-    tarifaKm: alinhada.kmExtra,
-    horaExtra: alinhada.horaExtra,
-    total: alinhada.acionamento || Number(linha.total_value) || salvo?.acionamento || 0,
-    km: Number(linha.total_km) || 0,
-    duracaoMin: salvo?.duracaoMin ?? alinhada.duracaoMin ?? null,
-    daTela: false,
-  };
-  if (!tela || !linhaConfereComTela(linha, tela)) return gravado;
+  const kmRota = numero(linha.total_km);
+  const horasLinha = numero(linha.total_hours);
+  const kmSalvo = salvo?.kmFaturado != null && salvo.kmFaturado > 0
+    ? salvo.kmFaturado
+    : (salvo && salvo.kmFranquia > 0 && !franquiaIncluidaSeparada(salvo.kmFranquia, FRANQUIA_KM, salvo.usouMinimo, kmRota)
+      ? salvo.kmFranquia
+      : kmRota);
+  const horasSalvas = salvo?.horasContadas != null && salvo.horasContadas > 0
+    ? salvo.horasContadas
+    : (salvo && salvo.horasFranquia > 0 && !franquiaIncluidaSeparada(salvo.horasFranquia, FRANQUIA_HORAS, salvo.usouMinimo, horasLinha)
+      ? salvo.horasFranquia
+      : horasLinha);
+  return { km: kmSalvo, horas: horasSalvas > 0 ? horasSalvas : null };
+}
+
+export function textoKmFaturadoSalvo(km: number, horas: number | null): string {
+  const kmTexto = `${numero(km).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+  if (horas == null || !Number.isFinite(horas) || horas <= 0) return kmTexto;
+  const horasTexto = Number.isInteger(horas)
+    ? `${horas} h`
+    : `${horas.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} h`;
+  return `${kmTexto} | ${horasTexto}`;
+}
+
+export function valoresExibidosDaLinha(
+  linha: Pick<LinhaHistoricoCotacao, 'origin' | 'destination' | 'total_km' | 'total_hours' | 'total_value' | 'contract_details'> & { client_name?: string | null },
+): { regiao: string; tarifaKm: number; horaExtra: number; total: number; km: number; horas: number | null } {
+  const salvo = lerSnapshot(linha.contract_details);
+  const tempo = kmTempoFaturadoSalvo(linha);
   return {
-    regiao: tela.regiao,
-    tarifaKm: tela.tarifaKm,
-    horaExtra: tela.horaExtra,
-    total: tela.total,
-    km: tela.km,
-    duracaoMin: tela.duracaoMin ?? gravado.duracaoMin,
-    daTela: true,
+    regiao: salvo?.regiao || '—',
+    tarifaKm: salvo?.kmExtra ?? 0,
+    horaExtra: salvo?.horaExtra ?? 0,
+    total: Number(linha.total_value) || salvo?.acionamento || 0,
+    km: tempo.km,
+    horas: tempo.horas,
   };
 }
 
@@ -394,8 +421,8 @@ export function mensagemCompletaCotacao(linha: LinhaHistoricoCotacao, agora = ne
   const salvo = lerSnapshot(linha.contract_details);
   const numeroLinha = salvo?.numero || (/^\d+$/.test(String(linha.id || '')) ? Number(linha.id) : null);
   const validade = rotuloValidade(linha, agora);
-  const horas = Number(linha.total_hours);
   const km = Number(linha.total_km);
+  const faturado = kmTempoFaturadoSalvo(linha);
   const franquiaMinima = salvo ? Boolean(salvo.usouMinimo) : km > 0 && km <= 100;
   const partes = [
     `Cotação${numeroLinha ? ` ${numeroLinha}` : ''} — ${String(linha.client_name || '').trim() || 'Cliente'}`,
@@ -406,8 +433,8 @@ export function mensagemCompletaCotacao(linha: LinhaHistoricoCotacao, agora = ne
     `Origem: ${String(linha.origin || '').trim() || '—'}`,
     `Destino: ${String(linha.destination || '').trim() || '—'}`,
     salvo?.paradas?.length ? `Paradas: ${salvo.paradas.join(' | ')}` : '',
-    `Distância / tempo: ${textoDistanciaTempo(linha.total_km, salvo?.duracaoMin ?? null)}`,
-    `Horas faturadas: ${Number.isFinite(horas) && horas > 0 ? horas.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}`,
+    `Distância / tempo: ${textoKmFaturadoSalvo(faturado.km, faturado.horas)}`,
+    `Horas faturadas: ${faturado.horas != null ? faturado.horas.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}`,
     `Região: ${textoRegiaoFranquia(salvo?.regiao || '—', franquiaMinima)}`,
     salvo && (salvo.kmFranquia > 0 || salvo.horasFranquia > 0) ? `Franquia: ${salvo.kmFranquia.toLocaleString('pt-BR')} km / ${salvo.horasFranquia.toLocaleString('pt-BR')} h` : '',
     `Valor KM: ${textoTarifaKm(salvo?.kmExtra)}`,
@@ -435,6 +462,8 @@ export function montarSnapshot(entrada: {
   operacao?: string;
   vigencia?: VersaoTabelaRegional | null;
   numero?: number | null;
+  kmFaturado?: number | null;
+  horasContadas?: number | null;
 }): SnapshotCotacaoPortal {
   return {
     kind: KIND_PORTAL_COTACAO,
@@ -452,6 +481,8 @@ export function montarSnapshot(entrada: {
     operacao: texto(entrada.operacao, 180),
     vigencia: entrada.vigencia === '2027' ? '2027' : '2026',
     numero: numeroInformado(entrada.numero),
+    ...(numero(entrada.kmFaturado) > 0 ? { kmFaturado: numero(entrada.kmFaturado) } : {}),
+    ...(numero(entrada.horasContadas) > 0 ? { horasContadas: numero(entrada.horasContadas) } : {}),
   };
 }
 
@@ -484,6 +515,8 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       operacao: dados.operacao,
       vigencia: vigenciaInformada(dados.vigencia),
       numero: numeroInformado(dados.numero),
+      kmFaturado: dados.kmFaturado,
+      horasContadas: dados.horasContadas,
     }),
       ...(linkPublico ? { linkPublico } : {}),
       ...(aceiteCliente ? { aceiteCliente } : {}),
@@ -495,6 +528,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
 
 export function propostaDoHistorico(linha: Pick<LinhaHistoricoCotacao, 'origin' | 'destination' | 'total_km' | 'total_hours' | 'total_value' | 'contract_details'>): PropostaPortal {
   const salvo = lerSnapshot(linha.contract_details);
+  const tempo = kmTempoFaturadoSalvo(linha);
   if (salvo) {
     return {
       acordada: salvo.acordada,
@@ -505,6 +539,8 @@ export function propostaDoHistorico(linha: Pick<LinhaHistoricoCotacao, 'origin' 
       acionamento: salvo.acionamento || numero(linha.total_value),
       kmFranquia: salvo.kmFranquia,
       horasFranquia: salvo.horasFranquia,
+      kmFaturado: tempo.km > 0 ? tempo.km : null,
+      horasContadas: tempo.horas,
       kmExtra: salvo.kmExtra,
       horaExtra: salvo.horaExtra,
       operacao: salvo.operacao || `${linha.origin} X ${linha.destination}`,
@@ -561,6 +597,8 @@ export function pedidoParaRegistro(
     operacao: texto(pedido.operacao, 180),
     vigencia: vigenciaInformada(pedido.vigencia) || '2026',
     numero: numeroInformado(pedido.numero),
+    kmFaturado: pedido.kmFaturado,
+    horasContadas: pedido.horasContadas,
   });
   const aceite = pedido.aceiteCliente;
   if (aceite && aceite.texto === TEXTO_ACEITE_OS && typeof aceite.em === 'string' && aceite.em.trim()) {

@@ -1,7 +1,6 @@
 /** Emissão e leitura do link. A página pública não recebe e-mail, id de usuário nem o restante do sistema. */
 
 import { cotacaoExcluida, podeEnviarCotacao, type AtorCotacao, type CotacaoGestao } from './gestaoCotacao';
-import { propostaNoPadraoDoCard } from './cotacao';
 import { lerSnapshot } from './historicoCotacoes';
 import {
   anexarLinkNoSnapshot,
@@ -79,7 +78,6 @@ export async function lerPropostaPublica(
   id: string,
   token: string,
   agora: Date,
-  linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }> = [],
 ): Promise<{ status: number; corpo: { ok: true; cliente: string; expiraEm: string; validade: string; proposta: unknown } | { error: string } }> {
   const linha = await banco.ler(id);
   if (!linha) return { status: 404, corpo: { error: 'Link inválido ou vencido.' } };
@@ -87,12 +85,6 @@ export async function lerPropostaPublica(
   if (!vista.ok) return { status: vista.status, corpo: { error: vista.error } };
   return {
     status: 200,
-    corpo: {
-      ok: true,
-      cliente: vista.cliente,
-      expiraEm: vista.expiraEm,
-      validade: vista.validade,
-      proposta: propostaNoPadraoDoCard(vista.proposta, vista.cliente, linhas),
-    },
+    corpo: { ok: true, cliente: vista.cliente, expiraEm: vista.expiraEm, validade: vista.validade, proposta: vista.proposta },
   };
 }

@@ -777,6 +777,8 @@ export const CotacaoPortal: React.FC<{
       horas: nova.horasContadas ?? nova.horasFranquia,
       regiao: nova.regiao,
       kmFranquia: nova.kmFaturado ?? nova.kmFranquia,
+      kmFaturado: nova.kmFaturado ?? nova.kmFranquia,
+      horasContadas: nova.horasContadas ?? nova.horasFranquia,
       kmExtra: nova.kmExtra,
       horaExtra: nova.horaExtra,
       acionamento: nova.acionamento,
@@ -985,7 +987,7 @@ export const CotacaoPortal: React.FC<{
           ocultarCampos
         />
         <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onPdf={preverPdf} />
-        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} contaAtual={contaAtual} origemAtual={origem} destinoAtual={destino} kmAtual={kmRota} duracaoMinAtual={duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null} />
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} />
         {isGenerating && (
           <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">
             <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">

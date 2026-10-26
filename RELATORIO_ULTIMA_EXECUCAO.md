@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. A coluna Distância / Tempo do histórico passa a mostrar o km faturado e as horas salvos na cotação. Na cotação 50 isso é 943 km e 24 h. Região, tarifa e total continuam os gravados (SUDESTE, R$ 6,60, R$ 9.583,80). A tela aberta e o tempo do Google não reescrevem a linha. O link público devolve o mesmo snapshot. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. O link da cotação 49 passa a mostrar a faixa da origem, com o mapa inteiro e a carreta no centro. O endereço já emitido continua o mesmo por 10 dias. O motor da OS não mudou.
 
 Executado em 26/10/2026. Antes de gerar a proposta, o usuário do cliente marca o aceite para uso em ordem de serviço. A equipe interna não marca. O texto fica no snapshot da cotação. O motor da OS não mudou.

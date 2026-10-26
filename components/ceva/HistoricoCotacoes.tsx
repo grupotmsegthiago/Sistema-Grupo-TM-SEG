@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
 import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { COPIA_FIXA_COTACAO, cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
-import { aplicarContaNaProposta, nomesDaVigencia, type ContaVisivelCotacao } from '../../lib/portalCliente/cotacao';
+import { nomesDaVigencia } from '../../lib/portalCliente/cotacao';
 import { cartaDaProposta } from '../../lib/portalCliente/apresentacao';
 import {
   TEXTO_HISTORICO_VAZIO,
@@ -16,17 +16,14 @@ import {
   formatarValorCotacao,
   lerSnapshot,
   mensagemCompletaCotacao,
-  linhaConfereComTela,
-  patchDaTelaNoSnapshot,
+  textoKmFaturadoSalvo,
   valoresExibidosDaLinha,
-  type TelaCotacao,
   nomePdfCotacao,
   normalizarLinhaHistorico,
   reservarNumeroCotacao,
   propostaDoHistorico,
   resumirEndereco,
   rotuloValidade,
-  textoDistanciaTempo,
   textoRegiaoFranquia,
   vigenciaDaCotacao,
   type LinhaHistoricoCotacao,
@@ -221,12 +218,7 @@ export const HistoricoCotacoes: React.FC<{
   versao?: VersaoTabelaRegional;
   onVersao?: (versao: VersaoTabelaRegional) => void;
   onEditar?: (edicao: EdicaoCotacao) => void;
-  contaAtual?: ContaVisivelCotacao | null;
-  origemAtual?: string;
-  destinoAtual?: string;
-  kmAtual?: number | null;
-  duracaoMinAtual?: number | null;
-}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar, contaAtual = null, origemAtual = '', destinoAtual = '', kmAtual = null, duracaoMinAtual = null }) => {
+}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar }) => {
   const portal = usePortalCliente();
   const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
   const versaoAtiva = versao ?? versaoLocal;
@@ -345,61 +337,7 @@ export const HistoricoCotacoes: React.FC<{
     return reservado;
   };
 
-  const telaAtual = (): TelaCotacao | null => {
-    if (!contaAtual?.aplicar || kmAtual == null) return null;
-    return {
-      origem: origemAtual,
-      destino: destinoAtual,
-      regiao: contaAtual.regiao,
-      tarifaKm: contaAtual.tarifaKm,
-      horaExtra: contaAtual.horaExtra,
-      total: contaAtual.total,
-      km: kmAtual,
-      duracaoMin: duracaoMinAtual,
-      horas: contaAtual.horasFaturadas,
-      usouMinimo: contaAtual.usouMinimo,
-      vigencia: contaAtual.vigencia,
-    };
-  };
-
-  useEffect(() => {
-    if (!clienteNome) return;
-    const tela = telaAtual();
-    if (!tela) return;
-    const alvos = linhas.flatMap((linha) => {
-      if (!linhaConfereComTela(linha, tela)) return [];
-      const patch = patchDaTelaNoSnapshot(linha.contract_details, tela);
-      return patch ? [{ id: linha.id, patch }] : [];
-    });
-    if (!alvos.length) return;
-    let ativo = true;
-    void (async () => {
-      for (const alvo of alvos) {
-        const { error } = await supabase.from('quotes').update(alvo.patch).eq('id', alvo.id);
-        if (!ativo || error) return;
-      }
-      if (!ativo) return;
-      const porId = new Map(alvos.map((alvo) => [alvo.id, alvo.patch]));
-      setLinhas((lista) => lista.map((item) => {
-        const patch = porId.get(item.id);
-        return patch ? { ...item, contract_details: patch.contract_details, total_value: patch.total_value, total_hours: patch.total_hours } : item;
-      }));
-    })();
-    return () => { ativo = false; };
-  }, [linhas, contaAtual, origemAtual, destinoAtual, kmAtual, duracaoMinAtual, clienteNome]);
-
-  const contaDaLinha = (linha: LinhaHistoricoCotacao): ContaVisivelCotacao | null => {
-    if (!contaAtual?.aplicar) return null;
-    if (lerSnapshot(linha.contract_details)?.acordada) return null;
-    if (!linhaConfereComTela(linha, { origem: origemAtual, destino: destinoAtual, km: kmAtual })) return null;
-    return contaAtual;
-  };
-
-  const propostaDaLinha = (linha: LinhaHistoricoCotacao) => {
-    const base = propostaDoHistorico(linha);
-    const conta = contaDaLinha(linha);
-    return conta ? aplicarContaNaProposta(base, conta) : base;
-  };
+  const propostaDaLinha = (linha: LinhaHistoricoCotacao) => propostaDoHistorico(linha);
 
   useEffect(() => {
     if (!captura) return;
@@ -454,7 +392,7 @@ export const HistoricoCotacoes: React.FC<{
     };
     void gerar();
     return () => { ativo = false; };
-  }, [captura, clienteNome, portal, contaAtual, origemAtual, destinoAtual, kmAtual]);
+  }, [captura, clienteNome, portal]);
 
   const abrirCaptura = async (linha: LinhaHistoricoCotacao, modo: 'pdf' | 'email') => {
     const mapa = await mapaEstaticoDaLinha(linha, clienteNome, portal);
@@ -626,7 +564,7 @@ export const HistoricoCotacoes: React.FC<{
               {linhas.map((linha) => {
                 const salvo = lerSnapshot(linha.contract_details);
                 const validade = rotuloValidade(linha);
-                const exibido = valoresExibidosDaLinha(linha, telaAtual());
+                const exibido = valoresExibidosDaLinha(linha);
                 const franquia = salvo ? Boolean(salvo.usouMinimo) : linha.total_km > 0 && linha.total_km <= 100;
                 return (
                   <tr key={linha.id} className="border-t border-slate-100 align-top">
@@ -637,7 +575,7 @@ export const HistoricoCotacoes: React.FC<{
                     </td>
                     <td className="px-3 py-3">{resumirEndereco(linha.origin)}</td>
                     <td className="px-3 py-3">{resumirEndereco(linha.destination)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">{textoDistanciaTempo(exibido.km, exibido.duracaoMin)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`distancia-tempo-${linha.id}`}>{textoKmFaturadoSalvo(exibido.km, exibido.horas)}</td>
                     <td className="px-3 py-3">{textoRegiaoFranquia(exibido.regiao, franquia)}</td>
                     <td className="px-3 py-3 whitespace-nowrap" data-testid={`valor-km-${linha.id}`}>{textoTarifaKm(exibido.tarifaKm)}</td>
                     <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(exibido.horaExtra)}</td>

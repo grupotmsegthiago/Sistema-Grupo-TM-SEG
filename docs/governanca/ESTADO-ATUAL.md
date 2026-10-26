@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. No histórico, Distância / Tempo mostra o km faturado e as horas gravados na hora da cotação. A cotação 50 permanece 943 km e 24 h, região SUDESTE, R$ 6,60 e total R$ 9.583,80. O km da rota e o tempo do Google não substituem esse par depois de salvo. O link público lê o mesmo snapshot. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. O link público da cotação 49 mostra a conta do card: SUDESTE MG/ES, R$ 7,30 por km e total R$ 6.880,25. A fórmula antiga (R$ 6,60 e R$ 9.583,80) deixa de aparecer nesse link. O mapa entra inteiro e a carreta fica no centro. O mesmo endereço vale 10 dias; um segundo clique não gera outro. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. No portal, o usuário do cliente marca "Concordo com as informações acima para utilização em ordem de serviço" antes de gerar a proposta. Equipe interna e quem cotação de dentro do sistema seguem sem essa marca. O texto fica no snapshot da cotação. Ainda não foi publicado. O motor da OS não mudou.
