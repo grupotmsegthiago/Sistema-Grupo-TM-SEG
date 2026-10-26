@@ -97,6 +97,7 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.match(carta, /Fiscal de rota/);
   assert.match(carta, /www\.grupotmseg\.com\.br/);
   assert.match(carta, /pedágio será cobrado à parte/);
+  assert.match(carta, /proposta completa segue em anexo/);
   assert.match(carta, /Tabela: Santos x Diadema/);
   assert.match(carta, /Rota: Santos x Diadema/);
   assert.doesNotMatch(carta, /\(2026-\)/);

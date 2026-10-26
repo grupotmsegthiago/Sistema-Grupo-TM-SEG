@@ -131,6 +131,8 @@ export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | n
     'Empresas que operam com a TM SEG',
     CLIENTES_TMSEG.map((item) => item.nome).join(', '),
     '',
+    'A proposta completa segue em anexo, com o mapa da rota.',
+    '',
     MARCA_TMSEG.telefone,
     MARCA_TMSEG.endereco,
     MARCA_TMSEG.sitio,

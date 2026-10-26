@@ -93,6 +93,7 @@ export const ExperienciaProposta: React.FC<{
     setAviso('');
     try {
       const pdf = acao === 'email' ? await pdfDaTela() : undefined;
+      if (acao === 'email' && !pdf) throw new Error('O PDF completo da proposta não ficou pronto.');
       if (clienteInterno) {
         if (acao === 'salvar') {
           const { supabase } = await import('../../lib/supabase');
@@ -180,21 +181,24 @@ export const ExperienciaProposta: React.FC<{
               <p className="mt-3 text-sm font-semibold text-white" data-testid="nome-tabela-vigencia">{nomes.tabela}</p>
               <p className="text-sm font-semibold text-white" data-testid="nome-rota-vigencia">{nomes.rota}</p>
               <p className="mt-6 max-w-xl text-lg text-white/90">{MARCA_TMSEG.chamada}</p>
-              {(printMapa || cena?.mapa) && (
-                <figure className="mt-8 overflow-hidden rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.35)]">
-                  {printMapa ? (
-                    <img src={printMapa} alt="Mapa da rota na tela" className="block h-auto w-full" />
-                  ) : cena?.mapa ? (
-                    <CenaRotaVisual mapa={cena.mapa} carreta={cena.carreta} logo={cena.logo} className="h-80" />
-                  ) : null}
-                </figure>
-              )}
               <svg viewBox="0 0 640 90" className="mt-8 h-16 w-full max-w-xl" aria-hidden="true">
                 <path d="M8 70 C 120 68, 180 18, 250 28 S 390 78, 632 16" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" />
                 <circle cx="8" cy="70" r="5" fill="#ffffff" />
                 <circle cx="632" cy="16" r="6" fill="#d0121a" />
               </svg>
             </header>
+
+            {(printMapa || cena?.mapa) && (
+              <section data-proposta-bloco data-proposta-mapa="1" className="bg-[#0c0d10] px-8 pb-10 sm:px-12">
+                <figure className="overflow-hidden rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.35)]">
+                  {printMapa ? (
+                    <img src={printMapa} alt="Mapa da rota na tela" className="block h-auto w-full" />
+                  ) : cena?.mapa ? (
+                    <CenaRotaVisual mapa={cena.mapa} carreta={cena.carreta} logo={cena.logo} className="h-80" />
+                  ) : null}
+                </figure>
+              </section>
+            )}
 
             <section data-proposta-bloco className="grid gap-0 bg-[#0c0d10] text-white sm:grid-cols-4">
               {numerosDaProposta(operacoes).map((item) => (
@@ -310,15 +314,16 @@ export const ExperienciaProposta: React.FC<{
               )}
               <p className="ml-auto text-xs text-[#6b6b6b]">{MARCA_TMSEG.telefone}</p>
             </div>
-            <form className="mt-3 flex flex-wrap items-center gap-2" onSubmit={(evento) => { evento.preventDefault(); postar('email'); }}>
-              <label className="min-w-[220px] flex-1 text-xs font-medium text-[#6b6b6b]">E-mail
+            <form className="mt-3 flex flex-wrap items-end gap-2" onSubmit={(evento) => { evento.preventDefault(); postar('email'); }}>
+              <label className="min-w-[220px] flex-1 text-xs font-medium text-[#6b6b6b]">Enviar para o e-mail
                 <span className="mt-1 flex h-11 items-center gap-2 rounded-full border border-black/10 px-3">
                   <Mail size={14} />
                   <input value={email} onChange={(evento) => setEmail(evento.target.value)} type="email" required placeholder="cliente@empresa.com" className="h-full w-full bg-transparent text-sm outline-none" />
                 </span>
               </label>
-              <button type="submit" disabled={ocupado === 'email'} className="mt-5 h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">Enviar por e-mail</button>
+              <button type="submit" disabled={ocupado === 'email'} data-testid="enviar-proposta-email" className="h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">{ocupado === 'email' ? 'Enviando o PDF…' : 'Enviar para o e-mail'}</button>
             </form>
+            <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail leva as informações do Grupo TM SEG. O PDF completo da proposta vai em anexo, com a foto do mapa e as condições da rota.</p>
             {aviso && <p className="mt-3 text-sm font-medium">{aviso}</p>}
           </footer>}
         </article>

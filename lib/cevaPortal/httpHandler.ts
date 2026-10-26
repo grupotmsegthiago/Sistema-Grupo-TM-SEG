@@ -1804,8 +1804,8 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           try {
             const { pdfAnexoAceito } = await import('../portalCliente/gestaoCotacao.js');
             const { nomeAnexoPdf } = await import('../portalCliente/historicoCotacoes.js');
-            const anexo = String(body?.pdf || '').trim() ? pdfAnexoAceito(String(body?.pdf || '')) : null;
-            if (anexo && !anexo.ok) {
+            const anexo = pdfAnexoAceito(String(body?.pdf || ''));
+            if (!anexo.ok) {
               res.status(400).json({ error: anexo.error });
               return;
             }
@@ -1815,7 +1815,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
               to: preparado.corpo.para,
               subject: preparado.corpo.assunto,
               text: preparado.corpo.texto,
-              attachments: anexo && anexo.ok ? [{
+              attachments: [{
                 filename: nomeAnexoPdf(body?.nomePdf, {
                   origem: String(body?.origem || ''),
                   destino: String(body?.destino || ''),
@@ -1824,7 +1824,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
                 }),
                 content: Buffer.from(anexo.base64, 'base64'),
                 contentType: 'application/pdf',
-              }] : undefined,
+              }],
             });
             res.status(200).json({ ok: true, enviado: true });
           } catch (error) {

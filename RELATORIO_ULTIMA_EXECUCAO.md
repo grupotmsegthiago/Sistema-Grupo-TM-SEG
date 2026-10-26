@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026 a partir do pedido direto de enviar a proposta por e-mail. O botão Enviar para o e-mail fica na proposta gerada. A mensagem leva os dados do Grupo TM SEG e o PDF completo vai em anexo, com a foto do mapa em faixa própria. Sem o PDF, o e-mail não sai. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026 a partir do pedido direto de tirar o painel da foto do PDF. Na hora do print, o quadro Informações da Rota some e volta em seguida. O PDF guarda a rota, os pinos e a carreta. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026 a partir do pedido direto de trocar o menu de ações. PDF, e-mail e copiar a mensagem ficam na linha. Desativar fica com o usuário interno. Excluir fica só com a diretoria. A validade passou de 30 para 10 dias, na tela e na rotina que marca a cotação expirada. Sem migration. Ainda não foi publicado. O motor da OS não mudou.

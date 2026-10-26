@@ -268,5 +268,30 @@ describe('histórico de cotações do portal', () => {
     assert.match(html, /1\.986 km/);
     assert.match(html, /1609 min/);
     assert.ok(html.split('data-proposta-bloco').length - 1 >= 6);
+    const tela = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
+      frase: '',
+      mostrando: true,
+      proposta: {
+        acordada: false,
+        regiao: 'NORDESTE',
+        origem: 'Salvador, BA',
+        destino: 'São Paulo, SP',
+        paradas: [],
+        acionamento: 830,
+        kmFranquia: 100,
+        horasFranquia: 3,
+        kmExtra: 8.3,
+        horaExtra: 207.5,
+        operacao: 'TABELA 2027 - NORDESTE',
+        vigencia: '2027',
+      },
+      pedido: { regiao: 'NORDESTE', origem: 'Salvador, BA', destino: 'São Paulo, SP', paradas: [], km: 1986 },
+      printMapa: 'data:image/jpeg;base64,abc',
+      onFechar: () => undefined,
+    }));
+    assert.match(tela, /Enviar para o e-mail/);
+    assert.match(tela, /data-proposta-mapa="1"/);
+    assert.match(tela, /Mapa da rota na tela/);
+    assert.match(tela, /PDF completo da proposta vai em anexo/);
   });
 });
