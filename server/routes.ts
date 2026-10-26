@@ -21,7 +21,7 @@ import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
 import { handleFinancialTransactionPaymentsRequest } from "../api/financial-transaction-payments";
-import dadosProtegidosHandler from "../api/dados-protegidos";
+import { atenderDadosProtegidos } from "../lib/dadosProtegidos/proxy";
 import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
@@ -457,8 +457,31 @@ export async function registerRoutes(
   });
 
   // Mesma função da Vercel. Sem esta rota o Express devolve o HTML do site e o Cockpit quebra o JSON.
+  // O arquivo api/dados-protegidos.ts faz createRequire(import.meta.url) no carregamento.
+  // No bundle CJS esse endereço vem vazio e derruba o Express inteiro. Aqui entra o módulo direto.
   app.post('/api/dados-protegidos', async (req, res) => {
-    await dadosProtegidosHandler(req, res);
+    const bruto = req.body;
+    let pedido: { method?: string; url?: string; headers?: Record<string, string>; body?: string | null } = {};
+    if (bruto && typeof bruto === 'object' && !Array.isArray(bruto)) {
+      pedido = bruto as typeof pedido;
+    } else if (typeof bruto === 'string' && bruto.trim()) {
+      try { pedido = JSON.parse(bruto) as typeof pedido; } catch { pedido = {}; }
+    }
+    const autorizacao = req.headers.authorization;
+    const resposta = await atenderDadosProtegidos({
+      method: String(pedido.method || 'GET'),
+      url: String(pedido.url || ''),
+      headers: pedido.headers || {},
+      body: pedido.body ?? null,
+      authorization: Array.isArray(autorizacao) ? String(autorizacao[0] || '') : String(autorizacao || ''),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({
+      status: resposta.status,
+      body: resposta.body,
+      contentType: resposta.contentType,
+      contentRange: resposta.contentRange,
+    });
   });
 
   registrarSessaoExpress(app);

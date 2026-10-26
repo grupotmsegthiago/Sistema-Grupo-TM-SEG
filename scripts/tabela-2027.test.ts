@@ -403,6 +403,8 @@ describe('vigência gravada no servidor', () => {
     assert.match(trecho, /requireRole\('diretoria', 'administrador', 'admin'\)/);
     assert.match(trecho, /createSupabaseAdminClient\(\)/);
     assert.match(trecho, /\.from\('system_settings'\)\.upsert/);
+    assert.equal(rotas.includes('from "../api/dados-protegidos"'), false);
+    assert.match(rotas, /atenderDadosProtegidos/);
     const sql = readFileSync('migrations/2026_10_26_fix_system_settings_rls.sql', 'utf8');
     assert.match(sql, /key = 'tabela_regional_vigente'/);
     assert.doesNotMatch(sql, /FROM users\b/i);
