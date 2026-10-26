@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Em Liberar uma pessoa, cada linha ganhou Editar e, no analista, Remover. Administrador não remove administrador. Editar grava nome, e-mail e perfil na mesma pessoa, sem senha nova. O bloqueio e a reativação continuam. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Na edição do usuário, o botão Redefinir senha gera uma senha nova, grava no cadastro e abre a mesma mensagem de quando o usuário é criado. Se a pessoa já entra no portal, a mesma senha fica nessa linha. O e-mail com link e o WhatsApp continuam. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Ao gerar a proposta ou o PDF, o quadro do mapa cola o print do mapa que está na tela (painel, rota e carreta). Se o canvas do Google não exportar, o mapa estático em Base64 fica por baixo e o restante do card entra por cima. A foto solta da carreta deixa de cobrir esse quadro quando o print existe. O motor da OS não mudou.
@@ -28,7 +30,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Unificação de 26/10/2026 na `main`, projeto `sistema-grupo-tm-seg`: Tabela 2027 com prioridade e escolha manual da 2026, fallback ", Brasil" na rota, Nova Rota sem tipo e região, fuso `America/Sao_Paulo` em 24h e gate de fluxo. O histórico da cotação, o mapa, a vigência regional e a senha por e-mail e WhatsApp continuam nessa mesma `main` |
+| Produção agora | Publicação de 26/10/2026 na `main`, projeto `sistema-grupo-tm-seg`: Editar e Remover na lista de pessoas do portal, Redefinir senha com o texto de usuário novo, e o print do mapa na proposta. A unificação anterior (Tabela 2027, rota, Nova Rota, fuso e gate) continua. A tarifa duplicada do portal não entrou. O plano do PDF único não foi codificado |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |

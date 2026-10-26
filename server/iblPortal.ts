@@ -22,6 +22,10 @@ export function registerIblPortalRoutes(app: Express): void {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pessoas-item', id: String(req.params.id || '') });
     await handleIblPortalHttp(req, res);
   });
+  app.delete('/api/ibl-portal/pessoas/:id', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pessoas-item', id: String(req.params.id || '') });
+    await handleIblPortalHttp(req, res);
+  });
   app.get('/api/ibl-portal/ao-vivo', withOp('ao-vivo'));
   app.get('/api/ibl-portal/relatorio', withOp('relatorio'));
   app.post('/api/ibl-portal/campos', withOp('campos'));
@@ -65,6 +69,10 @@ export function registerClientePortalRoutes(app: Express): void {
   app.get('/api/cliente-portal/pessoas', withCliente('pessoas'));
   app.post('/api/cliente-portal/pessoas', withCliente('pessoas'));
   app.patch('/api/cliente-portal/pessoas/:id', async (req, res) => {
+    if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pessoas-item', id: String(req.params.id || '') });
+    await handleClientePortalHttp(req, res);
+  });
+  app.delete('/api/cliente-portal/pessoas/:id', async (req, res) => {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'pessoas-item', id: String(req.params.id || '') });
     await handleClientePortalHttp(req, res);
   });

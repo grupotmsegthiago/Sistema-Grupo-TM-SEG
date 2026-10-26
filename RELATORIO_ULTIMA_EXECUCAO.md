@@ -2,7 +2,20 @@
 
 # Próxima Execução Proposta
 
-O botão Redefinir senha e o print do mapa da proposta entram nesta publicação. O plano do PDF único continua só registrado: o código dele não foi executado.
+Publicado nesta entrega, no projeto sistema-grupo-tm-seg: Editar e Remover na lista de pessoas do portal, o botão Redefinir senha com o texto de usuário novo, e o print do mapa na proposta. O plano do PDF único continua só registrado: o código dele não foi executado. A branch da tarifa duplicada do portal não entrou.
+
+## Editar e remover pessoa do portal (26/10/2026)
+
+Baseline `fb58e567`. Na tela Liberar uma pessoa, Editar preenche o formulário e grava nome, e-mail e perfil na mesma linha. Remover só aparece no analista e apaga essa linha. Administrador não some da lista por esse botão, nem se o pedido chegar direto na API. O bloqueio do último administrador ativo continua.
+
+- **Objetivo da Tarefa:** o administrador ajusta ou tira o analista da lista sem criar outra pessoa com o mesmo e-mail.
+- **Passo a Passo Sequencial:** 1. Editar chama o PATCH que já existia, agora também com nome, e-mail e perfil. 2. Remover chama DELETE na mesma rota da pessoa. 3. O servidor recusa quando o perfil é administrador. 4. Quem é só do portal fica inativo no cadastro do sistema ao sair da lista. 5. Quem também usa o sistema interno não é inativado.
+- **Ficheiros Afetados:** `components/ceva/PessoasCeva.tsx`, `lib/cevaPortal/httpHandler.ts`, `lib/cevaPortal/regrasAcesso.ts`, `lib/cevaPortal/acesso.ts`, `server/cevaPortal.ts`, `server/iblPortal.ts`, `scripts/portal-pessoas-editar-remover.test.ts`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas. Sem migration. Sem função nova. A senha da pessoa não é regravada na edição.
+
+Banco: nenhuma coluna nova. A escrita usa a tabela de usuários do portal que já existe e, só para quem é exclusivo do portal, `system_users`.
+
+O botão Redefinir senha e o print do mapa da proposta entram nesta mesma publicação.
 
 ## Redefinir senha com o texto de usuário novo (26/10/2026)
 
