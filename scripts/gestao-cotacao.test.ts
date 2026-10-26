@@ -173,6 +173,11 @@ describe('gestão da cotação', () => {
     assert.match(tela, /textoComBrasil/);
     assert.match(tela, /avoidFerries/);
     assert.match(tela, /PDF preview/);
+    assert.match(tela, /data-mapa-cotacao/);
+    assert.match(tela, /printDoMapaVisivel/);
+    const proposta = readFileSync(new URL('../components/ceva/ExperienciaProposta.tsx', import.meta.url), 'utf8');
+    assert.match(proposta, /printMapa/);
+    assert.match(proposta, /Mapa da rota na tela/);
     const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')) as { functions: Record<string, unknown> };
     assert.equal(Object.keys(vercel.functions).length, 50);
   });

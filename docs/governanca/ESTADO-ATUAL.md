@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Ainda nesta branch, sem publicar. Ao gerar a proposta ou o PDF, o quadro do mapa cola o print do mapa que está na tela (painel, rota e carreta). Se o canvas do Google não exportar, o mapa estático em Base64 fica por baixo e o restante do card entra por cima. A foto solta da carreta deixa de cobrir esse quadro quando o print existe. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg: a Tabela 2027 com prioridade e a escolha manual da 2026, o fallback ", Brasil" na rota Salvador–São Paulo, a Nova Rota sem tipo e região, o fuso de Brasília em 24h e o gate de fluxo. A branch da tarifa duplicada do portal não entrou. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Gate de fluxo: antes de criar, editar ou apagar código ou tabela, o agente desenha o plano no chat e na seção `# Próxima Execução Proposta` de `RELATORIO_ULTIMA_EXECUCAO.md`, e só executa depois de aprovação expressa (exemplo: "Fluxo aprovado, pode executar"). Desvio ou dúvida volta o plano ao chat e ao relatório, sem implementação. Permanecem o motor da OS em `lib/financialUtils.ts`, os contratos DHL e IBL, o limite de 50 funções na Vercel e o horário de Brasília em 24 horas.

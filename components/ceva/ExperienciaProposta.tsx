@@ -62,12 +62,14 @@ export const ExperienciaProposta: React.FC<{
   pedido: { regiao: string; origem: string; destino: string; paradas: string[]; km: number };
   clienteInterno?: string;
   cena?: CenaVisual | null;
+  /** Foto do mapa que estava na tela no momento de gerar a proposta. */
+  printMapa?: string | null;
   operacoes?: string | null;
   onFechar: () => void;
   /** Fora da tela, sem opacidade zero, para o html2canvas ler a proposta salva. */
   modoCaptura?: boolean;
   dataTexto?: string;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, operacoes, onFechar, modoCaptura = false, dataTexto }) => {
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
@@ -164,9 +166,13 @@ export const ExperienciaProposta: React.FC<{
               <h2 className="mt-3 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl" style={{ fontFamily: 'Oswald, sans-serif' }}>{caminho}</h2>
               <p className="mt-4 text-sm text-white/70">{regiaoLegivel(proposta.regiao)} · {data}</p>
               <p className="mt-6 max-w-xl text-lg text-white/90">{MARCA_TMSEG.chamada}</p>
-              {cena?.mapa && (
-                <figure className="mt-8 h-80 overflow-hidden rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.35)]">
-                  <CenaRotaVisual mapa={cena.mapa} carreta={cena.carreta} logo={cena.logo} className="h-80" />
+              {(printMapa || cena?.mapa) && (
+                <figure className="mt-8 overflow-hidden rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.35)]">
+                  {printMapa ? (
+                    <img src={printMapa} alt="Mapa da rota na tela" className="block h-auto w-full" />
+                  ) : cena?.mapa ? (
+                    <CenaRotaVisual mapa={cena.mapa} carreta={cena.carreta} logo={cena.logo} className="h-80" />
+                  ) : null}
                 </figure>
               )}
               <svg viewBox="0 0 640 90" className="mt-8 h-16 w-full max-w-xl" aria-hidden="true">

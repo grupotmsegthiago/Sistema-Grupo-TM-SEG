@@ -169,6 +169,33 @@ type TrajetoMapa = {
   pontos: PontoMapa[];
 };
 
+/** Pede o mapa estático em Base64 na rota que já existe. A URL https fica só se o servidor não devolver a imagem. */
+async function pedirMapaBase64(alvo: TrajetoMapa, enviar: (corpo: string) => Promise<Response>): Promise<string> {
+  const mapaUrl = urlMapaEstatico({
+    polyline: alvo.polyline,
+    pontos: alvo.pontos,
+    chave: googleMapsApiKey,
+    inicio: alvo.inicio,
+    fim: alvo.fim,
+    paradas: alvo.paradas,
+  }) || '';
+  try {
+    const corpo = JSON.stringify({
+      polyline: alvo.polyline,
+      inicio: alvo.inicio,
+      fim: alvo.fim,
+      paradas: alvo.paradas,
+      pontos: alvo.pontos,
+    });
+    const resposta = await enviar(corpo);
+    const dados = await resposta.json().catch(() => ({}));
+    if (resposta.ok && typeof dados.mapa === 'string' && dados.mapa.startsWith('data:image/')) return dados.mapa;
+  } catch {
+    // a URL https continua disponível quando o servidor não devolve a imagem
+  }
+  return mapaUrl;
+}
+
 function pontoDe(lugar: unknown): PontoMapa | null {
   return lerCoordenada(lugar);
 }
@@ -318,7 +345,7 @@ function MapaCotacao(props: {
   const carretaVisivel = Boolean(rota && props.mostrarCarreta);
 
   return (
-    <div className="relative h-[clamp(460px,52vw,640px)] w-full overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_22px_40px_rgba(15,23,42,0.18)]">
+    <div data-mapa-cotacao="1" className="relative h-[clamp(460px,52vw,640px)] w-full overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_22px_40px_rgba(15,23,42,0.18)]">
       {props.mapaErro ? (
         <p className="flex h-full items-center justify-center px-6 text-center text-sm font-bold text-slate-600">O mapa não carregou.</p>
       ) : !props.mapaPronto ? (
@@ -434,6 +461,7 @@ export const CotacaoPortal: React.FC<{
   const [etapa, setEtapa] = useState<'parada' | 'animando' | 'proposta'>('parada');
   const [trajeto, setTrajeto] = useState<TrajetoMapa | null>(null);
   const [cena, setCena] = useState<CenaVisual | null>(null);
+  const [printMapa, setPrintMapa] = useState<string | null>(null);
   const [editando, setEditando] = useState<Record<string, boolean>>({});
   const [carretaPronta, setCarretaPronta] = useState<string | null>(null);
   const [logoPronto, setLogoPronto] = useState<string | null>(null);
@@ -587,19 +615,39 @@ export const CotacaoPortal: React.FC<{
     return { nova, usouMinimo, vigencia: vigente };
   };
 
+  const colarPrintDoMapa = async (): Promise<string | null> => {
+    const raiz = document.querySelector('[data-mapa-cotacao="1"]');
+    if (!(raiz instanceof HTMLElement) || !trajeto) return null;
+    const fundo = cena?.mapa?.startsWith('data:image/') ? cena.mapa : await pedirMapaBase64(trajeto, (corpo) => (
+      clienteNome
+        ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
+        : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo })
+    ));
+    const { printDoMapaVisivel } = await import('./abrirPdfCotacao');
+    return printDoMapaVisivel(raiz, fundo.startsWith('data:image/') ? fundo : null);
+  };
+
   const gerar = () => {
     const feito = montarAtual();
     if (!feito) return;
-    setProposta(feito.nova);
-    setPasso(0);
-    setEtapa('animando');
-    void gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
+    void (async () => {
+      const print = await colarPrintDoMapa();
+      setPrintMapa(print);
+      setProposta(feito.nova);
+      setPasso(0);
+      setEtapa('animando');
+      void gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
+    })();
   };
 
   const preverPdf = () => {
     const feito = montarAtual();
     if (!feito) return;
-    setPreviewPdf(feito.nova);
+    void (async () => {
+      const print = await colarPrintDoMapa();
+      setPrintMapa(print);
+      setPreviewPdf(feito.nova);
+    })();
   };
 
   const editarCotacao = (edicao: { origem: string; destino: string; paradas: string[]; regiao?: string }) => {
@@ -672,6 +720,12 @@ export const CotacaoPortal: React.FC<{
       await new Promise((resolver) => window.setTimeout(resolver, 80));
       const artigo = document.querySelector('[data-proposta-pdf="1"]');
       if (!(artigo instanceof HTMLElement) || !ativo) return;
+      await Promise.all(Array.from(artigo.querySelectorAll('img')).map((imagem) => (
+        imagem.complete ? null : new Promise<void>((resolver) => {
+          imagem.onload = () => resolver();
+          imagem.onerror = () => resolver();
+        })
+      )));
       try {
         const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
         await abrirPdfDaProposta(artigo, nomePdfCotacao(clienteNome || portal.marca.rotulo, 'preview'), null);
@@ -691,6 +745,7 @@ export const CotacaoPortal: React.FC<{
   useEffect(() => {
     if (!trajeto?.polyline && (trajeto?.pontos.length || 0) < 2) {
       setCena(null);
+      setPrintMapa(null);
       setCarretaPronta(null);
       setLogoPronto(null);
       return;
@@ -702,31 +757,11 @@ export const CotacaoPortal: React.FC<{
     const marca = logoConhecido(clienteVisual) || logoPortal;
     const trabalhar = async () => {
       if (!trajeto) return;
-      const mapaUrl = urlMapaEstatico({
-        polyline: trajeto.polyline,
-        pontos: trajeto.pontos,
-        chave: googleMapsApiKey,
-        inicio: trajeto.inicio,
-        fim: trajeto.fim,
-        paradas: trajeto.paradas,
-      });
-      let mapa = mapaUrl || '';
-      try {
-        const corpo = JSON.stringify({
-          polyline: trajeto.polyline,
-          inicio: trajeto.inicio,
-          fim: trajeto.fim,
-          paradas: trajeto.paradas,
-          pontos: trajeto.pontos,
-        });
-        const resposta = clienteNome
-          ? await authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
-          : await fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo });
-        const dados = await resposta.json().catch(() => ({}));
-        if (ativo && resposta.ok && typeof dados.mapa === 'string' && dados.mapa.startsWith('data:image/')) mapa = dados.mapa;
-      } catch {
-        // a URL https continua na tela; o PDF usa o base64 quando o servidor devolve a imagem
-      }
+      const mapa = await pedirMapaBase64(trajeto, (corpo) => (
+        clienteNome
+          ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
+          : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo })
+      ));
       if (!ativo) return;
       setCarretaPronta(null);
       setLogoPronto(marca);
@@ -839,6 +874,7 @@ export const CotacaoPortal: React.FC<{
           pedido={{ regiao, origem, destino, paradas: paradas.map((item) => item.texto).filter(Boolean), km: kmRota || 0 }}
           clienteInterno={clienteNome}
           cena={cena}
+          printMapa={printMapa}
           operacoes={operacoes}
           onFechar={() => setPreviewPdf(null)}
         />
@@ -851,6 +887,7 @@ export const CotacaoPortal: React.FC<{
           pedido={{ regiao, origem, destino, paradas: paradas.map((item) => item.texto).filter(Boolean), km: kmRota || 0 }}
           clienteInterno={clienteNome}
           cena={cena}
+          printMapa={printMapa}
           operacoes={operacoes}
           onFechar={() => { setEtapa('parada'); setProposta(null); setPasso(0); }}
         />

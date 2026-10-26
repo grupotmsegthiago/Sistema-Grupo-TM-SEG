@@ -2,6 +2,14 @@
 
 # Próxima Execução Proposta
 
+O print do mapa na proposta foi pedido direto com as duas telas. A próxima alteração de código ou de tabela, fora desse ajuste, substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+
+## Print do mapa na proposta (26/10/2026)
+
+Baseline `fb58e567`. O quadro da proposta mostrava a foto da carreta porque a imagem do mapa não carregava. Gerar proposta e PDF preview passam a fotografar o card do mapa que está na tela e colar essa foto no lugar. O canvas do Google, quando não exporta, cede o lugar ao mapa estático em Base64, e o painel continua no card. Sem migration, sem função nova na Vercel e sem alteração em calculateMissionFinancials.
+
+## Unificação de 26/10/2026
+
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. A unificação autorizada em 26/10/2026 (Tabela 2027, rota Salvador, Nova Rota, fuso de Brasília e o gate de fluxo) é a execução desta entrega. A branch da tarifa duplicada do portal não entrou. Não há outro plano de código aberto. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
 
 ## Gate de aprovação prévia (26/10/2026)
