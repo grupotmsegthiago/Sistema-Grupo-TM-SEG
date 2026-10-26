@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   aplicarConsumoRota,
   arredondarHorasPeloCorte,
@@ -15,7 +16,9 @@ import {
   patchEdicaoRegional,
   patchExpiracaoCotacao,
   perfilPodeAplicarTabelaRegional,
+  registroVigenciaTabelaRegional,
   rotaVisivelEmNovaOs,
+  vigenciaTabelaInformada,
 } from '../lib/precificacao/tabela2027';
 import { checkAndExpireQuotations } from '../lib/precificacao/expirarCotacoes';
 import { getBase64ImageFromURL } from '../lib/precificacao/imageUtils';
@@ -371,5 +374,39 @@ describe('acesso da Diretoria', () => {
     assert.equal(perfilPodeAplicarTabelaRegional('Administrador'), true);
     assert.equal(perfilPodeAplicarTabelaRegional('Financeiro'), false);
     assert.equal(perfilPodeAplicarTabelaRegional('Comercial'), false);
+  });
+});
+
+describe('vigência gravada no servidor', () => {
+  it('aceita só 2026 ou 2027 e monta a linha da chave tabela_regional_vigente', () => {
+    assert.equal(vigenciaTabelaInformada('2027'), '2027');
+    assert.equal(vigenciaTabelaInformada('2026'), '2026');
+    assert.equal(vigenciaTabelaInformada('2028'), null);
+    assert.equal(vigenciaTabelaInformada(2027), null);
+    const linha = registroVigenciaTabelaRegional('2027', '  ', '2026-10-26T15:00:00.000Z');
+    assert.deepEqual(linha, {
+      key: 'tabela_regional_vigente',
+      value: { versao: '2027' },
+      updated_by: 'Diretoria',
+      updated_at: '2026-10-26T15:00:00.000Z',
+    });
+  });
+
+  it('o botão não grava system_settings pelo cliente anon', () => {
+    const tela = readFileSync('components/ClientForm.tsx', 'utf8');
+    assert.equal(tela.includes(".from('system_settings').upsert"), false);
+    assert.match(tela, /\/api\/pricing\/tabela-regional-vigente/);
+    const rotas = readFileSync('server/routes.ts', 'utf8');
+    const inicio = rotas.indexOf("app.post('/api/pricing/tabela-regional-vigente'");
+    assert.notEqual(inicio, -1);
+    const trecho = rotas.slice(inicio, inicio + 900);
+    assert.match(trecho, /requireRole\('diretoria', 'administrador', 'admin'\)/);
+    assert.match(trecho, /createSupabaseAdminClient\(\)/);
+    assert.match(trecho, /\.from\('system_settings'\)\.upsert/);
+    const sql = readFileSync('migrations/2026_10_26_fix_system_settings_rls.sql', 'utf8');
+    assert.match(sql, /key = 'tabela_regional_vigente'/);
+    assert.doesNotMatch(sql, /FROM users\b/i);
+    assert.doesNotMatch(sql, /USING \(true\)/);
+    assert.doesNotMatch(sql, /FOR ALL/);
   });
 });

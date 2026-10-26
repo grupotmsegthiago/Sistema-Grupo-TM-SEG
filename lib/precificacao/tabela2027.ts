@@ -200,6 +200,26 @@ export function perfilPodeAplicarTabelaRegional(role: string | null | undefined)
   return perfil === 'diretoria' || perfil === 'administrador' || perfil === 'admin';
 }
 
+/** Só 2026 ou 2027. Qualquer outro corpo da requisição é recusado antes do banco. */
+export function vigenciaTabelaInformada(valor: unknown): VersaoTabelaRegional | null {
+  return valor === '2026' || valor === '2027' ? valor : null;
+}
+
+/** Linha única de system_settings. A gravação fica no servidor, com a chave de serviço. */
+export function registroVigenciaTabelaRegional(
+  versao: VersaoTabelaRegional,
+  atualizadoPor: string,
+  atualizadoEm: string,
+) {
+  const nome = String(atualizadoPor || '').trim() || 'Diretoria';
+  return {
+    key: CHAVE_TABELA_REGIONAL_VIGENTE,
+    value: { versao },
+    updated_by: nome,
+    updated_at: atualizadoEm,
+  };
+}
+
 export function nomeLinhaPadrao(versao: VersaoTabelaRegional, faixa: FaixaRegional): string {
   return `TABELA ${versao} - ${faixa.nome}`;
 }

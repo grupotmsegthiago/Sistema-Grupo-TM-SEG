@@ -7,7 +7,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
-import { clienteContratualDhlOuIbl, ehLinhaPadraoRegional, patchEdicaoRegional } from "../lib/precificacao/tabela2027";
+import { clienteContratualDhlOuIbl, ehLinhaPadraoRegional, patchEdicaoRegional, registroVigenciaTabelaRegional, vigenciaTabelaInformada } from "../lib/precificacao/tabela2027";
 import { preservarParPedagioNoRecalculo } from "../lib/toll/clientTollBilling";
 import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
@@ -976,6 +976,24 @@ export async function registerRoutes(
       return res.json({ ok: true, linha: data });
     } catch (erro: any) {
       return res.status(500).json({ error: erro?.message || 'Falha ao editar a linha.' });
+    }
+  });
+
+  // A vigência da tabela regional não pode ir pelo cliente anon: o RLS de system_settings recusa a linha nova.
+  // service_role ignora o RLS. O perfil sai de system_users + profiles, não do JWT.
+  app.post('/api/pricing/tabela-regional-vigente', requireAuth, requireRole('diretoria', 'administrador', 'admin'), async (req: Request, res: Response) => {
+    try {
+      const versao = vigenciaTabelaInformada(req.body?.versao);
+      if (!versao) return res.status(400).json({ error: 'Informe a vigência 2026 ou 2027.' });
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
+      const usuario = (req as any).user;
+      const linha = registroVigenciaTabelaRegional(versao, usuario?.name || 'Diretoria', new Date().toISOString());
+      const { error } = await sb.from('system_settings').upsert(linha, { onConflict: 'key' });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ ok: true, versao });
+    } catch (erro: any) {
+      return res.status(500).json({ error: erro?.message || 'Falha ao gravar a vigência.' });
     }
   });
 

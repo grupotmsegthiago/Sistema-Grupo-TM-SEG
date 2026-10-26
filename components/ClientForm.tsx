@@ -924,13 +924,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
       });
       setAplicandoTabelaRegional(true);
       try {
-          const setting = await supabase.from('system_settings').upsert({
-              key: CHAVE_TABELA_REGIONAL_VIGENTE,
-              value: { versao: tabelaVigencia },
-              updated_by: currentUser?.name || 'Diretoria',
-              updated_at: new Date().toISOString(),
-          }, { onConflict: 'key' });
-          if (setting.error) throw new Error(setting.error.message);
+          const gravacaoVigencia = await authFetch('/api/pricing/tabela-regional-vigente', {
+              method: 'POST',
+              body: JSON.stringify({ versao: tabelaVigencia }),
+          });
+          const vigencia = await gravacaoVigencia.json().catch(() => ({}));
+          if (!gravacaoVigencia.ok) throw new Error(vigencia.error || 'Não foi possível gravar a vigência da tabela.');
 
           const catalogo = await supabase.from('regional_rates').upsert(plano.catalogo, { onConflict: 'versao,region' });
           const catalogoPendente = !!catalogo.error && colunaRegionalAusente(catalogo.error);
