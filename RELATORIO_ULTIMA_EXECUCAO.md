@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Rota Salvador–São Paulo sem ZERO_RESULTS (26/10/2026)
+
+Ainda não publicado. O texto "Salvador, BA" para "São Paulo, SP" não fecha no Directions. Com ", Brasil", a mesma rota responde cerca de 1.986 km e 1.609 min. A cotação passa a pedir placeId ou coordenada, com pedágio, rodovia e balsa liberados, e repete em texto com o país quando o status é ZERO_RESULTS ou NOT_FOUND. O km gravado na tela continua liberando Gerar proposta. Sem migration e sem alteração em calculateMissionFinancials.
+
 ## Ações do histórico e painel do mapa (26/10/2026)
 
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou no localhost as colunas, o menu e o painel do mapa. Baseline `882cd3c1`. O histórico passa a mostrar o km e a hora extra gravados na cotação. O menu inativa na hora, pede confirmação para excluir, devolve origem, destino e paradas ao formulário e envia o PDF pelo SMTP que já existe. Não há coluna deleted_at e a migration não foi criada. Administrador, diretoria e o autor inativam e excluem; o servidor grava system_logs. O mapa usa o painel Informações da Rota com a cidade, a distância e o tempo da rota calculada, e o caminhão 3D fica sobre o traçado. O PDF preview não insere cotação. Sem função nova na Vercel e sem alteração em calculateMissionFinancials. Rollback: reverter este commit.

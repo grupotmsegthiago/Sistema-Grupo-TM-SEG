@@ -8,9 +8,13 @@ import {
   destinoDirections,
   enderecoComUf,
   lerCoordenada,
+  localDaRota,
   lugarComGeometria,
   mensagemFalhaDirections,
   polylineCodificada,
+  precisaFallbackDeTexto,
+  restricoesDaRota,
+  textoComBrasil,
   refererDoMapa,
   resumirPontos,
   rotaAdministrativaPronta,
@@ -298,8 +302,24 @@ test('a rota da cotação lê coordenada, explica a falha e não grava tempo ine
   assert.equal(refererDoMapa('https://evil.example'), 'https://sistema.grupotmseg.com.br/');
   assert.equal(chaveDoMapaNoServidor({ GOOGLE_MAPS_API_KEY: 'chave-servidor', VITE_GOOGLE_MAPS_API_KEY: 'outra' }), 'chave-servidor');
   const tela = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
+  assert.equal(textoComBrasil('Salvador, BA'), 'Salvador, BA, Brasil');
+  assert.equal(textoComBrasil('São Paulo, SP, Brasil'), 'São Paulo, SP, Brasil');
+  assert.deepEqual(localDaRota({ placeId: 'abc', coordenada: { lat: -12.97, lng: -38.5 }, texto: 'Salvador, BA' }), { placeId: 'abc' });
+  assert.deepEqual(localDaRota({ coordenada: { lat: -12.97, lng: -38.5 }, texto: 'Salvador, BA' }), { lat: -12.97, lng: -38.5 });
+  assert.equal(localDaRota({ texto: 'Salvador, BA' }), 'Salvador, BA, Brasil');
+  assert.equal(localDaRota({ coordenada: 'São Paulo, SP', texto: 'São Paulo, SP' }), 'São Paulo, SP, Brasil');
+  const restricoes = restricoesDaRota();
+  assert.equal(restricoes.avoidTolls, false);
+  assert.equal(restricoes.avoidHighways, false);
+  assert.equal(restricoes.avoidFerries, false);
+  assert.equal(restricoes.provideRouteAlternatives, false);
+  assert.equal(precisaFallbackDeTexto('ZERO_RESULTS'), true);
+  assert.equal(precisaFallbackDeTexto('NOT_FOUND'), true);
+  assert.equal(precisaFallbackDeTexto('OK'), false);
   assert.match(tela, /Geocoder/);
   assert.match(tela, /place_id/);
+  assert.match(tela, /avoidFerries/);
+  assert.match(tela, /textoComBrasil/);
   assert.match(tela, /mensagemFalhaDirections/);
   assert.match(tela, /\/api\/proposta-escolta\/mapa/);
   assert.doesNotMatch(tela, /\/api\/proposta-escolta\/visual/);

@@ -130,7 +130,8 @@ describe('gestão da cotação', () => {
     assert.match(portal, /app\.delete\('\/api\/cotacoes\/:id'/);
     const tela = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
     assert.match(tela, /Informações da Rota/);
-    assert.match(tela, /geocodificarLugar/);
+    assert.match(tela, /textoComBrasil/);
+    assert.match(tela, /avoidFerries/);
     assert.match(tela, /PDF preview/);
     const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')) as { functions: Record<string, unknown> };
     assert.equal(Object.keys(vercel.functions).length, 50);

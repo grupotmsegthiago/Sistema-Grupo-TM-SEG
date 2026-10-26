@@ -9,18 +9,23 @@ import {
   ESTILO_MAPA_COTACAO,
   indiceNaRota,
   lerCoordenada,
+  localDaRota,
   lugarComGeometria,
   lugarPreenchido,
   mensagemFalhaDirections,
   polylineCodificada,
+  precisaFallbackDeTexto,
+  restricoesDaRota,
   resumirPontos,
   rotuloCidadeUf,
   rotuloMarcaTransito,
   statusDaFalhaDirections,
+  textoComBrasil,
   textoKmMonitor,
   textoTempoMonitor,
   TRACO_PIN,
   type Coordenada,
+  type LocalPedido,
 } from '../../lib/portalCliente/rotaCotacao';
 import {
   REGIOES_COTACAO,
@@ -67,7 +72,7 @@ function CampoLugar(props: {
   valor: string;
   placeholder: string;
   cor: string;
-  onValor: (valor: string, coordenada: Coordenada | null) => void;
+  onValor: (valor: string, coordenada: Coordenada | null, placeId: string | null) => void;
   onEditando: (id: string, editando: boolean) => void;
 }) {
   const campo = useRef<google.maps.places.Autocomplete | null>(null);
@@ -79,32 +84,32 @@ function CampoLugar(props: {
     elemento.value = props.valor;
     escolhido.current = props.valor;
   }, [props.valor]);
-  const aplicarLugar = (endereco: string, coordenada: Coordenada | null) => {
+  const aplicarLugar = (endereco: string, coordenada: Coordenada | null, placeId: string | null) => {
     escolhido.current = endereco;
     if (caixa.current) caixa.current.value = endereco;
-    props.onValor(endereco, coordenada);
+    props.onValor(endereco, coordenada, placeId);
   };
   const resolverTexto = async () => {
     const limpo = (caixa.current?.value || '').trim();
     if (!limpo) {
-      if (props.valor) props.onValor('', null);
+      if (props.valor) props.onValor('', null, null);
       return;
     }
     if (limpo === escolhido.current) return;
     if (typeof google === 'undefined' || !google.maps?.Geocoder) {
-      props.onValor(limpo, null);
+      props.onValor(limpo, null, null);
       return;
     }
     try {
-      const resposta = await new google.maps.Geocoder().geocode({ address: limpo, componentRestrictions: { country: 'BR' } });
+      const resposta = await new google.maps.Geocoder().geocode({ address: textoComBrasil(limpo), componentRestrictions: { country: 'BR' } });
       const achado = lugarComGeometria(resposta.results?.[0], limpo);
       if (!achado) {
-        props.onValor(limpo, null);
+        props.onValor(limpo, null, null);
         return;
       }
-      aplicarLugar(achado.endereco, achado.coordenada);
+      aplicarLugar(achado.endereco, achado.coordenada, achado.placeId);
     } catch {
-      props.onValor(limpo, null);
+      props.onValor(limpo, null, null);
     }
   };
   return (
@@ -115,9 +120,9 @@ function CampoLugar(props: {
         onPlaceChanged={() => {
           const achado = lugarComGeometria(campo.current?.getPlace(), caixa.current?.value);
           if (!achado) return;
-          aplicarLugar(achado.endereco, achado.coordenada);
+          aplicarLugar(achado.endereco, achado.coordenada, achado.placeId);
         }}
-        options={{ componentRestrictions: { country: 'br' }, fields: ['formatted_address', 'name', 'geometry', 'place_id', 'address_components'] }}
+        options={{ componentRestrictions: { country: 'BR' }, fields: ['formatted_address', 'name', 'geometry', 'place_id', 'address_components'] }}
       >
         <input
           ref={caixa}
@@ -126,7 +131,7 @@ function CampoLugar(props: {
             const novo = evento.target.value;
             if (novo === escolhido.current) return;
             escolhido.current = '';
-            if (props.valor) props.onValor('', null);
+            if (props.valor) props.onValor('', null, null);
           }}
           onKeyDown={(evento) => {
             if (evento.key !== 'Enter') return;
@@ -185,25 +190,16 @@ function pinDoMapa(cor: string, letra: string | null): google.maps.Symbol {
   };
 }
 
-async function geocodificarLugar(lugar: string | Coordenada): Promise<string | Coordenada> {
-  if (typeof lugar !== 'string') return lugar;
-  if (typeof google === 'undefined' || !google.maps?.Geocoder) return lugar;
-  try {
-    const resposta = await new google.maps.Geocoder().geocode({ address: lugar, componentRestrictions: { country: 'BR' } });
-    return lerCoordenada(resposta.results?.[0]?.geometry?.location) || lugar;
-  } catch {
-    return lugar;
-  }
-}
-
 function MapaCotacao(props: {
   origem: string | Coordenada;
   destino: string | Coordenada;
+  origemPlaceId?: string | null;
+  destinoPlaceId?: string | null;
   origemTexto: string;
   destinoTexto: string;
   km: number | null;
   duracaoSeg: number | null;
-  paradas: Array<string | Coordenada>;
+  paradas: Array<{ texto: string; local: string | Coordenada; placeId?: string | null }>;
   cliente: string;
   onRota: (km: number | null, segundos: number | null) => void;
   onTrajeto: (trajeto: TrajetoMapa | null) => void;
@@ -221,10 +217,10 @@ function MapaCotacao(props: {
   const [rota, setRota] = useState<google.maps.DirectionsResult | null>(null);
   const [satelite, setSatelite] = useState(false);
   const [falha, setFalha] = useState('');
-  const paradas = props.paradas.filter((item) => lugarPreenchido(item));
-  const chaveParadas = paradas.map((item) => (typeof item === 'string' ? item : `${item.lat},${item.lng}`)).join('|');
-  const chaveOrigem = typeof props.origem === 'string' ? props.origem : `${props.origem.lat},${props.origem.lng}`;
-  const chaveDestino = typeof props.destino === 'string' ? props.destino : `${props.destino.lat},${props.destino.lng}`;
+  const paradas = props.paradas.filter((item) => item.texto.trim() || lugarPreenchido(item.local));
+  const chaveParadas = paradas.map((item) => `${item.placeId || ''}|${item.texto}|${typeof item.local === 'string' ? item.local : `${item.local.lat},${item.local.lng}`}`).join('||');
+  const chaveOrigem = `${props.origemPlaceId || ''}|${typeof props.origem === 'string' ? props.origem : `${props.origem.lat},${props.origem.lng}`}`;
+  const chaveDestino = `${props.destinoPlaceId || ''}|${typeof props.destino === 'string' ? props.destino : `${props.destino.lat},${props.destino.lng}`}`;
 
   useEffect(() => {
     mapa.current?.setMapTypeId(satelite ? 'hybrid' : 'roadmap');
@@ -243,19 +239,22 @@ function MapaCotacao(props: {
     let ativo = true;
     const espera = window.setTimeout(() => {
       void (async () => {
-      const origemRota = await geocodificarLugar(props.origem);
-      const destinoRota = await geocodificarLugar(props.destino);
-      const vias: Array<string | Coordenada> = [];
-      for (const parada of paradas) vias.push(await geocodificarLugar(parada));
-      if (!ativo) return;
-      const servico = new google.maps.DirectionsService();
-      servico.route({
-        origin: origemRota,
-        destination: destinoRota,
+      const opcoes = restricoesDaRota();
+      const origemPedido = localDaRota({ placeId: props.origemPlaceId, coordenada: props.origem, texto: props.origemTexto });
+      const destinoPedido = localDaRota({ placeId: props.destinoPlaceId, coordenada: props.destino, texto: props.destinoTexto });
+      const viasPedido = paradas.map((item) => localDaRota({ placeId: item.placeId, coordenada: item.local, texto: item.texto }));
+      const pedir = (origin: LocalPedido, destination: LocalPedido, vias: LocalPedido[]) => new google.maps.DirectionsService().route({
+        origin,
+        destination,
         waypoints: vias.map((location) => ({ location, stopover: true })),
         travelMode: google.maps.TravelMode.DRIVING,
-        region: 'BR',
-      }).then((resultado) => {
+        avoidTolls: opcoes.avoidTolls,
+        avoidHighways: opcoes.avoidHighways,
+        avoidFerries: opcoes.avoidFerries,
+        provideRouteAlternatives: opcoes.provideRouteAlternatives,
+        region: opcoes.region,
+      });
+      const aplicar = (resultado: google.maps.DirectionsResult) => {
         if (!ativo) return;
         const pernas = resultado.routes[0]?.legs || [];
         const metros = pernas.reduce((soma, trecho) => soma + (trecho.distance?.value || 0), 0);
@@ -285,13 +284,27 @@ function MapaCotacao(props: {
         props.onTrajeto(trajeto);
         const limites = rotaDesenhada?.bounds;
         if (limites) mapa.current?.fitBounds(limites, 64);
-      }).catch((erro: unknown) => {
+      };
+      try {
+        let resultado: google.maps.DirectionsResult;
+        try {
+          resultado = await pedir(origemPedido, destinoPedido, viasPedido);
+        } catch (erro) {
+          const origemTexto = textoComBrasil(props.origemTexto);
+          const destinoTexto = textoComBrasil(props.destinoTexto);
+          const viasTexto = paradas.map((item) => textoComBrasil(item.texto));
+          const jaEraTexto = origemPedido === origemTexto && destinoPedido === destinoTexto && viasPedido.every((item, indice) => item === viasTexto[indice]);
+          if (!precisaFallbackDeTexto(statusDaFalhaDirections(erro)) || jaEraTexto || !origemTexto || !destinoTexto) throw erro;
+          resultado = await pedir(origemTexto, destinoTexto, viasTexto);
+        }
+        aplicar(resultado);
+      } catch (erro) {
         if (!ativo) return;
         setRota(null);
         setFalha(mensagemFalhaDirections(statusDaFalhaDirections(erro)));
         props.onRota(null, null);
         props.onTrajeto(null);
-      });
+      }
       })();
     }, 400);
     return () => {
@@ -415,7 +428,9 @@ export const CotacaoPortal: React.FC<{
   const [destino, setDestino] = useState('');
   const [coordOrigem, setCoordOrigem] = useState<Coordenada | null>(null);
   const [coordDestino, setCoordDestino] = useState<Coordenada | null>(null);
-  const [paradas, setParadas] = useState<{ id: number; texto: string; coordenada: Coordenada | null }[]>([]);
+  const [placeOrigem, setPlaceOrigem] = useState<string | null>(null);
+  const [placeDestino, setPlaceDestino] = useState<string | null>(null);
+  const [paradas, setParadas] = useState<{ id: number; texto: string; coordenada: Coordenada | null; placeId: string | null }[]>([]);
   const [kmRota, setKmRota] = useState<number | null>(null);
   const [duracaoSeg, setDuracaoSeg] = useState<number | null>(null);
   const [proposta, setProposta] = useState<PropostaPortal | null>(null);
@@ -579,7 +594,9 @@ export const CotacaoPortal: React.FC<{
     setDestino(edicao.destino);
     setCoordOrigem(null);
     setCoordDestino(null);
-    setParadas(edicao.paradas.map((texto, indice) => ({ id: Date.now() + indice, texto, coordenada: null })));
+    setPlaceOrigem(null);
+    setPlaceDestino(null);
+    setParadas(edicao.paradas.map((texto, indice) => ({ id: Date.now() + indice, texto, coordenada: null, placeId: null })));
     if (edicao.regiao) setRegiao(edicao.regiao);
     setEtapa('parada');
     setProposta(null);
@@ -742,18 +759,18 @@ export const CotacaoPortal: React.FC<{
           {isLoaded ? (
             <div className="relative mt-4 grid gap-3">
               <span className="absolute bottom-16 left-[17px] top-6 w-px bg-slate-200" />
-              <CampoLugar id="origem" valor={origem} placeholder="Origem" cor="bg-emerald-500" onValor={(texto, coordenada) => { setOrigem(texto); setCoordOrigem(coordenada); }} onEditando={marcarEdicao} />
-              <button type="button" onClick={() => { setOrigem(destino); setDestino(origem); setCoordOrigem(coordDestino); setCoordDestino(coordOrigem); }} className="z-10 grid h-9 w-9 place-items-center justify-self-center rounded-full border border-slate-200 bg-white text-slate-500 shadow" aria-label="Inverter origem e destino"><ArrowLeftRight size={14} /></button>
+              <CampoLugar id="origem" valor={origem} placeholder="Origem" cor="bg-emerald-500" onValor={(texto, coordenada, placeId) => { setOrigem(texto); setCoordOrigem(coordenada); setPlaceOrigem(placeId); }} onEditando={marcarEdicao} />
+              <button type="button" onClick={() => { setOrigem(destino); setDestino(origem); setCoordOrigem(coordDestino); setCoordDestino(coordOrigem); setPlaceOrigem(placeDestino); setPlaceDestino(placeOrigem); }} className="z-10 grid h-9 w-9 place-items-center justify-self-center rounded-full border border-slate-200 bg-white text-slate-500 shadow" aria-label="Inverter origem e destino"><ArrowLeftRight size={14} /></button>
               {paradas.map((parada) => (
                 <div key={parada.id} className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
-                    <CampoLugar id={`parada-${parada.id}`} valor={parada.texto} placeholder="Parada" cor="bg-amber-400" onValor={(texto, coordenada) => setParadas((lista) => lista.map((item) => item.id === parada.id ? { ...item, texto, coordenada } : item))} onEditando={marcarEdicao} />
+                    <CampoLugar id={`parada-${parada.id}`} valor={parada.texto} placeholder="Parada" cor="bg-amber-400" onValor={(texto, coordenada, placeId) => setParadas((lista) => lista.map((item) => item.id === parada.id ? { ...item, texto, coordenada, placeId } : item))} onEditando={marcarEdicao} />
                   </div>
                   <button type="button" onClick={() => setParadas((lista) => lista.filter((item) => item.id !== parada.id))} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-500" aria-label="Remover parada"><Trash2 size={16} /></button>
                 </div>
               ))}
               <CampoLugar id="destino" valor={destino} placeholder="Destino" cor="bg-red-500" onValor={(texto, coordenada) => { setDestino(texto); setCoordDestino(coordenada); }} onEditando={marcarEdicao} />
-              <button type="button" onClick={() => setParadas((lista) => [...lista, { id: Date.now(), texto: '', coordenada: null }])} className="inline-flex h-10 items-center gap-2 text-sm font-bold text-[#152c54]">
+              <button type="button" onClick={() => setParadas((lista) => [...lista, { id: Date.now(), texto: '', coordenada: null, placeId: null }])} className="inline-flex h-10 items-center gap-2 text-sm font-bold text-[#152c54]">
                 <Plus size={16} /> Adicionar parada
               </button>
             </div>
@@ -790,14 +807,14 @@ export const CotacaoPortal: React.FC<{
           origem={origem}
           destino={destino}
           km={kmRota == null ? '' : String(kmRota)}
-          onOrigem={(texto) => { if (texto === origem) return; setOrigem(texto); setCoordOrigem(null); }}
-          onDestino={(texto) => { if (texto === destino) return; setDestino(texto); setCoordDestino(null); }}
+          onOrigem={(texto) => { if (texto === origem) return; setOrigem(texto); setCoordOrigem(null); setPlaceOrigem(null); }}
+          onDestino={(texto) => { if (texto === destino) return; setDestino(texto); setCoordDestino(null); setPlaceDestino(null); }}
           onKm={() => undefined}
           tarifaKm={tabela?.kmExtra}
           horaExtra={tabela?.horaExtra}
           ocultarCampos
         />
-        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => destinoDirections(item.coordenada, item.texto))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} onGerar={gerar} onPdf={preverPdf} />
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} onGerar={gerar} onPdf={preverPdf} />
         <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} />
       </div>
       {previewPdf && (

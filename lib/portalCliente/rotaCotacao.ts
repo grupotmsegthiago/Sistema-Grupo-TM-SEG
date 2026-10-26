@@ -67,6 +67,56 @@ export function destinoDirections(coordenada: Coordenada | null | undefined, tex
   return String(texto || '').trim();
 }
 
+/** "Salvador, BA" sozinho o Directions não acha. Com o país, a malha rodoviária fecha. */
+export function textoComBrasil(texto: string | null | undefined): string {
+  const limpo = String(texto || '').trim().replace(/,\s*brasil\s*$/i, '').trim();
+  if (!limpo) return '';
+  return `${limpo}, Brasil`;
+}
+
+export type LocalPedido = { placeId: string } | Coordenada | string;
+
+/** placeId primeiro. Coordenada depois. Cidade e UF sempre com o país. */
+export function localDaRota(entrada: {
+  placeId?: string | null;
+  coordenada?: Coordenada | string | null;
+  texto?: string | null;
+}): LocalPedido {
+  const placeId = String(entrada.placeId || '').trim();
+  if (placeId) return { placeId };
+  if (entrada.coordenada && typeof entrada.coordenada !== 'string') {
+    const coord = lerCoordenada(entrada.coordenada);
+    if (coord) return coord;
+  }
+  const escrito = typeof entrada.coordenada === 'string' && entrada.coordenada.trim()
+    ? entrada.coordenada
+    : entrada.texto;
+  return textoComBrasil(escrito);
+}
+
+/** Pedágio, rodovia e balsa ficam liberados. A rota interestadual usa a malha normal. */
+export function restricoesDaRota(): {
+  avoidTolls: false;
+  avoidHighways: false;
+  avoidFerries: false;
+  provideRouteAlternatives: false;
+  region: 'BR';
+} {
+  return {
+    avoidTolls: false,
+    avoidHighways: false,
+    avoidFerries: false,
+    provideRouteAlternatives: false,
+    region: 'BR',
+  };
+}
+
+/** O texto curto falha. A segunda tentativa usa só "Cidade, UF, Brasil". */
+export function precisaFallbackDeTexto(status: string | null | undefined): boolean {
+  const nome = String(status || '').trim().toUpperCase();
+  return nome === 'ZERO_RESULTS' || nome === 'NOT_FOUND';
+}
+
 export function lugarPreenchido(valor: Coordenada | string | null | undefined): boolean {
   if (valor == null) return false;
   if (typeof valor === 'string') return Boolean(valor.trim());
