@@ -7,6 +7,20 @@ alwaysApply: true
 
 Detalhe: `docs/governanca/08-CONSTITUICAO-TECNICA.md` artigos 8 e 9, `11-PROTOCOLO-MIGRATIONS.md`, `15-MODELO-RELATORIO-EXECUCAO.md`.
 
+## Gate de desenho e aprovação prévia
+
+Antes de criar, editar ou apagar qualquer arquivo de código ou tabela no banco de dados:
+
+1. **Desenho e apresentação do fluxo (obrigatório).** Detalhar no chat um plano completo com:
+   - **Objetivo da Tarefa:** o que será feito e a motivação do ajuste.
+   - **Passo a Passo Sequencial:** lista numerada das etapas técnicas (leitura, backend/Supabase, frontend/componentes, testes/build).
+   - **Ficheiros Afetados:** lista nominal exata de todos os arquivos que serão criados ou editados.
+   - **Garantias de Não Impacto:** preservação do motor oficial da OS (`lib/financialUtils.ts`), dos contratos especiais (DHL/IBL), do limite de 50 funções na Vercel e do padrão temporal de Brasília (24h, `America/Sao_Paulo`).
+2. **Registo do fluxo proposto.** Gravar esse plano na seção `# Próxima Execução Proposta` de `RELATORIO_ULTIMA_EXECUCAO.md`.
+3. **Trava de aprovação humana.** É proibido alterar arquivo de código enquanto o usuário não responder com aprovação expressa (exemplo: "Fluxo aprovado, pode executar", ou equivalente). Se houver desvio, dúvida ou ajuste, corrigir o fluxo e reapresentá-lo no chat e no relatório antes de qualquer implementação.
+
+Os nove pontos abaixo continuam obrigatórios dentro desse plano. Sem a aprovação expressa, a execução para no desenho.
+
 Antes de escrever código:
 
 1. Objetivo de negócio.

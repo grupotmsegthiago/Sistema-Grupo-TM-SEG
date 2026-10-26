@@ -1,5 +1,18 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+# Próxima Execução Proposta
+
+## Gate de aprovação prévia (26/10/2026)
+
+Autorizado na mesma mensagem pelo pedido de gravar o complemento. Não altera código de aplicação nem tabela.
+
+- **Objetivo da Tarefa:** consolidar o gate de desenho e aprovação antes de qualquer alteração de código ou de tabela.
+- **Passo a Passo Sequencial:** 1. Ler o protocolo, o estado atual e este relatório. 2. Incluir a cláusula no protocolo. 3. Registrar a nota no topo do estado atual. 4. Registrar este plano nesta seção. 5. Conferir o texto gravado.
+- **Ficheiros Afetados:** `.cursor/rules/protocolo-alteracao-tmseg.mdc`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas.
+
+A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+
 ## Ações do histórico e painel do mapa (26/10/2026)
 
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou no localhost as colunas, o menu e o painel do mapa. Baseline `882cd3c1`. O histórico passa a mostrar o km e a hora extra gravados na cotação. O menu inativa na hora, pede confirmação para excluir, devolve origem, destino e paradas ao formulário e envia o PDF pelo SMTP que já existe. Não há coluna deleted_at e a migration não foi criada. Administrador, diretoria e o autor inativam e excluem; o servidor grava system_logs. O mapa usa o painel Informações da Rota com a cidade, a distância e o tempo da rota calculada, e o caminhão 3D fica sobre o traçado. O PDF preview não insere cotação. Sem função nova na Vercel e sem alteração em calculateMissionFinancials. Rollback: reverter este commit.
