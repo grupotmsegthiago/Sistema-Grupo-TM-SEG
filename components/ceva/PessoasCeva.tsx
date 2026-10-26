@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { LogoCeva } from './LogoCeva';
 import { usePortalCliente } from './portalMarca';
-import { mensagemAcessoPortal } from '../../lib/cevaPortal/regrasAcesso';
+import { mensagemAcessoPortal, podeRemoverPessoa } from '../../lib/cevaPortal/regrasAcesso';
 
 type Pessoa = {
   id: string;
@@ -40,7 +40,9 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
   const [email, setEmail] = useState('');
   const [perfil, setPerfil] = useState<'administrador' | 'analista'>('analista');
   const [confirmarAdmin, setConfirmarAdmin] = useState(false);
+  const [editando, setEditando] = useState<Pessoa | null>(null);
   const [bloqueio, setBloqueio] = useState<string | null>(null);
+  const [remocao, setRemocao] = useState<string | null>(null);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -67,9 +69,31 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
     setConfirmarAdmin(false);
   }
 
+  function limparFormulario() {
+    setNome('');
+    setEmail('');
+    setPerfil('analista');
+    setConfirmarAdmin(false);
+    setEditando(null);
+  }
+
+  function abrirEdicao(pessoa: Pessoa) {
+    setEditando(pessoa);
+    setNome(pessoa.nome);
+    setEmail(pessoa.email);
+    setPerfil(pessoa.perfil);
+    setConfirmarAdmin(false);
+    setBloqueio(null);
+    setRemocao(null);
+    setErro('');
+    setMensagem('');
+    setAviso('');
+  }
+
   async function liberar(event: React.FormEvent) {
     event.preventDefault();
-    if (perfil === 'administrador' && !confirmarAdmin) {
+    const promovendo = perfil === 'administrador' && editando?.perfil !== 'administrador';
+    if (promovendo && !confirmarAdmin) {
       setConfirmarAdmin(true);
       setAviso('');
       return;
@@ -78,8 +102,8 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
     setErro('');
     setAviso('');
     try {
-      const response = await fetch(portal.url('/pessoas'), {
-        method: 'POST',
+      const response = await fetch(editando ? portal.url(`/pessoas/${editando.id}`) : portal.url('/pessoas'), {
+        method: editando ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', ...portal.cabecalhos() },
         body: JSON.stringify({ nome, email, perfil }),
       });
@@ -88,7 +112,14 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
         portal.sair();
         return;
       }
-      if (!response.ok) throw new Error(data.error || 'Não foi possível liberar o acesso.');
+      if (!response.ok) throw new Error(data.error || (editando ? 'Não foi possível salvar a pessoa.' : 'Não foi possível liberar o acesso.'));
+      if (editando) {
+        limparFormulario();
+        setMensagem('');
+        setAviso('Dados atualizados. A senha desta pessoa continua a mesma.');
+        await carregar();
+        return;
+      }
       const link = `${window.location.origin}${portal.marca.caminho || `/${portal.marca.id}`}`;
       const texto = typeof data.mensagem === 'string' && data.mensagem
         ? data.mensagem
@@ -100,10 +131,7 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
           link,
           manteveSenha: false,
         });
-      setNome('');
-      setEmail('');
-      setPerfil('analista');
-      setConfirmarAdmin(false);
+      limparFormulario();
       setMensagem(texto);
       setAviso(data.emailEnviado === false
         ? 'O e-mail não saiu. Copie a mensagem abaixo e envie a senha por ela. No primeiro acesso a troca é obrigatória, e de novo a cada 30 dias.'
@@ -136,6 +164,32 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
     await carregar();
   }
 
+  async function remover(pessoa: Pessoa) {
+    if (!podeRemoverPessoa(pessoa.perfil)) {
+      setErro('Administrador não remove administrador.');
+      setRemocao(null);
+      return;
+    }
+    setErro('');
+    const response = await fetch(portal.url(`/pessoas/${pessoa.id}`), {
+      method: 'DELETE',
+      headers: portal.cabecalhos(),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      portal.sair();
+      return;
+    }
+    if (!response.ok) {
+      setErro(data.error || 'Não foi possível remover a pessoa.');
+      return;
+    }
+    if (editando?.id === pessoa.id) limparFormulario();
+    setRemocao(null);
+    setAviso(`${pessoa.nome} saiu da lista.`);
+    await carregar();
+  }
+
   return (
     <div className="fixed inset-0 z-40 overflow-auto bg-[#091426]">
       <div className="min-h-screen lg:grid lg:grid-cols-[0.78fr_1.22fr]">
@@ -157,6 +211,7 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
                 ['Senha por e-mail', 'O e-mail só sai na liberação, com a senha temporária.'],
                 ['Dois perfis', 'Analista consulta e preenche. Administrador também cuida dos acessos.'],
                 ['Último administrador', 'O portal não deixa bloquear o único administrador ativo.'],
+                ['Remover', 'O analista pode sair da lista. Administrador não remove administrador.'],
               ].map(([titulo, detalhe]) => (
                 <li key={titulo} className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
                   <span className="block font-bold">{titulo}</span>
@@ -170,8 +225,8 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
         <section className="bg-[var(--portal-fundo)] px-5 py-8 text-slate-800 sm:px-8 lg:rounded-l-[3rem] lg:px-10">
           <div className="mx-auto flex max-w-3xl items-start justify-between gap-4">
             <div>
-              <h3 className="text-3xl font-black tracking-tight text-[var(--portal-marca)]">Liberar uma pessoa</h3>
-              <p className="mt-1 text-sm text-slate-600">Nome, e-mail e o que essa pessoa pode fazer.</p>
+              <h3 className="text-3xl font-black tracking-tight text-[var(--portal-marca)]">{editando ? 'Editar pessoa' : 'Liberar uma pessoa'}</h3>
+              <p className="mt-1 text-sm text-slate-600">{editando ? `Alterando ${editando.nome}. A senha não muda nesta tela.` : 'Nome, e-mail e o que essa pessoa pode fazer.'}</p>
             </div>
             <button type="button" onClick={onFechar} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-[var(--portal-marca)]">Fechar</button>
           </div>
@@ -218,8 +273,13 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
             )}
             {erro && <p className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">{erro}</p>}
             <button type="submit" disabled={enviando} className="mt-5 h-12 w-full rounded-2xl bg-[var(--portal-acao)] text-sm font-bold text-white shadow-lg shadow-black/20 disabled:opacity-60">
-              {enviando ? 'Liberando...' : confirmarAdmin ? 'Confirmar administrador' : 'Liberar acesso'}
+              {enviando ? 'Salvando...' : confirmarAdmin ? 'Confirmar administrador' : editando ? 'Salvar alterações' : 'Liberar acesso'}
             </button>
+            {editando && (
+              <button type="button" onClick={limparFormulario} className="mt-3 h-10 w-full rounded-2xl border border-slate-300 text-sm font-bold text-slate-600">
+                Cancelar edição
+              </button>
+            )}
           </form>
 
           <div className="mx-auto mt-6 grid max-w-3xl gap-3">
@@ -232,6 +292,15 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold capitalize text-slate-600">{pessoa.perfil}</span>
                 <span className={`rounded-full px-3 py-1 text-xs font-bold ${pessoa.trocarSenha ? 'bg-amber-100 text-amber-900' : SELO[pessoa.status]}`}>{situacao(pessoa)}</span>
+                <button type="button" onClick={() => abrirEdicao(pessoa)} data-testid="button-editar-pessoa" className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700">Editar</button>
+                {podeRemoverPessoa(pessoa.perfil) && (remocao === pessoa.id ? (
+                  <span className="flex gap-2">
+                    <button type="button" onClick={() => void remover(pessoa)} data-testid="button-confirmar-remocao" className="rounded-full bg-[#8a3030] px-3 py-1.5 text-xs font-bold text-white">Confirmar remoção</button>
+                    <button type="button" onClick={() => setRemocao(null)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600">Cancelar</button>
+                  </span>
+                ) : (
+                  <button type="button" onClick={() => { setBloqueio(null); setRemocao(pessoa.id); }} data-testid="button-remover-pessoa" className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-700">Remover</button>
+                ))}
                 {pessoa.status === 'inativo' ? (
                   <button type="button" onClick={() => void alterar(pessoa, 'ativo')} className="rounded-full bg-[var(--portal-acao)] px-3 py-1.5 text-xs font-bold text-white">Reativar</button>
                 ) : bloqueio === pessoa.id ? (
@@ -240,7 +309,7 @@ export const PessoasCeva: React.FC<{ onFechar: () => void }> = ({ onFechar }) =>
                     <button type="button" onClick={() => setBloqueio(null)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600">Cancelar</button>
                   </span>
                 ) : (
-                  <button type="button" onClick={() => setBloqueio(pessoa.id)} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600">Bloquear</button>
+                  <button type="button" onClick={() => { setRemocao(null); setBloqueio(pessoa.id); }} className="rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold text-slate-600">Bloquear</button>
                 )}
               </article>
             ))}

@@ -22,6 +22,8 @@ import {
   decidirPrimeiroAcesso,
   deveTrocarSenhaPortal,
   mensagemAcessoPortal,
+  permissoesDoPortal,
+  podeRemoverPessoa,
   usuarioSoPortal,
 } from './regrasAcesso.js';
 import { alinharStatusCadastroPortal, colunaSenhaAlteradaAusente, vincularCadastroCliente } from './cadastroSistema.js';
@@ -942,8 +944,100 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       }
       const id = Number(req.query?.id || req.params?.id);
       const status = body?.status === 'inativo' ? 'inativo' : body?.status === 'ativo' ? 'ativo' : '';
-      if (!Number.isInteger(id) || !status) {
+      const querEditar = !status && (body?.nome != null || body?.email != null || body?.perfil != null);
+      if (!Number.isInteger(id) || (!status && !querEditar)) {
         res.status(400).json({ error: 'Informe a pessoa e a situação.' });
+        return;
+      }
+      if (querEditar) {
+        const nome = nomeDeAcesso(body?.nome);
+        const email = emailDeAcesso(body?.email);
+        const perfil = perfilDeAcesso(body?.perfil);
+        if (!nome) {
+          res.status(400).json({ error: 'Informe o nome da pessoa.' });
+          return;
+        }
+        if (!email) {
+          res.status(400).json({ error: 'Informe um e-mail válido.' });
+          return;
+        }
+        if (!perfil) {
+          res.status(400).json({ error: 'Escolha administrador ou analista.' });
+          return;
+        }
+        const sb = createSupabaseAdminClient();
+        if (!sb) {
+          res.status(503).json({ error: 'Portal indisponível.' });
+          return;
+        }
+        let leituraPessoa = sb
+          .from(cfg().tabelas.usuarios)
+          .select('id, nome, email, perfil, status')
+          .eq('id', id);
+        if (cfg().clientId != null) leituraPessoa = leituraPessoa.eq('client_id', cfg().clientId);
+        const { data: atual, error: leitura } = await leituraPessoa.maybeSingle();
+        if (leitura) {
+          res.status(500).json({ error: 'Não foi possível alterar a pessoa.' });
+          return;
+        }
+        if (!atual) {
+          res.status(404).json({ error: 'Pessoa não encontrada.' });
+          return;
+        }
+        const saiDeAdmin = atual.perfil === 'administrador' && atual.status !== 'inativo' && perfil !== 'administrador';
+        if (saiDeAdmin && !(await outroAdministradorVivo(sb, id))) {
+          res.status(409).json({ error: 'O portal precisa manter pelo menos um administrador.' });
+          return;
+        }
+        let outroEmail = sb.from(cfg().tabelas.usuarios).select('id').ilike('email', email).neq('id', id);
+        if (cfg().clientId != null) outroEmail = outroEmail.eq('client_id', cfg().clientId);
+        const duplicado = await outroEmail.maybeSingle();
+        if (duplicado.error) {
+          res.status(500).json({ error: 'Não foi possível alterar a pessoa.' });
+          return;
+        }
+        if (duplicado.data) {
+          res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
+          return;
+        }
+        const emailAntigo = String(atual.email || '');
+        const ficha = await sb
+          .from('system_users')
+          .select('id, permissions, user_type')
+          .ilike('email', emailAntigo)
+          .maybeSingle();
+        const fichaPortal = ficha.data && String(ficha.data.user_type || '') === 'client' && usuarioSoPortal(ficha.data.permissions)
+          ? ficha.data
+          : null;
+        if (fichaPortal && email !== emailAntigo) {
+          const ocupado = await sb.from('system_users').select('id').ilike('email', email).neq('id', fichaPortal.id).maybeSingle();
+          if (ocupado.data) {
+            res.status(409).json({ error: 'Este e-mail já está cadastrado.' });
+            return;
+          }
+        }
+        let atualizaPessoa = sb
+          .from(cfg().tabelas.usuarios)
+          .update({ nome, email, perfil, atualizado_em: new Date().toISOString() })
+          .eq('id', id);
+        if (cfg().clientId != null) atualizaPessoa = atualizaPessoa.eq('client_id', cfg().clientId);
+        const { data, error } = await atualizaPessoa.select('id, nome, email, perfil, status').single();
+        if (error || !data) {
+          res.status(500).json({ error: 'Não foi possível alterar a pessoa.' });
+          return;
+        }
+        if (fichaPortal) {
+          const { error: erroFicha } = await sb.from('system_users').update({
+            name: nome,
+            email,
+            permissions: permissoesDoPortal(cfg().caminho, perfil),
+          }).eq('id', fichaPortal.id);
+          if (erroFicha) {
+            res.status(500).json({ error: 'A pessoa mudou no portal, mas o cadastro do sistema não acompanhou.' });
+            return;
+          }
+        }
+        res.status(200).json({ pessoa: data });
         return;
       }
       const sb = createSupabaseAdminClient();
@@ -985,6 +1079,54 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       }
       if (data.email) await alinharStatusCadastroPortal(sb, String(data.email), proximo === 'ativo');
       res.status(200).json({ pessoa: data });
+      return;
+    }
+
+    if (op === 'pessoas-item' && method === 'DELETE') {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      if (bloquearPessoasSemLogin(res, session)) return;
+      if (!podeCadastrarPessoa(session.perfil)) {
+        res.status(403).json({ error: 'O analista não cadastra pessoas.' });
+        return;
+      }
+      const id = Number(req.query?.id || req.params?.id);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: 'Informe a pessoa.' });
+        return;
+      }
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: 'Portal indisponível.' });
+        return;
+      }
+      let leituraPessoa = sb
+        .from(cfg().tabelas.usuarios)
+        .select('id, email, perfil')
+        .eq('id', id);
+      if (cfg().clientId != null) leituraPessoa = leituraPessoa.eq('client_id', cfg().clientId);
+      const { data: atual, error: leitura } = await leituraPessoa.maybeSingle();
+      if (leitura) {
+        res.status(500).json({ error: 'Não foi possível remover a pessoa.' });
+        return;
+      }
+      if (!atual) {
+        res.status(404).json({ error: 'Pessoa não encontrada.' });
+        return;
+      }
+      if (!podeRemoverPessoa(atual.perfil)) {
+        res.status(403).json({ error: 'Administrador não remove administrador.' });
+        return;
+      }
+      let apaga = sb.from(cfg().tabelas.usuarios).delete().eq('id', id);
+      if (cfg().clientId != null) apaga = apaga.eq('client_id', cfg().clientId);
+      const { error } = await apaga;
+      if (error) {
+        res.status(500).json({ error: 'Não foi possível remover a pessoa.' });
+        return;
+      }
+      if (atual.email) await alinharStatusCadastroPortal(sb, String(atual.email), false);
+      res.status(200).json({ ok: true });
       return;
     }
 

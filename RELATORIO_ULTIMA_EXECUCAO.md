@@ -2,6 +2,21 @@
 
 # Próxima Execução Proposta
 
+Executado nesta branch, sem publicar. O pedido de um botão para editar e outro para remover, com administrador sem poder remover administrador, autorizou este ajuste.
+
+## Editar e remover pessoa do portal (26/10/2026)
+
+Baseline `fb58e567`. Na tela Liberar uma pessoa, Editar preenche o formulário e grava nome, e-mail e perfil na mesma linha. Remover só aparece no analista e apaga essa linha. Administrador não some da lista por esse botão, nem se o pedido chegar direto na API. O bloqueio do último administrador ativo continua.
+
+- **Objetivo da Tarefa:** o administrador ajusta ou tira o analista da lista sem criar outra pessoa com o mesmo e-mail.
+- **Passo a Passo Sequencial:** 1. Editar chama o PATCH que já existia, agora também com nome, e-mail e perfil. 2. Remover chama DELETE na mesma rota da pessoa. 3. O servidor recusa quando o perfil é administrador. 4. Quem é só do portal fica inativo no cadastro do sistema ao sair da lista. 5. Quem também usa o sistema interno não é inativado.
+- **Ficheiros Afetados:** `components/ceva/PessoasCeva.tsx`, `lib/cevaPortal/httpHandler.ts`, `lib/cevaPortal/regrasAcesso.ts`, `lib/cevaPortal/acesso.ts`, `server/cevaPortal.ts`, `server/iblPortal.ts`, `scripts/portal-pessoas-editar-remover.test.ts`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas. Sem migration. Sem função nova. A senha da pessoa não é regravada na edição.
+
+Banco: nenhuma coluna nova. A escrita usa a tabela de usuários do portal que já existe e, só para quem é exclusivo do portal, `system_users`. Rollback: reverter o commit desta branch. Não publicado.
+
+## Unificação de 26/10/2026
+
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. A unificação autorizada em 26/10/2026 (Tabela 2027, rota Salvador, Nova Rota, fuso de Brasília e o gate de fluxo) é a execução desta entrega. A branch da tarifa duplicada do portal não entrou. Não há outro plano de código aberto. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
 
 ## Gate de aprovação prévia (26/10/2026)

@@ -60,6 +60,7 @@ export {
   deveTrocarSenhaPortal,
   mensagemAcessoPortal,
   perfilPortalDasPermissoes,
+  podeRemoverPessoa,
   permissoesDoPortal,
   preservarSenhaPortal,
   semMarcasDePortal,

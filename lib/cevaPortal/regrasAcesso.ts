@@ -3,6 +3,11 @@ import type { PerfilCeva } from './acesso';
 export const DIAS_TROCA_SENHA_PORTAL = 30;
 export const PERMISSAO_SO_PORTAL = 'portal-only';
 
+/** Administrador não remove administrador. Só o analista sai da lista. */
+export function podeRemoverPessoa(perfil: string | null | undefined): boolean {
+  return perfil === 'analista';
+}
+
 /** Quem já tem hash no portal (a Lara, por exemplo) não recebe senha nova. */
 export function preservarSenhaPortal(senhaHash: string | null | undefined): boolean {
   return String(senhaHash || '').startsWith('scrypt$');
