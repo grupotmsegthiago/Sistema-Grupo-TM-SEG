@@ -122,6 +122,44 @@ export function registerCevaPortalRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json(resultado);
   });
+  app.post('/api/proposta-escolta/mapa', async (req, res) => {
+    const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
+    if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {
+      res.status(401).json({ error: 'Entre novamente para montar o mapa.' });
+      return;
+    }
+    const { urlMapaEstatico } = await import('../lib/portalCliente/frotaVisual.js');
+    const { chaveDoMapaNoServidor, refererDoMapa } = await import('../lib/portalCliente/rotaCotacao.js');
+    const pontos = Array.isArray(req.body?.pontos) ? req.body.pontos.slice(0, 120) : [];
+    const paradas = Array.isArray(req.body?.paradas) ? req.body.paradas.slice(0, 6) : [];
+    const url = urlMapaEstatico({
+      polyline: String(req.body?.polyline || '').slice(0, 20000),
+      chave: chaveDoMapaNoServidor(process.env),
+      inicio: req.body?.inicio,
+      fim: req.body?.fim,
+      paradas,
+      pontos,
+    });
+    if (!url) {
+      res.status(400).json({ error: 'A rota ainda não tem um traçado para o mapa.' });
+      return;
+    }
+    try {
+      const referer = refererDoMapa(String(req.headers.origin || req.headers.referer || ''));
+      const resposta = await fetch(url, { headers: { Referer: referer } });
+      const tipo = String(resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+      const buffer = Buffer.from(await resposta.arrayBuffer());
+      if (!resposta.ok || !tipo.startsWith('image/') || buffer.length < 8000) {
+        res.status(502).json({ error: 'O mapa estático não veio como imagem.' });
+        return;
+      }
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.status(200).json({ mapa: `data:${tipo};base64,${buffer.toString('base64')}` });
+    } catch (error) {
+      console.error('[proposta-escolta] mapa', error instanceof Error ? error.message : error);
+      res.status(502).json({ error: 'O mapa estático não respondeu.' });
+    }
+  });
   app.get('/api/ceva-portal/fotos/:os', async (req, res) => {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
     await handleCevaPortalHttp(req, res);

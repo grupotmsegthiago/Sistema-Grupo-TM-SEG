@@ -3,7 +3,20 @@ import { Autocomplete, GoogleMap, Marker, Polyline, useLoadScript } from '@react
 import { ArrowLeftRight, ArrowRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Route, Satellite, Trash2 } from 'lucide-react';
 import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
 import { authFetch } from '../../lib/authFetch';
-import { corSegura, logoConhecido, slugVisual, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
+import { logoConhecido, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
+import {
+  destinoDirections,
+  ESTILO_MAPA_COTACAO,
+  lerCoordenada,
+  lugarComGeometria,
+  lugarPreenchido,
+  mensagemFalhaDirections,
+  polylineCodificada,
+  resumirPontos,
+  statusDaFalhaDirections,
+  TRACO_PIN,
+  type Coordenada,
+} from '../../lib/portalCliente/rotaCotacao';
 import {
   REGIOES_COTACAO,
   montarProposta,
@@ -44,7 +57,14 @@ const FRASES_ACORDADA = [
   'Opa, essa rota já temos aqui acordada, segue os valores..',
 ];
 
-function CampoLugar(props: { id: string; valor: string; placeholder: string; cor: string; onValor: (valor: string) => void; onEditando: (id: string, editando: boolean) => void }) {
+function CampoLugar(props: {
+  id: string;
+  valor: string;
+  placeholder: string;
+  cor: string;
+  onValor: (valor: string, coordenada: Coordenada | null) => void;
+  onEditando: (id: string, editando: boolean) => void;
+}) {
   const campo = useRef<google.maps.places.Autocomplete | null>(null);
   const caixa = useRef<HTMLInputElement | null>(null);
   const escolhido = useRef(props.valor);
@@ -54,20 +74,45 @@ function CampoLugar(props: { id: string; valor: string; placeholder: string; cor
     elemento.value = props.valor;
     escolhido.current = props.valor;
   }, [props.valor]);
+  const aplicarLugar = (endereco: string, coordenada: Coordenada | null) => {
+    escolhido.current = endereco;
+    if (caixa.current) caixa.current.value = endereco;
+    props.onValor(endereco, coordenada);
+  };
+  const resolverTexto = async () => {
+    const limpo = (caixa.current?.value || '').trim();
+    if (!limpo) {
+      if (props.valor) props.onValor('', null);
+      return;
+    }
+    if (limpo === escolhido.current) return;
+    if (typeof google === 'undefined' || !google.maps?.Geocoder) {
+      props.onValor(limpo, null);
+      return;
+    }
+    try {
+      const resposta = await new google.maps.Geocoder().geocode({ address: limpo, componentRestrictions: { country: 'BR' } });
+      const achado = lugarComGeometria(resposta.results?.[0], limpo);
+      if (!achado) {
+        props.onValor(limpo, null);
+        return;
+      }
+      aplicarLugar(achado.endereco, achado.coordenada);
+    } catch {
+      props.onValor(limpo, null);
+    }
+  };
   return (
     <div className="relative">
       <span className={`absolute left-3 top-1/2 z-10 h-3 w-3 -translate-y-1/2 rounded-full ring-4 ring-white ${props.cor}`} />
       <Autocomplete
         onLoad={(item) => { campo.current = item; }}
         onPlaceChanged={() => {
-          const lugar = campo.current?.getPlace();
-          const endereco = lugar?.formatted_address || lugar?.name || '';
-          if (!endereco || !lugar?.geometry?.location) return;
-          escolhido.current = endereco;
-          if (caixa.current) caixa.current.value = endereco;
-          props.onValor(endereco);
+          const achado = lugarComGeometria(campo.current?.getPlace(), caixa.current?.value);
+          if (!achado) return;
+          aplicarLugar(achado.endereco, achado.coordenada);
         }}
-        options={{ componentRestrictions: { country: 'br' }, fields: ['formatted_address', 'name', 'geometry'] }}
+        options={{ componentRestrictions: { country: 'br' }, fields: ['formatted_address', 'name', 'geometry', 'place_id', 'address_components'] }}
       >
         <input
           ref={caixa}
@@ -76,10 +121,19 @@ function CampoLugar(props: { id: string; valor: string; placeholder: string; cor
             const novo = evento.target.value;
             if (novo === escolhido.current) return;
             escolhido.current = '';
-            if (props.valor) props.onValor('');
+            if (props.valor) props.onValor('', null);
+          }}
+          onKeyDown={(evento) => {
+            if (evento.key !== 'Enter') return;
+            window.setTimeout(() => { void resolverTexto(); }, 280);
           }}
           onFocus={() => props.onEditando(props.id, true)}
-          onBlur={() => window.setTimeout(() => props.onEditando(props.id, false), 300)}
+          onBlur={() => {
+            window.setTimeout(() => {
+              props.onEditando(props.id, false);
+              void resolverTexto();
+            }, 320);
+          }}
           placeholder={props.placeholder}
           className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-900 shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none focus:border-[#152c54]"
         />
@@ -106,50 +160,30 @@ type TrajetoMapa = {
   inicio: PontoMapa | null;
   fim: PontoMapa | null;
   paradas: PontoMapa[];
+  pontos: PontoMapa[];
 };
 
-function pontoDe(lugar?: google.maps.LatLng | null): PontoMapa | null {
-  if (!lugar) return null;
-  const lat = lugar.lat();
-  const lng = lugar.lng();
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { lat, lng };
+function pontoDe(lugar: unknown): PontoMapa | null {
+  return lerCoordenada(lugar);
 }
 
-function lerCacheCarreta(slug: string): { carreta: string; logo: string | null; gerada: boolean } | null {
-  try {
-    const bruto = localStorage.getItem(`tmseg-carreta-v1:${slug}`);
-    if (!bruto) return null;
-    const dados = JSON.parse(bruto) as { carreta?: string; logo?: string | null; gerada?: boolean };
-    if (!dados.carreta || dados.carreta.length > 1_800_000) return null;
-    return { carreta: dados.carreta, logo: dados.logo || null, gerada: Boolean(dados.gerada) };
-  } catch {
-    return null;
-  }
-}
-
-function gravarCacheCarreta(slug: string, dados: { carreta: string; logo: string | null; gerada: boolean }) {
-  if (dados.carreta.length > 1_800_000) return;
-  try {
-    localStorage.setItem(`tmseg-carreta-v1:${slug}`, JSON.stringify(dados));
-  } catch {
-    // o arquivo no servidor continua valendo na próxima leitura
-  }
-}
-
-function imagemExiste(src: string): Promise<boolean> {
-  return new Promise((resolver) => {
-    const imagem = new Image();
-    imagem.onload = () => resolver(imagem.naturalWidth > 80);
-    imagem.onerror = () => resolver(false);
-    imagem.src = src;
-  });
+function pinDoMapa(cor: string, letra: string | null): google.maps.Symbol {
+  return {
+    path: TRACO_PIN,
+    fillColor: cor,
+    fillOpacity: 1,
+    strokeColor: '#ffffff',
+    strokeWeight: 1.5,
+    scale: letra ? 1.45 : 1.05,
+    anchor: new google.maps.Point(12, 22),
+    labelOrigin: new google.maps.Point(12, 9),
+  };
 }
 
 function MapaCotacao(props: {
-  origem: string;
-  destino: string;
-  paradas: string[];
+  origem: string | Coordenada;
+  destino: string | Coordenada;
+  paradas: Array<string | Coordenada>;
   cliente: string;
   onRota: (km: number | null, segundos: number | null) => void;
   onTrajeto: (trajeto: TrajetoMapa | null) => void;
@@ -161,17 +195,21 @@ function MapaCotacao(props: {
 }) {
   const mapa = useRef<google.maps.Map | null>(null);
   const [rota, setRota] = useState<google.maps.DirectionsResult | null>(null);
-  const [satelite, setSatelite] = useState(true);
+  const [satelite, setSatelite] = useState(false);
   const [falha, setFalha] = useState('');
-  const paradas = props.paradas.map((item) => item.trim()).filter(Boolean).join('|');
+  const paradas = props.paradas.filter((item) => lugarPreenchido(item));
+  const chaveParadas = paradas.map((item) => (typeof item === 'string' ? item : `${item.lat},${item.lng}`)).join('|');
+  const chaveOrigem = typeof props.origem === 'string' ? props.origem : `${props.origem.lat},${props.origem.lng}`;
+  const chaveDestino = typeof props.destino === 'string' ? props.destino : `${props.destino.lat},${props.destino.lng}`;
 
   useEffect(() => {
     mapa.current?.setMapTypeId(satelite ? 'hybrid' : 'roadmap');
+    mapa.current?.setOptions({ styles: satelite ? [] : ESTILO_MAPA_COTACAO });
   }, [satelite]);
 
   useEffect(() => {
     if (!props.mapaPronto) return;
-    if (!props.origem.trim() || !props.destino.trim()) {
+    if (!lugarPreenchido(props.origem) || !lugarPreenchido(props.destino)) {
       setRota(null);
       setFalha('');
       props.onRota(null, null);
@@ -184,7 +222,7 @@ function MapaCotacao(props: {
       servico.route({
         origin: props.origem,
         destination: props.destino,
-        waypoints: paradas.split('|').filter(Boolean).map((location) => ({ location, stopover: true })),
+        waypoints: paradas.map((location) => ({ location, stopover: true })),
         travelMode: google.maps.TravelMode.DRIVING,
         region: 'BR',
       }).then((resultado) => {
@@ -192,24 +230,35 @@ function MapaCotacao(props: {
         const pernas = resultado.routes[0]?.legs || [];
         const metros = pernas.reduce((soma, trecho) => soma + (trecho.distance?.value || 0), 0);
         const segundos = pernas.reduce((soma, trecho) => soma + (trecho.duration?.value || 0), 0);
+        const km = Math.round(metros / 100) / 10;
         setRota(resultado);
         setFalha('');
-        props.onRota(Math.round(metros / 100) / 10, segundos);
+        props.onRota(km > 0 ? km : null, segundos > 0 ? segundos : null);
         const rotaDesenhada = resultado.routes[0];
-        const linha = typeof rotaDesenhada?.overview_polyline === 'string' ? rotaDesenhada.overview_polyline : '';
-        const caminhoCodificado = linha || (rotaDesenhada?.overview_path ? google.maps.geometry?.encoding?.encodePath(rotaDesenhada.overview_path) : '');
-        props.onTrajeto(caminhoCodificado ? {
-          polyline: caminhoCodificado,
-          inicio: pontoDe(pernas[0]?.start_location),
-          fim: pontoDe(pernas[pernas.length - 1]?.end_location),
-          paradas: pernas.slice(0, -1).map((perna) => pontoDe(perna.end_location)).filter((ponto): ponto is PontoMapa => ponto != null),
-        } : null);
+        let trajeto: TrajetoMapa | null = null;
+        try {
+          const pontos = resumirPontos((rotaDesenhada?.overview_path || []).map((ponto) => pontoDe(ponto)));
+          let linha = polylineCodificada(rotaDesenhada);
+          if (linha.length < 8 && pontos.length >= 2 && google.maps.geometry?.encoding?.encodePath) {
+            linha = google.maps.geometry.encoding.encodePath(pontos.map((ponto) => new google.maps.LatLng(ponto.lat, ponto.lng)));
+          }
+          trajeto = {
+            polyline: linha,
+            inicio: pontoDe(pernas[0]?.start_location),
+            fim: pontoDe(pernas[pernas.length - 1]?.end_location),
+            paradas: pernas.slice(0, -1).map((perna) => pontoDe(perna.end_location)).filter((ponto): ponto is PontoMapa => ponto != null),
+            pontos,
+          };
+        } catch {
+          trajeto = null;
+        }
+        props.onTrajeto(trajeto);
         const limites = rotaDesenhada?.bounds;
         if (limites) mapa.current?.fitBounds(limites, 64);
-      }).catch(() => {
+      }).catch((erro: unknown) => {
         if (!ativo) return;
         setRota(null);
-        setFalha('Não foi possível traçar essa rota. Escolha origem e destino na lista do Google.');
+        setFalha(mensagemFalhaDirections(statusDaFalhaDirections(erro)));
         props.onRota(null, null);
         props.onTrajeto(null);
       });
@@ -218,7 +267,7 @@ function MapaCotacao(props: {
       ativo = false;
       window.clearTimeout(espera);
     };
-  }, [props.mapaPronto, props.origem, props.destino, paradas]);
+  }, [props.mapaPronto, chaveOrigem, chaveDestino, chaveParadas]);
 
   const pernas = rota?.routes[0]?.legs || [];
   const caminho = rota?.routes[0]?.overview_path || [];
@@ -236,24 +285,24 @@ function MapaCotacao(props: {
         <p className="flex h-full items-center justify-center text-sm font-bold text-slate-600">Carregando mapa…</p>
       ) : (
         <GoogleMap
-          onLoad={(instancia) => { mapa.current = instancia; instancia.setMapTypeId(satelite ? 'hybrid' : 'roadmap'); const limites = rota?.routes[0]?.bounds; if (limites) instancia.fitBounds(limites, 64); }}
+          onLoad={(instancia) => { mapa.current = instancia; instancia.setMapTypeId(satelite ? 'hybrid' : 'roadmap'); if (!satelite) instancia.setOptions({ styles: ESTILO_MAPA_COTACAO }); const limites = rota?.routes[0]?.bounds; if (limites) instancia.fitBounds(limites, 64); }}
           mapContainerStyle={{ width: '100%', height: '100%' }}
-          center={{ lat: -23.5, lng: -46.6 }}
-          zoom={6}
-          options={{ disableDefaultUI: true, gestureHandling: 'greedy', clickableIcons: false, mapTypeId: satelite ? 'hybrid' : 'roadmap' }}
+          center={{ lat: -14.2, lng: -45.5 }}
+          zoom={5}
+          options={{ disableDefaultUI: true, gestureHandling: 'greedy', clickableIcons: false, mapTypeId: satelite ? 'hybrid' : 'roadmap', styles: satelite ? undefined : ESTILO_MAPA_COTACAO }}
         >
           {caminho.length > 0 && (
             <>
-              <Polyline path={caminho} options={{ strokeColor: '#7dd3fc', strokeOpacity: 0.28, strokeWeight: 26 }} />
-              <Polyline path={caminho} options={{ strokeColor: '#38bdf8', strokeOpacity: 0.95, strokeWeight: 8 }} />
-              <Polyline path={caminho} options={{ strokeColor: '#f0f9ff', strokeOpacity: 1, strokeWeight: 3 }} />
+              <Polyline path={caminho} options={{ strokeColor: '#7dd3fc', strokeOpacity: 0.35, strokeWeight: 22 }} />
+              <Polyline path={caminho} options={{ strokeColor: '#38bdf8', strokeOpacity: 0.95, strokeWeight: 7 }} />
+              <Polyline path={caminho} options={{ strokeColor: '#f8fafc', strokeOpacity: 1, strokeWeight: 2 }} />
             </>
           )}
-          {saida && <Marker position={saida} label={{ text: nomeCurto(pernas[0]?.start_address), color: '#0f172a', fontSize: '12px', fontWeight: '700' }} icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#16a34a', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3 }} />}
+          {saida && <Marker position={saida} label={{ text: 'A', color: '#ffffff', fontSize: '12px', fontWeight: '800' }} title={nomeCurto(pernas[0]?.start_address)} icon={pinDoMapa('#16a34a', 'A')} />}
           {paradasNoMapa.map((ponto, indice) => (
-            <Marker key={`parada-${indice}`} position={ponto} icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#f59e0b', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 2 }} />
+            <Marker key={`parada-${indice}`} position={ponto} icon={pinDoMapa('#f59e0b', null)} />
           ))}
-          {chegada && <Marker position={chegada} label={{ text: nomeCurto(pernas[pernas.length - 1]?.end_address), color: '#0f172a', fontSize: '12px', fontWeight: '700' }} icon={{ path: google.maps.SymbolPath.CIRCLE, scale: 9, fillColor: '#dc2626', fillOpacity: 1, strokeColor: '#ffffff', strokeWeight: 3 }} />}
+          {chegada && <Marker position={chegada} label={{ text: 'B', color: '#ffffff', fontSize: '12px', fontWeight: '800' }} title={nomeCurto(pernas[pernas.length - 1]?.end_address)} icon={pinDoMapa('#dc2626', 'B')} />}
         </GoogleMap>
       )}
       <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(8,16,32,0.42)_100%)]" />
@@ -264,7 +313,9 @@ function MapaCotacao(props: {
       </div>
       {carretaVisivel && (
       <div className="pointer-events-none absolute inset-x-3 bottom-3 z-10 flex items-end justify-between gap-3">
-        <ClientTruckVisual cliente={props.cliente} src={props.carreta} logo={props.logo} className="h-36 w-auto max-w-none object-contain drop-shadow-[0_18px_18px_rgba(0,0,0,0.35)]" />
+        <div className="rounded-[28px] bg-gradient-to-b from-white/25 to-slate-950/30 p-1 shadow-[0_22px_28px_rgba(0,0,0,0.5)] ring-1 ring-white/30">
+          <ClientTruckVisual cliente={props.cliente} src={props.carreta} logo={props.logo} className="h-40 w-auto max-w-none object-contain drop-shadow-[0_16px_14px_rgba(0,0,0,0.55)]" />
+        </div>
         <div className="mb-2 hidden gap-2 sm:flex">
           <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Escolta intermediada</p>
           <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Acompanhamento da operação</p>
@@ -272,7 +323,7 @@ function MapaCotacao(props: {
         </div>
       </div>
       )}
-      {!props.origem.trim() || !props.destino.trim() ? (
+      {!lugarPreenchido(props.origem) || !lugarPreenchido(props.destino) ? (
         <p className="pointer-events-none absolute left-4 top-4 rounded-2xl bg-white/90 px-3 py-2 text-xs font-bold text-slate-600 shadow">Escolha a origem e o destino no Google para ver o trajeto.</p>
       ) : null}
       {falha && <p className="absolute left-4 top-4 max-w-sm rounded-2xl bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow">{falha}</p>}
@@ -300,7 +351,9 @@ export const CotacaoPortal: React.FC<{
   const [regiao, setRegiao] = useState('');
   const [origem, setOrigem] = useState('');
   const [destino, setDestino] = useState('');
-  const [paradas, setParadas] = useState<{ id: number; texto: string }[]>([]);
+  const [coordOrigem, setCoordOrigem] = useState<Coordenada | null>(null);
+  const [coordDestino, setCoordDestino] = useState<Coordenada | null>(null);
+  const [paradas, setParadas] = useState<{ id: number; texto: string; coordenada: Coordenada | null }[]>([]);
   const [kmRota, setKmRota] = useState<number | null>(null);
   const [duracaoSeg, setDuracaoSeg] = useState<number | null>(null);
   const [proposta, setProposta] = useState<PropostaPortal | null>(null);
@@ -499,54 +552,48 @@ export const CotacaoPortal: React.FC<{
   const trechoCurto = origem.trim() && destino.trim() ? `${nomeCurto(origem)} → ${nomeCurto(destino)}` : 'Aguardando a rota';
 
   useEffect(() => {
-    if (!trajeto?.polyline) {
+    if (!trajeto?.polyline && (trajeto?.pontos.length || 0) < 2) {
       setCena(null);
       setCarretaPronta(null);
       setLogoPronto(null);
       return;
     }
     let ativo = true;
-    const slug = slugVisual(clienteVisual);
     const noPortal = !clienteNome;
     const logoPortal = noPortal && (portal.marca.logo.startsWith('/') || portal.marca.logo.startsWith('https://')) ? portal.marca.logo : null;
-    const corPortal = noPortal ? corSegura(portal.marca.css['--portal-marca']) : null;
-    const aplicar = async (carreta: string, logo: string | null, gerada: boolean) => {
+    const carreta = carretaDoCliente(clienteVisual);
+    const marca = logoConhecido(clienteVisual) || logoPortal;
+    const trabalhar = async () => {
+      if (!trajeto) return;
+      const mapaUrl = urlMapaEstatico({
+        polyline: trajeto.polyline,
+        pontos: trajeto.pontos,
+        chave: googleMapsApiKey,
+        inicio: trajeto.inicio,
+        fim: trajeto.fim,
+        paradas: trajeto.paradas,
+      });
+      let mapa = mapaUrl || '';
+      try {
+        const corpo = JSON.stringify({
+          polyline: trajeto.polyline,
+          inicio: trajeto.inicio,
+          fim: trajeto.fim,
+          paradas: trajeto.paradas,
+          pontos: trajeto.pontos,
+        });
+        const resposta = clienteNome
+          ? await authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
+          : await fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo });
+        const dados = await resposta.json().catch(() => ({}));
+        if (ativo && resposta.ok && typeof dados.mapa === 'string' && dados.mapa.startsWith('data:image/')) mapa = dados.mapa;
+      } catch {
+        // a URL https continua na tela; o PDF usa o base64 quando o servidor devolve a imagem
+      }
       if (!ativo) return;
-      const mapa = urlMapaEstatico({ polyline: trajeto.polyline, chave: googleMapsApiKey, inicio: trajeto.inicio, fim: trajeto.fim, paradas: trajeto.paradas });
-      const marca = logo || logoConhecido(clienteVisual) || logoPortal;
-      setCarretaPronta(gerada ? carreta : null);
+      setCarretaPronta(null);
       setLogoPronto(marca);
       setCena(mapa ? { mapa, carreta, logo: marca, sobreporLogo: Boolean(marca) } : null);
-    };
-    const trabalhar = async () => {
-      const cache = lerCacheCarreta(slug);
-      if (cache && await imagemExiste(cache.carreta)) {
-        await aplicar(cache.carreta, cache.logo || logoConhecido(clienteVisual) || logoPortal, cache.gerada);
-        return;
-      }
-      const arquivo = `/caminhoes/gerados/${slug}.png?v=1`;
-      if (await imagemExiste(arquivo)) {
-        const logo = logoConhecido(clienteVisual) || logoPortal;
-        gravarCacheCarreta(slug, { carreta: arquivo, logo, gerada: true });
-        await aplicar(arquivo, logo, true);
-        return;
-      }
-      try {
-        const corpo = JSON.stringify({ cliente: clienteVisual, cor: corPortal });
-        const resposta = clienteNome
-          ? await authFetch('/api/proposta-escolta/visual', { method: 'POST', body: corpo })
-          : await fetch('/api/proposta-escolta/visual', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo });
-        const dados = await resposta.json().catch(() => ({}));
-        if (!ativo) return;
-        if (!resposta.ok) throw new Error(dados.error || 'visual');
-        const logo = (typeof dados.logo === 'string' && dados.logo) || logoConhecido(clienteVisual) || logoPortal;
-        const gerada = Boolean(dados.gerada && typeof dados.carreta === 'string' && dados.carreta);
-        const carreta = gerada ? String(dados.carreta) : carretaDoCliente(clienteVisual);
-        if (gerada) gravarCacheCarreta(slug, { carreta, logo, gerada: true });
-        await aplicar(carreta, logo, gerada);
-      } catch {
-        if (ativo) await aplicar(carretaDoCliente(clienteVisual), logoConhecido(clienteVisual) || logoPortal, false);
-      }
     };
     void trabalhar();
     return () => { ativo = false; };
@@ -588,18 +635,18 @@ export const CotacaoPortal: React.FC<{
           {isLoaded ? (
             <div className="relative mt-4 grid gap-3">
               <span className="absolute bottom-16 left-[17px] top-6 w-px bg-slate-200" />
-              <CampoLugar id="origem" valor={origem} placeholder="Origem" cor="bg-emerald-500" onValor={setOrigem} onEditando={marcarEdicao} />
-              <button type="button" onClick={() => { setOrigem(destino); setDestino(origem); }} className="z-10 grid h-9 w-9 place-items-center justify-self-center rounded-full border border-slate-200 bg-white text-slate-500 shadow" aria-label="Inverter origem e destino"><ArrowLeftRight size={14} /></button>
+              <CampoLugar id="origem" valor={origem} placeholder="Origem" cor="bg-emerald-500" onValor={(texto, coordenada) => { setOrigem(texto); setCoordOrigem(coordenada); }} onEditando={marcarEdicao} />
+              <button type="button" onClick={() => { setOrigem(destino); setDestino(origem); setCoordOrigem(coordDestino); setCoordDestino(coordOrigem); }} className="z-10 grid h-9 w-9 place-items-center justify-self-center rounded-full border border-slate-200 bg-white text-slate-500 shadow" aria-label="Inverter origem e destino"><ArrowLeftRight size={14} /></button>
               {paradas.map((parada) => (
                 <div key={parada.id} className="flex items-center gap-2">
                   <div className="min-w-0 flex-1">
-                    <CampoLugar id={`parada-${parada.id}`} valor={parada.texto} placeholder="Parada" cor="bg-amber-400" onValor={(texto) => setParadas((lista) => lista.map((item) => item.id === parada.id ? { ...item, texto } : item))} onEditando={marcarEdicao} />
+                    <CampoLugar id={`parada-${parada.id}`} valor={parada.texto} placeholder="Parada" cor="bg-amber-400" onValor={(texto, coordenada) => setParadas((lista) => lista.map((item) => item.id === parada.id ? { ...item, texto, coordenada } : item))} onEditando={marcarEdicao} />
                   </div>
                   <button type="button" onClick={() => setParadas((lista) => lista.filter((item) => item.id !== parada.id))} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-500" aria-label="Remover parada"><Trash2 size={16} /></button>
                 </div>
               ))}
-              <CampoLugar id="destino" valor={destino} placeholder="Destino" cor="bg-red-500" onValor={setDestino} onEditando={marcarEdicao} />
-              <button type="button" onClick={() => setParadas((lista) => [...lista, { id: Date.now(), texto: '' }])} className="inline-flex h-10 items-center gap-2 text-sm font-bold text-[#152c54]">
+              <CampoLugar id="destino" valor={destino} placeholder="Destino" cor="bg-red-500" onValor={(texto, coordenada) => { setDestino(texto); setCoordDestino(coordenada); }} onEditando={marcarEdicao} />
+              <button type="button" onClick={() => setParadas((lista) => [...lista, { id: Date.now(), texto: '', coordenada: null }])} className="inline-flex h-10 items-center gap-2 text-sm font-bold text-[#152c54]">
                 <Plus size={16} /> Adicionar parada
               </button>
             </div>
@@ -636,14 +683,14 @@ export const CotacaoPortal: React.FC<{
           origem={origem}
           destino={destino}
           km={kmRota == null ? '' : String(kmRota)}
-          onOrigem={setOrigem}
-          onDestino={setDestino}
+          onOrigem={(texto) => { if (texto === origem) return; setOrigem(texto); setCoordOrigem(null); }}
+          onDestino={(texto) => { if (texto === destino) return; setDestino(texto); setCoordDestino(null); }}
           onKm={() => undefined}
           tarifaKm={tabela?.kmExtra}
           horaExtra={tabela?.horaExtra}
           ocultarCampos
         />
-        <MapaCotacao origem={origem} destino={destino} paradas={paradas.map((item) => item.texto)} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto} />
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} paradas={paradas.filter((item) => item.texto.trim()).map((item) => destinoDirections(item.coordenada, item.texto))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} />
         <button
           type="button"
           onClick={gerar}

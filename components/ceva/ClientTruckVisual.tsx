@@ -28,7 +28,7 @@ export const ClientTruckVisual: React.FC<{
     setImagem(src || carretaDoCliente(cliente));
   }, [src, cliente]);
   return (
-    <span className="relative inline-flex items-end">
+    <span className="relative inline-flex items-end [filter:drop-shadow(0_18px_12px_rgba(0,0,0,0.55))]">
       <img
         src={imagem}
         alt=""
@@ -38,7 +38,7 @@ export const ClientTruckVisual: React.FC<{
         className={className}
       />
       {logo ? (
-        <span className="pointer-events-none absolute left-[50%] top-[28%] flex h-[22%] w-[38%] items-center justify-center rounded-md bg-white/95 px-1.5 shadow-[0_6px_16px_rgba(0,0,0,0.28)]">
+        <span className="pointer-events-none absolute left-[56%] top-[18%] flex h-[18%] w-[26%] items-center justify-center rounded-md bg-white/95 px-1 shadow-[0_8px_16px_rgba(15,23,42,0.35)] ring-1 ring-slate-200/80">
           <img src={logo} alt="" className="max-h-full max-w-full object-contain" />
         </span>
       ) : null}

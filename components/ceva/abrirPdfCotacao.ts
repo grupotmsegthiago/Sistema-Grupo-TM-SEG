@@ -5,7 +5,7 @@ import { prepararImagensDoElemento } from '../../lib/precificacao/imageUtils';
 /** Abre o PDF já com as imagens em Base64 e também baixa o arquivo. A janela precisa ter sido aberta no clique. */
 export async function abrirPdfDaProposta(artigo: HTMLElement, nomeArquivo: string, janela: Window | null): Promise<void> {
   await prepararImagensDoElemento(artigo);
-  const canvas = await html2canvas(artigo, { scale: 2, useCORS: true, backgroundColor: '#f7f5f2', logging: false });
+  const canvas = await html2canvas(artigo, { scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#f7f5f2', logging: false });
   const imagem = canvas.toDataURL('image/png');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const largura = pdf.internal.pageSize.getWidth();

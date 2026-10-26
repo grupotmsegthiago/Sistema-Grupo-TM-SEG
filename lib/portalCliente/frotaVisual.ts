@@ -84,28 +84,91 @@ function pontoUtil(ponto: PontoMapa | null | undefined): PontoMapa | null {
   return { lat, lng };
 }
 
-/** Mapa híbrido do Google com o traçado já calculado. Não inventa rua. */
+const LIMITE_URL_MAPA = 7500;
+
+const ESTILOS_MAPA_ESTATICO = [
+  'element:geometry|color:0x0f172a',
+  'element:labels.text.fill|color:0xcbd5e1',
+  'element:labels.text.stroke|color:0x0f172a',
+  'feature:road|element:geometry|color:0x1e293b',
+  'feature:road.highway|element:geometry|color:0x334155',
+  'feature:water|element:geometry|color:0x0c4a6e',
+  'feature:landscape|element:geometry|color:0x111827',
+  'feature:poi|visibility:off',
+  'feature:transit|visibility:off',
+];
+
+function amostrarPontos(pontos: PontoMapa[], maximo: number): PontoMapa[] {
+  const validos = pontos.map((item) => pontoUtil(item)).filter((item): item is PontoMapa => item != null);
+  const teto = Math.max(2, maximo);
+  if (validos.length <= teto) return validos;
+  const passo = (validos.length - 1) / (teto - 1);
+  const saida: PontoMapa[] = [];
+  const vistos = new Set<number>();
+  for (let i = 0; i < teto; i++) {
+    const indice = Math.round(i * passo);
+    if (vistos.has(indice)) continue;
+    vistos.add(indice);
+    saida.push(validos[indice]);
+  }
+  return saida;
+}
+
+function camadasDoTrajeto(miolo: string): string[] {
+  return [
+    `color:0x7dd3fc99|weight:14|${miolo}`,
+    `color:0x38bdf8ff|weight:6|${miolo}`,
+    `color:0xf8fafcff|weight:2|${miolo}`,
+  ];
+}
+
+function montarUrlMapa(chave: string, trechos: string[], entrada: {
+  inicio?: PontoMapa | null;
+  fim?: PontoMapa | null;
+  paradas?: PontoMapa[];
+}): string {
+  const base = new URLSearchParams({ size: '640x360', scale: '2', maptype: 'roadmap', key: chave });
+  let url = `https://maps.googleapis.com/maps/api/staticmap?${base.toString()}`;
+  for (const estilo of ESTILOS_MAPA_ESTATICO) url += `&style=${encodeURIComponent(estilo)}`;
+  for (const trecho of trechos) url += `&path=${encodeURIComponent(trecho)}`;
+  const marcar = (spec: string, ponto: PontoMapa | null) => {
+    if (!ponto) return;
+    url += `&markers=${encodeURIComponent(`${spec}|${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`)}`;
+  };
+  marcar('size:mid|color:green|label:A', pontoUtil(entrada.inicio));
+  for (const parada of (entrada.paradas || []).slice(0, 6)) marcar('size:small|color:yellow', pontoUtil(parada));
+  marcar('size:mid|color:red|label:B', pontoUtil(entrada.fim));
+  return url;
+}
+
+/**
+ * Mapa estático do Google, 640×360 com scale 2 (o máximo do lado é 640).
+ * A polilinha longa vira uma sequência de pontos para a URL não estourar.
+ * Não inventa rua.
+ */
 export function urlMapaEstatico(entrada: {
   polyline: string;
   chave: string;
   inicio?: PontoMapa | null;
   fim?: PontoMapa | null;
   paradas?: PontoMapa[];
+  pontos?: PontoMapa[];
 }): string | null {
-  const linha = polylineUtil(entrada.polyline);
   const chave = String(entrada.chave || '').trim();
-  if (!linha || !chave) return null;
-  const base = new URLSearchParams({ size: '640x400', scale: '2', maptype: 'hybrid', key: chave });
-  const brilho = `color:0x7dd3fc55|weight:18|enc:${linha}`;
-  const rota = `color:0x38bdf8ff|weight:8|enc:${linha}`;
-  const nucleo = `color:0xe0f2feff|weight:3|enc:${linha}`;
-  let url = `https://maps.googleapis.com/maps/api/staticmap?${base.toString()}&path=${encodeURIComponent(brilho)}&path=${encodeURIComponent(rota)}&path=${encodeURIComponent(nucleo)}`;
-  const marcar = (cor: string, ponto: PontoMapa | null) => {
-    if (!ponto) return;
-    url += `&markers=${encodeURIComponent(`size:mid|color:${cor}|${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`)}`;
-  };
-  marcar('green', pontoUtil(entrada.inicio));
-  for (const parada of (entrada.paradas || []).slice(0, 6)) marcar('yellow', pontoUtil(parada));
-  marcar('red', pontoUtil(entrada.fim));
-  return url;
+  if (!chave) return null;
+  const linha = polylineUtil(entrada.polyline);
+  if (linha) {
+    const url = montarUrlMapa(chave, camadasDoTrajeto(`enc:${linha}`), entrada);
+    if (url.length <= LIMITE_URL_MAPA) return url;
+  }
+  let pontos = amostrarPontos(entrada.pontos || [], 80);
+  while (pontos.length >= 2) {
+    const miolo = pontos.map((ponto) => `${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`).join('|');
+    const url = montarUrlMapa(chave, camadasDoTrajeto(miolo), entrada);
+    if (url.length <= LIMITE_URL_MAPA) return url;
+    const proximo = Math.max(2, Math.floor(pontos.length * 0.65));
+    if (proximo >= pontos.length) return null;
+    pontos = amostrarPontos(pontos, proximo);
+  }
+  return null;
 }

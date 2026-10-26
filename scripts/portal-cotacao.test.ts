@@ -4,6 +4,19 @@ import test from 'node:test';
 import { cartaDaProposta, marcoDeOperacoes, SERVICOS_TMSEG } from '../lib/portalCliente/apresentacao.ts';
 import { logoConhecido, pedidoDaCarreta, slugVisual, urlMapaEstatico } from '../lib/portalCliente/frotaVisual.ts';
 import {
+  chaveDoMapaNoServidor,
+  destinoDirections,
+  enderecoComUf,
+  lerCoordenada,
+  lugarComGeometria,
+  mensagemFalhaDirections,
+  polylineCodificada,
+  refererDoMapa,
+  resumirPontos,
+  rotaAdministrativaPronta,
+  statusDaFalhaDirections,
+} from '../lib/portalCliente/rotaCotacao.ts';
+import {
   calcularCotacaoPortal,
   horasDaRota,
   regiaoDaOperacao,
@@ -207,13 +220,90 @@ test('a carreta não pede marca desenhada e o mapa estático usa a rota recebida
     fim: { lat: -22.9, lng: -43.17 },
   });
   assert.ok(mapa);
-  assert.match(mapa || '', /maptype=hybrid/);
+  assert.match(mapa || '', /size=640x360/);
+  assert.match(mapa || '', /scale=2/);
+  assert.match(mapa || '', /maptype=roadmap/);
+  assert.doesNotMatch(mapa || '', /size=800|maptype=hybrid/);
   assert.match(mapa || '', /enc%3AencodedPolylineOk|enc:encodedPolylineOk/);
+  assert.match(mapa || '', /label%3AA|label:A/);
+  assert.match(mapa || '', /label%3AB|label:B/);
   assert.doesNotMatch(mapa || '', /Santos|Rio/);
   assert.equal(urlMapaEstatico({ polyline: 'curta', chave: 'chave-teste' }), null);
+  const longa = 'A'.repeat(5000);
+  assert.equal(urlMapaEstatico({ polyline: longa, chave: 'chave-teste' }), null);
+  const porPontos = urlMapaEstatico({
+    polyline: longa,
+    chave: 'chave-teste',
+    pontos: [
+      { lat: -12.97, lng: -38.5 },
+      { lat: -19.92, lng: -43.94 },
+      { lat: -23.55, lng: -46.63 },
+    ],
+    inicio: { lat: -12.97, lng: -38.5 },
+    fim: { lat: -23.55, lng: -46.63 },
+  });
+  assert.ok(porPontos);
+  assert.ok((porPontos || '').length < 8000);
+  assert.doesNotMatch(porPontos || '', /enc%3A/);
+  assert.match(porPontos || '', /-12\.97000(?:%2C|,)-38\.50000/);
   const visual = readFileSync(new URL('../server/frotaVisual.ts', import.meta.url), 'utf8');
   assert.match(visual, /pedidoDaCarreta/);
   assert.doesNotMatch(visual, /body\.prompt/);
   const rota = readFileSync(new URL('../server/cevaPortal.ts', import.meta.url), 'utf8');
   assert.match(rota, /\/api\/proposta-escolta\/visual/);
+  assert.match(rota, /\/api\/proposta-escolta\/mapa/);
+});
+
+test('a rota da cotação lê coordenada, explica a falha e não grava tempo inexistente', () => {
+  assert.deepEqual(lerCoordenada({ lat: () => -12.97, lng: () => -38.51 }), { lat: -12.97, lng: -38.51 });
+  assert.deepEqual(lerCoordenada({ lat: -23.55, lng: -46.63 }), { lat: -23.55, lng: -46.63 });
+  assert.equal(lerCoordenada({ lat: 'Salvador', lng: -38 }), null);
+  const lugar = lugarComGeometria({
+    formatted_address: 'Salvador, BA, Brasil',
+    place_id: 'abc',
+    geometry: { location: { lat: -12.97, lng: -38.5 } },
+  });
+  assert.equal(lugar?.endereco, 'Salvador, BA, Brasil');
+  assert.equal(enderecoComUf({
+    formatted_address: 'Salvador, Bahia, Brazil',
+    address_components: [
+      { long_name: 'Salvador', types: ['locality'] },
+      { short_name: 'BA', types: ['administrative_area_level_1'] },
+    ],
+  }, 'Salvador, BA'), 'Salvador, BA');
+  assert.equal(enderecoComUf({
+    formatted_address: 'Salvador, Bahia, Brazil',
+    address_components: [
+      { long_name: 'Salvador', types: ['locality'] },
+      { short_name: 'BA', types: ['administrative_area_level_1'] },
+    ],
+  }, 'salvador'), 'Salvador, BA');
+  assert.equal(lugar?.placeId, 'abc');
+  assert.equal(lugarComGeometria({ name: 'Salvador' }), null);
+  assert.deepEqual(destinoDirections(lugar?.coordenada, 'Salvador, BA'), { lat: -12.97, lng: -38.5 });
+  assert.equal(destinoDirections(null, 'São Paulo, SP'), 'São Paulo, SP');
+  assert.equal(polylineCodificada({ overview_polyline: { points: 'abc12345' } }), 'abc12345');
+  assert.equal(polylineCodificada({ overview_polyline: 'xyz12345' }), 'xyz12345');
+  assert.match(mensagemFalhaDirections('ZERO_RESULTS'), /caminho de carro/);
+  assert.match(mensagemFalhaDirections('MAX_ROUTE_LENGTH_EXCEEDED'), /parada/);
+  assert.match(mensagemFalhaDirections('REQUEST_DENIED'), /Tente de novo/);
+  assert.match(mensagemFalhaDirections('NOT_FOUND'), /cidade e a UF/);
+  assert.equal(statusDaFalhaDirections({ message: 'Directions request failed: ZERO_RESULTS' }), 'ZERO_RESULTS');
+  assert.deepEqual(rotaAdministrativaPronta({ origin: 'Salvador, BA', destination: 'São Paulo, SP', distance: '1600.0', durationMinutes: null }), { ok: true });
+  assert.equal(rotaAdministrativaPronta({ origin: '', destination: 'São Paulo, SP', distance: '10' }).ok, false);
+  assert.equal(rotaAdministrativaPronta({ origin: 'Salvador, BA', destination: 'São Paulo, SP', distance: '0' }).ok, false);
+  assert.equal(rotaAdministrativaPronta({ origin: 'Salvador, BA', destination: 'São Paulo, SP', distance: '10', durationMinutes: 0 }).ok, false);
+  assert.equal(resumirPontos(Array.from({ length: 200 }, (_, i) => ({ lat: -12 + i / 100, lng: -38 - i / 100 })), 80).length, 80);
+  assert.equal(refererDoMapa('http://localhost:5000/cotacao'), 'http://localhost:5000/');
+  assert.equal(refererDoMapa('https://evil.example'), 'https://sistema.grupotmseg.com.br/');
+  assert.equal(chaveDoMapaNoServidor({ GOOGLE_MAPS_API_KEY: 'chave-servidor', VITE_GOOGLE_MAPS_API_KEY: 'outra' }), 'chave-servidor');
+  const tela = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
+  assert.match(tela, /Geocoder/);
+  assert.match(tela, /place_id/);
+  assert.match(tela, /mensagemFalhaDirections/);
+  assert.match(tela, /\/api\/proposta-escolta\/mapa/);
+  assert.doesNotMatch(tela, /\/api\/proposta-escolta\/visual/);
+  const formulario = readFileSync(new URL('../components/ClientRouteForm.tsx', import.meta.url), 'utf8');
+  assert.match(formulario, /rotaAdministrativaPronta/);
+  assert.doesNotMatch(formulario, /duration_minutes/);
 });
