@@ -57,7 +57,6 @@ const QuoteCalculatorCard: React.FC<Props> = ({
     horaExtraFallback: horaExtra,
   });
   const conta = regional.aplicar ? regional.conta : null;
-  const hora = regional.aplicar ? regional.horaExtra : horaExtra;
 
   const resolverCep = async () => {
     const cep = extrairCep(origem);
@@ -140,13 +139,11 @@ const QuoteCalculatorCard: React.FC<Props> = ({
           </div>
           <div className="rounded-xl bg-slate-50 p-3">
             <p className="font-bold uppercase text-gray-400">Horas</p>
-            <p className="mt-1 font-black text-gray-900">{conta ? `${conta.horasFaturadas} h` : '—'}</p>
-            {conta && <p className="text-[10px] font-bold text-gray-500">{conta.minutos} min no corte</p>}
+            <p className="mt-1 font-black text-gray-900" data-testid="cotacao-horas">{conta ? `${conta.horasFaturadas} h` : '—'}</p>
           </div>
           <div className="rounded-xl bg-slate-50 p-3">
             <p className="font-bold uppercase text-gray-400">Total</p>
-            <p className="mt-1 font-black text-gray-900">{conta ? reais(conta.valor) : '—'}</p>
-            {conta && <p className="text-[10px] font-bold text-gray-500">Acionamento mínimo {reais(conta.acionamentoMinimo)}{hora != null && Number.isFinite(hora) ? ` · hora extra ${reais(hora)}` : ''}</p>}
+            <p className="mt-1 font-black text-gray-900" data-testid="cotacao-total">{conta ? reais(conta.valor) : '—'}</p>
           </div>
         </div>
       )}
