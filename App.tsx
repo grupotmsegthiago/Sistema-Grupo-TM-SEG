@@ -9,6 +9,8 @@ import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
 import { caminhoPortalDasPermissoes, usuarioSoPortal } from './lib/cevaPortal/regrasAcesso';
+import { lerCaminhoLinkProposta } from './lib/portalCliente/linkProposta';
+import { PropostaPublica } from './components/ceva/PropostaPublica';
 import { supabase } from './lib/supabase';
 import { RefreshCw } from 'lucide-react';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -181,6 +183,7 @@ const App: React.FC = () => {
   });
   const [academyVersion, setAcademyVersion] = useState(0);
 
+  const linkProposta = lerCaminhoLinkProposta(window.location.pathname);
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
   const isCevaPortalRoute = normalizedPath === '/ceva';
@@ -548,6 +551,7 @@ const App: React.FC = () => {
   }, []);
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
+  if (linkProposta) return <PropostaPublica id={linkProposta.id} token={linkProposta.token} />;
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }

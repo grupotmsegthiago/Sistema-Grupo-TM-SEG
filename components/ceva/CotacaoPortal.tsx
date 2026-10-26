@@ -518,6 +518,7 @@ export const CotacaoPortal: React.FC<{
   const [avisoHistorico, setAvisoHistorico] = useState('');
   const [previewPdf, setPreviewPdf] = useState<PropostaPortal | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [idCotacaoAberta, setIdCotacaoAberta] = useState<string | null>(null);
   const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
@@ -699,8 +700,9 @@ export const CotacaoPortal: React.FC<{
     if (!feito) return;
     void (async () => {
       const print = await colarPrintDoMapa();
-      const numero = await gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
-      if (numero) feito.nova.numero = numero;
+      const gravado = await gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
+      if (gravado?.numero) feito.nova.numero = gravado.numero;
+      setIdCotacaoAberta(gravado?.id ?? null);
       setPrintMapa(print);
       setProposta(feito.nova);
       setPasso(0);
@@ -736,10 +738,11 @@ export const CotacaoPortal: React.FC<{
     if (edicao.regiao) setRegiao(edicao.regiao);
     setEtapa('parada');
     setProposta(null);
+    setIdCotacaoAberta(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional): Promise<number | null> => {
+  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional): Promise<{ numero: number | null; id: string | null } | null> => {
     setAvisoHistorico('');
     const pedido = {
       origem,
@@ -776,10 +779,10 @@ export const CotacaoPortal: React.FC<{
         });
         const registro = pedidoParaRegistro({ ...pedido, numero }, { id: idCliente, name: clienteNome }, { name: usuario.name || '', email: usuario.email || '' });
         if (!registro.ok) throw new Error(registro.error);
-        const { error } = await supabase.from('quotes').insert(registro.linha);
+        const { data, error } = await supabase.from('quotes').insert(registro.linha).select('id').single();
         if (error) throw new Error('A proposta abriu, mas o histórico não gravou.');
         setRecargaHistorico((atual) => atual + 1);
-        return numero;
+        return { numero, id: data?.id ? String(data.id) : null };
       }
       const resposta = await fetch(portal.url('/cotacao'), {
         method: 'POST',
@@ -789,7 +792,10 @@ export const CotacaoPortal: React.FC<{
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.error || 'A proposta abriu, mas o histórico não gravou.');
       setRecargaHistorico((atual) => atual + 1);
-      return typeof corpo.numero === 'number' ? corpo.numero : null;
+      return {
+        numero: typeof corpo.numero === 'number' ? corpo.numero : null,
+        id: typeof corpo.id === 'string' && corpo.id ? corpo.id : null,
+      };
     } catch (falha) {
       setAvisoHistorico(falha instanceof Error ? falha.message : 'A proposta abriu, mas o histórico não gravou.');
       return null;
@@ -990,7 +996,8 @@ export const CotacaoPortal: React.FC<{
           cena={cena}
           printMapa={printMapa}
           operacoes={operacoes}
-          onFechar={() => { setEtapa('parada'); setProposta(null); setPasso(0); }}
+          idCotacao={idCotacaoAberta}
+          onFechar={() => { setEtapa('parada'); setProposta(null); setPasso(0); setIdCotacaoAberta(null); }}
         />
       )}
     </section>

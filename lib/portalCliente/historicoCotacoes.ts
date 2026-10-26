@@ -31,6 +31,8 @@ export type SnapshotCotacaoPortal = {
   operacao: string;
   vigencia: VersaoTabelaRegional;
   numero: number | null;
+  /** Link de visualização. Some se o JSON for regravado sem este campo. */
+  linkPublico?: { token: string; expiraEm: string } | null;
 };
 
 export type LinhaHistoricoCotacao = CotacaoPrazo & {
@@ -366,7 +368,12 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
   try {
     const dados = JSON.parse(bruto) as Partial<SnapshotCotacaoPortal>;
     if (!dados || dados.kind !== KIND_PORTAL_COTACAO) return null;
-    return montarSnapshot({
+    const link = dados.linkPublico;
+    const linkPublico = link && typeof link.token === 'string' && typeof link.expiraEm === 'string'
+      ? { token: link.token, expiraEm: link.expiraEm }
+      : null;
+    return {
+      ...montarSnapshot({
       duracaoMin: dados.duracaoMin,
       usouMinimo: dados.usouMinimo,
       regiao: dados.regiao,
@@ -381,7 +388,9 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       operacao: dados.operacao,
       vigencia: vigenciaInformada(dados.vigencia),
       numero: numeroInformado(dados.numero),
-    });
+    }),
+      ...(linkPublico ? { linkPublico } : {}),
+    };
   } catch {
     return null;
   }

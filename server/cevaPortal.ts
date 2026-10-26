@@ -195,4 +195,51 @@ export function registerCevaPortalRoutes(app: Express): void {
     if (req.query && typeof req.query === 'object') Object.assign(req.query, { op: 'fotos', os: String(req.params.os || '') });
     await handleCevaPortalHttp(req, res);
   });
+  app.post('/api/cotacoes/:id/link-visualizacao', async (req, res) => {
+    const { createSupabaseAdminClient } = await import('./supabaseConfig.js');
+    const { atorDaRequisicao } = await import('./cotacaoGestaoHttp.js');
+    const { emitirLinkProposta } = await import('../lib/portalCliente/linkPropostaHttp.js');
+    const { randomBytes } = await import('crypto');
+    const sb = createSupabaseAdminClient();
+    const banco = sb ? bancoDoLink(sb) : null;
+    if (!banco) {
+      res.status(503).json({ error: 'Cotação indisponível.' });
+      return;
+    }
+    const ator = await atorDaRequisicao(sb!, req.headers as Record<string, unknown>);
+    const resultado = await emitirLinkProposta(banco, ator, String(req.params.id || ''), new Date(), randomBytes(16));
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(resultado.status).json(resultado.corpo);
+  });
+  app.get('/api/proposta-publica/:id/:token', async (req, res) => {
+    const { createSupabaseAdminClient } = await import('./supabaseConfig.js');
+    const { lerPropostaPublica } = await import('../lib/portalCliente/linkPropostaHttp.js');
+    const sb = createSupabaseAdminClient();
+    const banco = sb ? bancoDoLink(sb) : null;
+    if (!banco) {
+      res.status(503).json({ error: 'Cotação indisponível.' });
+      return;
+    }
+    const resultado = await lerPropostaPublica(banco, String(req.params.id || ''), String(req.params.token || ''), new Date());
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(resultado.status).json(resultado.corpo);
+  });
+}
+
+function bancoDoLink(sb: { from: (tabela: string) => any }) {
+  return {
+    async ler(id: string) {
+      const { data, error } = await sb.from('quotes').select('id, client_name, origin, destination, total_km, total_hours, total_value, created_at, created_by, status, is_active, converted_to_order_id, contract_details').eq('id', id).maybeSingle();
+      if (error || !data) return null;
+      return {
+        ...data,
+        id: String(data.id),
+        contract_details: data.contract_details == null ? null : String(data.contract_details),
+      };
+    },
+    async gravar(id: string, contractDetails: string) {
+      const { error } = await sb.from('quotes').update({ contract_details: contractDetails }).eq('id', id);
+      return error ? 'Não foi possível gravar o link.' : null;
+    },
+  };
 }

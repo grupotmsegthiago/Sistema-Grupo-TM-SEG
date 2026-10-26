@@ -54,12 +54,17 @@ export const ExperienciaProposta: React.FC<{
   dataTexto?: string;
   /** Separa o artigo do histórico do artigo que está na tela. */
   marcaPdf?: string;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1' }) => {
+  /** Página do link: só a proposta, sem gravar, enviar ou abrir o sistema. */
+  somenteLeitura?: boolean;
+  validadeTexto?: string;
+  idCotacao?: string | null;
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [linkAviso, setLinkAviso] = useState('');
   const caminho = caminhoDaProposta(proposta);
   const nomes = rotulosSemAno(proposta.origem, proposta.destino);
   const arquivoPdf = nomePdfCotacao({
@@ -95,6 +100,27 @@ export const ExperienciaProposta: React.FC<{
       setAviso(falha instanceof Error ? falha.message : 'Não foi possível gerar o PDF.');
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const copiarLink = async () => {
+    if (!idCotacao || isGenerating) return;
+    setLinkAviso('');
+    try {
+      const init = { method: 'POST' };
+      const resposta = clienteInterno
+        ? await authFetch(`/api/cotacoes/${idCotacao}/link-visualizacao`, init)
+        : await fetch(`/api/cotacoes/${idCotacao}/link-visualizacao`, { ...init, headers: portal.cabecalhos() });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok || typeof corpo.caminho !== 'string') throw new Error(corpo.error || 'Não foi possível gerar o link.');
+      const url = `${window.location.origin}${corpo.caminho}`;
+      await navigator.clipboard.writeText(url);
+      const validade = typeof corpo.expiraEm === 'string'
+        ? new Date(corpo.expiraEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '';
+      setLinkAviso(validade ? `Link copiado. Vale até ${validade}. A pessoa só vê esta proposta.` : 'Link copiado. A pessoa só vê esta proposta.');
+    } catch (falha) {
+      setLinkAviso(falha instanceof Error ? falha.message : 'Não foi possível copiar o link.');
     }
   };
 
@@ -149,7 +175,7 @@ export const ExperienciaProposta: React.FC<{
   };
 
   return (
-    <div data-captura-proposta={modoCaptura ? marcaPdf : undefined} className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
+    <div data-captura-proposta={modoCaptura ? marcaPdf : undefined} className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : somenteLeitura ? 'min-h-screen bg-[#0c0d10]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
       {!modoCaptura && isGenerating && (
         <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/45" role="status" data-testid="overlay-pdf-proposta">
           <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
@@ -191,8 +217,13 @@ export const ExperienciaProposta: React.FC<{
         </div>
       )}
       {visivel && (
-        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#f7f5f2] text-[#161616]' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
-          {!modoCaptura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
+        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#f7f5f2] text-[#161616]' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-[#f7f5f2] text-[#161616]' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
+          {somenteLeitura && (
+            <p className="bg-[#0c0d10] px-6 py-3 text-center text-sm text-white" data-testid="aviso-link-proposta">
+              Visualização da proposta{validadeTexto ? `. Válida até ${validadeTexto}` : ''}. Este link não abre o restante do sistema.
+            </p>
+          )}
+          {!modoCaptura && !somenteLeitura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
           <div data-proposta-corpo className={modoCaptura ? '' : 'min-h-0 flex-1 overflow-auto'}>
             <header data-proposta-bloco className="relative overflow-hidden bg-[#0c0d10] px-8 pb-10 pt-8 text-white sm:px-12">
               <div className="pointer-events-none absolute -right-10 top-8 h-56 w-56 rounded-full bg-[#d0121a]/30 blur-3xl" />
@@ -332,9 +363,12 @@ export const ExperienciaProposta: React.FC<{
             </section>
           </div>
 
-          {!modoCaptura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
+          {!modoCaptura && !somenteLeitura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" disabled={isGenerating} onClick={() => { void salvarPdf(); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white disabled:opacity-50">Salvar em PDF</button>
+              {idCotacao && (
+                <button type="button" onClick={() => { void copiarLink(); }} data-testid="link-visualizacao-proposta" className="h-11 rounded-full border border-black/15 px-4 text-xs font-semibold">Link de visualização</button>
+              )}
               {!proposta.acordada && (
                 <button type="button" disabled={isGenerating || ocupado === 'salvar'} onClick={() => postar('salvar')} className="h-11 rounded-full border border-black/15 px-4 text-xs font-semibold disabled:opacity-50">
                   Salvar essa proposta em nosso banco de dados
@@ -353,6 +387,7 @@ export const ExperienciaProposta: React.FC<{
             </form>
             <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail leva as informações do Grupo TM SEG. O PDF completo da proposta vai em anexo, com a foto do mapa e as condições da rota. Cópia para {COPIA_FIXA_COTACAO} e para quem fez a cotação.</p>
             {aviso && <p className="mt-3 text-sm font-medium">{aviso}</p>}
+            {linkAviso && <p className="mt-2 text-sm font-medium" data-testid="aviso-link-copiado">{linkAviso}</p>}
           </footer>}
         </article>
       )}

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, FileDown, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'lucide-react';
+import { Copy, FileDown, Link2, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
 import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
@@ -83,6 +83,7 @@ export function AcoesDaLinha({
   onPdf,
   onEmail,
   onCopiar,
+  onLink,
   onDesativar,
   onExcluir,
   onCriarOs,
@@ -97,6 +98,7 @@ export function AcoesDaLinha({
   onPdf?: () => void;
   onEmail?: () => void;
   onCopiar?: () => void;
+  onLink?: () => void;
   onDesativar?: () => void;
   onExcluir?: () => void;
   onCriarOs?: () => void;
@@ -121,6 +123,9 @@ export function AcoesDaLinha({
               <button type="button" onClick={() => fechar(onPdf)} data-testid={`ver-pdf-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><FileDown size={16} /> PDF</button>
               <button type="button" onClick={() => fechar(onEmail)} data-testid={`email-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Mail size={16} /> E-mail</button>
               <button type="button" onClick={() => fechar(onCopiar)} data-testid={`copiar-msg-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Copy size={16} /> Copiar MSG</button>
+              {onLink && (
+                <button type="button" onClick={() => fechar(onLink)} data-testid={`link-visualizacao-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Link2 size={16} /> Link de visualização</button>
+              )}
               {mostrarCriarOs && (
                 <button type="button" onClick={() => fechar(onCriarOs)} data-testid={`criar-os-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Plus size={16} /> Criar OS</button>
               )}
@@ -451,6 +456,29 @@ export const HistoricoCotacoes: React.FC<{
     setToast('Cotação excluída.');
   };
 
+  const copiarLink = async (linha: LinhaHistoricoCotacao) => {
+    setErro('');
+    const init = { method: 'POST' };
+    const resposta = clienteNome
+      ? await authFetch(`/api/cotacoes/${linha.id}/link-visualizacao`, init)
+      : await fetch(`/api/cotacoes/${linha.id}/link-visualizacao`, { ...init, headers: portal.cabecalhos() });
+    const corpo = await resposta.json().catch(() => ({}));
+    if (!resposta.ok || typeof corpo.caminho !== 'string') {
+      setErro(String(corpo.error || 'Não foi possível gerar o link.'));
+      return;
+    }
+    const url = `${window.location.origin}${corpo.caminho}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      const validade = typeof corpo.expiraEm === 'string'
+        ? new Date(corpo.expiraEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '';
+      setToast(validade ? `Link copiado. Vale até ${validade}. A pessoa só vê esta proposta.` : 'Link copiado. A pessoa só vê esta proposta.');
+    } catch {
+      setToast(url);
+    }
+  };
+
   const abrirEmail = (linha: LinhaHistoricoCotacao) => {
     if (captura) return;
     const salvo = lerSnapshot(linha.contract_details);
@@ -575,6 +603,7 @@ export const HistoricoCotacoes: React.FC<{
                         onPdf={() => verPdf(linha)}
                         onEmail={() => abrirEmail(linha)}
                         onCopiar={() => { void copiarMsg(linha); }}
+                        onLink={() => { void copiarLink(linha); }}
                         onCriarOs={() => criarOs(linha)}
                         onAlterar={() => editar(linha)}
                         onDesativar={() => { void inativar(linha); }}
