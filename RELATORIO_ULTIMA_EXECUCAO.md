@@ -2,11 +2,14 @@
 
 # Próxima Execução Proposta
 
-O print do mapa na proposta foi pedido direto com as duas telas. A próxima alteração de código ou de tabela, fora desse ajuste, substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+Plano aguardando aprovação. A próxima alteração de código só começa depois de "Fluxo aprovado, pode executar".
 
-## Print do mapa na proposta (26/10/2026)
+## PDF único da cotação e mapa centrado em A e B (26/10/2026)
 
-Baseline `fb58e567`. O quadro da proposta mostrava a foto da carreta porque a imagem do mapa não carregava. Gerar proposta e PDF preview passam a fotografar o card do mapa que está na tela e colar essa foto no lugar. O canvas do Google, quando não exporta, cede o lugar ao mapa estático em Base64, e o painel continua no card. Sem migration, sem função nova na Vercel e sem alteração em calculateMissionFinancials.
+- **Objetivo da Tarefa:** o download, o Ver PDF e o anexo de e-mail saem do mesmo artigo oficial, sem corte no meio do bloco. Ao gerar a proposta, o mapa fica centrado com o ponto A na origem e o ponto B no destino, os dois dentro do quadro.
+- **Passo a Passo Sequencial:** 1. Marcar os blocos da proposta e completar rota, km faturado, tempo, acionamento, km extra, hora extra e pedágio à parte. 2. Antes da foto, enquadrar o mapa no retângulo da origem e do destino, com folga para o A e o B não ficarem sob o painel. 3. O mapa estático da proposta usa `visible` nesses dois pontos, para o centro da imagem ser o meio do trecho. 4. A espera do `idle` do mapa acontece antes da captura. 5. O PDF A4 empilha bloco inteiro, com margem, sem fatiar um card. 6. Salvar em PDF, preview, Ver PDF e os dois e-mails usam esse mesmo arquivo. 7. A OS nascida da cotação grava tabela e rota como `Origem x Destino (2026-)` ou `(2027-)`, pela vigência do snapshot.
+- **Ficheiros Afetados:** `components/ceva/abrirPdfCotacao.ts`, `components/ceva/ExperienciaProposta.tsx`, `components/ceva/HistoricoCotacoes.tsx`, `components/ceva/CotacaoPortal.tsx`, `components/ceva/SolicitarEscolta.tsx`, `server/cevaPortal.ts`, `lib/portalCliente/registrarOs.ts`, `lib/portalCliente/historicoCotacoes.ts`, `lib/portalCliente/frotaVisual.ts`, `scripts/gestao-cotacao.test.ts`, `scripts/portal-cotacao.test.ts`, `scripts/historico-cotacoes.test.ts`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas. Sem migration. A linha de preço já usada por outra OS não é renomeada.
 
 ## Unificação de 26/10/2026
 
