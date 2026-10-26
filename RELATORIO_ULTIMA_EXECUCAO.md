@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Publicado nesta entrega, em 26/10/2026, no projeto sistema-grupo-tm-seg, a pedido de publicar todas as branches f513. O histórico abre Ações, o PDF guarda texto e imagens, e o e-mail aceita o anexo com cópia para thiago@grupotmseg.com.br e para quem fez a cotação. A branch da tarifa 2027 do portal entrou sem substituir `tarifaDoBotao`. As demais branches f513 já estavam na main. O motor da OS não mudou.
+
 Executado em 26/10/2026 a partir do erro "O PDF da cotação não veio no anexo". O anexo do jsPDF traz o nome do arquivo antes do Base64 e agora é aceito. O envio coloca em cópia thiago@grupotmseg.com.br e o e-mail de quem fez a cotação, junto com os e-mails escolhidos. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026 a partir do pedido de enxugar as ações e corrigir o PDF em branco. A linha do histórico tem um botão Ações. O painel sobreposto guarda PDF, e-mail, copiar a mensagem, criar OS, alterar, desativar e excluir. O Salvar em PDF remove desfoque, animação e a proposta fora da tela antes da foto, para o arquivo levar texto e imagens. Ainda não foi publicado. O motor da OS não mudou.

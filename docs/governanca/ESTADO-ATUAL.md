@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O histórico abre Ações, o PDF salvo leva texto e imagens com o nome `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`, e o e-mail da proposta aceita o anexo e copia thiago@grupotmseg.com.br e quem fez a cotação. A branch da tarifa duplicada entrou no histórico sem trocar `tarifaDoBotao`. As demais branches f513 já estavam na main. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. O e-mail da proposta aceita o PDF gerado e manda cópia para thiago@grupotmseg.com.br e para quem fez a cotação, além dos e-mails escolhidos. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. No histórico, a linha fica com um botão Ações. O clique abre a tela com PDF, e-mail, copiar a mensagem e as demais opções. O PDF deixa de sair em branco: a foto tira desfoque e animação antes de gravar o texto e as imagens. Ainda não foi publicado. O motor da OS não mudou.
