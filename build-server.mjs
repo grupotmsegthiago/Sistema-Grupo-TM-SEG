@@ -126,6 +126,14 @@ execSync(
 );
 console.log('Sessão e dados protegidos empacotados.');
 
+// Redefinição de senha. Import ESM de lib/passwordReset.ts (gravarSenha sem
+// extensão) derruba a função na Vercel com FUNCTION_INVOCATION_FAILED.
+execSync(
+  'npx esbuild lib/passwordReset.ts --bundle --platform=node --format=cjs --outfile=api/_password-reset-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Password reset core bundle: api/_password-reset-core.cjs');
+
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(
   'npx esbuild server/vercelAppEntry.ts --bundle --platform=node --format=cjs --outfile=dist/vercelApp.cjs --packages=external',

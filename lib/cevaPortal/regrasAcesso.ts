@@ -92,6 +92,41 @@ export function mensagemAcessoPortal(input: {
   ].join('\n');
 }
 
+/** Telefone brasileiro para a Z-API: DDI 55 + DDD + número. Recusa grupo. */
+export function normalizarTelefoneWhatsapp(valor: unknown): string | null {
+  const bruto = String(valor ?? '').trim();
+  if (!bruto || bruto.includes('@g.us') || bruto.includes('@lid')) return null;
+  const digits = bruto.replace(/\D/g, '');
+  if (digits.startsWith('120363')) return null;
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return digits;
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  return null;
+}
+
+/** Mensagem com a senha temporária. A troca é obrigatória no próximo acesso. */
+export function mensagemNovaSenhaWhatsapp(input: {
+  nome: string;
+  email: string;
+  senha: string;
+  link: string;
+}): string {
+  return [
+    '🔐 *GRUPO TMSEG — Nova senha de acesso*',
+    '',
+    `Olá *${input.nome}*,`,
+    '',
+    'Sua senha foi redefinida pela equipe da TM SEG.',
+    '',
+    `📧 *Login:* ${input.email}`,
+    `🔑 *Senha:* ${input.senha}`,
+    `🌐 *Link:* ${input.link}`,
+    '',
+    '⚠️ Assim que acessar novamente, troque esta senha.',
+    '',
+    '_Grupo TMSEG — Gestão Operacional_',
+  ].join('\n');
+}
+
 /** O acesso nasce no Cadastro de Usuários. A tela pública não cria administrador. */
 export function decidirPrimeiroAcesso(_input?: {
   existeAdministrador?: boolean;

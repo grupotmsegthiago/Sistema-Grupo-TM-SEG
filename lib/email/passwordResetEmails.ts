@@ -29,9 +29,13 @@ export async function sendPasswordResetEmail(
   to: string,
   name: string,
   resetLink: string,
-  senderName?: string
-): Promise<boolean> {
+  senderName?: string,
+  portalLink?: string,
+): Promise<{ ok: boolean; erro?: string }> {
   try {
+    const portal = portalLink
+      ? `<p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 16px 0;">Depois de definir a senha, entre no portal do cliente:<br/><a href="${portalLink}" style="color:#2563eb;word-break:break-all;">${portalLink}</a></p>`
+      : '';
     const html = baseTemplate(`
     <h2 style="color:#111827;font-size:18px;font-weight:800;margin:0 0 12px 0;">Redefinição de Senha</h2>
     <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 16px 0;">Olá <strong>${toTitleCase(name)}</strong>,</p>
@@ -40,6 +44,7 @@ export async function sendPasswordResetEmail(
     <div style="text-align:center;margin:24px 0;">
       <a href="${resetLink}" style="display:inline-block;background-color:#dc2626;color:#ffffff;font-size:14px;font-weight:800;text-decoration:none;padding:14px 40px;border-radius:8px;letter-spacing:0.5px;text-transform:uppercase;">Definir Nova Senha</a>
     </div>
+    ${portal}
     <p style="color:#6b7280;font-size:12px;line-height:1.5;margin:20px 0 0 0;">⚠️ Este link é válido por <strong>24 horas</strong>. Se você não solicitou essa alteração, ignore este e-mail.</p>
     <p style="color:#9ca3af;font-size:11px;line-height:1.5;margin:12px 0 0 0;">Caso o botão não funcione, copie e cole o link abaixo no seu navegador:<br/><span style="color:#2563eb;word-break:break-all;">${resetLink}</span></p>
     `, senderName);
@@ -51,9 +56,9 @@ export async function sendPasswordResetEmail(
       html,
     });
     console.log(`[Email] Reset de senha enviado → ${to}`);
-    return true;
+    return { ok: true };
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar reset de senha:`, err?.message);
-    return false;
+    return { ok: false, erro: err?.message || 'Falha ao enviar e-mail' };
   }
 }

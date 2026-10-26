@@ -1,6 +1,5 @@
 import type { Express, Request, Response } from "express";
 import { usuarioIdDoToken } from "../lib/sessao/token";
-import { gravarSenhaNoServidor } from "../lib/sessao/gravarSenha";
 import { registrarSessaoExpress } from "../lib/sessao/express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
@@ -14,7 +13,8 @@ import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress }
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail, sendSystemAlertEmail } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail, sendSystemAlertEmail } from "./emailService";
+import { handlePasswordResetConfirm, handlePasswordResetRequest, handlePasswordResetValidate } from "../lib/passwordReset";
 import { registerTabelaRotaAlerta } from "./tabelaRotaAlerta";
 import { montarEmailAuditoriaFaturamento, rotaDaTabelaOperacao } from "../lib/comercial/auditoriaFaturamentoTabela";
 import { runEmailHealthCheck } from "./emailHealth";
@@ -2200,31 +2200,8 @@ export async function registerRoutes(
 
   app.post("/api/password-reset/request", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { userId, senderName } = req.body;
-      if (!userId) return res.status(400).json({ error: 'userId obrigatório' });
-
-      const { data: userData, error: userErr } = await supabase.from('system_users').select('id, name, email').eq('id', userId).single();
-      if (userErr || !userData) return res.status(404).json({ error: 'Usuário não encontrado' });
-
-      const crypto = await import('crypto');
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-      const { error: updateErr } = await supabase.from('system_users').update({
-        password_reset_token: token,
-        password_reset_expires: expiresAt,
-        force_password_change: true
-      }).eq('id', userId);
-      if (updateErr) throw updateErr;
-
-      const { data: verifyData } = await supabase.from('system_users').select('password_reset_token').eq('id', userId).single();
-      console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyData?.password_reset_token ? 'SIM' : 'NÃO'}`);
-
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
-      const resetLink = `${systemUrl}/reset-password?token=${token}`;
-
-      const success = await sendPasswordResetEmail(userData.email, userData.name, resetLink, senderName);
-      res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
+      const result = await handlePasswordResetRequest(req.body || {});
+      res.status(result.status).json(result.body);
     } catch (err: any) {
       console.error('[PasswordReset] Erro:', err.message);
       res.status(500).json({ error: err.message });
@@ -2233,17 +2210,8 @@ export async function registerRoutes(
 
   app.post("/api/password-reset/validate", async (req: Request, res: Response) => {
     try {
-      const { token } = req.body;
-      if (!token) return res.status(400).json({ error: 'Token obrigatório' });
-
-      const { data, error } = await supabase.from('system_users').select('id, name, email, password_reset_expires').eq('password_reset_token', token).single();
-      if (error || !data) return res.status(404).json({ error: 'Token inválido ou expirado' });
-
-      if (new Date(data.password_reset_expires) < new Date()) {
-        return res.status(410).json({ error: 'Token expirado' });
-      }
-
-      res.json({ valid: true, userName: data.name, userEmail: data.email });
+      const result = await handlePasswordResetValidate(req.body || {});
+      res.status(result.status).json(result.body);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2251,24 +2219,8 @@ export async function registerRoutes(
 
   app.post("/api/password-reset/confirm", async (req: Request, res: Response) => {
     try {
-      const { token, newPassword } = req.body;
-      if (!token || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios' });
-      if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
-
-      const { data, error } = await supabase.from('system_users').select('id, name, password_reset_expires').eq('password_reset_token', token).single();
-      if (error || !data) return res.status(404).json({ error: 'Token inválido ou expirado' });
-
-      if (new Date(data.password_reset_expires) < new Date()) {
-        return res.status(410).json({ error: 'Token expirado' });
-      }
-
-      await gravarSenhaNoServidor(supabase, String(data.id), newPassword, {
-        password_reset_token: null,
-        password_reset_expires: null,
-        force_password_change: false,
-      });
-
-      res.json({ success: true, message: 'Senha alterada com sucesso!' });
+      const result = await handlePasswordResetConfirm(req.body || {});
+      res.status(result.status).json(result.body);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

@@ -188,3 +188,53 @@ export async function sincronizarAcessoPortal(
   if (erroPermissao) return { ok: false, status: 500, error: 'O portal foi gravado, mas o cadastro não ficou restrito ao cliente.' };
   return { ok: true, manteveSenha: preservar, acesso: input.acesso };
 }
+
+/** Lê a pessoa do portal pelo e-mail. Tabela ainda não criada conta como ausente. */
+export async function lerAcessoPortal(
+  sb: Consulta,
+  input: { tabela: string; email: string; clientId?: string | number | null },
+): Promise<{ ok: true; id: string | number | null } | { ok: false; error: string }> {
+  let leitura = sb.from(input.tabela).select('id').ilike('email', input.email);
+  if (input.tabela === 'portal_cliente_usuarios' && input.clientId != null && String(input.clientId) !== '') {
+    leitura = leitura.eq('client_id', input.clientId);
+  }
+  const achou = await leitura.maybeSingle();
+  if (achou.error) {
+    const msg = String(achou.error.message || '');
+    if (/does not exist|schema cache|Could not find|PGRST205|42P01/i.test(msg)) {
+      return { ok: true, id: null };
+    }
+    return { ok: false, error: 'Não foi possível ler o acesso do portal.' };
+  }
+  return { ok: true, id: achou.data?.id ?? null };
+}
+
+/**
+ * Grava a senha pedida na redefinição. Diferente do cadastro, que preserva
+ * o hash de quem já entra no portal.
+ */
+export async function aplicarSenhaNoPortal(
+  sb: Consulta,
+  input: {
+    tabela: string;
+    email: string;
+    clientId?: string | number | null;
+    senha: string;
+    trocarSenha: boolean;
+  },
+): Promise<{ ok: true; atualizado: boolean } | { ok: false; error: string }> {
+  const senhaInvalida = validarSenha(input.senha);
+  if (senhaInvalida) return { ok: false, error: senhaInvalida };
+  const acesso = await lerAcessoPortal(sb, input);
+  if (!acesso.ok) return acesso;
+  if (acesso.id == null) return { ok: true, atualizado: false };
+  const campos: Record<string, unknown> = {
+    senha_hash: hashSenha(input.senha),
+    trocar_senha: input.trocarSenha,
+    senha_alterada_em: input.trocarSenha ? null : new Date().toISOString(),
+    atualizado_em: new Date().toISOString(),
+  };
+  const gravado = await gravarLinha(sb, input.tabela, acesso.id, campos);
+  if (gravado.error) return { ok: false, error: 'Não foi possível gravar a nova senha do portal.' };
+  return { ok: true, atualizado: true };
+}
