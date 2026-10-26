@@ -75,7 +75,11 @@ export function registerCronRoutes(app: Express): void {
     const comissoes = sb
       ? await sincronizarComissoesTmETorres(sb)
       : { ok: false, error: "supabase_unavailable" };
-    return { maintenance, comissoes };
+    const { checkAndExpireQuotations } = await import("../lib/precificacao/expirarCotacoes");
+    const expiracao = sb
+      ? await checkAndExpireQuotations(sb as never)
+      : { expiradas: false, colunaAusente: false, erro: "supabase_unavailable" };
+    return { maintenance, comissoes, expiracao };
   });
 
   console.log("[Cron] Rotas /api/cron/* registradas (Vercel Cron Jobs).");

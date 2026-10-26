@@ -11,6 +11,8 @@ import {
   montarPayloadTabelaCliente,
   resultadoFromQuoteItems,
 } from '../lib/comercial/tabelaPrecosRegionais';
+import { checkAndExpireQuotations } from '../lib/precificacao/expirarCotacoes';
+import { cotacaoSelecionavel, cotacaoVencida, patchExpiracaoCotacao } from '../lib/precificacao/tabela2027';
 
 interface Props {
   onAdd: () => void;
@@ -85,6 +87,12 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
             }
         }
 
+        try {
+            await checkAndExpireQuotations(supabase as never);
+        } catch (erroExpiracao) {
+            console.warn('[Cotações] expiração:', erroExpiracao);
+        }
+
         const [quotesRes, clientsRes] = await Promise.all([
             quoteQuery,
             supabase.from('clients').select('name, trading_name')
@@ -97,7 +105,13 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
         }
         setClientMap(map);
         setDbStatus('ok');
-        if(quotesRes.data) setQuotes(quotesRes.data as any);
+        if (quotesRes.data) {
+            const agora = new Date();
+            setQuotes((quotesRes.data as Quote[]).map((cotacao) => {
+                const patch = patchExpiracaoCotacao(cotacao, agora);
+                return patch ? { ...cotacao, ...patch } : cotacao;
+            }));
+        }
     } catch(e) { 
         console.error(e);
         setDbStatus('error');
@@ -128,6 +142,10 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
   };
 
   const handleFecharProposta = async (quote: Quote) => {
+    if (!cotacaoSelecionavel(quote)) {
+      showNotification('Cotação indisponível', 'Cotação expirada ou já convertida em OS não entra em nova proposta.', 'warning');
+      return;
+    }
     const resultado = resultadoFromQuoteItems(quote);
     const cliente = String(quote.client_name || clientName || '').trim();
     if (!resultado || !cliente) {
@@ -203,24 +221,28 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
               <tbody className="divide-y divide-gray-100 bg-white">
                 {isLoading ? (<tr><td colSpan={5} className="text-center p-4">Carregando...</td></tr>) : 
                  filtered.length === 0 ? (<tr><td colSpan={5} className="text-center p-4 text-gray-500">Nenhuma cotação encontrada na sua carteira.</td></tr>) :
-                 filtered.map((item) => (
+                 filtered.map((item) => {
+                    const selecionavel = cotacaoSelecionavel(item);
+                    const expirada = !selecionavel && (cotacaoVencida(item) || String(item.status || '').toLowerCase() === 'expirada' || item.is_active === false);
+                    return (
                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      {!embedded && (<td className="pl-10 px-6 py-4"><span className="font-bold text-sm text-gray-900 uppercase">{clientMap[item.client_name] || item.client_name || 'Prospect'}</span>{item.quote_source === 'RAPIDA_REGIONAL' && <span className="ml-2 text-[9px] font-black uppercase text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Rápida</span>}</td>)}
-                      <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs text-gray-600"><div className="flex items-center gap-1.5"><MapPin size={12} className="text-blue-500"/> {item.origin}</div><div className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {item.destination}</div></div></td>
+                      {!embedded && (<td className="pl-10 px-6 py-4"><span className="font-bold text-sm text-gray-900 uppercase">{clientMap[item.client_name] || item.client_name || 'Prospect'}</span>{item.quote_source === 'RAPIDA_REGIONAL' && <span className="ml-2 text-[9px] font-black uppercase text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Rápida</span>}{expirada && <span className="ml-2 text-[9px] font-black uppercase text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">Expirada</span>}{item.converted_to_order_id && <span className="ml-2 text-[9px] font-black uppercase text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">OS {item.converted_to_order_id}</span>}</td>)}
+                      <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs text-gray-600"><div className="flex items-center gap-1.5"><MapPin size={12} className="text-blue-500"/> {item.origin}</div><div className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {item.destination}</div>{embedded && expirada && <span className="w-fit text-[9px] font-black uppercase text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">Expirada</span>}</div></td>
                       <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs font-bold"><div className="flex items-center gap-1.5 text-gray-700">KM: {item.total_km}</div>{canViewValues ? (<div className="flex items-center gap-1.5 text-green-700 bg-green-50 px-2 py-0.5 rounded w-fit"><DollarSign size={12}/> {formatCurrency(item.total_value)}</div>) : (<div className="flex items-center gap-1 text-gray-400 font-normal italic"><Lock size={10} /> Restrito</div>)}</div></td>
                       <td className="pl-10 px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                           {item.quote_source === 'RAPIDA_REGIONAL' && !item.closed_price_table_id && (
+                           {item.quote_source === 'RAPIDA_REGIONAL' && !item.closed_price_table_id && selecionavel && (
                              <button type="button" onClick={() => void handleFecharProposta(item)} disabled={closingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg disabled:opacity-50" data-testid={`btn-fechar-proposta-${item.id}`}>
                                {closingId === item.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Fechar proposta
                              </button>
                            )}
-                           <button onClick={() => onEdit(item.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Pencil size={18} /></button>
+                           <button onClick={() => selecionavel && onEdit(item.id)} disabled={!selecionavel} title={selecionavel ? 'Editar' : 'Cotação expirada ou convertida'} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"><Pencil size={18} /></button>
                            {(isDirector || isCommercial) && (<button onClick={() => handleDelete(item.id)} disabled={isDeleting === item.id} className="p-2 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all">{isDeleting === item.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}</button>)}
                         </div>
                       </td>
                     </tr>
-                 ))}
+                    );
+                 })}
               </tbody>
             </table>
         </div>

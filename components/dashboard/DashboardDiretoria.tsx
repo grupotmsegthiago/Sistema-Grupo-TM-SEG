@@ -37,6 +37,7 @@ import {
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
+import { cotacaoContaComoAberta } from '../../lib/precificacao/tabela2027';
 import {
   buildYearOptions,
   createDefaultPeriod,
@@ -306,7 +307,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const arAp = useMemo(() => buildArApByMonth(data.allTransactions, data.categories), [data.allTransactions, data.categories]);
   const expenseDonut = useMemo(() => buildExpenseDonut(data.transactions, data.categories), [data.transactions, data.categories]);
   const pendingApprovals = useMemo(() => buildPendingApprovals(data.missions, data.refs), [data.missions, data.refs]);
-  const openQuotes = useMemo(() => data.quotes.filter(q => q.status !== 'Aprovada').length, [data.quotes]);
+  const openQuotes = useMemo(() => data.quotes.filter((q) => cotacaoContaComoAberta(q)).length, [data.quotes]);
 
   const alerts = useMemo(
     () => buildCriticalAlerts({

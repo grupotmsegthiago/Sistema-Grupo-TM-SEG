@@ -13,6 +13,8 @@ import {
   getRhReferenceMonth,
 } from './periodUtils';
 import type { DashboardDiretoriaData, DashboardPeriod, DashboardRefs } from './types';
+import { checkAndExpireQuotations } from '../precificacao/expirarCotacoes';
+import { cotacaoVencida } from '../precificacao/tabela2027';
 
 /** Extrai o saldo mais recente por conta a partir da lista de snapshots. */
 function latestBalanceByAccount(
@@ -136,7 +138,15 @@ export function useDashboardDiretoriaData(period: DashboardPeriod): DashboardDir
         return d >= startIso && d <= endIso;
       }));
       setCategories((catRes.data || []) as FinancialCategory[]);
-      setQuotes((quotesRes.data || []) as DashboardDiretoriaData['quotes']);
+      try {
+        await checkAndExpireQuotations(supabase as never);
+      } catch (erroExpiracao) {
+        console.warn('[DashboardDiretoria] expiração de cotação:', erroExpiracao);
+      }
+      const agoraCotacao = new Date();
+      setQuotes(((quotesRes.data || []) as DashboardDiretoriaData['quotes']).map((cotacao) => (
+        cotacaoVencida(cotacao, agoraCotacao) ? { ...cotacao, status: 'expirada' } : cotacao
+      )));
       setQuotesTruncated(!!quotesRes.truncated);
       const accs = (accountsRes.data || []).map((a: any) => ({
         id: String(a.id),

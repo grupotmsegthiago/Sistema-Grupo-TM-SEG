@@ -13,6 +13,7 @@ import {
     ArrowDownRight, Minus, Route, Timer, Package, Eye
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { prepararImagensDoElemento } from '../lib/precificacao/imageUtils';
 import jsPDF from 'jspdf';
 
 const BRAND_PRIMARY = '#9E0032';
@@ -227,6 +228,7 @@ const ClientCommitteePresentation: React.FC<Props> = ({ missions, clientName }) 
         setIsExporting(true);
         try {
             const element = presentationRef.current;
+            await prepararImagensDoElemento(element);
             const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });

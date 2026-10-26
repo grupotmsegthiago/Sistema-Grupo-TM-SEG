@@ -8,6 +8,7 @@ import { createClient, type RealtimeChannel, type SupabaseClient } from "@supaba
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
+import { clienteContratualDhlOuIbl, ehLinhaPadraoRegional, patchEdicaoRegional } from "../lib/precificacao/tabela2027";
 import { preservarParPedagioNoRecalculo } from "../lib/toll/clientTollBilling";
 import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
@@ -922,6 +923,59 @@ export async function registerRoutes(
     } catch (e: any) {
       console.error('[Loss Alert]', e.message);
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch('/api/clients/:clientId/pricing-tables/:id', requireAuth, requireRole('diretoria', 'administrador', 'admin'), async (req: Request, res: Response) => {
+    try {
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
+      const clientId = String(req.params.clientId || '').trim();
+      const rowId = String(req.params.id || '').trim();
+      const corpo = req.body || {};
+      const { data: cliente, error: erroCliente } = await sb.from('clients').select('id, name').eq('id', clientId).maybeSingle();
+      if (erroCliente) return res.status(500).json({ error: erroCliente.message });
+      if (!cliente?.name) return res.status(404).json({ error: 'Cliente não encontrado.' });
+      const { data: linha, error: erroLinha } = await sb.from('client_price_tables').select('id, client, operation_type').eq('id', rowId).maybeSingle();
+      if (erroLinha) return res.status(500).json({ error: erroLinha.message });
+      if (!linha) return res.status(404).json({ error: 'Linha não encontrada.' });
+      if (String(linha.client || '').trim() !== String(cliente.name).trim()) {
+        return res.status(404).json({ error: 'A linha não pertence a este cliente.' });
+      }
+      if (ehLinhaPadraoRegional(String(linha.operation_type || '')) && clienteContratualDhlOuIbl(String(cliente.name))) {
+        return res.status(409).json({ error: 'DHL e IBL permanecem na tabela contratual.' });
+      }
+      const patch = patchEdicaoRegional({
+        id: rowId,
+        clientName: String(cliente.name),
+        ratePerKm: corpo.rate_per_km,
+        extraHourRate: corpo.extra_hour_rate,
+        franchiseKm: corpo.franchise_km,
+        franchiseHours: corpo.franchise_hours,
+        linhas: [{ id: String(linha.id), client: String(linha.client || '') }],
+      });
+      if (!patch.ok) return res.status(400).json({ error: patch.erro });
+      const { data, error } = await sb
+        .from('client_price_tables')
+        .update(patch.payload)
+        .eq('id', patch.id)
+        .eq('client', String(cliente.name))
+        .select('id, client, operation_type, price_per_extra_km, price_per_extra_hour, franchise_km, franchise_hours, activation_fee')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      const usuario = (req as any).user;
+      await sb.from('system_logs').insert([{
+        action_type: 'UPDATE',
+        entity: 'ClientPriceTable',
+        entity_id: patch.id,
+        user_id: usuario?.id || null,
+        user_name: usuario?.name || 'Diretoria',
+        details: `Edição regional de ${cliente.name}: ${linha.operation_type}. KM ${patch.payload.price_per_extra_km}, hora extra ${patch.payload.price_per_extra_hour}, franquia ${patch.payload.franchise_km} km / ${patch.payload.franchise_hours} h.`,
+        created_at: new Date().toISOString(),
+      }]);
+      return res.json({ ok: true, linha: data });
+    } catch (erro: any) {
+      return res.status(500).json({ error: erro?.message || 'Falha ao editar a linha.' });
     }
   });
 

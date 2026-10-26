@@ -15,6 +15,8 @@ import {
 import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
+import { numerosDaCotacaoRegional } from '../../lib/precificacao/tabela2027';
+import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 
 function filtroDoCliente(nome: string): string {
   const limpo = nome.trim().replace(/"/g, '');
@@ -388,6 +390,28 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string }> = ({ clienteNome 
       kmRota,
       tabelaRegiao: tabela,
     });
+    const regional = numerosDaCotacaoRegional({
+      cliente: clienteNome || portal.marca.rotulo,
+      origem,
+      km: kmRota,
+      versao: '2027',
+      linhas: tabelas.map((item) => ({
+        operation_type: item.operacao,
+        price_per_extra_km: item.kmExtra,
+        price_per_extra_hour: item.horaExtra,
+      })),
+      tarifaKmFallback: tabela.kmExtra,
+      horaExtraFallback: tabela.horaExtra,
+      acordada: nova.acordada,
+    });
+    if (regional.aplicar) {
+      nova.acionamento = regional.conta.valor;
+      nova.kmFranquia = regional.conta.kmFaturado;
+      nova.horasFranquia = regional.conta.horasFaturadas;
+      nova.kmExtra = regional.tarifaKm;
+      if (regional.horaExtra != null) nova.horaExtra = regional.horaExtra;
+      if (regional.nome) nova.regiao = regional.nome;
+    }
     setProposta(nova);
     setPasso(0);
     setEtapa('animando');
@@ -525,6 +549,24 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string }> = ({ clienteNome 
             <p className="truncate text-[11px] text-slate-400">{trechoCurto}</p>
           </article>
         </div>
+        <QuoteCalculatorCard
+          cliente={clienteVisual}
+          versao="2027"
+          linhas={tabelas.map((item) => ({
+            operation_type: item.operacao,
+            price_per_extra_km: item.kmExtra,
+            price_per_extra_hour: item.horaExtra,
+          }))}
+          origem={origem}
+          destino={destino}
+          km={kmRota == null ? '' : String(kmRota)}
+          onOrigem={setOrigem}
+          onDestino={setDestino}
+          onKm={() => undefined}
+          tarifaKm={tabela?.kmExtra}
+          horaExtra={tabela?.horaExtra}
+          ocultarCampos
+        />
         <MapaCotacao origem={origem} destino={destino} paradas={paradas.map((item) => item.texto)} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto} />
         <button
           type="button"

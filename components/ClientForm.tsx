@@ -34,11 +34,15 @@ import {
   CHAVE_TABELA_REGIONAL_VIGENTE,
   clienteContratualDhlOuIbl,
   colunaRegionalAusente,
+  ehLinhaPadraoRegional,
   FAIXAS_REGIONAIS,
   montarAplicacaoTabela,
+  patchEdicaoRegional,
   perfilPodeAplicarTabelaRegional,
   type VersaoTabelaRegional,
 } from '../lib/precificacao/tabela2027';
+import QuoteCalculatorCard from './precificacao/QuoteCalculatorCard';
+import ImagemSegura from './ImagemSegura';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -214,6 +218,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [priceSearch, setPriceSearch] = useState<string>('');
   const [tabelaVigencia, setTabelaVigencia] = useState<VersaoTabelaRegional>('2026');
   const [aplicandoTabelaRegional, setAplicandoTabelaRegional] = useState(false);
+  const [cotacaoOrigem, setCotacaoOrigem] = useState('');
+  const [cotacaoDestino, setCotacaoDestino] = useState('');
+  const [cotacaoKm, setCotacaoKm] = useState('');
+  const [linhaRegional, setLinhaRegional] = useState<ClientPriceTable | null>(null);
+  const [regionalForm, setRegionalForm] = useState({ km: '', hora: '', franquiaKm: '100', franquiaHoras: '3' });
+  const [salvandoRegional, setSalvandoRegional] = useState(false);
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clients, setClientsList] = useState<Client[]>([]);
@@ -1019,6 +1029,77 @@ const ClientForm: React.FC<ClientFormProps> = ({
       } finally { setIsSavingPrice(false); }
   };
 
+  const abrirEdicaoRegional = (table: ClientPriceTable) => {
+      if (!podeAplicarTabelaRegional) {
+          showNotification('Sem permissão', 'Somente Diretoria ou Administrador edita a tarifa regional.', 'error');
+          return;
+      }
+      setLinhaRegional(table);
+      setRegionalForm({
+          km: String(table.price_per_extra_km ?? ''),
+          hora: String(table.price_per_extra_hour ?? ''),
+          franquiaKm: String(table.franchise_km ?? 100),
+          franquiaHoras: String(table.franchise_hours ?? 3),
+      });
+  };
+
+  const salvarLinhaRegional = async () => {
+      if (!linhaRegional || !formData.name) return;
+      if (!podeAplicarTabelaRegional) {
+          showNotification('Sem permissão', 'Somente Diretoria ou Administrador edita a tarifa regional.', 'error');
+          return;
+      }
+      if (ehLinhaPadraoRegional(linhaRegional.operation_type) && clienteContratualDhlOuIbl(formData.name)) {
+          showNotification('Tabela contratual', 'DHL e IBL permanecem na tabela já cadastrada.', 'warning');
+          return;
+      }
+      const patch = patchEdicaoRegional({
+          id: linhaRegional.id,
+          clientName: formData.name,
+          ratePerKm: parseCurrency(regionalForm.km),
+          extraHourRate: parseCurrency(regionalForm.hora),
+          franchiseKm: parseCurrency(regionalForm.franquiaKm),
+          franchiseHours: parseCurrency(regionalForm.franquiaHoras),
+          linhas: [{ id: linhaRegional.id, client: formData.name }],
+      });
+      if (!patch.ok) {
+          showNotification('Atenção', patch.erro, 'warning');
+          return;
+      }
+      setSalvandoRegional(true);
+      try {
+          let gravouPelaApi = false;
+          if (id) {
+              const resposta = await authFetch(`/api/clients/${id}/pricing-tables/${linhaRegional.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({
+                      rate_per_km: patch.payload.price_per_extra_km,
+                      extra_hour_rate: patch.payload.price_per_extra_hour,
+                      franchise_km: patch.payload.franchise_km,
+                      franchise_hours: patch.payload.franchise_hours,
+                  }),
+              });
+              if (resposta.ok) gravouPelaApi = true;
+              else if (resposta.status !== 404) {
+                  const corpo = await resposta.json().catch(() => ({}));
+                  throw new Error(corpo.error || 'Não foi possível gravar a linha.');
+              }
+          }
+          if (!gravouPelaApi) {
+              const { error } = await supabase.from('client_price_tables').update(patch.payload).eq('id', patch.id).eq('client', formData.name);
+              if (error) throw new Error(error.message);
+              await logAction('UPDATE', 'ClientPriceTable', patch.id, `Edição regional de ${formData.name} — ${linhaRegional.operation_type}: KM ${patch.payload.price_per_extra_km}, hora extra ${patch.payload.price_per_extra_hour}, franquia ${patch.payload.franchise_km} km / ${patch.payload.franchise_hours} h.`);
+          }
+          showNotification('Linha atualizada', 'A tarifa desta região foi gravada só neste cliente.', 'success');
+          setLinhaRegional(null);
+          await fetchPriceTables(formData.name);
+      } catch (erro) {
+          showNotification('Erro', mensagemDeErro(erro), 'error');
+      } finally {
+          setSalvandoRegional(false);
+      }
+  };
+
   const handleEditPrice = (table: ClientPriceTable) => {
       setEditingPriceId(table.id);
       const parts = table.operation_type.split(' - ');
@@ -1440,7 +1521,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               const { data } = supabase.storage.from('mission-evidence').getPublicUrl(caminho);
                               setFormData((prev) => ({ ...prev, portal_logo_url: data.publicUrl }));
                             }} />
-                            {formData.portal_logo_url && <img src={formData.portal_logo_url} alt="Logotipo do portal" className="h-10 w-auto object-contain" />}
+                            {formData.portal_logo_url && <ImagemSegura src={formData.portal_logo_url} alt="Logotipo do portal" className="h-10 w-auto object-contain" />}
                           </div>
                           <label className="text-xs font-bold text-slate-600">Cor principal
                             <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(formData.portal_cor) ? formData.portal_cor : '#111111'} onChange={(event) => setFormData({ ...formData, portal_cor: event.target.value })} className="mt-1 block h-10 w-full" />
@@ -1967,6 +2048,18 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   </div>
               )}
 
+              <QuoteCalculatorCard
+                  cliente={formData.name}
+                  versao={tabelaVigencia}
+                  linhas={priceTables}
+                  origem={cotacaoOrigem}
+                  destino={cotacaoDestino}
+                  km={cotacaoKm}
+                  onOrigem={setCotacaoOrigem}
+                  onDestino={setCotacaoDestino}
+                  onKm={setCotacaoKm}
+              />
+
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">{editingPriceId ? <Edit size={14}/> : <Plus size={14}/>} {editingPriceId ? 'Editar Regra' : 'Adicionar Nova Regra'}</h4>
                 <form onSubmit={handlePriceSubmit} className="space-y-4">
@@ -2059,11 +2152,44 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                         <span className="text-gray-300 font-bold uppercase text-[8px]">Pendente</span>
                                     )}
                                 </td>
-                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button><button onClick={() => handleEditPrice(table)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit size={12} /></button><button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
+                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button>{ehLinhaPadraoRegional(table.operation_type) && <button type="button" onClick={() => abrirEdicaoRegional(table)} className="px-2 py-1 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50 rounded inline-flex items-center gap-1" title="Editar tarifa regional" data-testid={`button-editar-regional-${table.id}`}><Edit size={12} /> Editar</button>}{!ehLinhaPadraoRegional(table.operation_type) && <button onClick={() => handleEditPrice(table)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit size={12} /></button>}<button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
                             </tr> 
                         ))}
                     </tbody>
                 </table>
+              </div>
+          </div>
+      )}
+      {linhaRegional && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" data-testid="modal-editar-regional">
+              <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                      <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tarifa deste cliente</p>
+                          <h3 className="text-sm font-black uppercase text-gray-900">{linhaRegional.operation_type}</h3>
+                      </div>
+                      <button type="button" onClick={() => setLinhaRegional(null)} className="p-2 text-gray-400 hover:text-gray-700"><X size={16} /></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Valor do KM
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.km} onChange={(evento) => setRegionalForm({ ...regionalForm, km: evento.target.value })} data-testid="input-regional-km" />
+                      </label>
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Hora extra
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.hora} onChange={(evento) => setRegionalForm({ ...regionalForm, hora: evento.target.value })} data-testid="input-regional-hora" />
+                      </label>
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Franquia de KM
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.franquiaKm} onChange={(evento) => setRegionalForm({ ...regionalForm, franquiaKm: evento.target.value })} data-testid="input-regional-franquia-km" />
+                      </label>
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Franquia de horas
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.franquiaHoras} onChange={(evento) => setRegionalForm({ ...regionalForm, franquiaHoras: evento.target.value })} data-testid="input-regional-franquia-horas" />
+                      </label>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => setLinhaRegional(null)} className="px-4 py-2 text-xs font-bold uppercase text-gray-600">Cancelar</button>
+                      <button type="button" onClick={() => { void salvarLinhaRegional(); }} disabled={salvandoRegional} className="px-4 py-2 rounded-lg bg-black text-white text-xs font-black uppercase disabled:opacity-50" data-testid="button-salvar-regional">
+                          {salvandoRegional ? 'Salvando…' : 'Salvar neste cliente'}
+                      </button>
+                  </div>
               </div>
           </div>
       )}

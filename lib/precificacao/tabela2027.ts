@@ -453,3 +453,184 @@ export function camposAoSalvarRota(input: {
   }
   return { route_type: 'esporadica', is_active: true, region: input.region, consumed_in_order_id: null };
 }
+
+export const PRAZO_COTACAO_MS = 30 * 24 * 60 * 60 * 1000;
+
+export type CotacaoPrazo = {
+  id?: string;
+  created_at?: string | null;
+  status?: string | null;
+  is_active?: boolean | null;
+  converted_to_order_id?: string | null;
+};
+
+export function cotacaoConvertida(cotacao: CotacaoPrazo | null | undefined): boolean {
+  if (!cotacao) return false;
+  if (String(cotacao.converted_to_order_id || '').trim()) return true;
+  return String(cotacao.status || '').trim().toLowerCase() === 'convertida';
+}
+
+export function cotacaoVencida(cotacao: CotacaoPrazo | null | undefined, agora = new Date()): boolean {
+  if (!cotacao || cotacaoConvertida(cotacao)) return false;
+  const criada = cotacao.created_at ? new Date(cotacao.created_at) : null;
+  if (!criada || Number.isNaN(criada.getTime())) return false;
+  return agora.getTime() - criada.getTime() > PRAZO_COTACAO_MS;
+}
+
+/** Entra na busca de cotação para nova OS. Convertida não expira, mas não volta para seleção. */
+export function cotacaoSelecionavel(cotacao: CotacaoPrazo | null | undefined, agora = new Date()): boolean {
+  if (!cotacao || cotacaoConvertida(cotacao)) return false;
+  if (cotacao.is_active === false) return false;
+  if (String(cotacao.status || '').trim().toLowerCase() === 'expirada') return false;
+  if (cotacaoVencida(cotacao, agora)) return false;
+  if (!cotacao.created_at) return false;
+  return true;
+}
+
+/** Proposta ainda sem OS e dentro dos 30 dias. Aprovada, convertida e expirada ficam de fora. */
+export function cotacaoContaComoAberta(cotacao: CotacaoPrazo | null | undefined, agora = new Date()): boolean {
+  if (!cotacao || cotacaoConvertida(cotacao)) return false;
+  const status = String(cotacao.status || '').trim().toLowerCase();
+  if (status === 'aprovada' || status === 'expirada') return false;
+  if (cotacao.is_active === false) return false;
+  if (cotacaoVencida(cotacao, agora)) return false;
+  return true;
+}
+
+export type NumerosCotacaoRegional =
+  | { aplicar: false; motivo: 'contratual' | 'acordada' | 'sem_tarifa' | 'sem_km' }
+  | {
+      aplicar: true;
+      conta: CustoViagem;
+      tarifaKm: number;
+      horaExtra: number | null;
+      region: RegiaoTabela | null;
+      nome: string;
+    };
+
+/**
+ * Conta da cotação regional. Rota acordada e cliente DHL/IBL não entram.
+ * Sem a linha TABELA 20xx, usa a tarifa já gravada na região do cliente.
+ */
+export function numerosDaCotacaoRegional(input: {
+  cliente: string;
+  origem: string;
+  km: number;
+  versao: VersaoTabelaRegional;
+  linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }>;
+  tarifaKmFallback?: number | null;
+  horaExtraFallback?: number | null;
+  acordada?: boolean;
+}): NumerosCotacaoRegional {
+  if (input.acordada) return { aplicar: false, motivo: 'acordada' };
+  const local = getRegionFromLocation(input.origem, '', input.cliente);
+  if (local.clienteContratual) return { aplicar: false, motivo: 'contratual' };
+  const lida = tarifaKmParaOrigem({
+    cliente: input.cliente,
+    origem: input.origem,
+    versao: input.versao,
+    linhas: input.linhas,
+  });
+  const fallback = Number(input.tarifaKmFallback);
+  const taxa = lida.tarifaKm != null && Number.isFinite(lida.tarifaKm) && lida.tarifaKm > 0
+    ? lida.tarifaKm
+    : (Number.isFinite(fallback) && fallback > 0 ? fallback : null);
+  const km = Number(input.km);
+  if (taxa == null) return { aplicar: false, motivo: 'sem_tarifa' };
+  if (!Number.isFinite(km) || km < 0) return { aplicar: false, motivo: 'sem_km' };
+  const horaLida = lida.horaExtra != null && Number.isFinite(lida.horaExtra) ? lida.horaExtra : null;
+  const horaFallback = Number(input.horaExtraFallback);
+  return {
+    aplicar: true,
+    conta: calculateTripCost(km, taxa),
+    tarifaKm: taxa,
+    horaExtra: horaLida ?? (Number.isFinite(horaFallback) ? horaFallback : null),
+    region: lida.region,
+    nome: lida.nome || nomeRegiao(lida.region),
+  };
+}
+
+export function patchExpiracaoCotacao(
+  cotacao: CotacaoPrazo,
+  agora = new Date(),
+): { is_active: false; status: 'expirada' } | null {
+  if (!cotacaoVencida(cotacao, agora)) return null;
+  if (cotacao.is_active === false && String(cotacao.status || '').toLowerCase() === 'expirada') return null;
+  return { is_active: false, status: 'expirada' };
+}
+
+export type PatchEdicaoRegional =
+  | {
+      ok: true;
+      id: string;
+      client: string;
+      payload: {
+        price_per_extra_km: number;
+        price_per_extra_hour: number;
+        franchise_km: number;
+        franchise_hours: number;
+        activation_fee: number;
+      };
+    }
+  | { ok: false; erro: string };
+
+/** Devolve o patch de uma única linha. As demais linhas do lote não entram. */
+export function patchEdicaoRegional(input: {
+  id: string;
+  clientName: string;
+  ratePerKm: number;
+  extraHourRate: number;
+  franchiseKm: number;
+  franchiseHours: number;
+  linhas: Array<{ id: string; client?: string | null }>;
+}): PatchEdicaoRegional {
+  const alvo = input.linhas.find((linha) => String(linha.id) === String(input.id));
+  if (!alvo) return { ok: false, erro: 'Linha não encontrada.' };
+  const dono = String(alvo.client || '').trim();
+  const cliente = String(input.clientName || '').trim();
+  if (dono && cliente && dono !== cliente) return { ok: false, erro: 'A linha pertence a outro cliente.' };
+  const km = Number(input.ratePerKm);
+  const hora = Number(input.extraHourRate);
+  const franquiaKm = Number(input.franchiseKm);
+  const franquiaHoras = Number(input.franchiseHours);
+  if (![km, hora, franquiaKm, franquiaHoras].every((n) => Number.isFinite(n) && n >= 0)) {
+    return { ok: false, erro: 'Informe valores numéricos a partir de zero.' };
+  }
+  return {
+    ok: true,
+    id: String(alvo.id),
+    client: dono || cliente,
+    payload: {
+      price_per_extra_km: km,
+      price_per_extra_hour: hora,
+      franchise_km: franquiaKm,
+      franchise_hours: franquiaHoras,
+      activation_fee: roundMoney(franquiaKm * km),
+    },
+  };
+}
+
+export function tarifaKmParaOrigem(input: {
+  cliente: string;
+  origem: string;
+  versao: VersaoTabelaRegional;
+  linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }>;
+}): { contratual: boolean; region: RegiaoTabela | null; nome: string; tarifaKm: number | null; horaExtra: number | null } {
+  const local = getRegionFromLocation(input.origem, '', input.cliente);
+  if (local.clienteContratual) {
+    return { contratual: true, region: null, nome: '', tarifaKm: null, horaExtra: null };
+  }
+  if (!local.region) return { contratual: false, region: null, nome: '', tarifaKm: null, horaExtra: null };
+  const faixa = FAIXAS_REGIONAIS.find((item) => item.region === local.region);
+  if (!faixa) return { contratual: false, region: local.region, nome: '', tarifaKm: null, horaExtra: null };
+  const nome = nomeLinhaPadrao(input.versao, faixa);
+  const linha = input.linhas.find((item) => String(item.operation_type || '').trim().toUpperCase() === nome);
+  if (!linha) return { contratual: false, region: local.region, nome, tarifaKm: null, horaExtra: null };
+  return {
+    contratual: false,
+    region: local.region,
+    nome,
+    tarifaKm: Number(linha.price_per_extra_km),
+    horaExtra: Number(linha.price_per_extra_hour),
+  };
+}

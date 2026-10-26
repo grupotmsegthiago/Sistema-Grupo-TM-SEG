@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Cotação, edição regional e imagens (26/10/2026)
+
+Ainda não publicado. Cotação sem `converted_to_order_id` e com mais de 30 dias recebe `is_active = false` e status `expirada` na listagem, no painel da Diretoria e no cron de manutenção. Cotação já ligada a uma OS não expira e não volta para seleção. A migration `migrations/2026_10_26_cotacoes_validade.sql` não foi executada. Sem as colunas, a lista continua e a tela trata o prazo na memória. Diretoria ou Administrador edita KM, hora extra e franquia da linha `TABELA 2026/2027` pelo `PATCH /api/clients/:clientId/pricing-tables/:id`, gravando só aquele cliente e deixando rastro em `system_logs`. DHL e IBL não recebem essa linha. O cartão `QuoteCalculatorCard` aparece na tabela de preços e no portal. Rota acordada e cliente contratual continuam na conta que já existia. Os demais usam `calculateTripCost`. Antes do PDF e da impressão da proposta, as imagens viram data URL. O motor `calculateMissionFinancials` não foi alterado.
+
 ## Tabela 2027 e rota esporádica (26/10/2026)
 
 Ainda não publicado. A rota ganhou tipo Fixa ou Esporádica, região e o vínculo com a OS que consumiu a esporádica. A conta nova é `calculateTripCost`: até 100 km cobra 100 km e 3 horas; acima disso o km inteiro usa o valor da região e a hora segue o corte de 40 minutos, sem ficar abaixo de 3 horas. DHL e IBL não recebem essa tabela. Guarulhos/SP cai em Sudeste SP/RJ e Belo Horizonte/MG em Sudeste MG/ES. O botão Aplicar valor por região fica só para Diretoria e Administrador, grava a vigência em `system_settings` e só mexe nas linhas `TABELA 2026/2027`. O motor `calculateMissionFinancials` não foi alterado. A migration não foi executada. Sem as colunas novas, a OS e a rota continuam gravando e a tela avisa.

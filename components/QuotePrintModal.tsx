@@ -5,6 +5,8 @@ import { Quote } from '../types';
 import { supabase } from '../lib/supabase';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { prepararImagensDoElemento } from '../lib/precificacao/imageUtils';
+import ImagemSegura from './ImagemSegura';
 
 interface Props {
   quote: Quote;
@@ -102,6 +104,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
         const element = document.getElementById('print-area');
         if (!element) return;
 
+        await prepararImagensDoElemento(element);
         const canvas = await html2canvas(element, {
             scale: 2,
             useCORS: true,
@@ -252,7 +255,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                 
                 <div className="flex justify-between items-start mb-12 border-b border-gray-100 pb-8">
                     <div className="space-y-4 max-w-[60%]">
-                        <img src="/logo.png" alt="TMSEG" className="h-16 object-contain" />
+                        <ImagemSegura src="/logo.png" alt="TMSEG" className="h-16 object-contain" />
                         <div className="mt-2">
                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Destinatário:</p>
                             <h2 className="text-lg font-black text-slate-900 uppercase leading-tight">

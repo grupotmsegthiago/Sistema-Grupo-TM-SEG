@@ -16,6 +16,7 @@ import { ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import html2canvas from 'html2canvas';
+import { prepararImagensDoElemento } from '../lib/precificacao/imageUtils';
 import { jsPDF } from 'jspdf';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -193,6 +194,7 @@ const CommercialProposalModal: React.FC<Props> = ({
 
         for (let i = 0; i < pages.length; i++) {
             const page = pages[i] as HTMLElement;
+            await prepararImagensDoElemento(page);
             
             // CONFIGURAÇÃO DE ALTA RESOLUÇÃO (4x Scale para 300 DPI+)
             const canvas = await html2canvas(page, { 

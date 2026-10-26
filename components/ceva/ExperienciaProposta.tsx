@@ -14,6 +14,8 @@ import {
 import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
 import { authFetch } from '../../lib/authFetch';
+import { prepararImagensDoElemento } from '../../lib/precificacao/imageUtils';
+import ImagemSegura from '../ImagemSegura';
 import { CenaRotaVisual } from './ClientTruckVisual';
 import { usePortalCliente } from './portalMarca';
 
@@ -36,10 +38,6 @@ function imprimirPropostaOnline(): boolean {
   const copia = artigo.cloneNode(true) as HTMLElement;
   copia.querySelector('[data-proposta-acoes]')?.remove();
   copia.querySelector('[aria-label="Fechar"]')?.remove();
-  copia.querySelectorAll('img').forEach((img) => {
-    const src = img.getAttribute('src') || '';
-    if (src.startsWith('/')) img.src = `${window.location.origin}${src}`;
-  });
   janela.document.open();
   janela.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Proposta Grupo TM SEG</title></head><body></body></html>');
   janela.document.close();
@@ -49,9 +47,8 @@ function imprimirPropostaOnline(): boolean {
   const ajuste = janela.document.createElement('style');
   ajuste.textContent = '@page{size:A4;margin:8mm}html,body{margin:0;background:#fff!important}#proposta-tmseg-online,#proposta-tmseg-online [data-proposta-corpo]{height:auto!important;max-height:none!important;overflow:visible!important;box-shadow:none!important}#proposta-tmseg-online{width:100%!important;max-width:none!important;border-radius:0!important}figure,section{break-inside:avoid}';
   janela.document.head.appendChild(ajuste);
-  janela.document.body.appendChild(copia);
-  const imagens = [...janela.document.images];
-  Promise.all(imagens.map((img) => (img.complete ? Promise.resolve() : new Promise((resolver) => { img.onload = () => resolver(null); img.onerror = () => resolver(null); })))).then(() => {
+  void prepararImagensDoElemento(copia).then(() => {
+    janela.document.body.appendChild(copia);
     janela.focus();
     janela.print();
   });
@@ -158,7 +155,7 @@ export const ExperienciaProposta: React.FC<{
           <div data-proposta-corpo className="min-h-0 flex-1 overflow-auto">
             <header className="relative overflow-hidden bg-[#0c0d10] px-8 pb-10 pt-8 text-white sm:px-12">
               <div className="pointer-events-none absolute -right-10 top-8 h-56 w-56 rounded-full bg-[#d0121a]/30 blur-3xl" />
-              <img src="/marca-grupotmseg.webp" alt="Grupo TM SEG" className="h-14 w-auto" />
+              <ImagemSegura src="/marca-grupotmseg.webp" alt="Grupo TM SEG" className="h-14 w-auto" />
               <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Proposta comercial</p>
               <h2 className="mt-3 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl" style={{ fontFamily: 'Oswald, sans-serif' }}>{caminho}</h2>
               <p className="mt-4 text-sm text-white/70">{regiaoLegivel(proposta.regiao)} · {data}</p>

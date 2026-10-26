@@ -338,7 +338,9 @@ export interface Quote {
   total_value: number;
   created_at: string;
   created_by: string;
-  status: 'Rascunho' | 'Enviada' | 'Aprovada';
+  status: 'Rascunho' | 'Enviada' | 'Aprovada' | 'expirada' | 'convertida';
+  is_active?: boolean | null;
+  converted_to_order_id?: string | null;
   items?: QuoteItem[]; 
   contract_details?: string;
   quote_source?: 'ROTA' | 'RAPIDA_REGIONAL';
