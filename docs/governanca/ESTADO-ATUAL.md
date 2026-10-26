@@ -1,8 +1,8 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. O botão Ver PDF do histórico usa o mesmo desenho do Salvar em PDF. A proposta salva fica fora da tela e, na hora da foto, volta para a esquerda da janela. O PDF é uma imagem do artigo inteiro, cortada só no vão entre as faixas, então os cards lado a lado não viram página cheia e nenhum bloco parte no meio. Se o artigo não montar, a janela "Gerando o PDF" fecha e a tela avisa. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O botão Ver PDF do histórico usa o mesmo desenho do Salvar em PDF. A proposta salva fica fora da tela e, na hora da foto, volta para a esquerda da janela. O PDF é uma imagem do artigo inteiro, cortada só no vão entre as faixas, então os cards lado a lado não viram página cheia e nenhum bloco parte no meio. Se o artigo não montar, a janela "Gerando o PDF" fecha e a tela avisa. O motor da OS não mudou.
 
-Atualizado em 2026-10-26. O PDF único da cotação foi codificado depois da aprovação do fluxo. Ver PDF, Salvar em PDF, o preview e os dois e-mails passam pelo mesmo desenho: cada bloco entra inteiro na folha, com `page-break-inside: avoid`. O mapa ao vivo espera o `idle` e enquadra a origem e o destino com folga à esquerda do painel. O mapa estático usa `visible` para o meio do trecho ficar no centro. A proposta mostra `Tabela: Origem x Destino (2026-)` ou `(2027-)`, e a OS nascida da cotação grava esses nomes no snapshot que já existia. Sem marca, fica 2026. Linha de preço já gravada não é renomeada. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O PDF único da cotação foi codificado depois da aprovação do fluxo. Ver PDF, Salvar em PDF, o preview e os dois e-mails passam pelo mesmo desenho: cada bloco entra inteiro na folha, com `page-break-inside: avoid`. O mapa ao vivo espera o `idle` e enquadra a origem e o destino com folga à esquerda do painel. O mapa estático usa `visible` para o meio do trecho ficar no centro. A proposta mostra `Tabela: Origem x Destino (2026-)` ou `(2027-)`, e a OS nascida da cotação grava esses nomes no snapshot que já existia. Sem marca, fica 2026. Linha de preço já gravada não é renomeada. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Em Liberar uma pessoa, cada linha ganhou Editar e, no analista, Remover. Administrador não remove administrador. Editar grava nome, e-mail e perfil na mesma pessoa, sem senha nova. O bloqueio e a reativação continuam. O motor da OS não mudou.
 
@@ -34,7 +34,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Publicação de 26/10/2026 na `main`, projeto `sistema-grupo-tm-seg`, commit `03484557`: Editar e Remover na lista de pessoas do portal, Redefinir senha com o texto de usuário novo, e o print do mapa na proposta. A unificação anterior (Tabela 2027, rota, Nova Rota, fuso e gate) continua. A tarifa duplicada do portal não entrou. O PDF único foi codificado depois, nesta branch, e ainda não está nesta publicação |
+| Produção agora | Publicação de 26/10/2026 na `main`, projeto `sistema-grupo-tm-seg`. O PDF único da cotação e o Ver PDF do histórico entram nesta publicação (código em `6b817d6c`): a mesma folha do Salvar em PDF, mapa centrado em A e B, sufixo `(2026-)` ou `(2027-)`. Continuam Editar e Remover, Redefinir senha e o print do mapa, a partir de `03484557`. A tarifa duplicada do portal não entrou. O motor da OS não mudou |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
