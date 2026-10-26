@@ -1,5 +1,13 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Senha por e-mail e WhatsApp do usuário de cliente (26/10/2026)
+
+Ainda não publicado. O clique em Enviar nova senha por e-mail respondia texto puro 500 (`FUNCTION_INVOCATION_FAILED`) porque `api/password-reset-*.ts` importava `lib/passwordReset.ts`, e o import sem extensão derrubava a função na Vercel antes do SMTP. As três rotas agora carregam `api/_password-reset-core.cjs`. No localhost, sem token a rota responde 401 JSON; com telefone inválido, 400 JSON. O handler da função, carregado pelo bundle, faz o mesmo.
+
+Na ficha do usuário de cliente entrou o botão Redefinir senha e enviar no WhatsApp. Ele gera a senha, envia no número informado e só então grava. Se o bot estiver desconectado, a senha atual permanece. Quem entra pelo portal recebe a senha nova com troca obrigatória. O link do e-mail, quando a pessoa define a senha, também grava essa senha no portal.
+
+Não houve escrita no banco nesta sessão. O conector Supabase desta sessão não é o da TM SEG. A coluna `ceva_portal_usuarios.senha_alterada_em` não existe; a gravação segue sem ela. `trocar_senha` existe.
+
 ## Tabela da mesma rota (22/10/2026)
 
 Publicado nesta entrega. A criação olhava as últimas OS do cliente, de qualquer rota. Guarulhos–Serra acabava em Guarulhos–Aparecida de Goiânia e o fornecedor caía na faixa de 1000KM. A consulta do histórico pedia `original_client_name`, coluna que não existe, e voltava vazia. Agora entram as 10 mais recentes da mesma cidade de origem e de destino. A tabela que mais se repetiu é a selecionada, no cliente e no fornecedor daquela OS. No localhost, DHL Guarulhos–Serra com a TORRES ficou em SUDESTE - GUARULHOS-SERRA 758KM e 800KM. Vale para a OS nova, o portal e a auditoria sem valor gravado. OS aprovada ou já faturada não muda.

@@ -108,6 +108,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
   const [isSendingReset, setIsSendingReset] = useState(false);
+  const [isSendingWhatsapp, setIsSendingWhatsapp] = useState(false);
+  const [whatsappDestino, setWhatsappDestino] = useState('');
   const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string; link?: string; rotulo?: string; manteveSenha?: boolean } | null>(null);
   const [acessoPortal, setAcessoPortal] = useState(false);
   const [perfilPortal, setPerfilPortal] = useState<PerfilCeva>('analista');
@@ -855,7 +857,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   {id && formData.email && (
                       <button
                         type="button"
-                        disabled={isSendingReset}
+                        disabled={isSendingReset || isSendingWhatsapp}
                         onClick={async () => {
                           if (!confirm(`Enviar e-mail de redefinição de senha para ${formData.email}?`)) return;
                           setIsSendingReset(true);
@@ -868,12 +870,12 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                             });
                             const data = await parseJsonResponse(res);
                             if (res.ok && data.success) {
-                              showNotification('success', 'E-mail de redefinição enviado com sucesso!');
+                              showNotification('E-mail', 'E-mail de redefinição enviado com sucesso!', 'success');
                             } else {
-                              showNotification('error', data.error || 'Falha ao enviar e-mail');
+                              showNotification('E-mail', data.error || 'Falha ao enviar e-mail', 'error');
                             }
                           } catch (err: any) {
-                            showNotification('error', 'Erro ao enviar e-mail: ' + err.message);
+                            showNotification('E-mail', 'Erro ao enviar e-mail: ' + err.message, 'error');
                           } finally {
                             setIsSendingReset(false);
                           }
@@ -884,6 +886,58 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                         {isSendingReset ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
                         Enviar nova senha por e-mail
                       </button>
+                  )}
+                  {id && userType === 'client' && (
+                      <div className="mt-3 space-y-2">
+                          <label className={LABEL_CLASS}>WhatsApp da pessoa</label>
+                          <div className="relative">
+                              <input
+                                  type="tel"
+                                  className={INPUT_CLASS}
+                                  placeholder="(11) 99999-9999"
+                                  value={whatsappDestino}
+                                  onChange={(e) => setWhatsappDestino(e.target.value)}
+                                  data-testid="input-whatsapp-senha"
+                              />
+                              <MessageCircle size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          </div>
+                          <button
+                              type="button"
+                              disabled={isSendingWhatsapp || isSendingReset}
+                              data-testid="button-reset-password-whatsapp"
+                              onClick={async () => {
+                                  const digitos = whatsappDestino.replace(/\D/g, '');
+                                  if (digitos.length < 10) {
+                                      showNotification('WhatsApp', 'Informe o WhatsApp com DDD.', 'error');
+                                      return;
+                                  }
+                                  if (!confirm(`Redefinir a senha de ${formData.name || 'este usuário'} e enviar a nova senha no WhatsApp ${whatsappDestino}? No próximo acesso a troca será obrigatória.`)) return;
+                                  setIsSendingWhatsapp(true);
+                                  try {
+                                      const res = await authFetch('/api/password-reset/request', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ userId: id, canal: 'whatsapp', telefone: whatsappDestino }),
+                                      });
+                                      const data = await parseJsonResponse(res);
+                                      if (res.ok && data.success) {
+                                          showNotification('WhatsApp', data.message || 'Nova senha enviada no WhatsApp.', 'success');
+                                      } else {
+                                          showNotification('WhatsApp', data.error || 'Falha ao enviar a senha no WhatsApp', 'error');
+                                      }
+                                  } catch (err: any) {
+                                      showNotification('WhatsApp', 'Erro ao enviar no WhatsApp: ' + err.message, 'error');
+                                  } finally {
+                                      setIsSendingWhatsapp(false);
+                                  }
+                              }}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors uppercase tracking-wider disabled:opacity-50"
+                          >
+                              {isSendingWhatsapp ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+                              Redefinir senha e enviar no WhatsApp
+                          </button>
+                          <p className="text-[10px] text-gray-500">Gera uma senha nova, manda neste WhatsApp e pede a troca assim que a pessoa acessar de novo.</p>
+                      </div>
                   )}
               </div>
           </div>
