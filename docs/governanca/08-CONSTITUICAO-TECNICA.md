@@ -14,6 +14,8 @@ Valor aprovado ou faturado não é recalculado em silêncio. Override manual aut
 
 Franquia, KM, hora, pedágio, excedente e regra contratual saem da tabela vinculada ao cliente ou ao fornecedor (decisão em produção no PR #344). Não hardcodar tarifa nova ao lado dessa tabela.
 
+**Padrão Temporal Oficial:** Todas as datas e horários exibidos no portal, relatórios, PDFs e persistidos no banco devem operar sob o fuso horário oficial `America/Sao_Paulo` (Horário de Brasília). É obrigatório o formato de 24 horas (`HH:mm`, ex.: 14:30), sendo expressamente vedado o uso do formato AM/PM. Datas devem sempre seguir o formato brasileiro `DD/MM/AAAA`.
+
 ## Artigo 3 — Uma fonte
 
 Antes de tabela, RPC, rota ou integração nova, a sessão procura a fonte única e registra por que a existente não serve. Writers paralelos já conhecidos (browser e service role em `missions`) não são “corrigidos” por um terceiro escritor. A Fase 3 é que escolhe o escritor único, se for autorizada.

@@ -36,6 +36,15 @@ Nunca diga "pronto" ou "publicado" sem evidencia de que testou.
 ### Testes automatizados (se existirem para o escopo)
 - `bash scripts/run-tests.sh` ou `node --test` nos arquivos `*.test.ts` / `*.test.tsx` relacionados
 
+### Smoke check antes de sinalizar a publicacao
+
+Antes de dizer que a alteracao pode ser publicada, a IA executa este protocolo minimo e so segue se cada item do escopo passar:
+
+1. `GET /api/health` respondendo 200 OK.
+2. Integridade de build: `npm run build` termina sem erro.
+3. Testes do escopo alterado. Exemplo: scripts de cotacao e da tabela 2027 quando a mudanca mexe em precos.
+4. Diagnostico basico de e-mail com `scripts/email-health-check.ts` sempre que a alteracao envolver notificacao ou faturamento.
+
 ### Publicacao (so quando o usuario pedir publicar)
 - Apos `publicar.ps1`: aguardar deploy Vercel
 - Verificar site em producao (HTML + tela de login sem erro)

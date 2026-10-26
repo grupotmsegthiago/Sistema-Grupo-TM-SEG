@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Homologados na `main`, no projeto sistema-grupo-tm-seg: a Tabela 2027, as rotas regionais e o menu de ações da cotação, com envio da proposta por e-mail e inativação. O padrão temporal oficial fica em `America/Sao_Paulo` (Horário de Brasília), hora em 24h (`HH:mm`, sem AM/PM) e data em `DD/MM/AAAA`, no portal, nos relatórios, nos PDFs e no que for persistido. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou no localhost as colunas de KM e hora extra, o menu de ações e o painel do mapa. O histórico da cotação mostra Valor KM e Hora Extra do snapshot, e o menu de ações inativa, exclui, devolve a rota ao formulário e envia o PDF por e-mail. Inativar grava status Inativa e is_active falso. Excluir grava status Excluida, sem coluna deleted_at e sem migration. As duas ações ficam com administrador, diretoria ou o autor, e geram system_logs. O mapa da cotação ganhou o painel Informações da Rota com os dados da rota que está na tela, o caminhão sobre o traçado e o botão Gerar proposta dentro do card. O PDF preview não grava cotação. As rotas novas estão no Express que já existe. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou Salvador, BA → São Paulo, SP: a rota traçou, o botão Gerar proposta liberou e o PDF mostrou o mapa estático e o caminhão 3D. Na cotação, origem e destino aceitam a lista do Google e, se a pessoa só digitar a cidade e a UF, o Geocoder completa a coordenada. O mapa ao vivo usa o tema escuro, pinos A e B e a carreta 3D que já está em /caminhoes/3d, com o logotipo do cliente no baú. O PDF pede o mapa estático em POST /api/proposta-escolta/mapa, no Express que já existe, e grava a imagem em Base64. Não há função nova na Vercel nem migration. A rota administrativa exige origem, destino e km antes de gravar; não existe coluna de duração. O motor da OS não mudou.
@@ -12,7 +14,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Histórico da cotação com Valor KM, Hora Extra, menu de ações e painel da rota, na `main`, projeto `sistema-grupo-tm-seg`. A rota Salvador–São Paulo, a vigência regional, a Tabela 2027 e a senha por e-mail e WhatsApp continuam nessa mesma `main` |
+| Produção agora | Histórico da cotação com Valor KM, Hora Extra, menu de ações e painel da rota, na `main`, projeto `sistema-grupo-tm-seg`. A Tabela 2027, as rotas regionais, o envio da proposta por e-mail e a inativação estão homologados nessa mesma `main`. O fuso oficial é `America/Sao_Paulo`, em 24h |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
