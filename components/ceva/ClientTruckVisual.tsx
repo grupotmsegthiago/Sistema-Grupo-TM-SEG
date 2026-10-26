@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { logoConhecido, type CenaVisual } from '../../lib/portalCliente/frotaVisual';
 
 const CARRETAS: Record<string, string> = {
   ceva: '/caminhoes/3d/ceva-recorte.webp',
@@ -7,6 +8,13 @@ const CARRETAS: Record<string, string> = {
 };
 
 const GENERICA = '/caminhoes/3d/generico-recorte.webp';
+
+/** A mesma cena do botão, do PDF, do e-mail e do link: mapa estático e a carreta do cliente. */
+export function cenaDaProposta(cliente: string, mapa: string | null | undefined): CenaVisual | null {
+  if (!mapa || !mapa.startsWith('data:image/')) return null;
+  const logo = logoConhecido(cliente);
+  return { mapa, carreta: carretaDoCliente(cliente), logo, sobreporLogo: Boolean(logo) };
+}
 
 /** Usa a carreta já gravada no projeto. A imagem nova, quando existe, chega pela prop src. */
 export function carretaDoCliente(nome: string): string {

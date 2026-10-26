@@ -176,16 +176,13 @@ export function registerCevaPortalRoutes(app: Express): void {
       return;
     }
     try {
-      const referer = refererDoMapa(String(req.headers.origin || req.headers.referer || ''));
-      const resposta = await fetch(url, { headers: { Referer: referer } });
-      const tipo = String(resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-      const buffer = Buffer.from(await resposta.arrayBuffer());
-      if (!resposta.ok || !tipo.startsWith('image/') || buffer.length < 8000) {
+      const mapa = await imagemDoMapa(url, String(req.headers.origin || req.headers.referer || ''));
+      if (!mapa) {
         res.status(502).json({ error: 'O mapa estático não veio como imagem.' });
         return;
       }
       res.setHeader('Cache-Control', 'private, no-store');
-      res.status(200).json({ mapa: `data:${tipo};base64,${buffer.toString('base64')}` });
+      res.status(200).json({ mapa });
     } catch (error) {
       console.error('[proposta-escolta] mapa', error instanceof Error ? error.message : error);
       res.status(502).json({ error: 'O mapa estático não respondeu.' });
@@ -222,8 +219,41 @@ export function registerCevaPortalRoutes(app: Express): void {
     }
     const resultado = await lerPropostaPublica(banco, String(req.params.id || ''), String(req.params.token || ''), new Date());
     res.setHeader('Cache-Control', 'private, no-store');
-    res.status(resultado.status).json(resultado.corpo);
+    if (resultado.status !== 200 || !('proposta' in resultado.corpo) || !resultado.corpo.proposta) {
+      res.status(resultado.status).json(resultado.corpo);
+      return;
+    }
+    const proposta = resultado.corpo.proposta as { origem?: string; destino?: string; paradas?: string[] };
+    const mapa = await mapaPorEndereco(String(proposta.origem || ''), String(proposta.destino || ''), Array.isArray(proposta.paradas) ? proposta.paradas : [], String(req.headers.origin || req.headers.referer || ''));
+    res.status(200).json({ ...resultado.corpo, mapa });
   });
+}
+
+async function imagemDoMapa(url: string, origem: string): Promise<string | null> {
+  const { refererDoMapa } = await import('../lib/portalCliente/rotaCotacao.js');
+  const resposta = await fetch(url, { headers: { Referer: refererDoMapa(origem) } });
+  const tipo = String(resposta.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  const buffer = Buffer.from(await resposta.arrayBuffer());
+  if (!resposta.ok || !tipo.startsWith('image/') || buffer.length < 8000) return null;
+  return `data:${tipo};base64,${buffer.toString('base64')}`;
+}
+
+async function mapaPorEndereco(origem: string, destino: string, paradas: string[], referer: string): Promise<string | null> {
+  const { urlMapaPorEnderecos } = await import('../lib/portalCliente/frotaVisual.js');
+  const { chaveDoMapaNoServidor } = await import('../lib/portalCliente/rotaCotacao.js');
+  const url = urlMapaPorEnderecos({
+    origem,
+    destino,
+    paradas: paradas.map((item) => String(item || '')).filter(Boolean).slice(0, 6),
+    chave: chaveDoMapaNoServidor(process.env),
+  });
+  if (!url) return null;
+  try {
+    return await imagemDoMapa(url, referer);
+  } catch (error) {
+    console.error('[proposta-publica] mapa', error instanceof Error ? error.message : error);
+    return null;
+  }
 }
 
 function bancoDoLink(sb: { from: (tabela: string) => any }) {

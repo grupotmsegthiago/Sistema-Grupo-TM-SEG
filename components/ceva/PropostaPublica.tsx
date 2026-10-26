@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { ExperienciaProposta } from './ExperienciaProposta';
+import { cenaDaProposta } from './ClientTruckVisual';
 import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
 
 type Vista = {
   cliente: string;
   validade: string;
   proposta: PropostaPortal;
+  mapa: string | null;
 };
 
 /** Quem recebe o link vê só esta proposta. Não há menu, login nem outras telas. */
@@ -25,6 +27,7 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
           cliente: String(corpo.cliente || ''),
           validade: String(corpo.validade || ''),
           proposta: corpo.proposta as PropostaPortal,
+          mapa: typeof corpo.mapa === 'string' ? corpo.mapa : null,
         });
       } catch (falha) {
         if (ativo) setErro(falha instanceof Error ? falha.message : 'Link inválido ou vencido.');
@@ -60,6 +63,7 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
       validadeTexto={vista.validade}
       proposta={vista.proposta}
       clienteInterno={vista.cliente}
+      cena={cenaDaProposta(vista.cliente, vista.mapa)}
       pedido={{
         regiao: vista.proposta.regiao,
         origem: vista.proposta.origem,

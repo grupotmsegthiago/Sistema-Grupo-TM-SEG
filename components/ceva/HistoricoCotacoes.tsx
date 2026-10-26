@@ -33,6 +33,7 @@ import {
 } from '../../lib/portalCliente/historicoCotacoes';
 import { SeletorVigencia } from '../precificacao/SeletorVigencia';
 import { ExperienciaProposta } from './ExperienciaProposta';
+import { cenaDaProposta } from './ClientTruckVisual';
 import { usePortalCliente } from './portalMarca';
 
 const COLUNAS = 'id, client_id, client_name, origin, destination, total_km, total_hours, total_value, created_at, created_by, status, is_active, converted_to_order_id, contract_details';
@@ -716,8 +717,8 @@ export const HistoricoCotacoes: React.FC<{
           mostrando
           proposta={propostaCaptura}
           pedido={{ regiao: propostaCaptura.regiao, origem: linhaCaptura.origin, destino: linhaCaptura.destination, paradas: propostaCaptura.paradas, km: linhaCaptura.total_km }}
-          clienteInterno={clienteNome}
-          printMapa={mapaCaptura}
+          clienteInterno={clienteNome || linhaCaptura.client_name}
+          cena={cenaDaProposta(linhaCaptura.client_name || clienteNome || '', mapaCaptura)}
           marcaPdf="historico"
           dataTexto={dataLongaCotacao(linhaCaptura.created_at)}
           onFechar={() => setCaptura(null)}

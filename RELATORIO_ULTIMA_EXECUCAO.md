@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. O link público da proposta monta a mesma cena do PDF: mapa estático da rota e a carreta do cliente. O histórico, ao gerar PDF ou e-mail, usa essa mesma cena.
+
 Executado em 26/10/2026. O histórico da mesma rota passa a mostrar a faixa, a tarifa e o total do card. A gravação nova e a linha antiga dessa rota deixam de usar a tabela genérica SUDESTE. O motor da OS não mudou.
 
 Executado em 26/10/2026 a partir do pedido de link temporário. O botão Link de visualização copia um endereço válido por 10 dias. A página `/proposta/v/` mostra só a proposta e não entra no sistema. O token fica em `contract_details` da cotação do portal. Cotação em texto livre não é reescrita. Ainda não foi publicado. O motor da OS não mudou.

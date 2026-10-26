@@ -25,6 +25,7 @@ import { listarHistoricoCotacoes, registrarCotacaoPortal } from '../lib/portalCl
 import { AcoesDaLinha, HistoricoVazio } from '../components/ceva/HistoricoCotacoes';
 import { escalaDaCaptura } from '../components/ceva/abrirPdfCotacao';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
+import { cenaDaProposta } from '../components/ceva/ClientTruckVisual';
 
 const AGORA = new Date('2026-10-26T15:00:00.000Z');
 
@@ -405,6 +406,32 @@ describe('histórico de cotações do portal', () => {
     assert.match(html, /1\.986 km/);
     assert.match(html, /1609 min/);
     assert.ok(html.split('data-proposta-bloco').length - 1 >= 6);
+    const cena = cenaDaProposta('CEVA LOGISTICS', 'data:image/png;base64,iVBORw0KGgo=');
+    assert.equal(cena?.carreta, '/caminhoes/3d/ceva-recorte.webp');
+    const comMapa = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
+      frase: '',
+      mostrando: true,
+      somenteLeitura: true,
+      proposta: {
+        acordada: false,
+        regiao: 'SUDESTE MG/ES',
+        origem: 'Vitória, ES',
+        destino: 'São Paulo, SP',
+        paradas: [],
+        acionamento: 6880.25,
+        kmFranquia: 100,
+        horasFranquia: 3,
+        kmExtra: 7.3,
+        horaExtra: 169,
+        operacao: 'SUDESTE MG/ES',
+      },
+      pedido: { regiao: 'SUDESTE MG/ES', origem: 'Vitória, ES', destino: 'São Paulo, SP', paradas: [], km: 942.5 },
+      cena,
+      onFechar: () => undefined,
+    }));
+    assert.match(comMapa, /data-proposta-mapa="1"/);
+    assert.match(comMapa, /\/caminhoes\/3d\/ceva-recorte\.webp/);
+    assert.match(comMapa, /Mapa da rota calculada no Google/);
     const tela = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
       frase: '',
       mostrando: true,
