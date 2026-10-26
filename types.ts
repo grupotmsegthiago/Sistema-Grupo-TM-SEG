@@ -283,6 +283,10 @@ export interface ClientRoute {
   client: string;
   stops?: string[];
   toll_cost?: number;
+  route_type?: 'fixa' | 'esporadica' | null;
+  is_active?: boolean | null;
+  region?: string | null;
+  consumed_in_order_id?: string | null;
 }
 
 export interface QuoteItem {

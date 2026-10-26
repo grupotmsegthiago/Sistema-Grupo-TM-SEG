@@ -8,6 +8,15 @@ import { useLoadScript, Autocomplete, GoogleMap, DirectionsRenderer } from '@rea
 import { googleMapsLoadConfig } from '../lib/maps';
 import { calculateDistance } from '../lib/utils';
 import { useNotification } from '../lib/NotificationContext';
+import {
+  camposAoSalvarRota,
+  colunaRegionalAusente,
+  extrairCep,
+  getRegionFromLocation,
+  nomeRegiao,
+  type ResultadoRegiao,
+  type TipoRota,
+} from '../lib/precificacao/tabela2027';
 
 declare const google: any;
 
@@ -59,6 +68,9 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
   const [formData, setFormData] = useState({
     name: '', client: '', origin: '', destination: '', distance: '', code: '', price: ''
   });
+  const [routeType, setRouteType] = useState<'' | TipoRota>('');
+  const [regionInfo, setRegionInfo] = useState<ResultadoRegiao | null>(null);
+  const [rotaConsumidaId, setRotaConsumidaId] = useState<string | null>(null);
 
   const [autoName, setAutoName] = useState(true);
   const [coords, setCoords] = useState<{ origin: { lat: number; lng: number } | null; destination: { lat: number; lng: number } | null; waypoints: { lat: number; lng: number }[]; }>({ origin: null, destination: null, waypoints: [] });
@@ -86,6 +98,14 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
             const { data } = await supabase.from('client_routes').select('*').eq('id', id).single();
             if (data) {
                 setFormData({ name: data.name, client: data.client, origin: data.origin, destination: data.destination, distance: data.distance, code: data.code || '000', price: data.toll_cost ? data.toll_cost.toFixed(2) : '' });
+                setRouteType(data.route_type === 'esporadica' ? 'esporadica' : data.route_type === 'fixa' ? 'fixa' : '');
+                setRotaConsumidaId(data.consumed_in_order_id || null);
+                const calculada = getRegionFromLocation(data.origin || '', '', data.client || '');
+                if (!calculada.region && data.region && !calculada.clienteContratual) {
+                    setRegionInfo({ ...calculada, region: data.region, aplicaPrecificacaoRegional: true, motivo: 'uf' });
+                } else {
+                    setRegionInfo(calculada);
+                }
                 setAutoName(false);
             }
         } else {
@@ -104,7 +124,16 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
       let place: any;
       if (type === 'origin') {
           place = originRef.current?.getPlace();
-          if (place?.geometry) { const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }; setFormData(prev => ({ ...prev, origin: place.formatted_address || '' })); setCoords(prev => ({ ...prev, origin: loc })); }
+          if (place?.geometry) {
+              const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+              const endereco = place.formatted_address || '';
+              setFormData(prev => ({ ...prev, origin: endereco }));
+              setCoords(prev => ({ ...prev, origin: loc }));
+              const componentes = place.address_components || [];
+              const uf = componentes.find((c: any) => (c.types || []).includes('administrative_area_level_1'))?.short_name || '';
+              const cidade = componentes.find((c: any) => (c.types || []).includes('locality') || (c.types || []).includes('administrative_area_level_2'))?.long_name || '';
+              setRegionInfo(getRegionFromLocation(cidade || endereco, uf, formData.client));
+          }
       } else if (type === 'destination') {
           place = destRef.current?.getPlace();
           if (place?.geometry) { const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }; setFormData(prev => ({ ...prev, destination: place.formatted_address || '' })); setCoords(prev => ({ ...prev, destination: loc })); }
@@ -144,17 +173,55 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
 
   useEffect(() => { if (formData.origin && formData.destination && formData.client && isLoaded) { const timer = setTimeout(() => calculateRouteAndName(), 800); return () => clearTimeout(timer); } }, [formData.origin, formData.destination, formData.client, waypoints, isLoaded]);
 
+  const resolverOrigem = async (texto: string) => {
+      const cep = extrairCep(texto);
+      const apenasCep = !!cep && texto.trim().replace(/\D/g, '') === cep;
+      if (cep && apenasCep) {
+          try {
+              const resposta = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+              const dados = await resposta.json();
+              if (!dados.erro && dados.uf) {
+                  const endereco = [dados.logradouro, dados.bairro, `${dados.localidade} - ${dados.uf}`, cep].filter(Boolean).join(', ');
+                  setFormData(prev => ({ ...prev, origin: endereco }));
+                  setRegionInfo(getRegionFromLocation(dados.localidade || '', dados.uf || '', formData.client));
+                  return;
+              }
+          } catch (erro) {
+              console.error('CEP da rota:', erro);
+          }
+      }
+      setRegionInfo(getRegionFromLocation(texto, '', formData.client));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault(); setIsSaving(true);
     try {
-        const payload = { code: formData.code, name: formData.name, client: formData.client, origin: formData.origin, destination: waypoints.length > 0 ? `${formData.destination} (Via: ${waypoints.join(' -> ')})` : formData.destination, distance: formData.distance, toll_cost: parseFloat(formData.price) || 0 };
-        if (id) {
-            const { error } = await supabase.from('client_routes').update(payload).eq('id', id);
-            if (error) throw new Error('Erro ao salvar rota: ' + error.message);
-        } else {
-            const { error } = await supabase.from('client_routes').insert([payload]);
-            if (error) throw new Error('Erro ao criar rota: ' + error.message);
+        if (routeType !== 'fixa' && routeType !== 'esporadica') {
+            showNotification('Atenção', 'Selecione se a rota é Fixa ou Esporádica.', 'error');
+            return;
         }
+        const base = { code: formData.code, name: formData.name, client: formData.client, origin: formData.origin, destination: waypoints.length > 0 ? `${formData.destination} (Via: ${waypoints.join(' -> ')})` : formData.destination, distance: formData.distance, toll_cost: parseFloat(formData.price) || 0 };
+        const classificacao = camposAoSalvarRota({
+            routeType,
+            region: regionInfo?.aplicaPrecificacaoRegional ? regionInfo.region : null,
+            jaConsumida: routeType === 'esporadica' && !!rotaConsumidaId,
+            consumedInOrderId: rotaConsumidaId,
+        });
+        const payload = { ...base, ...classificacao };
+        const gravar = async (dados: Record<string, unknown>) => id
+            ? supabase.from('client_routes').update(dados).eq('id', id)
+            : supabase.from('client_routes').insert([dados]);
+        let { error } = await gravar(payload);
+        if (error && colunaRegionalAusente(error)) {
+            const retry = await gravar(base);
+            error = retry.error;
+            if (!error) {
+                showNotification('Rota salva', 'O banco ainda não tem as colunas de tipo e região. Aplique a migration para a classificação valer.', 'warning');
+                onSuccess();
+                return;
+            }
+        }
+        if (error) throw new Error('Erro ao salvar rota: ' + error.message);
         showNotification('Sucesso', 'Rota salva!', 'success'); onSuccess();
     } catch (err: any) { showNotification('Erro', err.message, 'error'); } finally { setIsSaving(false); }
   };
@@ -206,9 +273,23 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Navigation size={18} className="text-blue-700" /><h3 className="font-bold text-sm text-gray-800 uppercase tracking-wider">Configuração de Trajeto</h3></div>
-             <div><label className={LABEL_CLASS}>1. Cliente</label><select required className={SELECT_CLASS} value={formData.client} onChange={e => setFormData(prev => ({ ...prev, client: e.target.value }))}><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}</select></div>
+             <div><label className={LABEL_CLASS}>1. Cliente</label><select required className={SELECT_CLASS} value={formData.client} onChange={e => { const cliente = e.target.value; setFormData(prev => ({ ...prev, client: cliente })); setRegionInfo(getRegionFromLocation(formData.origin, '', cliente)); }}><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}</select></div>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                     <label className={LABEL_CLASS}>Tipo da rota</label>
+                     <select required className={SELECT_CLASS} value={routeType} onChange={e => setRouteType(e.target.value as TipoRota)} data-testid="select-route-type">
+                         <option value="">Selecione...</option>
+                         <option value="fixa">Fixa</option>
+                         <option value="esporadica">Esporádica</option>
+                     </select>
+                 </div>
+                 <div>
+                     <label className={LABEL_CLASS}>Região</label>
+                     <input readOnly className={`${INPUT_WITH_ICON} bg-gray-50`} data-testid="input-regiao-rota" value={regionInfo?.clienteContratual ? 'Tabela contratual' : (nomeRegiao(regionInfo?.region || null) || 'Informe a origem')} />
+                 </div>
+             </div>
              <div className="space-y-4">
-                 <div className="relative"><label className={LABEL_CLASS}>2. Origem</label><Autocomplete onLoad={ref => originRef.current = ref} onPlaceChanged={() => handlePlaceSelect('origin')}><input type="text" required className={`${INPUT_WITH_ICON} border-blue-200`} placeholder="Endereço de saída..." value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-blue-600 pointer-events-none" /></div>
+                 <div className="relative"><label className={LABEL_CLASS}>2. Origem</label><Autocomplete onLoad={ref => originRef.current = ref} onPlaceChanged={() => handlePlaceSelect('origin')}><input type="text" required className={`${INPUT_WITH_ICON} border-blue-200`} placeholder="Endereço, cidade ou CEP..." value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} onBlur={() => { void resolverOrigem(formData.origin); }} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-blue-600 pointer-events-none" /></div>
                  {waypoints.map((wp, index) => (
                      <div key={index} className="relative pl-8 animate-fade-in"><div className="absolute left-2 top-8 w-0.5 h-full bg-gray-300 -translate-y-1/2"></div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Parada {index + 1}</label><div className="flex gap-2"><div className="relative flex-1"><Autocomplete onLoad={ref => waypointRefs.current[index] = ref} onPlaceChanged={() => handlePlaceSelect('waypoint', index)}><input type="text" className={`${INPUT_WITH_ICON} border-gray-200`} placeholder="Endereço..." value={wp} onChange={e => { const nw = [...waypoints]; nw[index] = e.target.value; setWaypoints(nw); }} /></Autocomplete><MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" /></div><button type="button" onClick={() => removeWaypoint(index)} className="p-3 text-gray-400 hover:text-red-600 border border-gray-200 rounded-lg"><Trash2 size={18} /></button></div></div>
                  ))}

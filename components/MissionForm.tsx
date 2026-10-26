@@ -30,6 +30,7 @@ import { escolherTabelaProxima } from '../lib/rotaAprovadaTabela';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 import { consumirPrefillSolicitacao } from '../lib/solicitacaoEscolta/prefill';
+import { consumirRotaEsporadica, filtrarRotasParaNovaOs, getRegionFromLocation, nomeRegiao } from '../lib/precificacao/tabela2027';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -841,11 +842,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
         supabase.from('client_routes').select('*').or(cFilter).order('name').then(async ({ data, error }) => {
           if (error) console.error('[MissionForm] Erro client_routes:', error.message);
-          if (data && data.length > 0) { setClientRoutes(data as any); return; }
+          if (data && data.length > 0) { setClientRoutes(filtrarRotasParaNovaOs(data as ClientRoute[])); return; }
           if (firstWord) {
             const { data: fb } = await supabase.from('client_routes').select('*').ilike('client', `%${firstWord}%`).order('name');
-            if (fb && fb.length > 0) setClientRoutes(fb as any);
-            else setClientRoutes(data || []);
+            if (fb && fb.length > 0) setClientRoutes(filtrarRotasParaNovaOs(fb as ClientRoute[]));
+            else setClientRoutes(filtrarRotasParaNovaOs((data || []) as ClientRoute[]));
           }
         });
 
@@ -1625,6 +1626,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 details: JSON.stringify({ client: formData.client, origin: formData.origin, destination: formData.destination })
             }]);
         } catch (logErr) { console.warn('Falha ao registrar log de criação da OS:', logErr); }
+        try {
+            const rotaEscolhida = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+            if (rotaEscolhida && saved) {
+                const consumo = await consumirRotaEsporadica(supabase, rotaEscolhida, finalId);
+                if (consumo.consumida) {
+                    showNotification('Rota esporádica', 'A rota foi desativada e não entra em outra OS.', 'success');
+                } else if (consumo.motivo === 'coluna_ausente') {
+                    showNotification('Rota esporádica', 'A OS foi salva. O banco ainda não tem as colunas da rota esporádica. Aplique a migration antes de confiar na exclusão automática.', 'warning');
+                } else if (consumo.motivo === 'erro') {
+                    showNotification('Rota esporádica', 'A OS foi salva, mas a rota não foi desativada: ' + (consumo.detalhe || 'erro'), 'warning');
+                }
+            }
+        } catch (consumoErr) {
+            console.warn('Falha ao consumir rota esporádica:', consumoErr);
+        }
         await uploadEvidences(finalId);
         await uploadDhlDeslocamentoPrint(finalId);
 
@@ -1832,7 +1848,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     <div className="max-w-4xl mx-auto space-y-6 pb-20 animate-in fade-in">
       {isClientModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsClientModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientForm onBack={() => setIsClientModalOpen(false)} onSave={() => { setIsClientModalOpen(false); loadBasicData(); }} onAddVehicle={() => {}} onEditVehicle={() => {}} onAddRoute={() => {}} onEditRoute={() => {}} onAddQuote={() => {}} onEditQuote={() => {}} /></div></div>)}
       {isProviderModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsProviderModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ProviderForm onBack={() => setIsProviderModalOpen(false)} onNavigateToVehicles={() => {}} /></div></div>)}
-      {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').or(clientFuzzyFilter(formData.client)).order('name').then(({ data }) => { if (data) { setClientRoutes(data as any); const newRoute = data.find((r: any) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
+      {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').or(clientFuzzyFilter(formData.client)).order('name').then(({ data }) => { if (data) { const visiveis = filtrarRotasParaNovaOs(data as ClientRoute[]); setClientRoutes(visiveis); const newRoute = visiveis.find((r) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
       {isVehicleModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsVehicleModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientVehicleForm embedded onBack={() => setIsVehicleModalOpen(false)} onSuccess={() => { setIsVehicleModalOpen(false); if(formData.client) fetchClientVehicles(formData.client); }} /></div></div>)}
 
       {emailConfirmDialog && (
@@ -2906,6 +2922,23 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           )}
                       </div>
                   </div>
+
+                  {formData.origin && (() => {
+                      const regiaoOrigem = getRegionFromLocation(formData.origin, '', formData.client);
+                      if (regiaoOrigem.clienteContratual) {
+                          return (
+                              <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="text-regiao-origem">
+                                  Cliente contratual: a tabela já cadastrada permanece.
+                              </p>
+                          );
+                      }
+                      if (!regiaoOrigem.region) return null;
+                      return (
+                          <p className="text-[10px] font-black uppercase tracking-wider text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" data-testid="text-regiao-origem">
+                              Região da origem: {nomeRegiao(regiaoOrigem.region)}
+                          </p>
+                      );
+                  })()}
 
                   {clientRoutes.length > 0 && (
                       <div className="space-y-2">

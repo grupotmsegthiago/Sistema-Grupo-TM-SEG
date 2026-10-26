@@ -30,6 +30,15 @@ import {
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalPorNomeCliente, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
 import { limparSlug, slugDeNome, slugPublico } from '../lib/portalCliente/slug';
+import {
+  CHAVE_TABELA_REGIONAL_VIGENTE,
+  clienteContratualDhlOuIbl,
+  colunaRegionalAusente,
+  FAIXAS_REGIONAIS,
+  montarAplicacaoTabela,
+  perfilPodeAplicarTabelaRegional,
+  type VersaoTabelaRegional,
+} from '../lib/precificacao/tabela2027';
 
 interface ClientFormProps {
   onBack: () => void;
@@ -203,6 +212,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isReverting, setIsReverting] = useState(false);
   const [selectedPriceIds, setSelectedPriceIds] = useState<string[]>([]);
   const [priceSearch, setPriceSearch] = useState<string>('');
+  const [tabelaVigencia, setTabelaVigencia] = useState<VersaoTabelaRegional>('2026');
+  const [aplicandoTabelaRegional, setAplicandoTabelaRegional] = useState(false);
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clients, setClientsList] = useState<Client[]>([]);
@@ -872,6 +883,108 @@ const ClientForm: React.FC<ClientFormProps> = ({
         const msg = mensagemDeErro(error);
         showNotification('Erro', 'Erro ao salvar cliente: ' + msg, 'error');
     } finally { setIsSaving(false); }
+  };
+
+  const podeAplicarTabelaRegional = perfilPodeAplicarTabelaRegional(currentUser?.role);
+
+  useEffect(() => {
+      if (!podeAplicarTabelaRegional) return;
+      supabase.from('system_settings').select('value').eq('key', CHAVE_TABELA_REGIONAL_VIGENTE).maybeSingle().then(({ data }) => {
+          const versao = data?.value?.versao;
+          if (versao === '2026' || versao === '2027') setTabelaVigencia(versao);
+      });
+  }, [podeAplicarTabelaRegional]);
+
+  const handleAplicarTabelaRegional = async () => {
+      if (!podeAplicarTabelaRegional) {
+          showNotification('Sem permissão', 'Somente Diretoria ou Administrador aplica a tabela por região.', 'error');
+          return;
+      }
+      if (!formData.name) {
+          showNotification('Atenção', 'Salve o cliente antes de aplicar a tabela.', 'warning');
+          return;
+      }
+      const plano = montarAplicacaoTabela({
+          versao: tabelaVigencia,
+          cliente: formData.name,
+          existentes: priceTables,
+      });
+      setAplicandoTabelaRegional(true);
+      try {
+          const setting = await supabase.from('system_settings').upsert({
+              key: CHAVE_TABELA_REGIONAL_VIGENTE,
+              value: { versao: tabelaVigencia },
+              updated_by: currentUser?.name || 'Diretoria',
+              updated_at: new Date().toISOString(),
+          }, { onConflict: 'key' });
+          if (setting.error) throw new Error(setting.error.message);
+
+          const catalogo = await supabase.from('regional_rates').upsert(plano.catalogo, { onConflict: 'versao,region' });
+          const catalogoPendente = !!catalogo.error && colunaRegionalAusente(catalogo.error);
+
+          if (!plano.aplicarNoCliente) {
+              await logAction('UPDATE', 'TabelaRegional', tabelaVigencia, `Tabela ${tabelaVigencia} definida como padrão. ${plano.motivo}`);
+              showNotification('Tabela contratual', `A Tabela ${tabelaVigencia} ficou como padrão do portal. ${plano.motivo}`, 'warning');
+              return;
+          }
+
+          for (const linha of plano.linhas) {
+              const payload = {
+                  client: linha.client,
+                  operation_type: linha.operation_type,
+                  activation_fee: linha.activation_fee,
+                  franchise_hours: linha.franchise_hours,
+                  franchise_km: linha.franchise_km,
+                  price_per_extra_km: linha.price_per_extra_km,
+                  price_per_extra_hour: linha.price_per_extra_hour,
+              };
+              const gravacao = linha.id
+                  ? await supabase.from('client_price_tables').update(payload).eq('id', linha.id)
+                  : await supabase.from('client_price_tables').insert([payload]);
+              if (gravacao.error) throw new Error(gravacao.error.message);
+          }
+
+          let rotasSemColuna = false;
+          for (const rota of plano.rotas) {
+              const busca = await supabase.from('client_routes').select('id').eq('client', formData.name).eq('name', rota.name).limit(1);
+              if (busca.error) throw new Error(busca.error.message);
+              const idRota = busca.data?.[0]?.id;
+              if (idRota) {
+                  const atualizacao = await supabase.from('client_routes').update(rota.atualizar).eq('id', idRota);
+                  if (atualizacao.error && colunaRegionalAusente(atualizacao.error)) {
+                      rotasSemColuna = true;
+                      break;
+                  }
+                  if (atualizacao.error) throw new Error(atualizacao.error.message);
+              } else {
+                  const inclusao = await supabase.from('client_routes').insert([{ ...rota.criar, client: formData.name }]);
+                  if (inclusao.error && colunaRegionalAusente(inclusao.error)) {
+                      const { route_type, is_active, region, ...legado } = rota.criar;
+                      void route_type; void is_active; void region;
+                      const retry = await supabase.from('client_routes').insert([{ ...legado, client: formData.name }]);
+                      if (retry.error) throw new Error(retry.error.message);
+                      rotasSemColuna = true;
+                      break;
+                  }
+                  if (inclusao.error) throw new Error(inclusao.error.message);
+              }
+          }
+
+          await logAction('UPDATE', 'TabelaRegional', tabelaVigencia, `Tabela ${tabelaVigencia} aplicada em ${formData.name}. ${plano.linhas.length} linhas padrão. Rotas nomeadas não foram alteradas.`);
+          await fetchPriceTables(formData.name);
+          const avisoColuna = rotasSemColuna || catalogoPendente
+              ? ' As colunas novas ainda não existem no banco: aplique migrations/2026_10_26_tabela_2027_rotas.sql.'
+              : '';
+          showNotification(
+              'Tabela aplicada',
+              `A Tabela ${tabelaVigencia} é o padrão do portal. As regiões deste cliente foram gravadas.${avisoColuna}`,
+              avisoColuna ? 'warning' : 'success',
+          );
+      } catch (erro: any) {
+          showNotification('Erro', erro?.message || 'Não foi possível aplicar a tabela.', 'error');
+      } finally {
+          setAplicandoTabelaRegional(false);
+      }
   };
 
   const handlePriceSubmit = async (e: React.FormEvent) => {
@@ -1809,6 +1922,50 @@ const ClientForm: React.FC<ClientFormProps> = ({
                       </div>
                   </div>
               </div>
+
+              {podeAplicarTabelaRegional && (
+                  <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3" data-testid="card-tabela-regional">
+                      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+                          <div>
+                              <h4 className="text-xs font-bold text-gray-700 uppercase">Vigência da tabela regional</h4>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Diretoria e administrador. Aplica as seis regiões padrão. Rotas de cidade não são reescritas.</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                              <select
+                                  className="p-2 border rounded text-xs font-bold bg-white uppercase"
+                                  value={tabelaVigencia}
+                                  onChange={e => setTabelaVigencia(e.target.value as VersaoTabelaRegional)}
+                                  data-testid="select-tabela-vigencia"
+                              >
+                                  <option value="2026">Tabela 2026</option>
+                                  <option value="2027">Tabela 2027</option>
+                              </select>
+                              <button
+                                  type="button"
+                                  onClick={handleAplicarTabelaRegional}
+                                  disabled={aplicandoTabelaRegional}
+                                  className="px-4 py-2 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
+                                  data-testid="button-aplicar-valor-regiao"
+                              >
+                                  {aplicandoTabelaRegional ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />}
+                                  Aplicar valor por região
+                              </button>
+                          </div>
+                      </div>
+                      {clienteContratualDhlOuIbl(formData.name) && (
+                          <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="aviso-cliente-contratual">
+                              Este cliente permanece na tabela contratual. O botão só grava a vigência do portal.
+                          </p>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          {FAIXAS_REGIONAIS.map((faixa) => (
+                              <div key={faixa.region} className="text-[10px] font-bold uppercase text-gray-600 border border-gray-100 rounded-lg px-3 py-2">
+                                  {faixa.nome}: R$ {(tabelaVigencia === '2027' ? faixa.km2027 : faixa.km2026).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/km · 100 km / 3 h
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              )}
 
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
                 <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">{editingPriceId ? <Edit size={14}/> : <Plus size={14}/>} {editingPriceId ? 'Editar Regra' : 'Adicionar Nova Regra'}</h4>

@@ -328,6 +328,12 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
                           <td className="px-6 py-4">
                              <div className="flex flex-col">
                                 <span className="font-bold text-sm text-gray-900 uppercase">({clientMap[item.client] || item.client}) / {item.name}</span>
+                                {(item.route_type || item.is_active === false) && (
+                                    <span className={`mt-1 inline-flex w-fit text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${item.is_active === false ? 'bg-gray-200 text-gray-600' : 'bg-blue-50 text-blue-700'}`}>
+                                        {item.route_type === 'esporadica' ? 'Esporádica' : item.route_type === 'fixa' ? 'Fixa' : 'Rota'}
+                                        {item.is_active === false ? ' · inativa' : ''}
+                                    </span>
+                                )}
                                 <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5"><MapPin size={10} className="text-blue-500 shrink-0"/> <span className="truncate max-w-[200px]">{item.origin}</span><ArrowRight size={10} className="shrink-0 text-gray-400" /><MapPin size={10} className="text-red-500 shrink-0"/><span className="truncate max-w-[200px]">{item.destination}</span></div>
                              </div>
                           </td>

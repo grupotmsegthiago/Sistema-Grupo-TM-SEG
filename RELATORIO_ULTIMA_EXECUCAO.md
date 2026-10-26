@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Tabela 2027 e rota esporádica (26/10/2026)
+
+Ainda não publicado. A rota ganhou tipo Fixa ou Esporádica, região e o vínculo com a OS que consumiu a esporádica. A conta nova é `calculateTripCost`: até 100 km cobra 100 km e 3 horas; acima disso o km inteiro usa o valor da região e a hora segue o corte de 40 minutos, sem ficar abaixo de 3 horas. DHL e IBL não recebem essa tabela. Guarulhos/SP cai em Sudeste SP/RJ e Belo Horizonte/MG em Sudeste MG/ES. O botão Aplicar valor por região fica só para Diretoria e Administrador, grava a vigência em `system_settings` e só mexe nas linhas `TABELA 2026/2027`. O motor `calculateMissionFinancials` não foi alterado. A migration não foi executada. Sem as colunas novas, a OS e a rota continuam gravando e a tela avisa.
+
 ## Tabela da mesma rota (22/10/2026)
 
 Publicado nesta entrega. A criação olhava as últimas OS do cliente, de qualquer rota. Guarulhos–Serra acabava em Guarulhos–Aparecida de Goiânia e o fornecedor caía na faixa de 1000KM. A consulta do histórico pedia `original_client_name`, coluna que não existe, e voltava vazia. Agora entram as 10 mais recentes da mesma cidade de origem e de destino. A tabela que mais se repetiu é a selecionada, no cliente e no fornecedor daquela OS. No localhost, DHL Guarulhos–Serra com a TORRES ficou em SUDESTE - GUARULHOS-SERRA 758KM e 800KM. Vale para a OS nova, o portal e a auditoria sem valor gravado. OS aprovada ou já faturada não muda.
