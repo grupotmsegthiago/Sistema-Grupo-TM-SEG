@@ -358,4 +358,8 @@ test('a rota da cotação lê coordenada, explica a falha e não grava tempo ine
   const formulario = readFileSync(new URL('../components/ClientRouteForm.tsx', import.meta.url), 'utf8');
   assert.match(formulario, /rotaAdministrativaPronta/);
   assert.doesNotMatch(formulario, /duration_minutes/);
+  assert.doesNotMatch(formulario, /Tipo da rota/);
+  assert.doesNotMatch(formulario, /select-route-type/);
+  assert.doesNotMatch(formulario, /Informe a origem/);
+  assert.match(formulario, /tipoJaGravado/);
 });

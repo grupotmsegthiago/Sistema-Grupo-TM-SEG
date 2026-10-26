@@ -13,7 +13,6 @@ import {
   colunaRegionalAusente,
   extrairCep,
   getRegionFromLocation,
-  nomeRegiao,
   type ResultadoRegiao,
   type TipoRota,
 } from '../lib/precificacao/tabela2027';
@@ -256,10 +255,6 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (routeType !== 'fixa' && routeType !== 'esporadica') {
-        showNotification('Atenção', 'Selecione se a rota é Fixa ou Esporádica.', 'error');
-        return;
-    }
     const conferencia = rotaAdministrativaPronta({
         origin: formData.origin,
         destination: formData.destination,
@@ -273,13 +268,19 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
     setIsSaving(true);
     try {
         const base = { code: formData.code, name: formData.name, client: formData.client, origin: formData.origin, destination: waypoints.length > 0 ? `${formData.destination} (Via: ${waypoints.join(' -> ')})` : formData.destination, distance: formData.distance, toll_cost: parseFloat(formData.price) || 0 };
-        const classificacao = camposAoSalvarRota({
-            routeType,
-            region: regionInfo?.aplicaPrecificacaoRegional ? regionInfo.region : null,
-            jaConsumida: routeType === 'esporadica' && !!rotaConsumidaId,
-            consumedInOrderId: rotaConsumidaId,
-        });
-        const payload = { ...base, ...classificacao };
+        // Nova rota não pede tipo nem região. Só uma rota já classificada (edição) regrava esses campos, para não apagar fixa/esporádica.
+        const tipoJaGravado = routeType === 'fixa' || routeType === 'esporadica';
+        const payload = tipoJaGravado
+            ? {
+                ...base,
+                ...camposAoSalvarRota({
+                    routeType,
+                    region: regionInfo?.aplicaPrecificacaoRegional ? regionInfo.region : null,
+                    jaConsumida: routeType === 'esporadica' && !!rotaConsumidaId,
+                    consumedInOrderId: rotaConsumidaId,
+                }),
+            }
+            : base;
         const gravar = async (dados: Record<string, unknown>) => id
             ? supabase.from('client_routes').update(dados).eq('id', id)
             : supabase.from('client_routes').insert([dados]);
@@ -346,20 +347,6 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Navigation size={18} className="text-blue-700" /><h3 className="font-bold text-sm text-gray-800 uppercase tracking-wider">Configuração de Trajeto</h3></div>
              <div><label className={LABEL_CLASS}>1. Cliente</label><select required className={SELECT_CLASS} value={formData.client} onChange={e => { const cliente = e.target.value; setFormData(prev => ({ ...prev, client: cliente })); setRegionInfo(getRegionFromLocation(formData.origin, '', cliente)); }}><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}</select></div>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
-                     <label className={LABEL_CLASS}>Tipo da rota</label>
-                     <select required className={SELECT_CLASS} value={routeType} onChange={e => setRouteType(e.target.value as TipoRota)} data-testid="select-route-type">
-                         <option value="">Selecione...</option>
-                         <option value="fixa">Fixa</option>
-                         <option value="esporadica">Esporádica</option>
-                     </select>
-                 </div>
-                 <div>
-                     <label className={LABEL_CLASS}>Região</label>
-                     <input readOnly className={`${INPUT_WITH_ICON} bg-gray-50`} data-testid="input-regiao-rota" value={regionInfo?.clienteContratual ? 'Tabela contratual' : (nomeRegiao(regionInfo?.region || null) || 'Informe a origem')} />
-                 </div>
-             </div>
              <div className="space-y-4">
                  <div className="relative"><label className={LABEL_CLASS}>2. Origem</label><Autocomplete onLoad={ref => originRef.current = ref} onPlaceChanged={() => handlePlaceSelect('origin')}><input type="text" required className={`${INPUT_WITH_ICON} border-blue-200`} placeholder="Endereço, cidade ou CEP..." value={formData.origin} onChange={e => { setFormData({...formData, origin: e.target.value}); setCoords(prev => ({ ...prev, origin: null })); setDuracaoMinutos(null); }} onBlur={(e) => { const texto = e.target.value; window.setTimeout(() => { void resolverOrigem(texto); void completarLugar('origin', texto); }, 280); }} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-blue-600 pointer-events-none" /></div>
                  {waypoints.map((wp, index) => (

@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Na tela Nova Rota saíram Tipo da rota e Região. Rota nova grava só o trajeto. Na edição, uma rota que já tinha tipo continua gravando essa classificação. O consumo de rota esporádica na OS e o motor da OS não mudaram.
+
 Atualizado em 2026-10-26. A rota Salvador, BA → São Paulo, SP deixa de ir ao Directions só com a cidade e a UF. O pedido usa placeId ou coordenada e, se o Google responder ZERO_RESULTS ou NOT_FOUND, repete com "Cidade, UF, Brasil". Pedágio, rodovia e balsa não são evitados. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A cotação abre na Tabela 2027. Se o cliente tem a linha dessa vigência na região, ela vale (na CEVA Nordeste: acionamento R$ 830,00, km R$ 8,30, hora R$ 207,50). Sem essa linha, entra a Tabela 2026 do cliente e, sem as duas, a faixa regional. Se o operador escolhe Tabela 2026 no seletor, a linha 2027 não é lida. O snapshot grava a vigência usada. Proposta antiga sem marca continua em 2026. DHL e IBL seguem na tabela contratual. O motor da OS não mudou.

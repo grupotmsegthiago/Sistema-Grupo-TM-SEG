@@ -4,6 +4,10 @@
 
 Não há alteração de código pendente além da unificação já autorizada. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
 
+## Nova Rota sem tipo e região (26/10/2026)
+
+Baseline `ad3074fa`. A tela Nova Rota pedia Tipo da rota (Fixa ou Esporádica) e mostrava Região só leitura. Os dois campos saíram. Sem tipo escolhido, o salvamento grava só código, nome, cliente, origem, destino, km e pedágio. Se a rota já estava classificada, a edição regrava o tipo que veio do banco, para não apagar fixa ou esporádica. `consumirRotaEsporadica` e `calculateMissionFinancials` não foram alterados. Sem migration.
+
 ## Rota Salvador–São Paulo sem ZERO_RESULTS (26/10/2026)
 
 O texto "Salvador, BA" para "São Paulo, SP" não fecha no Directions. Com ", Brasil", a mesma rota responde cerca de 1.986 km e 1.609 min. A cotação passa a pedir placeId ou coordenada, com pedágio, rodovia e balsa liberados, e repete em texto com o país quando o status é ZERO_RESULTS ou NOT_FOUND. O km gravado na tela continua liberando Gerar proposta. Sem migration e sem alteração em calculateMissionFinancials.
