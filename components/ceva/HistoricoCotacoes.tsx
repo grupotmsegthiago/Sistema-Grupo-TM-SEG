@@ -521,7 +521,10 @@ export const HistoricoCotacoes: React.FC<{
       const validade = typeof corpo.expiraEm === 'string'
         ? new Date(corpo.expiraEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
         : '';
-      setToast(validade ? `Link copiado. Vale até ${validade}. A pessoa só vê esta proposta.` : 'Link copiado. A pessoa só vê esta proposta.');
+      const mesmo = corpo.reutilizado === true;
+      setToast(validade
+        ? (mesmo ? `O mesmo link de antes. Vale até ${validade}. Não é gerado outro nestes 10 dias.` : `Link copiado. Vale até ${validade}. A pessoa só vê esta proposta.`)
+        : 'Link copiado. A pessoa só vê esta proposta.');
     } catch {
       setToast(url);
     }

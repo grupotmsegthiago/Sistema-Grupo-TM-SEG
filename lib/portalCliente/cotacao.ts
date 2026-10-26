@@ -342,6 +342,47 @@ export function aplicarContaNaProposta(proposta: PropostaPortal, conta: ContaVis
 }
 
 /**
+ * A proposta gravada com a fórmula antiga (franquia + km extra + hora extra)
+ * volta para a conta do card: km da rota vezes a faixa da origem.
+ * Rota com preço fechado, diferente dessa fórmula, permanece como foi gravada.
+ */
+export function propostaNoPadraoDoCard(
+  proposta: PropostaPortal,
+  cliente: string,
+  linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }> = [],
+): PropostaPortal {
+  const km = Number(proposta.kmRota);
+  const taxa = Number(proposta.kmExtra);
+  const hora = Number(proposta.horaExtra);
+  if (!Number.isFinite(km) || km <= 0 || !Number.isFinite(taxa) || taxa < 0 || !Number.isFinite(hora) || hora < 0) return proposta;
+  const antigo = calcularCotacaoPortal({
+    acionamento: centavos(KM_MINIMO_COTACAO * taxa),
+    franquiaKm: KM_MINIMO_COTACAO,
+    franquiaHoras: HORAS_MINIMAS_COTACAO,
+    kmExtra: taxa,
+    horaExtra: hora,
+  }, km).total;
+  if (Math.abs(antigo - proposta.acionamento) >= 0.05) return proposta;
+  const versao: VersaoTabelaRegional = proposta.vigencia === '2026' ? '2026' : '2027';
+  const local = getRegionFromLocation(proposta.origem, '', cliente);
+  const faixa = FAIXAS_REGIONAIS.find((item) => item.region === local.region);
+  const conta = contaVisivelDaCotacao({
+    cliente,
+    origem: proposta.origem,
+    km,
+    versao,
+    linhas,
+    tarifaKmFallback: faixa ? valorKmDaFaixa(faixa, versao) : null,
+    horaExtraFallback: faixa ? faixa.hora2026 : null,
+    vigenciaFallback: versao,
+    acordada: false,
+  });
+  if (!conta.aplicar) return proposta;
+  if (Math.abs(proposta.acionamento - conta.total) < 0.05 && Math.abs(proposta.kmExtra - conta.tarifaKm) < 0.001) return proposta;
+  return aplicarContaNaProposta({ ...proposta, acordada: false }, conta);
+}
+
+/**
  * Números que o card, a tabela da proposta e o e-mail mostram juntos.
  * O km e as horas do card vencem a franquia incluída quando os dois existem.
  */
@@ -390,6 +431,24 @@ export function propostaDaConta(entrada: {
   duracaoMin?: number | null;
 }): PropostaPortal {
   const paradas = entrada.paradas.map((item) => item.trim()).filter(Boolean);
+  if (entrada.conta.aplicar) {
+    return {
+      ...aplicarContaNaProposta({
+        acordada: false,
+        regiao: entrada.regiao,
+        origem: entrada.origem,
+        destino: entrada.destino,
+        paradas,
+        acionamento: 0,
+        kmFranquia: 0,
+        horasFranquia: 0,
+        kmExtra: 0,
+        horaExtra: 0,
+        operacao: `${entrada.regiao} - ${cidadeDaRota(entrada.origem)} X ${cidadeDaRota(entrada.destino)}`,
+      }, entrada.conta),
+      duracaoMin: entrada.duracaoMin ?? null,
+    };
+  }
   const acordada = paradas.length ? null : rotaAcordada(entrada.tabelas, entrada.regiao, entrada.origem, entrada.destino);
   if (acordada) {
     return {
@@ -408,34 +467,16 @@ export function propostaDaConta(entrada: {
       duracaoMin: entrada.duracaoMin ?? null,
     };
   }
-  if (!entrada.conta.aplicar) {
-    const base = montarProposta({
-      tabelas: entrada.tabelas,
-      regiao: entrada.regiao,
-      origem: entrada.origem,
-      destino: entrada.destino,
-      paradas,
-      kmRota: entrada.kmRota,
-      tabelaRegiao: entrada.tabelaRegiao,
-    });
-    return { ...base, kmRota: entrada.kmRota, duracaoMin: entrada.duracaoMin ?? base.duracaoMin ?? null };
-  }
-  return {
-    ...aplicarContaNaProposta({
-      acordada: false,
-      regiao: entrada.regiao,
-      origem: entrada.origem,
-      destino: entrada.destino,
-      paradas,
-      acionamento: 0,
-      kmFranquia: 0,
-      horasFranquia: 0,
-      kmExtra: 0,
-      horaExtra: 0,
-      operacao: `${entrada.regiao} - ${cidadeDaRota(entrada.origem)} X ${cidadeDaRota(entrada.destino)}`,
-    }, entrada.conta),
-    duracaoMin: entrada.duracaoMin ?? null,
-  };
+  const base = montarProposta({
+    tabelas: entrada.tabelas,
+    regiao: entrada.regiao,
+    origem: entrada.origem,
+    destino: entrada.destino,
+    paradas,
+    kmRota: entrada.kmRota,
+    tabelaRegiao: entrada.tabelaRegiao,
+  });
+  return { ...base, kmRota: entrada.kmRota, duracaoMin: entrada.duracaoMin ?? base.duracaoMin ?? null };
 }
 
 /** Primeiro trecho do endereço, como a pessoa vê na proposta. */

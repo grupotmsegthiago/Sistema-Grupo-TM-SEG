@@ -1,6 +1,7 @@
 /** Emissão e leitura do link. A página pública não recebe e-mail, id de usuário nem o restante do sistema. */
 
-import { podeEnviarCotacao, type AtorCotacao, type CotacaoGestao } from './gestaoCotacao';
+import { cotacaoExcluida, podeEnviarCotacao, type AtorCotacao, type CotacaoGestao } from './gestaoCotacao';
+import { propostaNoPadraoDoCard } from './cotacao';
 import { lerSnapshot } from './historicoCotacoes';
 import {
   anexarLinkNoSnapshot,
@@ -45,18 +46,18 @@ export async function emitirLinkProposta(
   if (!ator) return { status: 401, corpo: { error: 'Entre novamente.' } };
   const linha = await banco.ler(id);
   if (!linha) return { status: 404, corpo: { error: 'Cotação não encontrada.' } };
-  if (!podeEnviarCotacao(ator, cotacaoDoRegistro(linha))) {
-    return { status: 403, corpo: { error: 'Você não pode gerar o link desta cotação.' } };
-  }
   const salvo = lerSnapshot(linha.contract_details);
   if (!salvo) return { status: 409, corpo: { error: 'Gere a proposta no histórico antes do link.' } };
   const atual = salvo.linkPublico;
+  const pode = podeEnviarCotacao(ator, cotacaoDoRegistro(linha));
   if (atual && linkAindaVale(atual, agora)) {
+    if (!pode && !cotacaoExcluida(linha)) return { status: 403, corpo: { error: 'Você não pode gerar o link desta cotação.' } };
     return {
       status: 200,
       corpo: { ok: true, caminho: caminhoLinkProposta(String(linha.id), atual.token), expiraEm: atual.expiraEm, reutilizado: true },
     };
   }
+  if (!pode) return { status: 403, corpo: { error: 'Você não pode gerar o link desta cotação.' } };
   let novo: LinkPublicoProposta;
   try {
     novo = criarLinkPublico(agora, aleatorio);
@@ -78,6 +79,7 @@ export async function lerPropostaPublica(
   id: string,
   token: string,
   agora: Date,
+  linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }> = [],
 ): Promise<{ status: number; corpo: { ok: true; cliente: string; expiraEm: string; validade: string; proposta: unknown } | { error: string } }> {
   const linha = await banco.ler(id);
   if (!linha) return { status: 404, corpo: { error: 'Link inválido ou vencido.' } };
@@ -85,6 +87,12 @@ export async function lerPropostaPublica(
   if (!vista.ok) return { status: vista.status, corpo: { error: vista.error } };
   return {
     status: 200,
-    corpo: { ok: true, cliente: vista.cliente, expiraEm: vista.expiraEm, validade: vista.validade, proposta: vista.proposta },
+    corpo: {
+      ok: true,
+      cliente: vista.cliente,
+      expiraEm: vista.expiraEm,
+      validade: vista.validade,
+      proposta: propostaNoPadraoDoCard(vista.proposta, vista.cliente, linhas),
+    },
   };
 }

@@ -63,19 +63,21 @@ export const CenaRotaVisual: React.FC<{
   faixa?: boolean;
   onMapaErro?: () => void;
 }> = ({ mapa, carreta, logo, className = '', faixa = true, onMapaErro }) => (
-  <div className={`relative h-full w-full overflow-hidden bg-slate-200 ${className}`}>
+  <div className={`relative aspect-video w-full overflow-hidden bg-slate-200 ${className}`}>
     <img
       src={mapa}
       alt="Mapa da rota calculada no Google"
-      className="h-full w-full object-cover"
+      className="absolute inset-0 h-full w-full object-contain object-center"
       onLoad={(evento) => {
         if (evento.currentTarget.naturalWidth < 80) onMapaErro?.();
       }}
       onError={() => onMapaErro?.()}
     />
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(8,16,32,0.5)_100%)]" />
-    <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-between gap-3">
-      <ClientTruckVisual cliente="" src={carreta} logo={logo} className="h-48 w-auto max-w-none object-contain drop-shadow-[0_18px_18px_rgba(0,0,0,0.45)]" />
+    <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-[58%]" data-testid="carreta-centro-mapa">
+      <ClientTruckVisual cliente="" src={carreta} logo={logo} className="h-40 w-auto max-w-none object-contain drop-shadow-[0_18px_18px_rgba(0,0,0,0.45)] sm:h-48" />
+    </div>
+    <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-end gap-3">
       {faixa && (
         <div className="mb-2 hidden gap-2 sm:flex">
           <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Escolta intermediada</p>

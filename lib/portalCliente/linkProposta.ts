@@ -1,7 +1,6 @@
 /** Link temporário de uma proposta. Não abre o restante do sistema. */
 
 import { KIND_PORTAL_COTACAO, propostaDoHistorico, type LinhaHistoricoCotacao } from './historicoCotacoes';
-import { cotacaoExcluida } from './gestaoCotacao';
 import type { PropostaPortal } from './cotacao';
 
 export const DIAS_LINK_PROPOSTA = 10;
@@ -87,7 +86,6 @@ export function vistaPublicaDaProposta(
     return { ok: false, status: 404, error: 'Link inválido ou vencido.' };
   }
   if (!linkAindaVale(link, agora)) return { ok: false, status: 410, error: 'Este link venceu. Peça um novo.' };
-  if (cotacaoExcluida(linha)) return { ok: false, status: 404, error: 'Link inválido ou vencido.' };
   return {
     ok: true,
     cliente: String(linha.client_name || '').trim(),

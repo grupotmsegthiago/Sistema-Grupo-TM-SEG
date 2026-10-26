@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. O link da cotação 49 passa a mostrar a faixa da origem, com o mapa inteiro e a carreta no centro. O endereço já emitido continua o mesmo por 10 dias. O motor da OS não mudou.
+
 Executado em 26/10/2026. Antes de gerar a proposta, o usuário do cliente marca o aceite para uso em ordem de serviço. A equipe interna não marca. O texto fica no snapshot da cotação. O motor da OS não mudou.
 
 Executado em 26/10/2026. O link público da proposta monta a mesma cena do PDF: mapa estático da rota e a carreta do cliente. O histórico, ao gerar PDF ou e-mail, usa essa mesma cena.

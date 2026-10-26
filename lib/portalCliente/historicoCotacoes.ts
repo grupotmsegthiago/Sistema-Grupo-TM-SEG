@@ -7,7 +7,7 @@ import {
   type CotacaoPrazo,
   type VersaoTabelaRegional,
 } from '../precificacao/tabela2027';
-import { cidadeDaRota, type PropostaPortal } from './cotacao';
+import { cidadeDaRota, propostaNoPadraoDoCard, type PropostaPortal } from './cotacao';
 import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
@@ -221,17 +221,18 @@ export type TelaCotacao = {
 };
 
 export function valoresExibidosDaLinha(
-  linha: Pick<LinhaHistoricoCotacao, 'origin' | 'destination' | 'total_km' | 'total_value' | 'contract_details'>,
+  linha: Pick<LinhaHistoricoCotacao, 'origin' | 'destination' | 'total_km' | 'total_value' | 'contract_details'> & { client_name?: string | null },
   tela: TelaCotacao | null,
 ): { regiao: string; tarifaKm: number; horaExtra: number; total: number; km: number; duracaoMin: number | null; daTela: boolean } {
   const salvo = lerSnapshot(linha.contract_details);
+  const alinhada = propostaNoPadraoDoCard(propostaDoHistorico(linha), String(linha.client_name || ''));
   const gravado = {
-    regiao: salvo?.regiao || '—',
-    tarifaKm: salvo?.kmExtra ?? 0,
-    horaExtra: salvo?.horaExtra ?? 0,
-    total: Number(linha.total_value) || salvo?.acionamento || 0,
+    regiao: alinhada.regiao || salvo?.regiao || '—',
+    tarifaKm: alinhada.kmExtra,
+    horaExtra: alinhada.horaExtra,
+    total: alinhada.acionamento || Number(linha.total_value) || salvo?.acionamento || 0,
     km: Number(linha.total_km) || 0,
-    duracaoMin: salvo?.duracaoMin ?? null,
+    duracaoMin: salvo?.duracaoMin ?? alinhada.duracaoMin ?? null,
     daTela: false,
   };
   if (!tela || !linhaConfereComTela(linha, tela)) return gravado;

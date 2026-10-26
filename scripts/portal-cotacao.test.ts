@@ -30,6 +30,7 @@ import {
   numerosDaTela,
   primeiraRegiaoComTarifa,
   propostaDaConta,
+  propostaNoPadraoDoCard,
   regiaoDaOperacao,
   tarifaDoBotao,
   tabelaPadraoDaRegiao,
@@ -103,6 +104,69 @@ test('a proposta da tela usa a conta do card e não a fórmula antiga', () => {
   assert.equal(tela.franquiaHoras, 3);
   assert.equal(tela.mostraFranquiaIncluida, true);
   assert.notEqual(tela.total, calcularCotacaoPortal({ acionamento: 660, franquiaKm: 100, franquiaHoras: 3, kmExtra: 6.6, horaExtra: 160 }, 942.5).total);
+  const comRotaGravada = propostaDaConta({
+    tabelas: [{
+      id: 'errada',
+      operacao: 'SUDESTE - AVENIDA TALMA RODRIGUES RIBEIRO X RODOVIA PRESIDENTE DUTRA',
+      regiao: 'SUDESTE',
+      acionamento: 9583.8,
+      franquiaKm: 943,
+      franquiaHoras: 24,
+      kmExtra: 6.6,
+      horaExtra: 160,
+    }],
+    regiao: 'SUDESTE',
+    origem: 'Avenida Talma Rodrigues Ribeiro, 147 - Nova Zelândia, Serra - ES',
+    destino: 'Rodovia Presidente Dutra, 17744 - Cumbica, Guarulhos - SP',
+    paradas: [],
+    kmRota: 942.5,
+    conta,
+    tabelaRegiao: { acionamento: 660, franquiaKm: 100, franquiaHoras: 3, kmExtra: 6.6, horaExtra: 160 },
+  });
+  assert.equal(comRotaGravada.acordada, false);
+  assert.equal(comRotaGravada.acionamento, 6880.25);
+  assert.equal(comRotaGravada.kmExtra, 7.3);
+});
+
+test('o link da fórmula antiga mostra a faixa da origem', () => {
+  const publicada = propostaNoPadraoDoCard({
+    acordada: true,
+    regiao: 'SUDESTE',
+    origem: 'Avenida Talma Rodrigues Ribeiro, 147 - Nova Zelândia, Serra - ES',
+    destino: 'Rodovia Presidente Dutra, 17744 - Cumbica, Guarulhos - SP',
+    paradas: [],
+    acionamento: 9583.8,
+    kmFranquia: 943,
+    horasFranquia: 24,
+    kmExtra: 6.6,
+    horaExtra: 160,
+    operacao: 'SUDESTE - AVENIDA TALMA RODRIGUES RIBEIRO X RODOVIA PRESIDENTE DUTRA',
+    vigencia: '2027',
+    kmRota: 942.5,
+  }, 'CEVA LOGISTICS LTDA', [
+    { operation_type: 'TABELA 2027 - SUDESTE MG/ES', price_per_extra_km: 7.3, price_per_extra_hour: 169 },
+  ]);
+  assert.equal(publicada.regiao, 'SUDESTE MG/ES');
+  assert.equal(publicada.kmExtra, 7.3);
+  assert.equal(publicada.horaExtra, 169);
+  assert.equal(publicada.acionamento, 6880.25);
+  assert.equal(publicada.kmFaturado, 942.5);
+  const fechada = propostaNoPadraoDoCard({
+    acordada: true,
+    regiao: 'SUDESTE',
+    origem: 'Santos, SP',
+    destino: 'Rio de Janeiro, RJ',
+    paradas: [],
+    acionamento: 3893.14,
+    kmFranquia: 589.9,
+    horasFranquia: 14,
+    kmExtra: 7,
+    horaExtra: 160,
+    operacao: 'SUDESTE - SANTOS X RIO DE JANEIRO',
+    vigencia: '2027',
+    kmRota: 502.5,
+  }, 'CEVA LOGISTICS LTDA', []);
+  assert.equal(fechada.acionamento, 3893.14);
 });
 
 test('km extra e hora extra saem da tabela da região', () => {

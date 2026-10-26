@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. O link público da cotação 49 mostra a conta do card: SUDESTE MG/ES, R$ 7,30 por km e total R$ 6.880,25. A fórmula antiga (R$ 6,60 e R$ 9.583,80) deixa de aparecer nesse link. O mapa entra inteiro e a carreta fica no centro. O mesmo endereço vale 10 dias; um segundo clique não gera outro. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. No portal, o usuário do cliente marca "Concordo com as informações acima para utilização em ordem de serviço" antes de gerar a proposta. Equipe interna e quem cotação de dentro do sistema seguem sem essa marca. O texto fica no snapshot da cotação. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. O link público da proposta usa a mesma cena do PDF: mapa da rota e a carreta do cliente. O histórico da cotação grava a faixa da origem, como SUDESTE MG/ES. A linha genérica SUDESTE não substitui essa conta. O link de 10 dias continua. A pessoa abre só aquela proposta, sem menu e sem as outras telas. O token fica no snapshot que já existe, sem tabela nova. A tabela da proposta continua na mesma conta do card. Ainda não foi publicado. O motor da OS não mudou.

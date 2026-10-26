@@ -134,7 +134,12 @@ test('texto livre, cotação excluída e token errado não abrem a proposta', as
   const token = lerCaminhoLinkProposta(emitido.corpo.caminho)!.token;
   memoria.atual.status = 'Excluida';
   const excluida = await lerPropostaPublica(memoria, 'q-42', token, AGORA);
-  assert.equal(excluida.status, 404);
+  assert.equal(excluida.status, 200);
+  const deNovo = await emitirLinkProposta(memoria, ator, 'q-42', new Date(AGORA.getTime() + 60_000), TOKEN_B);
+  assert.equal(deNovo.status, 200);
+  if (!('ok' in deNovo.corpo)) return;
+  assert.equal(deNovo.corpo.reutilizado, true);
+  assert.equal(deNovo.corpo.caminho, emitido.corpo.caminho);
   memoria.atual.status = 'Enviada';
   const errado = await lerPropostaPublica(memoria, 'q-42', 'a'.repeat(32), AGORA);
   assert.equal(errado.status, 404);
