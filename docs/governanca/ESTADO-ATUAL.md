@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. A cotação gera um link de visualização por 10 dias. A pessoa abre só aquela proposta, sem menu e sem as outras telas. O token fica no snapshot que já existe, sem tabela nova. A tabela da proposta continua na mesma conta do card. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-26. O histórico da cotação grava e mostra a faixa da origem, como SUDESTE MG/ES, com a tarifa e o total do card. A linha genérica SUDESTE não substitui essa conta. O link de 10 dias continua. A pessoa abre só aquela proposta, sem menu e sem as outras telas. O token fica no snapshot que já existe, sem tabela nova. A tabela da proposta continua na mesma conta do card. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O histórico abre Ações, o PDF salvo leva texto e imagens com o nome `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`, e o e-mail da proposta aceita o anexo e copia thiago@grupotmseg.com.br e quem fez a cotação. A branch da tarifa duplicada entrou no histórico sem trocar `tarifaDoBotao`. As demais branches f513 já estavam na main. O motor da OS não mudou.
 

@@ -35,12 +35,12 @@ function PainelRegiao() {
 describe('região da cotação acompanha a origem', () => {
   it('Guarulhos acende SUDESTE e Curitiba acende SUL', () => {
     assert.equal(regiaoAcompanhaOrigem('Guarulhos, SP', 'CEVA', 'NORTE'), 'SUDESTE');
-    assert.equal(textoCardRegiao('Guarulhos, SP', 'CEVA', 'NORTE'), 'Sudeste SP/RJ');
+    assert.equal(textoCardRegiao('Guarulhos, SP', 'CEVA', 'NORTE'), 'SUDESTE SP/RJ');
     assert.equal(regiaoAcompanhaOrigem('Rio de Janeiro, RJ', 'CEVA', 'NORTE'), 'SUDESTE');
     assert.equal(regiaoAcompanhaOrigem('Belo Horizonte, MG', 'CEVA', 'NORTE'), 'SUDESTE');
-    assert.equal(textoCardRegiao('Belo Horizonte, MG', 'CEVA', 'SUDESTE'), 'Sudeste MG/ES');
+    assert.equal(textoCardRegiao('Belo Horizonte, MG', 'CEVA', 'SUDESTE'), 'SUDESTE MG/ES');
     assert.equal(regiaoAcompanhaOrigem('Curitiba, PR', 'CEVA', 'NORTE'), 'SUL');
-    assert.equal(textoCardRegiao('Porto Alegre, RS', 'CEVA', 'NORTE'), 'Sul');
+    assert.equal(textoCardRegiao('Porto Alegre, RS', 'CEVA', 'NORTE'), 'SUL');
     assert.equal(regiaoAcompanhaOrigem('Guarulhos, SP', 'IBL', 'NORTE'), 'NORTE');
     assert.equal(regiaoAcompanhaOrigem('', 'CEVA', 'NORTE'), 'NORTE');
   });
@@ -72,11 +72,11 @@ describe('região da cotação acompanha a origem', () => {
     await act(async () => { digitar(origem, 'Guarulhos, SP'); });
     assert.equal(botao('SUDESTE')?.getAttribute('aria-pressed'), 'true');
     assert.equal(botao('NORTE')?.getAttribute('aria-pressed'), 'false');
-    assert.equal(card(), 'Sudeste SP/RJ');
+    assert.equal(card(), 'SUDESTE SP/RJ');
     await act(async () => { digitar(origem, 'Curitiba, PR'); });
     assert.equal(botao('SUL')?.getAttribute('aria-pressed'), 'true');
     assert.equal(botao('SUDESTE')?.getAttribute('aria-pressed'), 'false');
-    assert.equal(card(), 'Sul');
+    assert.equal(card(), 'SUL');
     raiz.unmount();
   });
 

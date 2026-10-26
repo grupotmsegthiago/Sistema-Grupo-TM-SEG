@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. O histórico da mesma rota passa a mostrar a faixa, a tarifa e o total do card. A gravação nova e a linha antiga dessa rota deixam de usar a tabela genérica SUDESTE. O motor da OS não mudou.
+
 Executado em 26/10/2026 a partir do pedido de link temporário. O botão Link de visualização copia um endereço válido por 10 dias. A página `/proposta/v/` mostra só a proposta e não entra no sistema. O token fica em `contract_details` da cotação do portal. Cotação em texto livre não é reescrita. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026 a partir dos cinco pontos da cotação. A tabela e o rodapé da proposta usam `numerosDaTela`, a mesma conta do card. `propostaDaConta` não chama a fórmula antiga quando o card tem conta. O PDF copia as cores calculadas da tela e sai em PNG, com o nome `Cotacao_NUMERO_CLIENTE_DATA.pdf`. O botão fica em `isGenerating` com o texto "Gerando PDF da proposta, aguarde...". O e-mail inclui o pernoite só quando a proposta traz o valor. Ainda não foi publicado. O motor da OS não mudou.

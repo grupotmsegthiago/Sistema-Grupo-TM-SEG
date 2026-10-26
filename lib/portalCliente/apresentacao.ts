@@ -1,4 +1,4 @@
-import { rotulosSemAno, type PropostaPortal } from './cotacao.js';
+import { numerosDaTela, rotulosSemAno, type PropostaPortal } from './cotacao.js';
 
 export const MARCA_TMSEG = {
   nome: 'Grupo TM SEG',
@@ -78,29 +78,34 @@ function escaparHtml(valor: string): string {
 
 /** Tabela da proposta no e-mail. Pernoite só entra quando a proposta traz o valor. */
 export function linhasDaTabelaEmail(proposta: PropostaPortal): Array<{ rotulo: string; valor: string }> {
+  const tela = numerosDaTela(proposta);
+  const minutos = proposta.duracaoMin != null && proposta.duracaoMin > 0 ? Math.round(proposta.duracaoMin) : 0;
+  const horasViagem = Math.floor(minutos / 60);
+  const resto = minutos % 60;
+  const tempo = minutos <= 0 ? '' : horasViagem <= 0 ? `${resto} min` : `${horasViagem}h ${String(resto).padStart(2, '0')}min`;
   const linhas: Array<{ rotulo: string; valor: string }> = [
     { rotulo: 'Origem', valor: proposta.origem || '—' },
     { rotulo: 'Destino', valor: proposta.destino || '—' },
-    { rotulo: 'Veículo / tipo de operação', valor: proposta.operacao || '—' },
-    { rotulo: 'Franquia de horas incluída', valor: `${quantidade(proposta.horasFranquia)} h` },
-    { rotulo: 'Franquia de km incluída', valor: `${quantidade(proposta.kmFranquia)} km` },
+    { rotulo: 'Distância estimada', valor: proposta.kmRota != null && proposta.kmRota > 0 ? `${quantidade(proposta.kmRota)} km` : '—' },
   ];
-  if (proposta.kmRota != null && proposta.kmRota > 0) {
-    linhas.push({ rotulo: 'Km rodado', valor: `${quantidade(proposta.kmRota)} km` });
-  }
+  if (tempo) linhas.push({ rotulo: 'Tempo de viagem', valor: tempo });
+  linhas.push(
+    { rotulo: 'Região', valor: proposta.regiao || '—' },
+    { rotulo: 'Franquia de km incluída', valor: `${quantidade(tela.franquiaKm)} km` },
+    { rotulo: 'Franquia de horas incluída', valor: `${quantidade(tela.franquiaHoras)} h` },
+    { rotulo: 'Valor do km extra', valor: moeda(tela.kmExtra) },
+    { rotulo: 'Valor da hora extra', valor: moeda(tela.horaExtra) },
+  );
   if (proposta.kmFaturado != null && proposta.kmFaturado > 0) {
     linhas.push({ rotulo: 'Km faturado', valor: `${quantidade(proposta.kmFaturado)} km` });
   }
   if (proposta.horasContadas != null && proposta.horasContadas > 0) {
     linhas.push({ rotulo: 'Horas consideradas', valor: `${quantidade(proposta.horasContadas)} h` });
   }
-  if (proposta.pernoite != null && Number.isFinite(proposta.pernoite) && proposta.pernoite > 0) {
-    linhas.push({ rotulo: 'Pernoite', valor: moeda(proposta.pernoite) });
-  }
+  if (tela.pernoite != null) linhas.push({ rotulo: 'Pernoite', valor: moeda(tela.pernoite) });
   linhas.push(
-    { rotulo: 'Valor do km extra', valor: moeda(proposta.kmExtra) },
-    { rotulo: 'Valor da hora extra', valor: moeda(proposta.horaExtra) },
-    { rotulo: 'Valor total da proposta', valor: moeda(proposta.acionamento) },
+    { rotulo: 'Valor total da cotação', valor: moeda(tela.total) },
+    { rotulo: 'Validade da proposta', valor: '10 dias' },
     { rotulo: 'Condições de pagamento', valor: CONDICAO_PAGAMENTO },
     { rotulo: 'Pedágio', valor: AVISO_PEDAGIO },
   );

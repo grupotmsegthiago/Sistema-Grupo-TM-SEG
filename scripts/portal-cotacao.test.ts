@@ -137,7 +137,9 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.match(carta, /Franquia de km incluída/);
   assert.match(carta, /Valor do km extra/);
   assert.match(carta, /Valor da hora extra/);
-  assert.match(carta, /Valor total da proposta/);
+  assert.match(carta, /Valor total da cotação/);
+  assert.match(carta, /Validade da proposta: 10 dias/);
+  assert.match(carta, /Distância estimada/);
   assert.match(carta, /Condições de pagamento/);
   assert.doesNotMatch(carta, /Pernoite/);
   const comPernoite = cartaDaProposta({
@@ -184,7 +186,7 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
     operacao: 'SUDESTE - SANTOS X DIADEMA',
   });
   assert.match(html, /<table/);
-  assert.match(html, /Valor total da proposta/);
+  assert.match(html, /Valor total da cotação/);
   assert.match(carta, /Tabela: Santos x Diadema/);
   assert.match(carta, /Rota: Santos x Diadema/);
   assert.doesNotMatch(carta, /\(2026-\)/);

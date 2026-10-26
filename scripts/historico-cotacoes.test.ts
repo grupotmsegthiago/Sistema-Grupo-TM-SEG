@@ -9,6 +9,8 @@ import {
   formatarValorCotacao,
   lerSnapshot,
   linhaConfereComTela,
+  patchDaTelaNoSnapshot,
+  valoresExibidosDaLinha,
   mensagemCompletaCotacao,
   nomePdfCotacao,
   pedidoParaRegistro,
@@ -150,7 +152,47 @@ describe('histórico de cotações do portal', () => {
     assert.equal(proposta.acionamento, 6880.25);
     assert.equal(proposta.kmExtra, 7.3);
     assert.equal(proposta.horaExtra, 180);
+    assert.equal(proposta.regiao, 'SUDESTE MG/ES');
     assert.notEqual(proposta.acionamento, 9583.8);
+    const antigo = {
+      origin: 'Avenida Talma Rodrigues Ribeiro, Vitória - ES',
+      destination: 'Rodovia Presidente Dutra, SP',
+      total_km: 943,
+      total_value: 9583.8,
+      contract_details: JSON.stringify({
+        kind: 'PORTAL_COTACAO',
+        regiao: 'SUDESTE',
+        kmExtra: 6.6,
+        horaExtra: 160,
+        acionamento: 9583.8,
+        acordada: false,
+        vigencia: '2027',
+      }),
+    };
+    const tela = {
+      origem: 'Avenida Talma Rodrigues Ribeiro, Vitória, ES',
+      destino: 'Rodovia Presidente Dutra, São Paulo, SP',
+      regiao: 'SUDESTE MG/ES',
+      tarifaKm: 7.3,
+      horaExtra: 169,
+      total: 6880.25,
+      km: 942.5,
+      duracaoMin: 840,
+      horas: 23,
+      usouMinimo: false,
+      vigencia: '2027' as const,
+    };
+    const exibido = valoresExibidosDaLinha(antigo, tela);
+    assert.equal(exibido.daTela, true);
+    assert.equal(exibido.regiao, 'SUDESTE MG/ES');
+    assert.equal(exibido.tarifaKm, 7.3);
+    assert.equal(exibido.horaExtra, 169);
+    assert.equal(exibido.total, 6880.25);
+    const patch = patchDaTelaNoSnapshot(antigo.contract_details, tela);
+    assert.equal(patch?.total_value, 6880.25);
+    assert.equal(JSON.parse(String(patch?.contract_details)).regiao, 'SUDESTE MG/ES');
+    assert.equal(JSON.parse(String(patch?.contract_details)).kmExtra, 7.3);
+    assert.equal(patchDaTelaNoSnapshot('Validade: 5 dias.', tela), null);
   });
 
   it('mantém ativa no 10º dia, expira no 11º e não reabre cotação convertida', () => {

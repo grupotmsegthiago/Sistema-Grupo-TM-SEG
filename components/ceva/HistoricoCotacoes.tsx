@@ -17,6 +17,9 @@ import {
   lerSnapshot,
   mensagemCompletaCotacao,
   linhaConfereComTela,
+  patchDaTelaNoSnapshot,
+  valoresExibidosDaLinha,
+  type TelaCotacao,
   nomePdfCotacao,
   normalizarLinhaHistorico,
   reservarNumeroCotacao,
@@ -221,7 +224,8 @@ export const HistoricoCotacoes: React.FC<{
   origemAtual?: string;
   destinoAtual?: string;
   kmAtual?: number | null;
-}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar, contaAtual = null, origemAtual = '', destinoAtual = '', kmAtual = null }) => {
+  duracaoMinAtual?: number | null;
+}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar, contaAtual = null, origemAtual = '', destinoAtual = '', kmAtual = null, duracaoMinAtual = null }) => {
   const portal = usePortalCliente();
   const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
   const versaoAtiva = versao ?? versaoLocal;
@@ -339,6 +343,49 @@ export const HistoricoCotacoes: React.FC<{
     setLinhas((lista) => lista.map((item) => item.id === linha.id ? { ...item, contract_details: corpo } : item));
     return reservado;
   };
+
+  const telaAtual = (): TelaCotacao | null => {
+    if (!contaAtual?.aplicar || kmAtual == null) return null;
+    return {
+      origem: origemAtual,
+      destino: destinoAtual,
+      regiao: contaAtual.regiao,
+      tarifaKm: contaAtual.tarifaKm,
+      horaExtra: contaAtual.horaExtra,
+      total: contaAtual.total,
+      km: kmAtual,
+      duracaoMin: duracaoMinAtual,
+      horas: contaAtual.horasFaturadas,
+      usouMinimo: contaAtual.usouMinimo,
+      vigencia: contaAtual.vigencia,
+    };
+  };
+
+  useEffect(() => {
+    if (!clienteNome) return;
+    const tela = telaAtual();
+    if (!tela) return;
+    const alvos = linhas.flatMap((linha) => {
+      if (!linhaConfereComTela(linha, tela)) return [];
+      const patch = patchDaTelaNoSnapshot(linha.contract_details, tela);
+      return patch ? [{ id: linha.id, patch }] : [];
+    });
+    if (!alvos.length) return;
+    let ativo = true;
+    void (async () => {
+      for (const alvo of alvos) {
+        const { error } = await supabase.from('quotes').update(alvo.patch).eq('id', alvo.id);
+        if (!ativo || error) return;
+      }
+      if (!ativo) return;
+      const porId = new Map(alvos.map((alvo) => [alvo.id, alvo.patch]));
+      setLinhas((lista) => lista.map((item) => {
+        const patch = porId.get(item.id);
+        return patch ? { ...item, contract_details: patch.contract_details, total_value: patch.total_value, total_hours: patch.total_hours } : item;
+      }));
+    })();
+    return () => { ativo = false; };
+  }, [linhas, contaAtual, origemAtual, destinoAtual, kmAtual, duracaoMinAtual, clienteNome]);
 
   const contaDaLinha = (linha: LinhaHistoricoCotacao): ContaVisivelCotacao | null => {
     if (!contaAtual?.aplicar) return null;
@@ -575,8 +622,7 @@ export const HistoricoCotacoes: React.FC<{
               {linhas.map((linha) => {
                 const salvo = lerSnapshot(linha.contract_details);
                 const validade = rotuloValidade(linha);
-                const contaLinha = contaDaLinha(linha);
-                const regiao = contaLinha?.aplicar ? (contaLinha.regiao || salvo?.regiao || '—') : (salvo?.regiao || '—');
+                const exibido = valoresExibidosDaLinha(linha, telaAtual());
                 const franquia = salvo ? Boolean(salvo.usouMinimo) : linha.total_km > 0 && linha.total_km <= 100;
                 return (
                   <tr key={linha.id} className="border-t border-slate-100 align-top">
@@ -587,11 +633,11 @@ export const HistoricoCotacoes: React.FC<{
                     </td>
                     <td className="px-3 py-3">{resumirEndereco(linha.origin)}</td>
                     <td className="px-3 py-3">{resumirEndereco(linha.destination)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap">{textoDistanciaTempo(linha.total_km, salvo?.duracaoMin ?? null)}</td>
-                    <td className="px-3 py-3">{textoRegiaoFranquia(regiao, franquia)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`valor-km-${linha.id}`}>{textoTarifaKm(contaLinha?.aplicar ? contaLinha.tarifaKm : salvo?.kmExtra)}</td>
-                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(contaLinha?.aplicar ? contaLinha.horaExtra : salvo?.horaExtra)}</td>
-                    <td className="px-3 py-3 font-black text-slate-900">{formatarValorCotacao(contaLinha?.aplicar ? contaLinha.total : linha.total_value)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">{textoDistanciaTempo(exibido.km, exibido.duracaoMin)}</td>
+                    <td className="px-3 py-3">{textoRegiaoFranquia(exibido.regiao, franquia)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`valor-km-${linha.id}`}>{textoTarifaKm(exibido.tarifaKm)}</td>
+                    <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(exibido.horaExtra)}</td>
+                    <td className="px-3 py-3 font-black text-slate-900">{formatarValorCotacao(exibido.total)}</td>
                     <td className="px-3 py-3">{selo(validade.tom, validade.rotulo)}</td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <AcoesDaLinha

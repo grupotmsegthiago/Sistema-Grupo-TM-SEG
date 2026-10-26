@@ -7,7 +7,7 @@ import {
   type CotacaoPrazo,
   type VersaoTabelaRegional,
 } from '../precificacao/tabela2027';
-import type { PropostaPortal } from './cotacao';
+import { cidadeDaRota, type PropostaPortal } from './cotacao';
 import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
@@ -180,13 +180,93 @@ export function linhaConfereComTela(
   const kmTela = Number(tela.km);
   const kmLinha = Number(linha.total_km);
   if (!Number.isFinite(kmTela) || kmTela <= 0 || !Number.isFinite(kmLinha)) return false;
-  if (Math.abs(kmLinha - kmTela) >= 0.2) return false;
+  if (Math.abs(kmLinha - kmTela) >= 1) return false;
   const origemTela = String(tela.origem || '').trim();
   const origemLinha = String(linha.origin || '').trim();
   if (!origemTela || !origemLinha) return false;
   if (origemLinha === origemTela) return true;
-  return resumirEndereco(origemLinha) === resumirEndereco(origemTela)
-    && resumirEndereco(linha.destination) === resumirEndereco(tela.destino);
+  if (resumirEndereco(origemLinha) === resumirEndereco(origemTela)
+    && resumirEndereco(linha.destination) === resumirEndereco(tela.destino)) return true;
+  const saidaLinha = cidadeDaRota(origemLinha);
+  const saidaTela = cidadeDaRota(origemTela);
+  const chegadaLinha = cidadeDaRota(String(linha.destination || ''));
+  const chegadaTela = cidadeDaRota(String(tela.destino || ''));
+  return saidaLinha.length >= 3 && saidaLinha === saidaTela && chegadaLinha.length >= 3 && chegadaLinha === chegadaTela;
+}
+
+/** O que o card mostra. O histórico grava e lê estes campos, sem recalcular a tabela genérica. */
+export type TelaCotacao = {
+  origem: string;
+  destino: string;
+  regiao: string;
+  tarifaKm: number;
+  horaExtra: number;
+  total: number;
+  km: number;
+  duracaoMin: number | null;
+  horas: number;
+  usouMinimo: boolean;
+  vigencia: VersaoTabelaRegional;
+};
+
+export function valoresExibidosDaLinha(
+  linha: Pick<LinhaHistoricoCotacao, 'origin' | 'destination' | 'total_km' | 'total_value' | 'contract_details'>,
+  tela: TelaCotacao | null,
+): { regiao: string; tarifaKm: number; horaExtra: number; total: number; km: number; duracaoMin: number | null; daTela: boolean } {
+  const salvo = lerSnapshot(linha.contract_details);
+  const gravado = {
+    regiao: salvo?.regiao || '—',
+    tarifaKm: salvo?.kmExtra ?? 0,
+    horaExtra: salvo?.horaExtra ?? 0,
+    total: Number(linha.total_value) || salvo?.acionamento || 0,
+    km: Number(linha.total_km) || 0,
+    duracaoMin: salvo?.duracaoMin ?? null,
+    daTela: false,
+  };
+  if (!tela || !linhaConfereComTela(linha, tela)) return gravado;
+  return {
+    regiao: tela.regiao,
+    tarifaKm: tela.tarifaKm,
+    horaExtra: tela.horaExtra,
+    total: tela.total,
+    km: tela.km,
+    duracaoMin: tela.duracaoMin ?? gravado.duracaoMin,
+    daTela: true,
+  };
+}
+
+/** Devolve a gravação só quando o snapshot ainda está na tabela genérica. Texto livre não entra. */
+export function patchDaTelaNoSnapshot(
+  bruto: string | null | undefined,
+  tela: TelaCotacao,
+): { contract_details: string; total_value: number; total_hours: number } | null {
+  if (!bruto) return null;
+  let dados: Record<string, unknown>;
+  try {
+    dados = JSON.parse(bruto) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (!dados || dados.kind !== KIND_PORTAL_COTACAO || dados.acordada) return null;
+  const igual = String(dados.regiao || '') === tela.regiao
+    && Math.abs(Number(dados.kmExtra) - tela.tarifaKm) < 0.001
+    && Math.abs(Number(dados.horaExtra) - tela.horaExtra) < 0.001
+    && Math.abs(Number(dados.acionamento) - tela.total) < 0.01;
+  if (igual) return null;
+  return {
+    contract_details: JSON.stringify({
+      ...dados,
+      regiao: tela.regiao,
+      kmExtra: tela.tarifaKm,
+      horaExtra: tela.horaExtra,
+      acionamento: tela.total,
+      duracaoMin: tela.duracaoMin,
+      vigencia: tela.vigencia,
+      usouMinimo: tela.usouMinimo,
+    }),
+    total_value: tela.total,
+    total_hours: tela.horas,
+  };
 }
 
 export function numeroInformado(valor: unknown): number | null {

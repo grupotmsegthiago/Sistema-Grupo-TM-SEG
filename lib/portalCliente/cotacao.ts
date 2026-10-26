@@ -7,6 +7,7 @@ import {
   FRANQUIA_KM,
   getRegionFromLocation,
   nomeLinhaPadrao,
+  nomeRegiao,
   numerosDaCotacaoRegional,
   valorKmDaFaixa,
   versaoDaLinhaTarifaria,
@@ -51,7 +52,7 @@ export function regiaoAcompanhaOrigem(origem: string, cliente: string, atual: st
 
 export function textoCardRegiao(origem: string, cliente: string, botao: string): string {
   const local = getRegionFromLocation(origem, '', cliente);
-  if (!local.clienteContratual && local.region) return rotuloRegiaoVisivel(local.region);
+  if (!local.clienteContratual && local.region) return nomeRegiao(local.region);
   if (botao === 'CENTRO-OESTE') return 'Centro-Oeste';
   if (!botao) return '';
   return `${botao.charAt(0)}${botao.slice(1).toLowerCase()}`;
@@ -317,7 +318,7 @@ export function contaVisivelDaCotacao(input: {
     horaExtra: regional.horaExtra ?? 0,
     total: regional.conta.valor,
     usouMinimo: regional.conta.usouMinimo,
-    regiao: rotuloRegiaoVisivel(regional.region) || regional.nome,
+    regiao: nomeRegiao(regional.region) || regional.nome,
     vigencia: regional.vigenciaUsada,
   };
 }

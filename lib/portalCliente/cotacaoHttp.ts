@@ -68,6 +68,27 @@ export function montarPropostaDoPedido(
   const destino = String(pedido.destino || '').trim();
   const paradas = Array.isArray(pedido.paradas) ? pedido.paradas.map((item) => String(item || '')) : [];
   const km = numero(pedido.km);
+  const pedidoPronto = pedido as { kmExtra?: unknown; horaExtra?: unknown; acionamento?: unknown; valor?: unknown; regiao?: unknown; horas?: unknown; kmFranquia?: unknown; duracaoMin?: unknown; operacao?: unknown; vigencia?: unknown };
+  const tarifaInformada = numero(pedidoPronto.kmExtra);
+  const totalInformado = numero(pedidoPronto.acionamento ?? pedidoPronto.valor);
+  if (tarifaInformada > 0 && totalInformado > 0 && regiao && origem && destino && km > 0) {
+    return {
+      acordada: false,
+      regiao,
+      origem,
+      destino,
+      paradas,
+      acionamento: totalInformado,
+      kmFranquia: numero(pedidoPronto.kmFranquia) || 100,
+      horasFranquia: numero(pedidoPronto.horas) || 3,
+      kmExtra: tarifaInformada,
+      horaExtra: numero(pedidoPronto.horaExtra),
+      operacao: String(pedidoPronto.operacao || `${regiao} - ${origem}`).slice(0, 180),
+      kmRota: km,
+      duracaoMin: numero(pedidoPronto.duracaoMin) || null,
+      vigencia: pedidoPronto.vigencia === '2026' || pedidoPronto.vigencia === '2027' ? pedidoPronto.vigencia : null,
+    };
+  }
   const tabelaRegiao = valoresDaRegiao(tabelas.filter((item) => item.regiao === regiao));
   if (!regiao || !origem || !destino || !tabelaRegiao || km <= 0) return { error: 'Faltam região, origem, destino ou a rota.' };
   const conta = contaVisivelDaCotacao({
