@@ -8,27 +8,30 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-let handler: any = null;
+let app: any = null;
 let bootError: Error | null = null;
 
-/** Encaminha a requisição Vercel para o Express completo (dist/vercelApp.cjs). */
+/** Encaminha a requisição Vercel para o Express completo (dist/vercelApp.cjs).
+ * A Vercel entrega req/res do Node. O adapter serverless-http espera evento Lambda:
+ * a resposta não fecha e a função fica até estourar o tempo. */
 async function proxyToExpress(req: any, res: any) {
   try {
-    if (!handler) {
+    if (!app) {
       if (bootError) {
         res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
         return;
       }
-      const serverless = require("serverless-http");
       const { getApp } = require("../dist/vercelApp.cjs");
-      const app = await getApp();
-      handler = serverless(app, { binary: true });
+      app = await getApp();
     }
-    return handler(req, res);
+    return app(req, res);
   } catch (e: any) {
     bootError = e instanceof Error ? e : new Error(String(e));
+    app = null;
     console.error("[Vercel] Falha ao iniciar backend:", bootError);
-    res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+    if (!res.headersSent) {
+      res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+    }
   }
 }
 

@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Express da Vercel responde de novo (26/10/2026)
+
+Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Depois que o bundle passou a iniciar, a função esperava um evento Lambda e não fechava a resposta. A Vercel entrega req e res do Node, então api/index.ts chama o Express direto. O motor calculateMissionFinancials não foi alterado.
+
 ## Express da Vercel voltou a iniciar (26/10/2026)
 
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O bundle CJS carregava api/dados-protegidos.ts, e o createRequire(import.meta.url) desse arquivo recebia endereço vazio. O Express inteiro respondia 503, inclusive a rota da vigência. A rota /api/dados-protegidos do Express passou a chamar atenderDadosProtegidos direto. A função solta da Vercel continua no arquivo api/dados-protegidos.ts. O motor calculateMissionFinancials não foi alterado.

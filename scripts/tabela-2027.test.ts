@@ -405,6 +405,9 @@ describe('vigência gravada no servidor', () => {
     assert.match(trecho, /\.from\('system_settings'\)\.upsert/);
     assert.equal(rotas.includes('from "../api/dados-protegidos"'), false);
     assert.match(rotas, /atenderDadosProtegidos/);
+    const entrada = readFileSync('api/index.ts', 'utf8');
+    assert.match(entrada, /return app\(req, res\)/);
+    assert.equal(entrada.includes('require("serverless-http")'), false);
     const sql = readFileSync('migrations/2026_10_26_fix_system_settings_rls.sql', 'utf8');
     assert.match(sql, /key = 'tabela_regional_vigente'/);
     assert.doesNotMatch(sql, /FROM users\b/i);
