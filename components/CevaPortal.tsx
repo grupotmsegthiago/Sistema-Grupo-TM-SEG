@@ -263,6 +263,12 @@ const CevaPortal: React.FC = () => {
   const sessaoAtual = portal.marca.exigeLogin ? sessao : sessaoAberta;
 
   useEffect(() => {
+    const abrirOs = () => setPedirAberto(true);
+    window.addEventListener('tmseg-cotacao-criar-os', abrirOs);
+    return () => window.removeEventListener('tmseg-cotacao-criar-os', abrirOs);
+  }, []);
+
+  useEffect(() => {
     const sair = () => {
       if (!portal.marca.exigeLogin) return;
       portal.limpar();

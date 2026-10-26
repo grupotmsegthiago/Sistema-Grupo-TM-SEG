@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Histórico de cotações no portal (26/10/2026)
+
+Ainda não publicado. Abaixo de Gerar proposta, o cliente vê as 10 cotações mais recentes: data, solicitante, origem, destino, distância e tempo de viagem, região com franquia, valor, validade de 30 dias e o botão Ver PDF. O PDF reabre a proposta com o snapshot gravado em `quotes.contract_details`. Criar OS só abre a solicitação já existente, com origem e destino, sem gravar missão e sem marcar a cotação como convertida. A lista usa a rota de cotação que já existia (`?lista=historico`). Rota acordada e cliente DHL/IBL continuam com a conta de antes; a linha do histórico é só o registro. O motor `calculateMissionFinancials` não foi alterado.
+
 ## Cotação, edição regional e imagens (26/10/2026)
 
 Publicado nesta entrega. Thiago aplicou `migrations/2026_10_26_cotacoes_validade.sql` no banco. Cotação sem `converted_to_order_id` e com mais de 30 dias recebe `is_active = false` e status `expirada` na listagem, no painel da Diretoria e no cron de manutenção. Cotação já ligada a uma OS não expira e não volta para seleção. Com as colunas no banco, a rotina grava a expiração de verdade. Diretoria ou Administrador edita KM, hora extra e franquia da linha `TABELA 2026/2027` pelo `PATCH /api/clients/:clientId/pricing-tables/:id`, gravando só aquele cliente e deixando rastro em `system_logs`. DHL e IBL não recebem essa linha. O cartão `QuoteCalculatorCard` aparece na tabela de preços e no portal. Rota acordada e cliente contratual continuam na conta que já existia. Os demais usam `calculateTripCost`. Antes do PDF e da impressão da proposta, as imagens viram data URL. O motor `calculateMissionFinancials` não foi alterado.

@@ -1,0 +1,34 @@
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
+import { prepararImagensDoElemento } from '../../lib/precificacao/imageUtils';
+
+/** Abre o PDF já com as imagens em Base64 e também baixa o arquivo. A janela precisa ter sido aberta no clique. */
+export async function abrirPdfDaProposta(artigo: HTMLElement, nomeArquivo: string, janela: Window | null): Promise<void> {
+  await prepararImagensDoElemento(artigo);
+  const canvas = await html2canvas(artigo, { scale: 2, useCORS: true, backgroundColor: '#f7f5f2', logging: false });
+  const imagem = canvas.toDataURL('image/png');
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const largura = pdf.internal.pageSize.getWidth();
+  const alturaPagina = pdf.internal.pageSize.getHeight();
+  const altura = (canvas.height * largura) / canvas.width;
+  let restante = altura;
+  let posicao = 0;
+  pdf.addImage(imagem, 'PNG', 0, posicao, largura, altura);
+  restante -= alturaPagina;
+  while (restante > 0) {
+    posicao = restante - altura;
+    pdf.addPage();
+    pdf.addImage(imagem, 'PNG', 0, posicao, largura, altura);
+    restante -= alturaPagina;
+  }
+  const blob = pdf.output('blob');
+  const url = URL.createObjectURL(blob);
+  if (janela && !janela.closed) janela.location.href = url;
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nomeArquivo;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

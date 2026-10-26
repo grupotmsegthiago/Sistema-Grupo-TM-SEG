@@ -313,6 +313,17 @@ const LISTA_VAZIA: Record<CampoListaSolicitacao, string[]> = {
   tsp: [],
   atendimentoPgr: [],
 };
+function enderecoVindoDaCotacao(campo: 'origem' | 'destino'): string {
+  try {
+    const bruto = sessionStorage.getItem('tmseg-cotacao-os');
+    if (!bruto) return '';
+    const dados = JSON.parse(bruto) as { origem?: string; destino?: string };
+    return String(dados[campo] || '');
+  } catch {
+    return '';
+  }
+}
+
 const LISTA_EXEMPLO: Record<CampoListaSolicitacao, string[]> = {
   operacao: ['DEDICADO', 'SPOT'],
   quemAutorizou: ['JOÃO SILVA'],
@@ -327,8 +338,12 @@ export const SolicitarEscolta: React.FC<Props> = ({ onFechar, onCriada, somenteV
   const { isLoaded } = useLoadScript(googleMapsLoadConfig);
   const origemRef = useRef<google.maps.places.Autocomplete | null>(null);
   const destinoRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const [origem, setOrigem] = useState('');
-  const [destino, setDestino] = useState('');
+  const [origem, setOrigem] = useState(() => enderecoVindoDaCotacao('origem'));
+  const [destino, setDestino] = useState(() => enderecoVindoDaCotacao('destino'));
+  useEffect(() => {
+    const timer = window.setTimeout(() => sessionStorage.removeItem('tmseg-cotacao-os'), 400);
+    return () => window.clearTimeout(timer);
+  }, []);
   const [pedido, setPedido] = useState('');
   const [agentes, setAgentes] = useState<1 | 2 | 0>(0);
   const [dataInicio, setDataInicio] = useState('');

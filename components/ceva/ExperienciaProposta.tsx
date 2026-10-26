@@ -64,13 +64,17 @@ export const ExperienciaProposta: React.FC<{
   cena?: CenaVisual | null;
   operacoes?: string | null;
   onFechar: () => void;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, operacoes, onFechar }) => {
+  /** Fora da tela, sem opacidade zero, para o html2canvas ler a proposta salva. */
+  modoCaptura?: boolean;
+  dataTexto?: string;
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, operacoes, onFechar, modoCaptura = false, dataTexto }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState('');
   const caminho = caminhoDaProposta(proposta);
-  const data = dataDaProposta();
+  const data = dataTexto || dataDaProposta();
+  const visivel = mostrando || modoCaptura;
 
   const postar = async (acao: 'salvar' | 'email') => {
     setOcupado(acao);
@@ -118,7 +122,7 @@ export const ExperienciaProposta: React.FC<{
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6">
+    <div className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Outfit:wght@400;500;600&display=swap');
         @keyframes tmseg-subir { from { opacity: 0; transform: translateY(36px) rotateX(8deg); } to { opacity: 1; transform: translateY(0) rotateX(0); } }
@@ -131,7 +135,7 @@ export const ExperienciaProposta: React.FC<{
           .tmseg-parado { display: block; }
         }
       `}</style>
-      {!mostrando && (
+      {!visivel && (
         <div className="w-full max-w-xl text-center text-white" style={{ fontFamily: 'Outfit, sans-serif' }}>
           <svg viewBox="0 0 400 210" className="mx-auto mb-4 h-48 w-full max-w-lg" aria-hidden="true">
             <path d="M36 178 C 140 178, 230 118, 364 128" fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="2" strokeDasharray="5 7" />
@@ -149,10 +153,10 @@ export const ExperienciaProposta: React.FC<{
           <p className="text-2xl font-semibold leading-snug">{frase}</p>
         </div>
       )}
-      {mostrando && (
-        <article id="proposta-tmseg-online" className="relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]" style={{ animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
-          <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>
-          <div data-proposta-corpo className="min-h-0 flex-1 overflow-auto">
+      {visivel && (
+        <article id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={modoCaptura ? '1' : undefined} className={modoCaptura ? 'relative flex w-full flex-col bg-[#f7f5f2] text-[#161616]' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
+          {!modoCaptura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
+          <div data-proposta-corpo className={modoCaptura ? '' : 'min-h-0 flex-1 overflow-auto'}>
             <header className="relative overflow-hidden bg-[#0c0d10] px-8 pb-10 pt-8 text-white sm:px-12">
               <div className="pointer-events-none absolute -right-10 top-8 h-56 w-56 rounded-full bg-[#d0121a]/30 blur-3xl" />
               <ImagemSegura src="/marca-grupotmseg.webp" alt="Grupo TM SEG" className="h-14 w-auto" />
@@ -264,7 +268,7 @@ export const ExperienciaProposta: React.FC<{
             </section>
           </div>
 
-          <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
+          {!modoCaptura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => { if (!imprimirPropostaOnline()) setAviso('O navegador bloqueou a janela de impressão. Permita a janela e tente de novo.'); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white">Salvar em PDF</button>
               {!proposta.acordada && (
@@ -284,7 +288,7 @@ export const ExperienciaProposta: React.FC<{
               <button type="submit" disabled={ocupado === 'email'} className="mt-5 h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">Enviar por e-mail</button>
             </form>
             {aviso && <p className="mt-3 text-sm font-medium">{aviso}</p>}
-          </footer>
+          </footer>}
         </article>
       )}
     </div>

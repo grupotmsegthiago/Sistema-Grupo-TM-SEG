@@ -1615,7 +1615,13 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       }
       try {
         const cliente = await carregarClienteDoPortal(sb);
-        const { listarTabelasCotacao } = await import('../portalCliente/cotacaoHttp.js');
+        const { listarTabelasCotacao, listarHistoricoCotacoes } = await import('../portalCliente/cotacaoHttp.js');
+        if (String(req.query?.lista || '') === 'historico') {
+          const pagina = Number(req.query?.pagina);
+          const historico = await listarHistoricoCotacoes(sb, cliente, Number.isFinite(pagina) ? pagina : 0);
+          res.status(historico.status).json(historico.corpo);
+          return;
+        }
         const resultado = await listarTabelasCotacao(sb, cliente);
         res.status(resultado.status).json(resultado.corpo);
       } catch (error) {
@@ -1635,7 +1641,12 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
       }
       try {
         const cliente = await carregarClienteDoPortal(sb);
-        const { salvarPropostaPortal, propostaParaEmail } = await import('../portalCliente/cotacaoHttp.js');
+        const { salvarPropostaPortal, propostaParaEmail, registrarCotacaoPortal } = await import('../portalCliente/cotacaoHttp.js');
+        if (String(body?.acao || '') === 'registrar') {
+          const gravado = await registrarCotacaoPortal(sb, cliente, { name: session.name, email: session.email }, body || {});
+          res.status(gravado.status).json(gravado.corpo);
+          return;
+        }
         if (String(body?.acao || '') === 'email') {
           const preparado = await propostaParaEmail(sb, cliente, body || {});
           if (preparado.status !== 200 || !('ok' in preparado.corpo)) {

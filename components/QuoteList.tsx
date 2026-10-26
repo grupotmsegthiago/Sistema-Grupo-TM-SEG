@@ -197,7 +197,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
       )}
       {embedded && clientName?.trim() && (
         <div className="rounded-xl border border-gray-200 bg-slate-50 p-4">
-          <CotacaoPortal clienteNome={clientName.trim()} />
+          <CotacaoPortal clienteNome={clientName.trim()} clientId={clientId} />
         </div>
       )}
       <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />

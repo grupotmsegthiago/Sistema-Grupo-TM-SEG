@@ -16,7 +16,9 @@ import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
 import { numerosDaCotacaoRegional } from '../../lib/precificacao/tabela2027';
+import { pedidoParaRegistro } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
+import { HistoricoCotacoes } from './HistoricoCotacoes';
 
 function filtroDoCliente(nome: string): string {
   const limpo = nome.trim().replace(/"/g, '');
@@ -276,7 +278,7 @@ function MapaCotacao(props: {
   );
 }
 
-export const CotacaoPortal: React.FC<{ clienteNome?: string }> = ({ clienteNome }) => {
+export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string | number | null }> = ({ clienteNome, clientId }) => {
   const portal = usePortalCliente();
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [tabelas, setTabelas] = useState<TabelaCotacao[]>([]);
@@ -297,6 +299,8 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string }> = ({ clienteNome 
   const [carretaPronta, setCarretaPronta] = useState<string | null>(null);
   const [logoPronto, setLogoPronto] = useState<string | null>(null);
   const [operacoes, setOperacoes] = useState<string | null>(null);
+  const [recargaHistorico, setRecargaHistorico] = useState(0);
+  const [avisoHistorico, setAvisoHistorico] = useState('');
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
     setEditando((atual) => (Boolean(atual[id]) === ativo ? atual : { ...atual, [id]: ativo }));
@@ -412,9 +416,59 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string }> = ({ clienteNome 
       if (regional.horaExtra != null) nova.horaExtra = regional.horaExtra;
       if (regional.nome) nova.regiao = regional.nome;
     }
+    const usouMinimo = regional.aplicar ? Boolean(regional.conta.usouMinimo) : kmRota <= 100;
     setProposta(nova);
     setPasso(0);
     setEtapa('animando');
+    void gravarNoHistorico(nova, usouMinimo);
+  };
+
+  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean) => {
+    setAvisoHistorico('');
+    const pedido = {
+      origem,
+      destino,
+      paradas: paradas.map((item) => item.texto).filter(Boolean),
+      km: kmRota,
+      duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
+      valor: nova.acionamento,
+      horas: nova.horasFranquia,
+      regiao: nova.regiao,
+      kmFranquia: nova.kmFranquia,
+      kmExtra: nova.kmExtra,
+      horaExtra: nova.horaExtra,
+      acionamento: nova.acionamento,
+      acordada: nova.acordada,
+      operacao: nova.operacao,
+      usouMinimo,
+    };
+    try {
+      if (clienteNome) {
+        const { supabase } = await import('../../lib/supabase');
+        let idCliente = Number(clientId);
+        if (!Number.isFinite(idCliente) || idCliente <= 0) {
+          const { data } = await supabase.from('clients').select('id').ilike('name', clienteNome).limit(1).maybeSingle();
+          idCliente = Number(data?.id);
+        }
+        let usuario: { name?: string; email?: string } = {};
+        try { usuario = JSON.parse(localStorage.getItem('userData') || '{}') as { name?: string; email?: string }; } catch { usuario = {}; }
+        const registro = pedidoParaRegistro(pedido, { id: idCliente, name: clienteNome }, { name: usuario.name || '', email: usuario.email || '' });
+        if (!registro.ok) throw new Error(registro.error);
+        const { error } = await supabase.from('quotes').insert(registro.linha);
+        if (error) throw new Error('A proposta abriu, mas o histórico não gravou.');
+      } else {
+        const resposta = await fetch(portal.url('/cotacao'), {
+          method: 'POST',
+          headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ acao: 'registrar', ...pedido }),
+        });
+        const corpo = await resposta.json().catch(() => ({}));
+        if (!resposta.ok) throw new Error(corpo.error || 'A proposta abriu, mas o histórico não gravou.');
+      }
+      setRecargaHistorico((atual) => atual + 1);
+    } catch (falha) {
+      setAvisoHistorico(falha instanceof Error ? falha.message : 'A proposta abriu, mas o histórico não gravou.');
+    }
   };
 
   const clienteVisual = clienteNome || portal.marca.rotulo;
@@ -577,6 +631,7 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string }> = ({ clienteNome 
           <FileText size={18} /> Gerar proposta <ArrowRight size={18} />
         </button>
         {!podeGerar && <p className="text-center text-xs font-semibold text-slate-500">{kmRota == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} />
       </div>
       {etapa !== 'parada' && proposta && (
         <ExperienciaProposta
