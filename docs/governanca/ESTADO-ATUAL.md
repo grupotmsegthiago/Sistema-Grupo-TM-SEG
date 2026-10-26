@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg: a Tabela 2027 com prioridade e a escolha manual da 2026, o fallback ", Brasil" na rota Salvador–São Paulo, a Nova Rota sem tipo e região, o fuso de Brasília em 24h e o gate de fluxo. A branch da tarifa duplicada do portal não entrou. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Gate de fluxo: antes de criar, editar ou apagar código ou tabela, o agente desenha o plano no chat e na seção `# Próxima Execução Proposta` de `RELATORIO_ULTIMA_EXECUCAO.md`, e só executa depois de aprovação expressa (exemplo: "Fluxo aprovado, pode executar"). Desvio ou dúvida volta o plano ao chat e ao relatório, sem implementação. Permanecem o motor da OS em `lib/financialUtils.ts`, os contratos DHL e IBL, o limite de 50 funções na Vercel e o horário de Brasília em 24 horas.
 
 Atualizado em 2026-10-26. O padrão temporal oficial fica em `America/Sao_Paulo` (Horário de Brasília), hora em 24h (`HH:mm`, sem AM/PM) e data em `DD/MM/AAAA`, no portal, nos relatórios, nos PDFs e no que for persistido. O smoke check antes de publicar exige `GET /api/health`, `npm run build`, os testes do escopo e, quando a alteração mexe em notificação ou faturamento, `scripts/email-health-check.ts`. O motor da OS não mudou.
@@ -22,7 +24,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Histórico da cotação com Valor KM, Hora Extra, menu de ações e painel da rota, na `main`, projeto `sistema-grupo-tm-seg`. A rota Salvador–São Paulo, a vigência regional, a Tabela 2027 e a senha por e-mail e WhatsApp continuam nessa mesma `main`. O fuso oficial é `America/Sao_Paulo`, em 24h |
+| Produção agora | Unificação de 26/10/2026 na `main`, projeto `sistema-grupo-tm-seg`: Tabela 2027 com prioridade e escolha manual da 2026, fallback ", Brasil" na rota, Nova Rota sem tipo e região, fuso `America/Sao_Paulo` em 24h e gate de fluxo. O histórico da cotação, o mapa, a vigência regional e a senha por e-mail e WhatsApp continuam nessa mesma `main` |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
