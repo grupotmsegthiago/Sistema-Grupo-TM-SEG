@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. O padrão temporal oficial fica em `America/Sao_Paulo` (Horário de Brasília), hora em 24h (`HH:mm`, sem AM/PM) e data em `DD/MM/AAAA`, no portal, nos relatórios, nos PDFs e no que for persistido. O smoke check antes de publicar exige `GET /api/health`, `npm run build`, os testes do escopo e, quando a alteração mexe em notificação ou faturamento, `scripts/email-health-check.ts`. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Na tela Nova Rota saíram Tipo da rota e Região. Rota nova grava só o trajeto. Na edição, uma rota que já tinha tipo continua gravando essa classificação. O consumo de rota esporádica na OS e o motor da OS não mudaram.
 
 Atualizado em 2026-10-26. A rota Salvador, BA → São Paulo, SP deixa de ir ao Directions só com a cidade e a UF. O pedido usa placeId ou coordenada e, se o Google responder ZERO_RESULTS ou NOT_FOUND, repete com "Cidade, UF, Brasil". Pedágio, rodovia e balsa não são evitados. O motor da OS não mudou.
@@ -18,7 +20,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Histórico da cotação com Valor KM, Hora Extra, menu de ações e painel da rota, na `main`, projeto `sistema-grupo-tm-seg`. A rota Salvador–São Paulo, a vigência regional, a Tabela 2027 e a senha por e-mail e WhatsApp continuam nessa mesma `main` |
+| Produção agora | Histórico da cotação com Valor KM, Hora Extra, menu de ações e painel da rota, na `main`, projeto `sistema-grupo-tm-seg`. A rota Salvador–São Paulo, a vigência regional, a Tabela 2027 e a senha por e-mail e WhatsApp continuam nessa mesma `main`. O fuso oficial é `America/Sao_Paulo`, em 24h |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
