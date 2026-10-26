@@ -2,11 +2,15 @@
 
 # Próxima Execução Proposta
 
-Não há alteração de código pendente. A prioridade da Tabela 2027 na cotação foi autorizada e gravada nesta entrega. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+Não há alteração de código pendente além da unificação já autorizada. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+
+## Rota Salvador–São Paulo sem ZERO_RESULTS (26/10/2026)
+
+O texto "Salvador, BA" para "São Paulo, SP" não fecha no Directions. Com ", Brasil", a mesma rota responde cerca de 1.986 km e 1.609 min. A cotação passa a pedir placeId ou coordenada, com pedágio, rodovia e balsa liberados, e repete em texto com o país quando o status é ZERO_RESULTS ou NOT_FOUND. O km gravado na tela continua liberando Gerar proposta. Sem migration e sem alteração em calculateMissionFinancials.
 
 ## Prioridade da Tabela 2027 na cotação (26/10/2026)
 
-Ainda não publicado. Baseline `ad3074fa`. Fluxo aprovado com o ajuste do seletor: Tabela 2027 começa selecionada e tem prioridade; se o operador muda para Tabela 2026, valem as tarifas 2026 daquele cliente. A vigência continua no prefixo do nome da operação, sem coluna nova e sem migration. Linha antiga de R$ 10,00 não cobre a `TABELA 2027 - NORDESTE`. Sem linha 2027, usa a 2026 do cliente; sem as duas, a faixa de `tabela2027.ts`. O snapshot grava `vigencia` 2027 ou 2026 conforme o que foi usado. Cotação antiga sem marca permanece em 2026. DHL e IBL não entram. `calculateMissionFinancials` não foi alterado. Rollback: reverter este commit.
+Baseline `ad3074fa`. Fluxo aprovado com o ajuste do seletor: Tabela 2027 começa selecionada e tem prioridade; se o operador muda para Tabela 2026, valem as tarifas 2026 daquele cliente. A vigência continua no prefixo do nome da operação, sem coluna nova e sem migration. Linha antiga de R$ 10,00 não cobre a `TABELA 2027 - NORDESTE`. Sem linha 2027, usa a 2026 do cliente; sem as duas, a faixa de `tabela2027.ts`. O snapshot grava `vigencia` 2027 ou 2026 conforme o que foi usado. Cotação antiga sem marca permanece em 2026. DHL e IBL não entram. `calculateMissionFinancials` não foi alterado.
 
 ## Ações do histórico e painel do mapa (26/10/2026)
 
