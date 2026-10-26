@@ -208,6 +208,20 @@ export function ehLinhaPadraoRegional(operationType: string): boolean {
   return /^TABELA 20(26|27) - /.test(String(operationType || '').trim().toUpperCase());
 }
 
+/** Linha `TABELA 2027` fica na 2027. O restante, inclusive rota de cidade, fica na 2026. */
+export function versaoDaLinhaTarifaria(operationType: string | null | undefined): VersaoTabelaRegional {
+  const nome = String(operationType || '').trim().toUpperCase();
+  return nome.startsWith('TABELA 2027') ? '2027' : '2026';
+}
+
+export function filtrarPorVigencia<T>(
+  itens: readonly T[],
+  selecionada: VersaoTabelaRegional,
+  ler: (item: T) => VersaoTabelaRegional,
+): T[] {
+  return itens.filter((item) => ler(item) === selecionada);
+}
+
 export function valorKmDaFaixa(faixa: FaixaRegional, versao: VersaoTabelaRegional): number {
   return versao === '2027' ? faixa.km2027 : faixa.km2026;
 }

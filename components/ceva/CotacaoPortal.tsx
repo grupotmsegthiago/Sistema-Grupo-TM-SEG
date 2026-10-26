@@ -15,7 +15,7 @@ import {
 import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
-import { numerosDaCotacaoRegional } from '../../lib/precificacao/tabela2027';
+import { numerosDaCotacaoRegional, versaoDaLinhaTarifaria, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { pedidoParaRegistro } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
@@ -278,8 +278,19 @@ function MapaCotacao(props: {
   );
 }
 
-export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string | number | null }> = ({ clienteNome, clientId }) => {
+export const CotacaoPortal: React.FC<{
+  clienteNome?: string;
+  clientId?: string | number | null;
+  versao?: VersaoTabelaRegional;
+  onVersao?: (versao: VersaoTabelaRegional) => void;
+}> = ({ clienteNome, clientId, versao, onVersao }) => {
   const portal = usePortalCliente();
+  const [versaoInterna, setVersaoInterna] = useState<VersaoTabelaRegional>('2027');
+  const versaoAtiva = versao ?? versaoInterna;
+  const trocarVersao = (proxima: VersaoTabelaRegional) => {
+    if (onVersao) onVersao(proxima);
+    else setVersaoInterna(proxima);
+  };
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [tabelas, setTabelas] = useState<TabelaCotacao[]>([]);
   const [erro, setErro] = useState('');
@@ -362,6 +373,16 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string |
     return () => { ativo = false; };
   }, [portal, clienteNome]);
 
+  const linhasDaVersao = useMemo(
+    () => tabelas
+      .filter((item) => versaoDaLinhaTarifaria(item.operacao) === versaoAtiva)
+      .map((item) => ({
+        operation_type: item.operacao,
+        price_per_extra_km: item.kmExtra,
+        price_per_extra_hour: item.horaExtra,
+      })),
+    [tabelas, versaoAtiva],
+  );
   const regioes = useMemo(
     () => REGIOES_COTACAO.filter((item) => valoresDaRegiao(tabelas.filter((tabela) => tabela.regiao === item))),
     [tabelas],
@@ -398,12 +419,8 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string |
       cliente: clienteNome || portal.marca.rotulo,
       origem,
       km: kmRota,
-      versao: '2027',
-      linhas: tabelas.map((item) => ({
-        operation_type: item.operacao,
-        price_per_extra_km: item.kmExtra,
-        price_per_extra_hour: item.horaExtra,
-      })),
+      versao: versaoAtiva,
+      linhas: linhasDaVersao,
       tarifaKmFallback: tabela.kmExtra,
       horaExtraFallback: tabela.horaExtra,
       acordada: nova.acordada,
@@ -441,6 +458,7 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string |
       acordada: nova.acordada,
       operacao: nova.operacao,
       usouMinimo,
+      vigencia: versaoAtiva,
     };
     try {
       if (clienteNome) {
@@ -605,12 +623,8 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string |
         </div>
         <QuoteCalculatorCard
           cliente={clienteVisual}
-          versao="2027"
-          linhas={tabelas.map((item) => ({
-            operation_type: item.operacao,
-            price_per_extra_km: item.kmExtra,
-            price_per_extra_hour: item.horaExtra,
-          }))}
+          versao={versaoAtiva}
+          linhas={linhasDaVersao}
           origem={origem}
           destino={destino}
           km={kmRota == null ? '' : String(kmRota)}
@@ -631,7 +645,7 @@ export const CotacaoPortal: React.FC<{ clienteNome?: string; clientId?: string |
           <FileText size={18} /> Gerar proposta <ArrowRight size={18} />
         </button>
         {!podeGerar && <p className="text-center text-xs font-semibold text-slate-500">{kmRota == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
-        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} />
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} />
       </div>
       {etapa !== 'parada' && proposta && (
         <ExperienciaProposta

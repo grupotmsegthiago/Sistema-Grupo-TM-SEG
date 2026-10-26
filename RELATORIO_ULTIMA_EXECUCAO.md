@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Filtro exclusivo Tabela 2026 / Tabela 2027 (26/10/2026)
+
+Ainda não publicado. Na tabela de preços do cliente, Tabela 2027 mostra só as linhas com nome `TABELA 2027`. Tabela 2026 mostra o restante, inclusive rota de cidade, e esconde a 2027. A seleção em massa e a proposta comercial usam só as linhas visíveis. No histórico do portal e na aba de cotações, o mesmo seletor lista só a vigência escolhida. Cotação nova grava `vigencia` dentro do snapshot. Cotação antiga, sem essa marca, permanece na 2026. Não foi criada coluna nem migration. O motor `calculateMissionFinancials` não foi alterado.
+
 ## Histórico de cotações no portal (26/10/2026)
 
 Ainda não publicado. Abaixo de Gerar proposta, o cliente vê as 10 cotações mais recentes: data, solicitante, origem, destino, distância e tempo de viagem, região com franquia, valor, validade de 30 dias e o botão Ver PDF. O PDF reabre a proposta com o snapshot gravado em `quotes.contract_details`. Criar OS só abre a solicitação já existente, com origem e destino, sem gravar missão e sem marcar a cotação como convertida. A lista usa a rota de cotação que já existia (`?lista=historico`). Rota acordada e cliente DHL/IBL continuam com a conta de antes; a linha do histórico é só o registro. O motor `calculateMissionFinancials` não foi alterado.
