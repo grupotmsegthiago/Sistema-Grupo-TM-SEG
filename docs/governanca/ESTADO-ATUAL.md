@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. Ainda não publicado. Na cotação, origem e destino aceitam a lista do Google e, se a pessoa só digitar a cidade e a UF, o Geocoder completa a coordenada. Salvador–São Paulo deixa de apagar o km quando a polilinha longa falha ao ser lida. O mapa ao vivo usa o tema escuro, pinos A e B e a carreta 3D que já está em /caminhoes/3d, com o logotipo do cliente no baú. O PDF pede o mapa estático em POST /api/proposta-escolta/mapa, no Express que já existe, e grava a imagem em Base64. Não há função nova na Vercel nem migration. A rota administrativa exige origem, destino e km antes de gravar; não existe coluna de duração. O motor da OS não mudou.
+Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou Salvador, BA → São Paulo, SP: a rota traçou, o botão Gerar proposta liberou e o PDF mostrou o mapa estático e o caminhão 3D. Na cotação, origem e destino aceitam a lista do Google e, se a pessoa só digitar a cidade e a UF, o Geocoder completa a coordenada. O mapa ao vivo usa o tema escuro, pinos A e B e a carreta 3D que já está em /caminhoes/3d, com o logotipo do cliente no baú. O PDF pede o mapa estático em POST /api/proposta-escolta/mapa, no Express que já existe, e grava a imagem em Base64. Não há função nova na Vercel nem migration. A rota administrativa exige origem, destino e km antes de gravar; não existe coluna de duração. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O Express da Vercel voltou a iniciar e a responder: a rota de dados protegidos chama o módulo direto, e a função da Vercel entrega o req e o res direto ao Express. O botão Aplicar valor por região não grava mais system_settings pelo navegador. A vigência vai em POST /api/pricing/tabela-regional-vigente, depois da conferência de Diretoria ou Administrador em system_users, com a chave de serviço. Thiago validou o clique da Tabela 2027 sem o erro de RLS. A migration migrations/2026_10_26_fix_system_settings_rls.sql não foi aplicada e só libera a leitura da chave tabela_regional_vigente. O motor da OS não mudou.
 
@@ -10,7 +10,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Aplicar valor por região grava a vigência no servidor, na `main`, projeto `sistema-grupo-tm-seg`. Tabela 2027, histórico, filtro 2026/2027, região pela origem e senha por e-mail e WhatsApp continuam nessa mesma `main` |
+| Produção agora | Cotação Salvador–São Paulo traça a rota e o PDF leva o mapa estático, na `main`, projeto `sistema-grupo-tm-seg`. Vigência regional, Tabela 2027, histórico e senha por e-mail e WhatsApp continuam nessa mesma `main` |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |
