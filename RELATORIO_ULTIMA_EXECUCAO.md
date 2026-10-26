@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+## Região da cotação pela origem (26/10/2026)
+
+Ainda não publicado. Na tela de cotação, Guarulhos, SP acende o botão SUDESTE e o card superior mostra Sudeste SP/RJ. Uma cidade do Sul acende SUL. DHL e IBL continuam na tabela contratual, sem essa troca. No card Origem, destino e km, Horas mostra só o valor faturado e Total mostra só o valor. Saíram o texto do corte de minutos e a legenda de acionamento mínimo e hora extra. O motor `calculateMissionFinancials` não foi alterado.
+
 ## Filtro exclusivo Tabela 2026 / Tabela 2027 (26/10/2026)
 
 Ainda não publicado. Na tabela de preços do cliente, Tabela 2027 mostra só as linhas com nome `TABELA 2027`. Tabela 2026 mostra o restante, inclusive rota de cidade, e esconde a 2027. A seleção em massa e a proposta comercial usam só as linhas visíveis. No histórico do portal e na aba de cotações, o mesmo seletor lista só a vigência escolhida. Cotação nova grava `vigencia` dentro do snapshot. Cotação antiga, sem essa marca, permanece na 2026. Não foi criada coluna nem migration. O motor `calculateMissionFinancials` não foi alterado.

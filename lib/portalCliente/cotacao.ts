@@ -1,10 +1,49 @@
 /** Cotação do portal. Não entra em OS, NF, Asaas nem no motor de faturamento. */
 
+import { getRegionFromLocation, type RegiaoTabela } from '../precificacao/tabela2027';
+
 export const KM_MINIMO_COTACAO = 100;
 export const HORAS_MINIMAS_COTACAO = 3;
 export const KM_POR_HORA_COTACAO = 40;
 
 export const REGIOES_COTACAO = ['NORTE', 'NORDESTE', 'CENTRO-OESTE', 'SUDESTE', 'SUL'] as const;
+
+export type RegiaoBotaoCotacao = (typeof REGIOES_COTACAO)[number];
+
+/** O botão da tela junta SP/RJ e MG/ES em SUDESTE. O card mostra a faixa da UF. */
+export function botaoDaRegiaoTabela(region: RegiaoTabela | null): RegiaoBotaoCotacao | null {
+  if (region === 'sudeste_sp_rj' || region === 'sudeste_mg_es') return 'SUDESTE';
+  if (region === 'sul') return 'SUL';
+  if (region === 'centro_oeste') return 'CENTRO-OESTE';
+  if (region === 'nordeste') return 'NORDESTE';
+  if (region === 'norte') return 'NORTE';
+  return null;
+}
+
+export function rotuloRegiaoVisivel(region: RegiaoTabela | null): string {
+  if (region === 'sudeste_sp_rj') return 'Sudeste SP/RJ';
+  if (region === 'sudeste_mg_es') return 'Sudeste MG/ES';
+  if (region === 'centro_oeste') return 'Centro-Oeste';
+  if (region === 'nordeste') return 'Nordeste';
+  if (region === 'norte') return 'Norte';
+  if (region === 'sul') return 'Sul';
+  return '';
+}
+
+export function regiaoAcompanhaOrigem(origem: string, cliente: string, atual: string): string {
+  if (!String(origem || '').trim()) return atual;
+  const local = getRegionFromLocation(origem, '', cliente);
+  if (local.clienteContratual || !local.region) return atual;
+  return botaoDaRegiaoTabela(local.region) || atual;
+}
+
+export function textoCardRegiao(origem: string, cliente: string, botao: string): string {
+  const local = getRegionFromLocation(origem, '', cliente);
+  if (!local.clienteContratual && local.region) return rotuloRegiaoVisivel(local.region);
+  if (botao === 'CENTRO-OESTE') return 'Centro-Oeste';
+  if (!botao) return '';
+  return `${botao.charAt(0)}${botao.slice(1).toLowerCase()}`;
+}
 
 export type TabelaCotacao = {
   id: string;

@@ -7,7 +7,9 @@ import { corSegura, logoConhecido, slugVisual, urlMapaEstatico, type CenaVisual,
 import {
   REGIOES_COTACAO,
   montarProposta,
+  regiaoAcompanhaOrigem,
   tabelaDeLinha,
+  textoCardRegiao,
   valoresDaRegiao,
   type PropostaPortal,
   type TabelaCotacao,
@@ -332,7 +334,7 @@ export const CotacaoPortal: React.FC<{
             .filter((linha): linha is TabelaCotacao => linha != null);
           setTabelas(lista);
           const primeira = REGIOES_COTACAO.find((item) => valoresDaRegiao(lista.filter((tabela) => tabela.regiao === item))) || '';
-          setRegiao(primeira);
+          setRegiao((atual) => atual || primeira);
         })
         .then(() => {
           if (!ativo) return;
@@ -362,7 +364,7 @@ export const CotacaoPortal: React.FC<{
         if (!ativo) return;
         setTabelas(lista);
         const primeira = REGIOES_COTACAO.find((item) => valoresDaRegiao(lista.filter((tabela) => tabela.regiao === item))) || '';
-        setRegiao(primeira);
+        setRegiao((atual) => atual || primeira);
       })
       .catch((falha: unknown) => {
         if (ativo) setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar a tabela.');
@@ -373,6 +375,10 @@ export const CotacaoPortal: React.FC<{
     return () => { ativo = false; };
   }, [portal, clienteNome]);
 
+  const clienteDaRegiao = clienteNome || portal.marca.rotulo;
+  useEffect(() => {
+    setRegiao((atual) => regiaoAcompanhaOrigem(origem, clienteDaRegiao, atual));
+  }, [origem, clienteDaRegiao]);
   const linhasDaVersao = useMemo(
     () => tabelas
       .filter((item) => versaoDaLinhaTarifaria(item.operacao) === versaoAtiva)
@@ -566,6 +572,8 @@ export const CotacaoPortal: React.FC<{
                   key={item}
                   type="button"
                   onClick={() => setRegiao(item)}
+                  aria-pressed={regiao === item}
+                  data-testid={`botao-regiao-${item}`}
                   className={`h-10 rounded-2xl px-3 text-[11px] font-black shadow-[0_8px_16px_rgba(15,23,42,0.08)] motion-safe:transition motion-safe:hover:-translate-y-0.5 motion-reduce:transform-none ${regiao === item ? 'bg-[#152c54] text-white shadow-[0_10px_18px_rgba(21,44,84,0.35)]' : 'bg-slate-100 text-slate-600'}`}
                 >
                   {item}
@@ -617,7 +625,7 @@ export const CotacaoPortal: React.FC<{
           </article>
           <article className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
             <p className="text-[11px] font-bold text-slate-400">Região</p>
-            <p className="mt-2 text-2xl font-black capitalize text-slate-900">{regiao ? regiao.toLowerCase() : '—'}</p>
+            <p className="mt-2 text-2xl font-black text-slate-900" data-testid="card-regiao-cotacao">{textoCardRegiao(origem, clienteDaRegiao, regiao) || '—'}</p>
             <p className="truncate text-[11px] text-slate-400">{trechoCurto}</p>
           </article>
         </div>
