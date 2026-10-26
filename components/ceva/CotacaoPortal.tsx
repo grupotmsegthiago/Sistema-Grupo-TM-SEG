@@ -30,9 +30,8 @@ import {
 import {
   REGIOES_COTACAO,
   consultaDoCliente,
-  aplicarContaNaProposta,
   contaVisivelDaCotacao,
-  montarProposta,
+  propostaDaConta,
   primeiraRegiaoComTarifa,
   regiaoAcompanhaOrigem,
   regiaoTemLinha,
@@ -518,7 +517,7 @@ export const CotacaoPortal: React.FC<{
   const [recargaHistorico, setRecargaHistorico] = useState(0);
   const [avisoHistorico, setAvisoHistorico] = useState('');
   const [previewPdf, setPreviewPdf] = useState<PropostaPortal | null>(null);
-  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
@@ -652,15 +651,17 @@ export const CotacaoPortal: React.FC<{
       horaExtra: conta.horaExtra,
     } : null);
     if (!tabelaRegiao) return null;
-    const nova = aplicarContaNaProposta(montarProposta({
+    const nova = propostaDaConta({
       tabelas,
       regiao,
       origem,
       destino,
       paradas: paradas.map((item) => item.texto),
       kmRota,
+      conta,
       tabelaRegiao,
-    }), conta);
+      duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
+    });
     if (nova.acordada) {
       nova.vigencia = versaoAtiva;
       nova.kmRota = kmRota;
@@ -708,17 +709,17 @@ export const CotacaoPortal: React.FC<{
   };
 
   const preverPdf = () => {
-    if (gerandoPdf) return;
+    if (isGenerating) return;
     const feito = montarAtual();
     if (!feito) return;
-    setGerandoPdf(true);
+    setIsGenerating(true);
     void (async () => {
       try {
         const print = await colarPrintDoMapa();
         setPrintMapa(print);
         setPreviewPdf(feito.nova);
       } catch {
-        setGerandoPdf(false);
+        setIsGenerating(false);
         setAvisoHistorico('Não foi possível abrir o PDF.');
       }
     })();
@@ -814,13 +815,14 @@ export const CotacaoPortal: React.FC<{
           cliente: clienteNome || portal.marca.rotulo,
           origem: previewPdf.origem,
           destino: previewPdf.destino,
+          numero: previewPdf.numero,
         }), null);
       } catch (falha) {
         if (ativo) setAvisoHistorico(falha instanceof Error ? falha.message : 'Não foi possível abrir o PDF.');
       } finally {
         if (ativo) {
           setPreviewPdf(null);
-          setGerandoPdf(false);
+          setIsGenerating(false);
         }
       }
     };
@@ -954,7 +956,7 @@ export const CotacaoPortal: React.FC<{
         />
         <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} onGerar={gerar} onPdf={preverPdf} />
         <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} contaAtual={contaAtual} origemAtual={origem} destinoAtual={destino} kmAtual={kmRota} />
-        {gerandoPdf && (
+        {isGenerating && (
           <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">
             <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
               <Loader2 className="animate-spin text-slate-900" size={22} />

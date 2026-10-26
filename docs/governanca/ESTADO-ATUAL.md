@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. O card da cotação, o histórico da mesma rota, o PDF e o e-mail passam a usar a mesma conta: tarifa, hora extra e total do card. O PDF se chama `Cotacao_NUMERO_CLIENTE_DATA.pdf` e a tela mostra "Gerando PDF da proposta, aguarde..." enquanto o arquivo sai. O e-mail leva a tabela do acionamento em texto e HTML, pelo mesmo desenho da proposta. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-26. A tabela da proposta e o rodapé leem `numerosDaTela`, a mesma conta do card (total, km faturado, horas e adicionais). A fórmula antiga não entra quando essa conta se aplica. O PDF grava as cores da tela, com o nome `Cotacao_NUMERO_CLIENTE_DATA.pdf`, e a espera "Gerando PDF da proposta, aguarde..." bloqueia outro clique. O e-mail leva a rota, a franquia, os adicionais, o total, o pagamento e o pernoite quando ele existe. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. O histórico abre Ações, o PDF salvo leva texto e imagens com o nome `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`, e o e-mail da proposta aceita o anexo e copia thiago@grupotmseg.com.br e quem fez a cotação. A branch da tarifa duplicada entrou no histórico sem trocar `tarifaDoBotao`. As demais branches f513 já estavam na main. O motor da OS não mudou.
 

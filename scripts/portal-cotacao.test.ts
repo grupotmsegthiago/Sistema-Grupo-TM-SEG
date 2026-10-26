@@ -26,7 +26,10 @@ import {
   calcularCotacaoPortal,
   horasDaRota,
   consultaDoCliente,
+  contaVisivelDaCotacao,
+  numerosDaTela,
   primeiraRegiaoComTarifa,
+  propostaDaConta,
   regiaoDaOperacao,
   tarifaDoBotao,
   tabelaPadraoDaRegiao,
@@ -70,6 +73,38 @@ test('rota menor que 100 km usa 100 km e 3 horas', () => {
   assert.equal(resultado.horas, 3);
 });
 
+test('a proposta da tela usa a conta do card e não a fórmula antiga', () => {
+  const conta = contaVisivelDaCotacao({
+    cliente: 'CEVA LOGISTICS',
+    origem: 'Vitória, ES',
+    km: 942.5,
+    versao: '2027',
+    linhas: [{ operation_type: 'TABELA 2027 - SUDESTE MG/ES', price_per_extra_km: 7.3, price_per_extra_hour: 180 }],
+  });
+  assert.equal(conta.aplicar, true);
+  if (!conta.aplicar) return;
+  const proposta = propostaDaConta({
+    tabelas: [],
+    regiao: 'SUDESTE',
+    origem: 'Vitória, ES',
+    destino: 'São Paulo, SP',
+    paradas: [],
+    kmRota: 942.5,
+    conta,
+    tabelaRegiao: { acionamento: 660, franquiaKm: 100, franquiaHoras: 3, kmExtra: 6.6, horaExtra: 160 },
+  });
+  const tela = numerosDaTela(proposta);
+  assert.equal(tela.total, 6880.25);
+  assert.equal(tela.kmFaturado, 942.5);
+  assert.equal(tela.horas, 23);
+  assert.equal(tela.kmExtra, 7.3);
+  assert.equal(tela.horaExtra, 180);
+  assert.equal(tela.franquiaKm, 100);
+  assert.equal(tela.franquiaHoras, 3);
+  assert.equal(tela.mostraFranquiaIncluida, true);
+  assert.notEqual(tela.total, calcularCotacaoPortal({ acionamento: 660, franquiaKm: 100, franquiaHoras: 3, kmExtra: 6.6, horaExtra: 160 }, 942.5).total);
+});
+
 test('km extra e hora extra saem da tabela da região', () => {
   const resultado = calcularCotacaoPortal(NORTE, 950);
   assert.equal(resultado.kmExtra, 850);
@@ -105,6 +140,36 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.match(carta, /Valor total da proposta/);
   assert.match(carta, /Condições de pagamento/);
   assert.doesNotMatch(carta, /Pernoite/);
+  const comPernoite = cartaDaProposta({
+    acordada: false,
+    regiao: 'SUDESTE',
+    origem: 'Santos, SP',
+    destino: 'Diadema, SP',
+    paradas: [],
+    acionamento: 650,
+    kmFranquia: 100,
+    horasFranquia: 3,
+    kmExtra: 7.1,
+    horaExtra: 160,
+    operacao: 'SUDESTE - SANTOS X DIADEMA',
+    pernoite: 350,
+  });
+  assert.match(comPernoite, /Pernoite/);
+  assert.match(comPernoite, /350/);
+  assert.match(htmlDaProposta({
+    acordada: false,
+    regiao: 'SUDESTE',
+    origem: 'Santos, SP',
+    destino: 'Diadema, SP',
+    paradas: [],
+    acionamento: 650,
+    kmFranquia: 100,
+    horasFranquia: 3,
+    kmExtra: 7.1,
+    horaExtra: 160,
+    operacao: 'SUDESTE - SANTOS X DIADEMA',
+    pernoite: 350,
+  }), /Pernoite/);
   const html = htmlDaProposta({
     acordada: false,
     regiao: 'SUDESTE',

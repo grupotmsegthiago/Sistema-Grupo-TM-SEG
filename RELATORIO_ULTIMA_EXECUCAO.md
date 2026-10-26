@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026 a partir dos cinco pontos da cotação. A tabela e o rodapé da proposta usam `numerosDaTela`, a mesma conta do card. `propostaDaConta` não chama a fórmula antiga quando o card tem conta. O PDF copia as cores calculadas da tela e sai em PNG, com o nome `Cotacao_NUMERO_CLIENTE_DATA.pdf`. O botão fica em `isGenerating` com o texto "Gerando PDF da proposta, aguarde...". O e-mail inclui o pernoite só quando a proposta traz o valor. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026 a partir do card em R$ 7,30/km e R$ 6.880,25 e do histórico em R$ 6,60/km e R$ 9.583,80. A rota que está na tela mostra a conta do card. O PDF único continua o da proposta, com o nome `Cotacao_NUMERO_CLIENTE_DATA.pdf` e a espera "Gerando PDF da proposta, aguarde...". O e-mail leva a tabela do acionamento. Ainda não foi publicado. O motor da OS não mudou.
 
 Publicado nesta entrega, em 26/10/2026, no projeto sistema-grupo-tm-seg, a pedido de publicar todas as branches f513. O histórico abre Ações, o PDF guarda texto e imagens, e o e-mail aceita o anexo com cópia para thiago@grupotmseg.com.br e para quem fez a cotação. A branch da tarifa 2027 do portal entrou sem substituir `tarifaDoBotao`. As demais branches f513 já estavam na main. O motor da OS não mudou.

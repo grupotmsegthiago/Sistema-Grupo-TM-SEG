@@ -76,7 +76,7 @@ type EstiloFoto = {
 function travaAnimacao(documento: Document): () => void {
   const estilo = documento.createElement('style');
   estilo.setAttribute('data-pdf-trava', '1');
-  estilo.textContent = '[data-proposta-pdf], [data-proposta-pdf] * { animation: none !important; transition: none !important; }';
+  estilo.textContent = '[data-proposta-pdf], [data-proposta-pdf] * { animation: none !important; transition: none !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }';
   documento.head?.appendChild(estilo);
   return () => estilo.remove();
 }
@@ -120,6 +120,18 @@ function prepararFoto(artigo: HTMLElement): () => void {
       item.el.style.backdropFilter = item.backdropFilter;
     }
   };
+}
+
+/** O html2canvas perde o fundo escuro se a cor ficar só na classe. A cópia grava a cor calculada. */
+function cravarCores(raiz: HTMLElement) {
+  const nos = [raiz, ...Array.from(raiz.querySelectorAll<HTMLElement>('*'))];
+  for (const el of nos) {
+    const estilo = getComputedStyle(el);
+    const fundo = estilo.backgroundColor;
+    if (fundo && fundo !== 'transparent' && fundo !== 'rgba(0, 0, 0, 0)') el.style.backgroundColor = fundo;
+    if (estilo.color) el.style.color = estilo.color;
+    if (estilo.borderTopColor) el.style.borderTopColor = estilo.borderTopColor;
+  }
 }
 
 function prepararClone(raiz: HTMLElement) {
@@ -237,8 +249,12 @@ async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
       onclone: (documento, clonado) => {
         travaAnimacao(documento);
         prepararClone(clonado);
+        cravarCores(clonado);
         const host = clonado.closest('[data-captura-proposta]');
-        if (host instanceof HTMLElement) prepararClone(host);
+        if (host instanceof HTMLElement) {
+          prepararClone(host);
+          cravarCores(host);
+        }
       },
     });
     if (!fotoTemConteudo(canvas)) {
@@ -269,7 +285,7 @@ async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
         larguraMm = larguraUtil * fator;
       }
       const x = MARGEM_MM + (larguraUtil - larguraMm) / 2;
-      pdf.addImage(recorte.toDataURL('image/jpeg', 0.86), 'JPEG', x, MARGEM_MM, larguraMm, alturaMm);
+      pdf.addImage(recorte.toDataURL('image/png'), 'PNG', x, MARGEM_MM, larguraMm, alturaMm);
     });
   } finally {
     restaurarFoto();

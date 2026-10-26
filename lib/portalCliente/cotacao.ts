@@ -266,6 +266,8 @@ export type PropostaPortal = {
   kmFaturado?: number | null;
   /** Horas que o card mostra. A franquia incluída continua em horasFranquia. */
   horasContadas?: number | null;
+  /** Pernoite da rota, quando a proposta traz o valor. Sem número, o e-mail omite a linha. */
+  pernoite?: number | null;
 };
 
 export type ContaVisivelCotacao =
@@ -335,6 +337,103 @@ export function aplicarContaNaProposta(proposta: PropostaPortal, conta: ContaVis
     regiao: conta.regiao || proposta.regiao,
     vigencia: conta.vigencia,
     kmRota: conta.kmRodado,
+  };
+}
+
+/**
+ * Números que o card, a tabela da proposta e o e-mail mostram juntos.
+ * O km e as horas do card vencem a franquia incluída quando os dois existem.
+ */
+export function numerosDaTela(proposta: PropostaPortal): {
+  total: number;
+  kmFaturado: number;
+  horas: number;
+  franquiaKm: number;
+  franquiaHoras: number;
+  kmExtra: number;
+  horaExtra: number;
+  pernoite: number | null;
+  mostraFranquiaIncluida: boolean;
+} {
+  const kmFaturado = proposta.kmFaturado != null && proposta.kmFaturado > 0 ? proposta.kmFaturado : proposta.kmFranquia;
+  const horas = proposta.horasContadas != null && proposta.horasContadas > 0 ? proposta.horasContadas : proposta.horasFranquia;
+  const pernoite = proposta.pernoite != null && Number.isFinite(proposta.pernoite) && proposta.pernoite > 0 ? proposta.pernoite : null;
+  const incluidaDiferente = (proposta.kmFaturado != null && proposta.kmFaturado > 0 && proposta.kmFranquia !== proposta.kmFaturado)
+    || (proposta.horasContadas != null && proposta.horasContadas > 0 && proposta.horasFranquia !== proposta.horasContadas);
+  return {
+    total: proposta.acionamento,
+    kmFaturado,
+    horas,
+    franquiaKm: proposta.kmFranquia,
+    franquiaHoras: proposta.horasFranquia,
+    kmExtra: proposta.kmExtra,
+    horaExtra: proposta.horaExtra,
+    pernoite,
+    mostraFranquiaIncluida: incluidaDiferente,
+  };
+}
+
+/**
+ * A proposta da tela sai da conta do card.
+ * A fórmula antiga só roda quando essa conta não se aplica e a rota não está acordada.
+ */
+export function propostaDaConta(entrada: {
+  tabelas: TabelaCotacao[];
+  regiao: string;
+  origem: string;
+  destino: string;
+  paradas: string[];
+  kmRota: number;
+  conta: ContaVisivelCotacao;
+  tabelaRegiao: Pick<TabelaCotacao, 'acionamento' | 'franquiaHoras' | 'franquiaKm' | 'kmExtra' | 'horaExtra'>;
+  duracaoMin?: number | null;
+}): PropostaPortal {
+  const paradas = entrada.paradas.map((item) => item.trim()).filter(Boolean);
+  const acordada = paradas.length ? null : rotaAcordada(entrada.tabelas, entrada.regiao, entrada.origem, entrada.destino);
+  if (acordada) {
+    return {
+      acordada: true,
+      regiao: entrada.regiao,
+      origem: entrada.origem,
+      destino: entrada.destino,
+      paradas,
+      acionamento: acordada.acionamento,
+      kmFranquia: acordada.franquiaKm,
+      horasFranquia: acordada.franquiaHoras,
+      kmExtra: acordada.kmExtra,
+      horaExtra: acordada.horaExtra,
+      operacao: acordada.operacao,
+      kmRota: entrada.kmRota,
+      duracaoMin: entrada.duracaoMin ?? null,
+    };
+  }
+  if (!entrada.conta.aplicar) {
+    const base = montarProposta({
+      tabelas: entrada.tabelas,
+      regiao: entrada.regiao,
+      origem: entrada.origem,
+      destino: entrada.destino,
+      paradas,
+      kmRota: entrada.kmRota,
+      tabelaRegiao: entrada.tabelaRegiao,
+    });
+    return { ...base, kmRota: entrada.kmRota, duracaoMin: entrada.duracaoMin ?? base.duracaoMin ?? null };
+  }
+  return {
+    ...aplicarContaNaProposta({
+      acordada: false,
+      regiao: entrada.regiao,
+      origem: entrada.origem,
+      destino: entrada.destino,
+      paradas,
+      acionamento: 0,
+      kmFranquia: 0,
+      horasFranquia: 0,
+      kmExtra: 0,
+      horaExtra: 0,
+      operacao: `${entrada.regiao} - ${cidadeDaRota(entrada.origem)} X ${cidadeDaRota(entrada.destino)}`,
+    }, entrada.conta),
+    duracaoMin: entrada.duracaoMin ?? null,
   };
 }
 

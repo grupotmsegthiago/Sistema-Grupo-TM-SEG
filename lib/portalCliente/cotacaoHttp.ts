@@ -1,6 +1,6 @@
 import { colunaRegionalAusente } from '../precificacao/tabela2027.js';
 import { cartaDaProposta, htmlDaProposta, marcoDeOperacoes } from './apresentacao.js';
-import { aplicarContaNaProposta, consultaDoCliente, contaVisivelDaCotacao, montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
+import { consultaDoCliente, contaVisivelDaCotacao, propostaDaConta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
 import {
   JANELA_HISTORICO_VIGENCIA,
   TAMANHO_PAGINA_HISTORICO,
@@ -70,7 +70,6 @@ export function montarPropostaDoPedido(
   const km = numero(pedido.km);
   const tabelaRegiao = valoresDaRegiao(tabelas.filter((item) => item.regiao === regiao));
   if (!regiao || !origem || !destino || !tabelaRegiao || km <= 0) return { error: 'Faltam região, origem, destino ou a rota.' };
-  const base = montarProposta({ tabelas, regiao, origem, destino, paradas, kmRota: km, tabelaRegiao });
   const conta = contaVisivelDaCotacao({
     cliente: clienteNome,
     origem,
@@ -84,7 +83,7 @@ export function montarPropostaDoPedido(
     tarifaKmFallback: tabelaRegiao.kmExtra,
     horaExtraFallback: tabelaRegiao.horaExtra,
   });
-  return aplicarContaNaProposta(base, conta);
+  return propostaDaConta({ tabelas, regiao, origem, destino, paradas, kmRota: km, conta, tabelaRegiao });
 }
 
 export function textoDaProposta(proposta: PropostaPortal, operacoes?: string | null): string {

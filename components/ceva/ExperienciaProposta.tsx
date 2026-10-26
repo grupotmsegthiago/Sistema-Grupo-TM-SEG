@@ -11,7 +11,7 @@ import {
   caminhoDaProposta,
   regiaoLegivel,
 } from '../../lib/portalCliente/apresentacao';
-import { rotulosSemAno, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { numerosDaTela, rotulosSemAno, type PropostaPortal } from '../../lib/portalCliente/cotacao';
 import { COPIA_FIXA_COTACAO } from '../../lib/portalCliente/gestaoCotacao';
 import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
@@ -59,6 +59,7 @@ export const ExperienciaProposta: React.FC<{
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
   const caminho = caminhoDaProposta(proposta);
   const nomes = rotulosSemAno(proposta.origem, proposta.destino);
   const arquivoPdf = nomePdfCotacao({
@@ -68,6 +69,7 @@ export const ExperienciaProposta: React.FC<{
     numero: proposta.numero,
   });
   const data = dataTexto || dataDaProposta();
+  const tela = numerosDaTela(proposta);
   const visivel = mostrando || modoCaptura;
   const artigoRef = React.useRef<HTMLElement | null>(null);
 
@@ -79,7 +81,8 @@ export const ExperienciaProposta: React.FC<{
   };
 
   const salvarPdf = async () => {
-    setOcupado('salvar');
+    if (isGenerating) return;
+    setIsGenerating(true);
     setAviso('');
     const janela = window.open('', '_blank');
     try {
@@ -91,12 +94,14 @@ export const ExperienciaProposta: React.FC<{
       try { janela?.close(); } catch { /* a janela pode já ter fechado */ }
       setAviso(falha instanceof Error ? falha.message : 'Não foi possível gerar o PDF.');
     } finally {
-      setOcupado('');
+      setIsGenerating(false);
     }
   };
 
   const postar = async (acao: 'salvar' | 'email') => {
+    if (isGenerating) return;
     setOcupado(acao);
+    if (acao === 'email') setIsGenerating(true);
     setAviso('');
     try {
       const pdf = acao === 'email' ? await pdfDaTela() : undefined;
@@ -139,12 +144,13 @@ export const ExperienciaProposta: React.FC<{
       setAviso(falha instanceof Error ? falha.message : 'Não foi possível concluir.');
     } finally {
       setOcupado('');
+      setIsGenerating(false);
     }
   };
 
   return (
     <div data-captura-proposta={modoCaptura ? marcaPdf : undefined} className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
-      {!modoCaptura && ocupado && (
+      {!modoCaptura && isGenerating && (
         <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/45" role="status" data-testid="overlay-pdf-proposta">
           <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
             <Loader2 className="animate-spin text-slate-900" size={22} />
@@ -163,6 +169,7 @@ export const ExperienciaProposta: React.FC<{
           .tmseg-anda { display: none; }
           .tmseg-parado { display: block; }
         }
+        [data-proposta-pdf], [data-proposta-pdf] * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         [data-proposta-bloco] { break-inside: avoid; page-break-inside: avoid; }
       `}</style>
       {!visivel && (
@@ -288,32 +295,32 @@ export const ExperienciaProposta: React.FC<{
               <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Condições comerciais</h3>
               <div className="mt-8 grid gap-8 border-y border-black/10 py-8 sm:grid-cols-3">
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Acionamento</p>
-                  <p className="mt-2 text-4xl font-semibold">{reais(proposta.acionamento)}</p>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Total</p>
+                  <p className="mt-2 text-4xl font-semibold" data-testid="proposta-total">{reais(tela.total)}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km franquia</p>
-                  <p className="mt-2 text-4xl font-semibold">{numero(proposta.kmFranquia)}</p>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>KM faturado</p>
+                  <p className="mt-2 text-4xl font-semibold" data-testid="proposta-km">{numero(tela.kmFaturado)}</p>
                 </div>
                 <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Horas franquia</p>
-                  <p className="mt-2 text-4xl font-semibold">{numero(proposta.horasFranquia)}</p>
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Horas</p>
+                  <p className="mt-2 text-4xl font-semibold" data-testid="proposta-horas">{numero(tela.horas)}</p>
                 </div>
               </div>
               <div className="mt-8 grid gap-6 sm:grid-cols-2">
-                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor do km extra</span><span className="mt-1 block text-3xl font-semibold">{reais(proposta.kmExtra)}</span></p>
-                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor da hora extra</span><span className="mt-1 block text-3xl font-semibold">{reais(proposta.horaExtra)}</span></p>
+                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor do km extra</span><span className="mt-1 block text-3xl font-semibold">{reais(tela.kmExtra)}</span></p>
+                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor da hora extra</span><span className="mt-1 block text-3xl font-semibold">{reais(tela.horaExtra)}</span></p>
               </div>
+              {tela.mostraFranquiaIncluida && (
+                <p className="mt-6 text-base text-[#3a3a3a]" data-testid="proposta-franquia-incluida">Franquia incluída: {numero(tela.franquiaKm)} km e {numero(tela.franquiaHoras)} h.</p>
+              )}
+              {tela.pernoite != null && (
+                <p className="mt-4 text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Pernoite</span><span className="mt-1 block text-3xl font-semibold">{reais(tela.pernoite)}</span></p>
+              )}
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                {proposta.kmRota != null && proposta.kmRota > 0 && (
+                {proposta.kmRota != null && proposta.kmRota > 0 && proposta.kmRota !== tela.kmFaturado && (
                   <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km da rota</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.kmRota)} km</span></p>
                 )}
-              {proposta.kmFaturado != null && proposta.kmFaturado > 0 && (
-                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km faturado</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.kmFaturado)} km</span></p>
-              )}
-              {proposta.horasContadas != null && proposta.horasContadas > 0 && (
-                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Horas consideradas</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.horasContadas)} h</span></p>
-              )}
                 {proposta.duracaoMin != null && proposta.duracaoMin > 0 && (
                   <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Tempo</span><span className="mt-1 block text-3xl font-semibold">{Math.round(proposta.duracaoMin)} min</span></p>
                 )}
@@ -327,9 +334,9 @@ export const ExperienciaProposta: React.FC<{
 
           {!modoCaptura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" disabled={ocupado === 'salvar'} onClick={() => { void salvarPdf(); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white disabled:opacity-50">Salvar em PDF</button>
+              <button type="button" disabled={isGenerating} onClick={() => { void salvarPdf(); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white disabled:opacity-50">Salvar em PDF</button>
               {!proposta.acordada && (
-                <button type="button" disabled={ocupado === 'salvar'} onClick={() => postar('salvar')} className="h-11 rounded-full border border-black/15 px-4 text-xs font-semibold disabled:opacity-50">
+                <button type="button" disabled={isGenerating || ocupado === 'salvar'} onClick={() => postar('salvar')} className="h-11 rounded-full border border-black/15 px-4 text-xs font-semibold disabled:opacity-50">
                   Salvar essa proposta em nosso banco de dados
                 </button>
               )}
@@ -342,7 +349,7 @@ export const ExperienciaProposta: React.FC<{
                   <input value={email} onChange={(evento) => setEmail(evento.target.value)} type="text" required placeholder="cliente@empresa.com — separe por vírgula" className="h-full w-full bg-transparent text-sm outline-none" />
                 </span>
               </label>
-              <button type="submit" disabled={ocupado === 'email'} data-testid="enviar-proposta-email" className="h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">{ocupado === 'email' ? 'Enviando o PDF…' : 'Enviar para o e-mail'}</button>
+              <button type="submit" disabled={isGenerating || ocupado === 'email'} data-testid="enviar-proposta-email" className="h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">{isGenerating ? 'Gerando PDF da proposta, aguarde...' : 'Enviar para o e-mail'}</button>
             </form>
             <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail leva as informações do Grupo TM SEG. O PDF completo da proposta vai em anexo, com a foto do mapa e as condições da rota. Cópia para {COPIA_FIXA_COTACAO} e para quem fez a cotação.</p>
             {aviso && <p className="mt-3 text-sm font-medium">{aviso}</p>}

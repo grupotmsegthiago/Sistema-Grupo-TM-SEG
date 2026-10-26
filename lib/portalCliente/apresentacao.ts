@@ -94,6 +94,9 @@ export function linhasDaTabelaEmail(proposta: PropostaPortal): Array<{ rotulo: s
   if (proposta.horasContadas != null && proposta.horasContadas > 0) {
     linhas.push({ rotulo: 'Horas consideradas', valor: `${quantidade(proposta.horasContadas)} h` });
   }
+  if (proposta.pernoite != null && Number.isFinite(proposta.pernoite) && proposta.pernoite > 0) {
+    linhas.push({ rotulo: 'Pernoite', valor: moeda(proposta.pernoite) });
+  }
   linhas.push(
     { rotulo: 'Valor do km extra', valor: moeda(proposta.kmExtra) },
     { rotulo: 'Valor da hora extra', valor: moeda(proposta.horaExtra) },
@@ -189,6 +192,7 @@ export function propostaRecebida(bruto: unknown): PropostaPortal | null {
   const kmFaturado = Number(item.kmFaturado);
   const horasContadas = Number(item.horasContadas);
   const kmRota = Number(item.kmRota);
+  const pernoite = Number(item.pernoite);
   return {
     acordada: Boolean(item.acordada),
     regiao: String(item.regiao || '').slice(0, 80),
@@ -206,6 +210,7 @@ export function propostaRecebida(bruto: unknown): PropostaPortal | null {
     duracaoMin: Number(item.duracaoMin) > 0 ? Number(item.duracaoMin) : null,
     kmFaturado: Number.isFinite(kmFaturado) && kmFaturado > 0 ? kmFaturado : null,
     horasContadas: Number.isFinite(horasContadas) && horasContadas > 0 ? horasContadas : null,
+    pernoite: Number.isFinite(pernoite) && pernoite > 0 ? pernoite : null,
     numero: Number.isInteger(Number(item.numero)) && Number(item.numero) > 0 ? Number(item.numero) : null,
   };
 }
