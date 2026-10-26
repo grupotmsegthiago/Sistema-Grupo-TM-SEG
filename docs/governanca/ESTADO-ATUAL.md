@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. No histórico, a linha fica com um botão Ações. O clique abre a tela com PDF, e-mail, copiar a mensagem e as demais opções. O PDF deixa de sair em branco: a foto tira desfoque e animação antes de gravar o texto e as imagens. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Na proposta gerada, Enviar para o e-mail manda o texto do Grupo TM SEG e anexa o PDF completo, com a foto do mapa e as condições da rota. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A foto do mapa no PDF deixa de fora o painel Informações da Rota. A rota, os pinos e a carreta continuam na imagem. O painel permanece na tela. Ainda não foi publicado. O motor da OS não mudou.

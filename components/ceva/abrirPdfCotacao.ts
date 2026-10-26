@@ -13,22 +13,29 @@ function liberarRolagem(artigo: HTMLElement): () => void {
     height: el.style.height,
     maxHeight: el.style.maxHeight,
     overflow: el.style.overflow,
+    flex: el.style.flex,
+    minHeight: el.style.minHeight,
   }));
   for (const el of alvos) {
     el.style.height = 'auto';
     el.style.maxHeight = 'none';
     el.style.overflow = 'visible';
+    // flex-1 com base 0 corta o restante da proposta quando a altura deixa de ser a da janela.
+    el.style.flex = '1 1 auto';
+    el.style.minHeight = 'auto';
   }
   return () => {
     for (const item of antes) {
       item.el.style.height = item.height;
       item.el.style.maxHeight = item.maxHeight;
       item.el.style.overflow = item.overflow;
+      item.el.style.flex = item.flex;
+      item.el.style.minHeight = item.minHeight;
     }
   };
 }
 
-/** O histórico deixa a proposta em left negativo. O html2canvas corta o que está fora da janela. */
+/** O histórico deixa a proposta em left negativo. O html2canvas só pinta o que está na janela. */
 function exporCaptura(artigo: HTMLElement): () => void {
   const host = artigo.closest('[data-captura-proposta]');
   if (!(host instanceof HTMLElement)) return () => undefined;
@@ -43,7 +50,7 @@ function exporCaptura(artigo: HTMLElement): () => void {
   host.style.top = '0px';
   host.style.opacity = '1';
   host.style.visibility = 'visible';
-  host.style.zIndex = '-1';
+  host.style.zIndex = '80';
   return () => {
     host.style.left = antes.left;
     host.style.top = antes.top;
@@ -51,6 +58,115 @@ function exporCaptura(artigo: HTMLElement): () => void {
     host.style.visibility = antes.visibility;
     host.style.zIndex = antes.zIndex;
   };
+}
+
+type EstiloFoto = {
+  el: HTMLElement;
+  animation: string;
+  transform: string;
+  filter: string;
+  backdropFilter: string;
+};
+
+/**
+ * A entrada da proposta anima opacidade e rotação.
+ * Mesmo depois que a animação acaba, o html2canvas copia essa propriedade
+ * e a folha sai só com o fundo bege, sem texto e sem imagem.
+ */
+function travaAnimacao(documento: Document): () => void {
+  const estilo = documento.createElement('style');
+  estilo.setAttribute('data-pdf-trava', '1');
+  estilo.textContent = '[data-proposta-pdf], [data-proposta-pdf] * { animation: none !important; transition: none !important; }';
+  documento.head?.appendChild(estilo);
+  return () => estilo.remove();
+}
+
+/** Desfoque, animação e backdrop-filter fazem o html2canvas devolver a folha vazia. */
+function limparEfeito(el: HTMLElement, lista: EstiloFoto[]) {
+  lista.push({
+    el,
+    animation: el.style.animation,
+    transform: el.style.transform,
+    filter: el.style.filter,
+    backdropFilter: el.style.backdropFilter,
+  });
+  el.style.animation = 'none';
+  el.style.transform = 'none';
+  el.style.filter = 'none';
+  el.style.backdropFilter = 'none';
+}
+
+function prepararFoto(artigo: HTMLElement): () => void {
+  const lista: EstiloFoto[] = [];
+  const opacidade = artigo.style.opacity;
+  let no: HTMLElement | null = artigo;
+  while (no) {
+    limparEfeito(no, lista);
+    no = no.parentElement;
+  }
+  artigo.style.opacity = '1';
+  artigo.querySelectorAll<HTMLElement>('*').forEach((filho) => {
+    const classe = typeof filho.className === 'string' ? filho.className : '';
+    if (classe.includes('blur') || filho.style.filter || filho.style.backdropFilter) limparEfeito(filho, lista);
+  });
+  const soltarTrava = travaAnimacao(artigo.ownerDocument);
+  return () => {
+    soltarTrava();
+    artigo.style.opacity = opacidade;
+    for (const item of lista) {
+      item.el.style.animation = item.animation;
+      item.el.style.transform = item.transform;
+      item.el.style.filter = item.filter;
+      item.el.style.backdropFilter = item.backdropFilter;
+    }
+  };
+}
+
+function prepararClone(raiz: HTMLElement) {
+  let no: HTMLElement | null = raiz;
+  while (no) {
+    no.style.animation = 'none';
+    no.style.transform = 'none';
+    no.style.filter = 'none';
+    no.style.backdropFilter = 'none';
+    if (no === raiz || no.hasAttribute('data-captura-proposta')) {
+      no.style.left = '0px';
+      no.style.top = '0px';
+      no.style.opacity = '1';
+      no.style.visibility = 'visible';
+      no.style.zIndex = '80';
+    }
+    no = no.parentElement;
+  }
+  raiz.querySelectorAll<HTMLElement>('*').forEach((filho) => {
+    filho.style.animation = 'none';
+    filho.style.filter = 'none';
+    filho.style.backdropFilter = 'none';
+  });
+}
+
+/** Altura grande em escala 2 estoura o canvas e a foto sai branca. */
+export function escalaDaCaptura(alturaCss: number): number {
+  if (!Number.isFinite(alturaCss) || alturaCss <= 0) return 1;
+  if (alturaCss > 8000) return 1;
+  if (alturaCss > 4500) return 1.25;
+  return 2;
+}
+
+function fotoTemConteudo(canvas: HTMLCanvasElement): boolean {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx || canvas.width < 8 || canvas.height < 8) return false;
+  const faixa = Math.min(canvas.height, Math.max(48, Math.floor(canvas.width * 0.55)));
+  const passoY = Math.max(6, Math.floor(faixa / 14));
+  const passoX = Math.max(10, Math.floor(canvas.width / 18));
+  for (let y = 6; y < faixa; y += passoY) {
+    for (let x = 6; x < canvas.width; x += passoX) {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      const claro = pixel[0] > 236 && pixel[1] > 232 && pixel[2] > 224;
+      if (pixel[3] > 16 && !claro) return true;
+    }
+  }
+  return false;
 }
 
 /** Botão de fechar e a barra de ações não entram na folha. */
@@ -97,38 +213,42 @@ async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
   const restaurarExposicao = exporCaptura(artigo);
   const restaurarRolagem = liberarRolagem(artigo);
   const restaurarChrome = esconderForaDoCorpo(artigo);
+  const restaurarFoto = prepararFoto(artigo);
   try {
     artigo.getBoundingClientRect();
     await prepararImagensDoElemento(artigo);
+    await new Promise<void>((resolver) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolver()));
+    });
     const retanguloArtigo = artigo.getBoundingClientRect();
     const blocos = Array.from(artigo.querySelectorAll('[data-proposta-bloco]')).filter((el): el is HTMLElement => (
       el instanceof HTMLElement && el.getClientRects().length > 0
     ));
+    const escala = escalaDaCaptura(Math.max(artigo.scrollHeight, retanguloArtigo.height));
     const canvas = await html2canvas(artigo, {
-      scale: 2,
+      scale: escala,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#f7f5f2',
       logging: false,
-      windowWidth: Math.max(window.innerWidth, Math.ceil(artigo.scrollWidth)),
+      windowWidth: Math.max(window.innerWidth, Math.ceil(artigo.scrollWidth), 960),
       windowHeight: Math.max(window.innerHeight, Math.ceil(artigo.scrollHeight)),
       onclone: (documento, clonado) => {
-        const host = clonado.closest('[data-captura-proposta]') || documento.querySelector('[data-captura-proposta]');
-        if (!(host instanceof HTMLElement)) return;
-        host.style.left = '0px';
-        host.style.top = '0px';
-        host.style.opacity = '1';
-        host.style.visibility = 'visible';
-        host.style.zIndex = '-1';
+        travaAnimacao(documento);
+        prepararClone(clonado);
+        const host = clonado.closest('[data-captura-proposta]');
+        if (host instanceof HTMLElement) prepararClone(host);
       },
     });
-    if (canvas.width < 8 || canvas.height < 8) return pdf;
-    const escala = canvas.width / Math.max(1, retanguloArtigo.width);
+    if (!fotoTemConteudo(canvas)) {
+      throw new Error('O PDF não trouxe o texto nem as imagens da proposta. Tente salvar de novo.');
+    }
+    const escalaCanvas = canvas.width / Math.max(1, retanguloArtigo.width);
     const retangulos = blocos.map((bloco) => {
       const retangulo = bloco.getBoundingClientRect();
       return {
-        top: (retangulo.top - retanguloArtigo.top) * escala,
-        bottom: (retangulo.bottom - retanguloArtigo.top) * escala,
+        top: (retangulo.top - retanguloArtigo.top) * escalaCanvas,
+        bottom: (retangulo.bottom - retanguloArtigo.top) * escalaCanvas,
       };
     });
     const faixas = faixasCobertas(retangulos, canvas.height);
@@ -151,6 +271,7 @@ async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
       pdf.addImage(recorte.toDataURL('image/jpeg', 0.86), 'JPEG', x, MARGEM_MM, larguraMm, alturaMm);
     });
   } finally {
+    restaurarFoto();
     restaurarChrome();
     restaurarRolagem();
     restaurarExposicao();

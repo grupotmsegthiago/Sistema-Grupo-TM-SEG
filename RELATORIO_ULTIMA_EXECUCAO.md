@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026 a partir do pedido de enxugar as ações e corrigir o PDF em branco. A linha do histórico tem um botão Ações. O painel sobreposto guarda PDF, e-mail, copiar a mensagem, criar OS, alterar, desativar e excluir. O Salvar em PDF remove desfoque, animação e a proposta fora da tela antes da foto, para o arquivo levar texto e imagens. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026 a partir do pedido direto de enviar a proposta por e-mail. O botão Enviar para o e-mail fica na proposta gerada. A mensagem leva os dados do Grupo TM SEG e o PDF completo vai em anexo, com a foto do mapa em faixa própria. Sem o PDF, o e-mail não sai. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026 a partir do pedido direto de tirar o painel da foto do PDF. Na hora do print, o quadro Informações da Rota some e volta em seguida. O PDF guarda a rota, os pinos e a carreta. Ainda não foi publicado. O motor da OS não mudou.

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Copy, FileDown, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
@@ -84,6 +85,7 @@ export function AcoesDaLinha({
   onExcluir,
   onCriarOs,
   onAlterar,
+  painelAberto = false,
 }: {
   id: string;
   mostrarDesativar: boolean;
@@ -97,24 +99,47 @@ export function AcoesDaLinha({
   onExcluir?: () => void;
   onCriarOs?: () => void;
   onAlterar?: () => void;
+  /** Só o teste abre o painel sem clique. Na tela ele começa fechado. */
+  painelAberto?: boolean;
 }) {
+  const [aberto, setAberto] = useState(painelAberto);
+  const fechar = (acao?: () => void) => {
+    setAberto(false);
+    acao?.();
+  };
+  const item = 'flex h-11 w-full items-center gap-2 rounded-2xl border px-3 text-left text-sm font-black';
+  const painel = aberto ? (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-slate-950/50 p-4" onClick={() => setAberto(false)}>
+          <div role="dialog" aria-label="Opções da cotação" className="w-full max-w-sm rounded-3xl bg-white p-4 shadow-2xl" onClick={(evento) => evento.stopPropagation()} data-testid={`painel-acoes-${id}`}>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-base font-black text-slate-900">Ações</h3>
+              <button type="button" onClick={() => setAberto(false)} className="h-9 rounded-full border border-slate-200 px-3 text-xs font-black text-slate-600">Fechar</button>
+            </div>
+            <div className="mt-3 grid gap-2">
+              <button type="button" onClick={() => fechar(onPdf)} data-testid={`ver-pdf-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><FileDown size={16} /> PDF</button>
+              <button type="button" onClick={() => fechar(onEmail)} data-testid={`email-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Mail size={16} /> E-mail</button>
+              <button type="button" onClick={() => fechar(onCopiar)} data-testid={`copiar-msg-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Copy size={16} /> Copiar MSG</button>
+              {mostrarCriarOs && (
+                <button type="button" onClick={() => fechar(onCriarOs)} data-testid={`criar-os-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Plus size={16} /> Criar OS</button>
+              )}
+              {mostrarAlterar && (
+                <button type="button" onClick={() => fechar(onAlterar)} data-testid={`alterar-${id}`} className={`${item} border-slate-200 text-slate-800 hover:bg-slate-50`}><Pencil size={16} /> Alterar</button>
+              )}
+              {mostrarDesativar && (
+                <button type="button" onClick={() => fechar(onDesativar)} data-testid={`desativar-${id}`} className={`${item} border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100`}><Power size={16} /> Desativar</button>
+              )}
+              {mostrarExcluir && (
+                <button type="button" onClick={() => fechar(onExcluir)} data-testid={`excluir-${id}`} className={`${item} border-red-200 bg-red-50 text-red-800 hover:bg-red-100`}><Trash2 size={16} /> Excluir</button>
+              )}
+            </div>
+          </div>
+        </div>
+  ) : null;
+  const destino = typeof document !== 'undefined' ? document.body : null;
   return (
-    <div className="flex max-w-[320px] flex-wrap gap-1" data-testid={`acoes-linha-${id}`}>
-      <button type="button" onClick={onPdf} data-testid={`ver-pdf-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><FileDown size={13} /> PDF</button>
-      <button type="button" onClick={onEmail} data-testid={`email-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Mail size={13} /> E-mail</button>
-      <button type="button" onClick={onCopiar} data-testid={`copiar-msg-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Copy size={13} /> Copiar MSG</button>
-      {mostrarCriarOs && (
-        <button type="button" onClick={onCriarOs} data-testid={`criar-os-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Plus size={13} /> Criar OS</button>
-      )}
-      {mostrarAlterar && (
-        <button type="button" onClick={onAlterar} data-testid={`alterar-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}><Pencil size={13} /> Alterar</button>
-      )}
-      {mostrarDesativar && (
-        <button type="button" onClick={onDesativar} data-testid={`desativar-${id}`} className={`${BOTAO} border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100`}><Power size={13} /> Desativar</button>
-      )}
-      {mostrarExcluir && (
-        <button type="button" onClick={onExcluir} data-testid={`excluir-${id}`} className={`${BOTAO} border-red-200 bg-red-50 text-red-800 hover:bg-red-100`}><Trash2 size={13} /> Excluir</button>
-      )}
+    <div data-testid={`acoes-linha-${id}`}>
+      <button type="button" onClick={() => setAberto(true)} data-testid={`abrir-acoes-${id}`} className={`${BOTAO} border-slate-200 text-slate-700 hover:bg-slate-50`}>Ações</button>
+      {painel && destino ? createPortal(painel, destino) : painel}
     </div>
   );
 }
@@ -515,7 +540,7 @@ export const HistoricoCotacoes: React.FC<{
                     <td className="px-3 py-3 whitespace-nowrap" data-testid={`hora-extra-${linha.id}`}>{textoHoraExtra(salvo?.horaExtra)}</td>
                     <td className="px-3 py-3 font-black text-slate-900">{formatarValorCotacao(linha.total_value)}</td>
                     <td className="px-3 py-3">{selo(validade.tom, validade.rotulo)}</td>
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3 whitespace-nowrap">
                       <AcoesDaLinha
                         id={linha.id}
                         mostrarDesativar={mostrarDesativarCotacao(ator, gestaoDaLinha(linha, salvo?.solicitanteEmail))}

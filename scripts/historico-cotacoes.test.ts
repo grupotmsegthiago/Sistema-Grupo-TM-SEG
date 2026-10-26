@@ -19,20 +19,33 @@ import {
 } from '../lib/portalCliente/historicoCotacoes';
 import { listarHistoricoCotacoes, registrarCotacaoPortal } from '../lib/portalCliente/cotacaoHttp';
 import { AcoesDaLinha, HistoricoVazio } from '../components/ceva/HistoricoCotacoes';
+import { escalaDaCaptura } from '../components/ceva/abrirPdfCotacao';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
 
 const AGORA = new Date('2026-10-26T15:00:00.000Z');
 
 describe('histórico de cotações do portal', () => {
+  it('a foto alta não usa escala que estoura o canvas', () => {
+    assert.equal(escalaDaCaptura(1200), 2);
+    assert.equal(escalaDaCaptura(5000), 1.25);
+    assert.equal(escalaDaCaptura(9000), 1);
+    assert.equal(escalaDaCaptura(0), 1);
+  });
+
   it('troca o menu por PDF, e-mail e copiar a mensagem', () => {
-    const interno = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q1', mostrarDesativar: true, mostrarExcluir: false }));
+    const fechado = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q0', mostrarDesativar: true, mostrarExcluir: true }));
+    assert.match(fechado, /Ações/);
+    assert.match(fechado, /abrir-acoes-q0/);
+    assert.doesNotMatch(fechado, /Copiar MSG/);
+    assert.doesNotMatch(fechado, /painel-acoes-q0/);
+    const interno = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q1', mostrarDesativar: true, mostrarExcluir: false, painelAberto: true }));
     assert.match(interno, /PDF/);
     assert.match(interno, /E-mail/);
     assert.match(interno, /Copiar MSG/);
     assert.match(interno, /Desativar/);
     assert.doesNotMatch(interno, /Excluir/);
-    assert.doesNotMatch(interno, /Ações da cotação/);
-    const diretoria = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q2', mostrarDesativar: true, mostrarExcluir: true }));
+    assert.match(interno, /painel-acoes-q1/);
+    const diretoria = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q2', mostrarDesativar: true, mostrarExcluir: true, painelAberto: true }));
     assert.match(diretoria, /desativar-q2/);
     assert.match(diretoria, /excluir-q2/);
     const portal = renderToStaticMarkup(React.createElement(AcoesDaLinha, { id: 'q3', mostrarDesativar: false, mostrarExcluir: false }));
