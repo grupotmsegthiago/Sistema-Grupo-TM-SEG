@@ -204,6 +204,7 @@ describe('gestão da cotação', () => {
     const historico = readFileSync(new URL('../components/ceva/HistoricoCotacoes.tsx', import.meta.url), 'utf8');
     assert.match(historico, /data-proposta-pdf="historico"/);
     assert.match(historico, /printMapa=\{mapaCaptura\}/);
+    assert.match(tela, /data-fora-pdf="painel"/);
     assert.match(historico, /nomeLinhaVigencia/);
     assert.match(historico, /esperarPropostaHistorico/);
     assert.match(historico, /Não foi possível montar o PDF desta cotação/);
@@ -211,6 +212,7 @@ describe('gestão da cotação', () => {
     assert.match(pdf, /faixasCobertas/);
     assert.match(pdf, /gruposNaFolha/);
     assert.match(pdf, /data-captura-proposta/);
+    assert.match(pdf, /\[data-fora-pdf\]/);
     assert.doesNotMatch(pdf, /while \(restante > 0\)/);
     assert.doesNotMatch(pdf, /financialUtils/);
     const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')) as { functions: Record<string, unknown> };

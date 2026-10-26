@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. A foto do mapa no PDF deixa de fora o painel Informações da Rota. A rota, os pinos e a carreta continuam na imagem. O painel permanece na tela. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. No histórico, o menu de ações virou botões: PDF, e-mail e copiar a mensagem. Desativar aparece para usuário interno. Excluir aparece só para a diretoria. A validade da cotação passou de 30 para 10 dias. Criar OS, no portal, e Alterar continuam na linha. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. O PDF salvo passa a se chamar `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`. O ano `(2026-)` e `(2027-)` sai do texto da folha. O número entra no snapshot da cotação, sem coluna nova. A OS nascida da cotação continua com o sufixo no nome da tabela e da rota. Ainda não foi publicado. O motor da OS não mudou.

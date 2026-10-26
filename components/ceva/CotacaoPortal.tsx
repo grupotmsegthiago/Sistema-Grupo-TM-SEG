@@ -432,7 +432,7 @@ function MapaCotacao(props: {
         </GoogleMap>
       )}
       <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(8,16,32,0.5)_100%)]" />
-      <aside data-testid="painel-rota" className="absolute left-3 top-3 z-20 w-[min(320px,calc(100%-5.5rem))] rounded-3xl border border-white/20 bg-slate-950/55 p-4 text-white shadow-[0_18px_40px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+      <aside data-testid="painel-rota" data-fora-pdf="painel" className="absolute left-3 top-3 z-20 w-[min(320px,calc(100%-5.5rem))] rounded-3xl border border-white/20 bg-slate-950/55 p-4 text-white shadow-[0_18px_40px_rgba(2,6,23,0.45)] backdrop-blur-xl">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-black">Informações da Rota</h3>
           <button type="button" onClick={props.onPdf} disabled={!props.podeGerar || props.gerando} className="inline-flex h-7 items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 text-[10px] font-bold text-white disabled:opacity-40">

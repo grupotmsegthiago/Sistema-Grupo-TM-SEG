@@ -204,7 +204,8 @@ function congelarCanvas(canvas: HTMLCanvasElement): HTMLImageElement | null {
 }
 
 /**
- * Foto do mapa que está na tela, com o painel, a rota e a carreta.
+ * Foto do mapa que está na tela, com a rota e a carreta.
+ * O painel Informações da Rota fica de fora: ele só serve na tela.
  * O canvas do Google não entra no PDF; quando ele não exporta, o mapa estático
  * já baixado fica por baixo e o html2canvas lê o restante do card.
  */
@@ -261,6 +262,12 @@ export async function printDoMapaVisivel(raiz: HTMLElement, mapaFundo: string | 
         });
       }
     }
+    const foraDoPdf = Array.from(raiz.querySelectorAll<HTMLElement>('[data-fora-pdf]'));
+    foraDoPdf.forEach((elemento) => {
+      const display = elemento.style.display;
+      elemento.style.display = 'none';
+      limpezas.push(() => { elemento.style.display = display; });
+    });
     await prepararImagensDoElemento(raiz);
     const shot = await html2canvas(raiz, {
       scale: 2,

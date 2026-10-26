@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026 a partir do pedido direto de tirar o painel da foto do PDF. Na hora do print, o quadro Informações da Rota some e volta em seguida. O PDF guarda a rota, os pinos e a carreta. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026 a partir do pedido direto de trocar o menu de ações. PDF, e-mail e copiar a mensagem ficam na linha. Desativar fica com o usuário interno. Excluir fica só com a diretoria. A validade passou de 30 para 10 dias, na tela e na rotina que marca a cotação expirada. Sem migration. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026 a partir do pedido direto de mudar o nome do PDF. Ao salvar, o arquivo fica `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`. O texto da folha deixa de mostrar `(2026-)` e `(2027-)`. Cada cotação nova recebe um número no snapshot que já existe. A OS continua gravando o sufixo. Ainda não foi publicado. O motor da OS não mudou.
