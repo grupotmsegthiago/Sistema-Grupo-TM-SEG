@@ -141,6 +141,34 @@ export function emailsDaCopia(bruto: string | null | undefined): { ok: true; lis
   return { ok: true, lista: partes };
 }
 
+/** Cópia fixa de toda proposta enviada. */
+export const COPIA_FIXA_COTACAO = 'thiago@grupotmseg.com.br';
+
+/**
+ * O primeiro e-mail escolhido é o destino.
+ * A cópia leva os demais escolhidos, thiago@grupotmseg.com.br
+ * e quem fez a cotação. Se quem fez foi usuário interno, entra o e-mail dele.
+ */
+export function montarDestinatariosEnvio(entrada: {
+  selecionados?: string | null;
+  autor?: string | null;
+}): { ok: true; para: string; copias: string[] } | { ok: false; error: string } {
+  const selecionados = String(entrada.selecionados || '').split(/[;,]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (selecionados.length === 0) return { ok: false, error: 'Informe um e-mail válido.' };
+  if (selecionados.length > 8) return { ok: false, error: 'Informe no máximo 8 e-mails.' };
+  if (selecionados.some((item) => !emailDestinoValido(item))) return { ok: false, error: 'Há um e-mail selecionado inválido.' };
+  const autor = String(entrada.autor || '').trim().toLowerCase();
+  const para = selecionados[0];
+  const vistos = new Set<string>([para]);
+  const copias: string[] = [];
+  for (const email of [...selecionados.slice(1), COPIA_FIXA_COTACAO, autor]) {
+    if (!emailDestinoValido(email) || vistos.has(email)) continue;
+    vistos.add(email);
+    copias.push(email);
+  }
+  return { ok: true, para, copias };
+}
+
 export function emailDestinoValido(bruto: string | null | undefined): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(bruto || '').trim().toLowerCase());
 }
@@ -178,7 +206,9 @@ export function podeEnviarCotacao(ator: AtorCotacao, cotacao: CotacaoGestao): bo
 
 /** Aceita o PDF já em Base64. Não baixa arquivo. */
 export function pdfAnexoAceito(bruto: string | null | undefined): { ok: true; base64: string } | { ok: false; error: string } {
-  const base64 = String(bruto || '').trim().replace(/^data:application\/pdf;base64,/i, '').replace(/\s/g, '');
+  const texto = String(bruto || '').trim();
+  // O jsPDF manda data:application/pdf;filename=generated.pdf;base64,...
+  const base64 = (texto.includes(',') && /^data:/i.test(texto) ? texto.slice(texto.indexOf(',') + 1) : texto).replace(/\s/g, '');
   if (base64.length < 80 || !/^[A-Za-z0-9+/=]+$/.test(base64)) return { ok: false, error: 'O PDF da cotação não veio no anexo.' };
   if (!base64.startsWith('JVBERi')) return { ok: false, error: 'O anexo não é um PDF.' };
   const bytes = Math.floor((base64.length * 3) / 4);

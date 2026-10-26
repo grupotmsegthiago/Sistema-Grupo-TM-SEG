@@ -4,7 +4,7 @@ import { Copy, FileDown, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'luci
 import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
 import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
-import { cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
+import { COPIA_FIXA_COTACAO, cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
 import { nomesDaVigencia } from '../../lib/portalCliente/cotacao';
 import {
   TEXTO_HISTORICO_VAZIO,
@@ -357,7 +357,10 @@ export const HistoricoCotacoes: React.FC<{
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível enviar o e-mail.');
           if (corpo.enviado === false) setErroPdf(String(corpo.aviso || 'O e-mail não saiu agora.'));
-          else setToast('Proposta enviada por e-mail.');
+          else {
+            const copias = Array.isArray(corpo.copias) ? corpo.copias.filter((item: unknown) => typeof item === 'string' && item) : [];
+            setToast(copias.length ? `Proposta enviada. Cópia para ${copias.join(', ')}.` : 'Proposta enviada por e-mail.');
+          }
         } else {
           const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
           await abrirPdfDaProposta(artigo, nomePdfCotacao({
@@ -593,7 +596,7 @@ export const HistoricoCotacoes: React.FC<{
             <label className="mt-3 block text-[11px] font-bold uppercase text-slate-400">Mensagem
               <textarea value={email.mensagem} onChange={(evento) => setEmail({ ...email, mensagem: evento.target.value })} rows={7} className="mt-1 w-full rounded-xl border border-slate-200 p-3 text-sm font-semibold normal-case text-slate-900" />
             </label>
-            <p className="mt-2 text-[11px] text-slate-500">O PDF da cotação segue em anexo.</p>
+            <p className="mt-2 text-[11px] text-slate-500">O PDF da cotação segue em anexo. Cópia para {COPIA_FIXA_COTACAO} e para quem fez a cotação.</p>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setEmail(null)} className="h-10 rounded-full border border-slate-200 px-4 text-xs font-black text-slate-600">Cancelar</button>
               <button type="submit" disabled={enviando} className="h-10 rounded-full bg-[#10284f] px-4 text-xs font-black text-white disabled:opacity-40">Enviar</button>

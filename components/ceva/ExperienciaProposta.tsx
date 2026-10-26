@@ -12,6 +12,7 @@ import {
   regiaoLegivel,
 } from '../../lib/portalCliente/apresentacao';
 import { rotulosSemAno, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { COPIA_FIXA_COTACAO } from '../../lib/portalCliente/gestaoCotacao';
 import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
 import { authFetch } from '../../lib/authFetch';
@@ -25,6 +26,12 @@ function reais(valor: number): string {
 
 function numero(valor: number): string {
   return valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+}
+
+function textoEnvio(corpo: { para?: unknown; copias?: unknown }, digitado: string): string {
+  const para = typeof corpo.para === 'string' && corpo.para ? corpo.para : digitado;
+  const copias = Array.isArray(corpo.copias) ? corpo.copias.filter((item) => typeof item === 'string' && item).join(', ') : '';
+  return copias ? `Proposta enviada para ${para}. Cópia para ${copias}.` : `Proposta enviada para ${para}.`;
 }
 
 function dataDaProposta(): string {
@@ -115,7 +122,7 @@ export const ExperienciaProposta: React.FC<{
           });
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
-          setAviso(corpo.enviado ? `Proposta enviada para ${email}.` : (corpo.aviso || 'O e-mail não saiu agora.'));
+          setAviso(corpo.enviado ? textoEnvio(corpo, email) : (corpo.aviso || 'O e-mail não saiu agora.'));
         }
         return;
       }
@@ -126,7 +133,7 @@ export const ExperienciaProposta: React.FC<{
       });
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
-      if (acao === 'email') setAviso(corpo.enviado ? `Proposta enviada para ${email}.` : (corpo.aviso || 'O e-mail não saiu agora.'));
+      if (acao === 'email') setAviso(corpo.enviado ? textoEnvio(corpo, email) : (corpo.aviso || 'O e-mail não saiu agora.'));
       else setAviso('Proposta gravada na tabela do cliente.');
     } catch (falha) {
       setAviso(falha instanceof Error ? falha.message : 'Não foi possível concluir.');
@@ -318,12 +325,12 @@ export const ExperienciaProposta: React.FC<{
               <label className="min-w-[220px] flex-1 text-xs font-medium text-[#6b6b6b]">Enviar para o e-mail
                 <span className="mt-1 flex h-11 items-center gap-2 rounded-full border border-black/10 px-3">
                   <Mail size={14} />
-                  <input value={email} onChange={(evento) => setEmail(evento.target.value)} type="email" required placeholder="cliente@empresa.com" className="h-full w-full bg-transparent text-sm outline-none" />
+                  <input value={email} onChange={(evento) => setEmail(evento.target.value)} type="text" required placeholder="cliente@empresa.com — separe por vírgula" className="h-full w-full bg-transparent text-sm outline-none" />
                 </span>
               </label>
               <button type="submit" disabled={ocupado === 'email'} data-testid="enviar-proposta-email" className="h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">{ocupado === 'email' ? 'Enviando o PDF…' : 'Enviar para o e-mail'}</button>
             </form>
-            <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail leva as informações do Grupo TM SEG. O PDF completo da proposta vai em anexo, com a foto do mapa e as condições da rota.</p>
+            <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail leva as informações do Grupo TM SEG. O PDF completo da proposta vai em anexo, com a foto do mapa e as condições da rota. Cópia para {COPIA_FIXA_COTACAO} e para quem fez a cotação.</p>
             {aviso && <p className="mt-3 text-sm font-medium">{aviso}</p>}
           </footer>}
         </article>

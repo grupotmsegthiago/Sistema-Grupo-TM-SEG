@@ -8,7 +8,7 @@ import {
   decisaoExcluir,
   decisaoInativar,
   emailDestinoValido,
-  emailsDaCopia,
+  montarDestinatariosEnvio,
   pdfAnexoAceito,
   podeEnviarCotacao,
   registroAuditoriaCotacao,
@@ -162,14 +162,14 @@ export async function atenderGestaoCotacao(req: Request, res: Response, acao: 'i
     res.status(403).json({ error: 'Você não pode enviar esta cotação.' });
     return;
   }
-  const para = String(req.body?.para || cotacao.solicitanteEmail || '').trim().toLowerCase();
-  if (!emailDestinoValido(para)) {
-    res.status(400).json({ error: 'Informe um e-mail válido.' });
-    return;
-  }
-  const copias = emailsDaCopia(String(req.body?.cc || ''));
-  if (!copias.ok) {
-    res.status(400).json({ error: copias.error });
+  const autorGravado = String(cotacao.solicitanteEmail || '').trim();
+  const autor = emailDestinoValido(autorGravado) ? autorGravado : ator.email;
+  const destinos = montarDestinatariosEnvio({
+    selecionados: [String(req.body?.para || ''), String(req.body?.cc || '')].filter(Boolean).join(', '),
+    autor,
+  });
+  if (!destinos.ok) {
+    res.status(400).json({ error: destinos.error });
     return;
   }
   const anexo = pdfAnexoAceito(String(req.body?.pdf || ''));
@@ -193,8 +193,8 @@ export async function atenderGestaoCotacao(req: Request, res: Response, acao: 'i
     const { sendMail, SMTP_FROM } = await import('../lib/email/smtp.js');
     await sendMail({
       from: SMTP_FROM,
-      to: para,
-      cc: copias.lista.length ? copias.lista : undefined,
+      to: destinos.para,
+      cc: destinos.copias.length ? destinos.copias : undefined,
       subject: `Proposta Grupo TM SEG — ${cotacao.origin || 'Cotação'}`,
       text: texto,
       attachments: [{
@@ -208,7 +208,7 @@ export async function atenderGestaoCotacao(req: Request, res: Response, acao: 'i
         contentType: 'application/pdf',
       }],
     });
-    res.status(200).json({ ok: true, enviado: true });
+    res.status(200).json({ ok: true, enviado: true, para: destinos.para, copias: destinos.copias });
   } catch (error) {
     console.error('[cotacao] email', error instanceof Error ? error.message : error);
     res.status(200).json({ ok: true, enviado: false, aviso: 'O e-mail não saiu agora. A cotação continua no histórico.' });

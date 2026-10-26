@@ -1796,7 +1796,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           return;
         }
         if (String(body?.acao || '') === 'email') {
-          const preparado = await propostaParaEmail(sb, cliente, body || {});
+          const preparado = await propostaParaEmail(sb, cliente, { ...(body || {}), autor: session.email });
           if (preparado.status !== 200 || !('ok' in preparado.corpo)) {
             res.status(preparado.status).json(preparado.corpo);
             return;
@@ -1813,6 +1813,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
             await sendMail({
               from: SMTP_FROM,
               to: preparado.corpo.para,
+              cc: preparado.corpo.copias.length ? preparado.corpo.copias : undefined,
               subject: preparado.corpo.assunto,
               text: preparado.corpo.texto,
               attachments: [{
@@ -1826,7 +1827,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
                 contentType: 'application/pdf',
               }],
             });
-            res.status(200).json({ ok: true, enviado: true });
+            res.status(200).json({ ok: true, enviado: true, para: preparado.corpo.para, copias: preparado.corpo.copias });
           } catch (error) {
             console.error(`[${cfg().logPrefix}] cotacao email`, error instanceof Error ? error.message : error);
             res.status(200).json({ ok: true, enviado: false, aviso: 'O e-mail não saiu agora. A proposta continua disponível para o PDF.' });

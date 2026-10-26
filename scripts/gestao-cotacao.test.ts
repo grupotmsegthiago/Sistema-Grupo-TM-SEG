@@ -10,6 +10,8 @@ import {
   cartaEmailCotacao,
   decisaoExcluir,
   decisaoInativar,
+  COPIA_FIXA_COTACAO,
+  montarDestinatariosEnvio,
   pdfAnexoAceito,
   mostrarDesativarCotacao,
   mostrarExcluirCotacao,
@@ -87,9 +89,24 @@ describe('gestão da cotação', () => {
     const pdf = Buffer.from(`%PDF-1.4\n${' '.repeat(80)}\n%%EOF`).toString('base64');
     const aceito = pdfAnexoAceito(`data:application/pdf;base64,${pdf}`);
     assert.equal(aceito.ok, true);
+    const comNome = pdfAnexoAceito(`data:application/pdf;filename=generated.pdf;base64,${pdf}`);
+    assert.equal(comNome.ok, true);
+    if (comNome.ok) assert.equal(comNome.base64.startsWith('JVBERi'), true);
     const texto = Buffer.from('isto não é pdf '.repeat(8)).toString('base64');
     const recusado = pdfAnexoAceito(texto);
     assert.equal(recusado.ok, false);
+    const destinos = montarDestinatariosEnvio({
+      selecionados: 'cliente@ceva.com, financeiro@ceva.com',
+      autor: 'operador@grupotmseg.com.br',
+    });
+    assert.equal(destinos.ok, true);
+    if (destinos.ok) {
+      assert.equal(destinos.para, 'cliente@ceva.com');
+      assert.deepEqual(destinos.copias, ['financeiro@ceva.com', COPIA_FIXA_COTACAO, 'operador@grupotmseg.com.br']);
+    }
+    const repetido = montarDestinatariosEnvio({ selecionados: COPIA_FIXA_COTACAO, autor: COPIA_FIXA_COTACAO });
+    assert.equal(repetido.ok, true);
+    if (repetido.ok) assert.deepEqual(repetido.copias, []);
     const carta = cartaEmailCotacao({ origem: 'Salvador, BA', destino: 'São Paulo, SP', km: 1985.3, valor: 19885 });
     assert.match(carta, /Salvador, BA/);
     assert.match(carta, /pedágio é cobrado à parte/i);

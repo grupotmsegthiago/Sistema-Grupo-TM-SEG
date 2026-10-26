@@ -63,9 +63,17 @@ export function registerCevaPortalRoutes(app: Express): void {
       res.status(401).json({ error: 'Entre novamente para enviar a proposta.' });
       return;
     }
-    const para = String(req.body?.para || '').trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(para)) {
-      res.status(400).json({ error: 'Informe um e-mail válido.' });
+    const { montarDestinatariosEnvio } = await import('../lib/portalCliente/gestaoCotacao.js');
+    const { atorDaRequisicao } = await import('./cotacaoGestaoHttp.js');
+    const { createSupabaseAdminClient: criarBanco } = await import('./supabaseConfig.js');
+    const bancoAtor = criarBanco();
+    const ator = bancoAtor ? await atorDaRequisicao(bancoAtor, req.headers as Record<string, unknown>) : null;
+    const destinos = montarDestinatariosEnvio({
+      selecionados: String(req.body?.para || ''),
+      autor: ator?.email || '',
+    });
+    if (!destinos.ok) {
+      res.status(400).json({ error: destinos.error });
       return;
     }
     const bruto = req.body?.proposta;
@@ -80,9 +88,7 @@ export function registerCevaPortalRoutes(app: Express): void {
     }
     const { cartaDaProposta } = await import('../lib/portalCliente/apresentacao.js');
     const { rotuloDeOperacoes } = await import('../lib/portalCliente/cotacaoHttp.js');
-    const { createSupabaseAdminClient } = await import('./supabaseConfig.js');
-    const sb = createSupabaseAdminClient();
-    const operacoes = sb ? await rotuloDeOperacoes(sb) : null;
+    const operacoes = bancoAtor ? await rotuloDeOperacoes(bancoAtor) : null;
     const proposta = {
       acordada: Boolean(bruto.acordada),
       regiao: String(bruto.regiao || ''),
@@ -110,7 +116,8 @@ export function registerCevaPortalRoutes(app: Express): void {
       const { sendMail, SMTP_FROM } = await import('../lib/email/smtp.js');
       await sendMail({
         from: SMTP_FROM,
-        to: para,
+        to: destinos.para,
+        cc: destinos.copias.length ? destinos.copias : undefined,
         subject: `Proposta Grupo TM SEG — ${proposta.operacao}`,
         text: cartaDaProposta(proposta, operacoes),
         attachments: [{
@@ -124,7 +131,7 @@ export function registerCevaPortalRoutes(app: Express): void {
           contentType: 'application/pdf',
         }],
       });
-      res.status(200).json({ ok: true, enviado: true });
+      res.status(200).json({ ok: true, enviado: true, para: destinos.para, copias: destinos.copias });
     } catch (error) {
       console.error('[proposta-escolta] email', error instanceof Error ? error.message : error);
       res.status(200).json({ ok: true, enviado: false, aviso: 'O e-mail não saiu agora. A proposta continua disponível para impressão.' });

@@ -11,7 +11,7 @@ import {
   type LinhaHistoricoCotacao,
   type PedidoRegistroCotacao,
 } from './historicoCotacoes.js';
-import { cotacaoExcluida } from './gestaoCotacao.js';
+import { cotacaoExcluida, montarDestinatariosEnvio } from './gestaoCotacao.js';
 import type { VersaoTabelaRegional } from '../precificacao/tabela2027.js';
 
 type ClientePortal = { name?: string | null; trading_name?: string | null } | null;
@@ -50,10 +50,6 @@ export async function listarTabelasCotacao(
 function numero(valor: unknown): number {
   const n = Number(valor);
   return Number.isFinite(n) ? n : 0;
-}
-
-function emailValido(valor: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor);
 }
 
 async function tabelasDoCliente(sb: { from: (tabela: string) => any }, cliente: ClientePortal): Promise<TabelaCotacao[] | { error: string; status: number }> {
@@ -170,10 +166,13 @@ export async function registrarCotacaoPortal(
 export async function propostaParaEmail(
   sb: { from: (tabela: string) => any },
   cliente: ClientePortal,
-  pedido: { para?: unknown; regiao?: unknown; origem?: unknown; destino?: unknown; paradas?: unknown; km?: unknown },
-): Promise<{ status: number; corpo: { error: string } | { ok: true; para: string; assunto: string; texto: string } }> {
-  const para = String(pedido.para || '').trim().toLowerCase();
-  if (!emailValido(para)) return { status: 400, corpo: { error: 'Informe um e-mail válido.' } };
+  pedido: { para?: unknown; autor?: unknown; regiao?: unknown; origem?: unknown; destino?: unknown; paradas?: unknown; km?: unknown },
+): Promise<{ status: number; corpo: { error: string } | { ok: true; para: string; copias: string[]; assunto: string; texto: string } }> {
+  const destinos = montarDestinatariosEnvio({
+    selecionados: String(pedido.para || ''),
+    autor: String(pedido.autor || ''),
+  });
+  if (!destinos.ok) return { status: 400, corpo: { error: destinos.error } };
   const tabelas = await tabelasDoCliente(sb, cliente);
   if (!Array.isArray(tabelas)) return { status: tabelas.status, corpo: { error: tabelas.error } };
   const proposta = montarPropostaDoPedido(tabelas, pedido);
@@ -182,7 +181,8 @@ export async function propostaParaEmail(
     status: 200,
     corpo: {
       ok: true,
-      para,
+      para: destinos.para,
+      copias: destinos.copias,
       assunto: `Proposta Grupo TM SEG — ${proposta.operacao}`,
       texto: textoDaProposta(proposta, await rotuloDeOperacoes(sb)),
     },
