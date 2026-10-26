@@ -1802,12 +1802,23 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
             return;
           }
           try {
+            const { pdfAnexoAceito } = await import('../portalCliente/gestaoCotacao.js');
+            const anexo = String(body?.pdf || '').trim() ? pdfAnexoAceito(String(body?.pdf || '')) : null;
+            if (anexo && !anexo.ok) {
+              res.status(400).json({ error: anexo.error });
+              return;
+            }
             const { sendMail, SMTP_FROM } = await import('../email/smtp.js');
             await sendMail({
               from: SMTP_FROM,
               to: preparado.corpo.para,
               subject: preparado.corpo.assunto,
               text: preparado.corpo.texto,
+              attachments: anexo && anexo.ok ? [{
+                filename: 'Proposta-Grupo-TM-SEG.pdf',
+                content: Buffer.from(anexo.base64, 'base64'),
+                contentType: 'application/pdf',
+              }] : undefined,
             });
             res.status(200).json({ ok: true, enviado: true });
           } catch (error) {

@@ -122,22 +122,80 @@ function camadasDoTrajeto(miolo: string): string[] {
   ];
 }
 
+/** Folga igual nos dois lados, para o meio do trecho continuar no centro da imagem. */
+function caixaComFolga(pontos: PontoMapa[]): PontoMapa[] {
+  if (pontos.length === 0) return [];
+  const lats = pontos.map((ponto) => ponto.lat);
+  const lngs = pontos.map((ponto) => ponto.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const folgaLat = Math.max(0.02, (maxLat - minLat) * 0.22);
+  const folgaLng = Math.max(0.02, (maxLng - minLng) * 0.22);
+  return [
+    { lat: minLat - folgaLat, lng: minLng - folgaLng },
+    { lat: maxLat + folgaLat, lng: maxLng + folgaLng },
+  ];
+}
+
+function estilosNaUrl(url: string): string {
+  let saida = url;
+  for (const estilo of ESTILOS_MAPA_ESTATICO) saida += `&style=${encodeURIComponent(estilo)}`;
+  return saida;
+}
+
 function montarUrlMapa(chave: string, trechos: string[], entrada: {
   inicio?: PontoMapa | null;
   fim?: PontoMapa | null;
   paradas?: PontoMapa[];
 }): string {
   const base = new URLSearchParams({ size: '640x360', scale: '2', maptype: 'roadmap', key: chave });
-  let url = `https://maps.googleapis.com/maps/api/staticmap?${base.toString()}`;
-  for (const estilo of ESTILOS_MAPA_ESTATICO) url += `&style=${encodeURIComponent(estilo)}`;
+  let url = estilosNaUrl(`https://maps.googleapis.com/maps/api/staticmap?${base.toString()}`);
   for (const trecho of trechos) url += `&path=${encodeURIComponent(trecho)}`;
   const marcar = (spec: string, ponto: PontoMapa | null) => {
     if (!ponto) return;
     url += `&markers=${encodeURIComponent(`${spec}|${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`)}`;
   };
-  marcar('size:mid|color:green|label:A', pontoUtil(entrada.inicio));
-  for (const parada of (entrada.paradas || []).slice(0, 6)) marcar('size:small|color:yellow', pontoUtil(parada));
-  marcar('size:mid|color:red|label:B', pontoUtil(entrada.fim));
+  const inicio = pontoUtil(entrada.inicio);
+  const fim = pontoUtil(entrada.fim);
+  marcar('size:mid|color:green|label:A', inicio);
+  const paradas = (entrada.paradas || []).slice(0, 6).map((parada) => pontoUtil(parada)).filter((parada): parada is PontoMapa => parada != null);
+  for (const parada of paradas) marcar('size:small|color:yellow', parada);
+  marcar('size:mid|color:red|label:B', fim);
+  const caixa = caixaComFolga([inicio, fim, ...paradas].filter((ponto): ponto is PontoMapa => ponto != null));
+  if (caixa.length === 2) {
+    url += `&visible=${encodeURIComponent(caixa.map((ponto) => `${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`).join('|'))}`;
+  }
+  return url;
+}
+
+/**
+ * Mapa estático só com os nomes da origem e do destino.
+ * O `visible` coloca o meio do trecho no centro, com o A e o B dentro do quadro.
+ */
+export function urlMapaPorEnderecos(entrada: {
+  origem: string;
+  destino: string;
+  paradas?: string[];
+  chave: string;
+}): string | null {
+  const chave = String(entrada.chave || '').trim();
+  const origem = String(entrada.origem || '').trim();
+  const destino = String(entrada.destino || '').trim();
+  if (!chave || origem.length < 3 || destino.length < 3) return null;
+  const base = new URLSearchParams({ size: '640x360', scale: '2', maptype: 'roadmap', key: chave });
+  let url = estilosNaUrl(`https://maps.googleapis.com/maps/api/staticmap?${base.toString()}`);
+  const marcar = (spec: string, lugar: string) => {
+    url += `&markers=${encodeURIComponent(`${spec}|${lugar}`)}`;
+  };
+  marcar('size:mid|color:green|label:A', origem);
+  for (const parada of (entrada.paradas || []).map((item) => item.trim()).filter(Boolean).slice(0, 6)) {
+    marcar('size:small|color:yellow', parada);
+  }
+  marcar('size:mid|color:red|label:B', destino);
+  url += `&visible=${encodeURIComponent(`${origem}|${destino}`)}`;
+  if (url.length > LIMITE_URL_MAPA) return null;
   return url;
 }
 

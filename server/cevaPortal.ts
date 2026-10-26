@@ -95,14 +95,28 @@ export function registerCevaPortalRoutes(app: Express): void {
       kmExtra: numeros[3],
       horaExtra: numeros[4],
       operacao: String(bruto.operacao || 'escolta').slice(0, 160),
+      vigencia: bruto.vigencia === '2027' ? '2027' as const : '2026' as const,
+      kmRota: Number(bruto.kmRota) > 0 ? Number(bruto.kmRota) : null,
+      duracaoMin: Number(bruto.duracaoMin) > 0 ? Number(bruto.duracaoMin) : null,
     };
     try {
+      const { pdfAnexoAceito } = await import('../lib/portalCliente/gestaoCotacao.js');
+      const anexo = String(req.body?.pdf || '').trim() ? pdfAnexoAceito(String(req.body?.pdf || '')) : null;
+      if (anexo && !anexo.ok) {
+        res.status(400).json({ error: anexo.error });
+        return;
+      }
       const { sendMail, SMTP_FROM } = await import('../lib/email/smtp.js');
       await sendMail({
         from: SMTP_FROM,
         to: para,
         subject: `Proposta Grupo TM SEG — ${proposta.operacao}`,
         text: cartaDaProposta(proposta, operacoes),
+        attachments: anexo && anexo.ok ? [{
+          filename: 'Proposta-Grupo-TM-SEG.pdf',
+          content: Buffer.from(anexo.base64, 'base64'),
+          contentType: 'application/pdf',
+        }] : undefined,
       });
       res.status(200).json({ ok: true, enviado: true });
     } catch (error) {
@@ -144,17 +158,25 @@ export function registerCevaPortalRoutes(app: Express): void {
       res.status(401).json({ error: 'Entre novamente para montar o mapa.' });
       return;
     }
-    const { urlMapaEstatico } = await import('../lib/portalCliente/frotaVisual.js');
+    const { urlMapaEstatico, urlMapaPorEnderecos } = await import('../lib/portalCliente/frotaVisual.js');
     const { chaveDoMapaNoServidor, refererDoMapa } = await import('../lib/portalCliente/rotaCotacao.js');
     const pontos = Array.isArray(req.body?.pontos) ? req.body.pontos.slice(0, 120) : [];
-    const paradas = Array.isArray(req.body?.paradas) ? req.body.paradas.slice(0, 6) : [];
+    const paradasBrutas = Array.isArray(req.body?.paradas) ? req.body.paradas.slice(0, 6) : [];
+    const paradasPonto = paradasBrutas.filter((item: unknown) => item && typeof item === 'object');
+    const paradasTexto = paradasBrutas.map((item: unknown) => (typeof item === 'string' ? item : '')).filter(Boolean);
+    const chave = chaveDoMapaNoServidor(process.env);
     const url = urlMapaEstatico({
       polyline: String(req.body?.polyline || '').slice(0, 20000),
-      chave: chaveDoMapaNoServidor(process.env),
+      chave,
       inicio: req.body?.inicio,
       fim: req.body?.fim,
-      paradas,
+      paradas: paradasPonto,
       pontos,
+    }) || urlMapaPorEnderecos({
+      origem: String(req.body?.origem || ''),
+      destino: String(req.body?.destino || ''),
+      paradas: paradasTexto,
+      chave,
     });
     if (!url) {
       res.status(400).json({ error: 'A rota ainda não tem um traçado para o mapa.' });

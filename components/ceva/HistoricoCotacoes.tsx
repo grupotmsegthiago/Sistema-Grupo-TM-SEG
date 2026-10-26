@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
 import { cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { cartaEmailCotacao, cotacaoExcluida, podeGerirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao } from '../../lib/portalCliente/gestaoCotacao';
+import { nomesDaVigencia } from '../../lib/portalCliente/cotacao';
 import {
   TEXTO_HISTORICO_VAZIO,
   TAMANHO_PAGINA_HISTORICO,
@@ -54,6 +55,33 @@ export type EdicaoCotacao = {
   regiao?: string;
 };
 
+async function mapaEstaticoDaLinha(
+  linha: LinhaHistoricoCotacao,
+  clienteNome: string | undefined,
+  portal: { cabecalhos: () => Record<string, string> },
+): Promise<string | null> {
+  const salvo = lerSnapshot(linha.contract_details);
+  const corpo = JSON.stringify({
+    origem: linha.origin,
+    destino: linha.destination,
+    paradas: salvo?.paradas || [],
+  });
+  try {
+    const resposta = clienteNome
+      ? await authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
+      : await fetch('/api/proposta-escolta/mapa', {
+        method: 'POST',
+        headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
+        body: corpo,
+      });
+    const dados = await resposta.json().catch(() => ({}));
+    if (resposta.ok && typeof dados.mapa === 'string' && dados.mapa.startsWith('data:image/')) return dados.mapa;
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 export const HistoricoCotacoes: React.FC<{
   clienteNome?: string;
   clientId?: string | number | null;
@@ -73,6 +101,7 @@ export const HistoricoCotacoes: React.FC<{
   const [erro, setErro] = useState('');
   const [erroPdf, setErroPdf] = useState('');
   const [captura, setCaptura] = useState<{ linha: LinhaHistoricoCotacao; modo: 'pdf' | 'email' } | null>(null);
+  const [mapaCaptura, setMapaCaptura] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const [excluir, setExcluir] = useState<LinhaHistoricoCotacao | null>(null);
   const [email, setEmail] = useState<{ linha: LinhaHistoricoCotacao; para: string; cc: string; mensagem: string } | null>(null);
@@ -169,9 +198,16 @@ export const HistoricoCotacoes: React.FC<{
     const janela = janelaPdf.current;
     let ativo = true;
     const gerar = async () => {
-      await new Promise((resolver) => window.setTimeout(resolver, 80));
-      const artigo = document.querySelector('[data-proposta-pdf="1"]');
+      await new Promise((resolver) => window.setTimeout(resolver, 120));
+      const artigo = document.querySelector('[data-proposta-pdf="historico"]');
       if (!(artigo instanceof HTMLElement) || !ativo) return;
+      const imagem = artigo.querySelector('img[alt="Mapa da rota na tela"]');
+      if (imagem instanceof HTMLImageElement && !imagem.complete) {
+        await new Promise<void>((resolver) => {
+          imagem.onload = () => resolver();
+          imagem.onerror = () => resolver();
+        });
+      }
       try {
         if (modo === 'email') {
           const { pdfBase64DaProposta } = await import('./abrirPdfCotacao');
@@ -193,13 +229,22 @@ export const HistoricoCotacoes: React.FC<{
         if (ativo) setErroPdf(falha instanceof Error ? falha.message : 'Não foi possível reabrir o PDF.');
         try { janela?.close(); } catch { /* a janela pode já ter fechado */ }
       } finally {
-        if (ativo) setCaptura(null);
+        if (ativo) {
+          setCaptura(null);
+          setMapaCaptura(null);
+        }
         setEnviando(false);
       }
     };
     void gerar();
     return () => { ativo = false; };
   }, [captura, clienteNome, portal]);
+
+  const abrirCaptura = async (linha: LinhaHistoricoCotacao, modo: 'pdf' | 'email') => {
+    const mapa = await mapaEstaticoDaLinha(linha, clienteNome, portal);
+    setMapaCaptura(mapa);
+    setCaptura({ linha, modo });
+  };
 
   const verPdf = (linha: LinhaHistoricoCotacao) => {
     setMenuId(null);
@@ -208,7 +253,7 @@ export const HistoricoCotacoes: React.FC<{
       janelaPdf.current?.document.write('<!DOCTYPE html><title>Cotação</title><p style="font-family:sans-serif;padding:24px">Gerando o PDF da cotação…</p>');
     } catch { /* popup bloqueado segue no download */ }
     setErroPdf('');
-    setCaptura({ linha, modo: 'pdf' });
+    void abrirCaptura(linha, 'pdf');
   };
 
   const chamar = async (caminho: string, method: string) => {
@@ -261,14 +306,22 @@ export const HistoricoCotacoes: React.FC<{
     emailPendente.current = { para: email.para, cc: email.cc, mensagem: email.mensagem };
     setEnviando(true);
     setErroPdf('');
-    setCaptura({ linha: email.linha, modo: 'email' });
+    const linha = email.linha;
     setEmail(null);
+    void abrirCaptura(linha, 'email');
   };
 
   const criarOs = (linha: LinhaHistoricoCotacao) => {
     setMenuId(null);
     try {
-      sessionStorage.setItem('tmseg-cotacao-os', JSON.stringify({ origem: linha.origin, destino: linha.destination }));
+      const salvo = lerSnapshot(linha.contract_details);
+      const nomes = nomesDaVigencia(linha.origin, linha.destination, salvo?.vigencia);
+      sessionStorage.setItem('tmseg-cotacao-os', JSON.stringify({
+        origem: linha.origin,
+        destino: linha.destination,
+        nomeLinhaVigencia: nomes.tabela,
+        nomeRotaVigencia: nomes.rota,
+      }));
     } catch { /* a solicitação abre mesmo sem o endereço preenchido */ }
     window.dispatchEvent(new CustomEvent('tmseg-cotacao-criar-os'));
   };
@@ -413,6 +466,8 @@ export const HistoricoCotacoes: React.FC<{
           proposta={propostaCaptura}
           pedido={{ regiao: propostaCaptura.regiao, origem: linhaCaptura.origin, destino: linhaCaptura.destination, paradas: propostaCaptura.paradas, km: linhaCaptura.total_km }}
           clienteInterno={clienteNome}
+          printMapa={mapaCaptura}
+          marcaPdf="historico"
           dataTexto={dataLongaCotacao(linhaCaptura.created_at)}
           onFechar={() => setCaptura(null)}
         />

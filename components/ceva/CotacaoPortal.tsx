@@ -213,6 +213,36 @@ function pinDoMapa(cor: string, letra: string | null): google.maps.Symbol {
   };
 }
 
+function folgaDoMapa(): google.maps.Padding {
+  return { top: 72, right: 80, bottom: 96, left: 300 };
+}
+
+function enquadrarMapa(instancia: google.maps.Map, limites: google.maps.LatLngBounds | null | undefined) {
+  if (!limites) return;
+  instancia.fitBounds(limites, folgaDoMapa());
+}
+
+function esperarMapaParado(instancia: google.maps.Map): Promise<void> {
+  return new Promise((resolver) => {
+    let resolvido = false;
+    const acabar = () => {
+      if (resolvido) return;
+      resolvido = true;
+      window.setTimeout(resolver, 160);
+    };
+    const timer = window.setTimeout(acabar, 1500);
+    try {
+      google.maps.event.addListenerOnce(instancia, 'idle', () => {
+        window.clearTimeout(timer);
+        acabar();
+      });
+    } catch {
+      window.clearTimeout(timer);
+      acabar();
+    }
+  });
+}
+
 function MapaCotacao(props: {
   origem: string | Coordenada;
   destino: string | Coordenada;
@@ -306,7 +336,7 @@ function MapaCotacao(props: {
         }
         props.onTrajeto(trajeto);
         const limites = rotaDesenhada?.bounds;
-        if (limites) mapa.current?.fitBounds(limites, 64);
+        if (limites && mapa.current) enquadrarMapa(mapa.current, limites);
       };
       try {
         let resultado: google.maps.DirectionsResult;
@@ -343,16 +373,33 @@ function MapaCotacao(props: {
   const paradasNoMapa = pernas.slice(0, -1).map((perna) => perna.end_location).filter(Boolean);
 
   const carretaVisivel = Boolean(rota && props.mostrarCarreta);
+  const raizMapa = useRef<HTMLDivElement | null>(null);
+  const limites = rota?.routes[0]?.bounds;
+
+  const publicarEnquadramento = (instancia: google.maps.Map, bounds: google.maps.LatLngBounds | null | undefined) => {
+    const raiz = raizMapa.current;
+    if (!raiz) return;
+    (raiz as HTMLElement & { enquadrarParaProposta?: () => Promise<void> }).enquadrarParaProposta = async () => {
+      enquadrarMapa(instancia, bounds);
+      await esperarMapaParado(instancia);
+    };
+  };
+
+  useEffect(() => {
+    const instancia = mapa.current;
+    if (!instancia) return;
+    publicarEnquadramento(instancia, limites);
+  }, [limites]);
 
   return (
-    <div data-mapa-cotacao="1" className="relative h-[clamp(460px,52vw,640px)] w-full overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_22px_40px_rgba(15,23,42,0.18)]">
+    <div ref={raizMapa} data-mapa-cotacao="1" className="relative h-[clamp(460px,52vw,640px)] w-full overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_22px_40px_rgba(15,23,42,0.18)]">
       {props.mapaErro ? (
         <p className="flex h-full items-center justify-center px-6 text-center text-sm font-bold text-slate-600">O mapa não carregou.</p>
       ) : !props.mapaPronto ? (
         <p className="flex h-full items-center justify-center text-sm font-bold text-slate-600">Carregando mapa…</p>
       ) : (
         <GoogleMap
-          onLoad={(instancia) => { mapa.current = instancia; instancia.setMapTypeId(satelite ? 'hybrid' : 'roadmap'); if (!satelite) instancia.setOptions({ styles: ESTILO_MAPA_COTACAO }); const limites = rota?.routes[0]?.bounds; if (limites) instancia.fitBounds(limites, 64); }}
+          onLoad={(instancia) => { mapa.current = instancia; instancia.setMapTypeId(satelite ? 'hybrid' : 'roadmap'); if (!satelite) instancia.setOptions({ styles: ESTILO_MAPA_COTACAO }); const bounds = rota?.routes[0]?.bounds; enquadrarMapa(instancia, bounds); publicarEnquadramento(instancia, bounds); }}
           mapContainerStyle={{ width: '100%', height: '100%' }}
           center={{ lat: -14.2, lng: -45.5 }}
           zoom={5}
@@ -600,6 +647,9 @@ export const CotacaoPortal: React.FC<{
       tabelaRegiao,
     });
     if (nova.acordada) {
+      nova.vigencia = versaoAtiva;
+      nova.kmRota = kmRota;
+      nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
       return { nova, usouMinimo: kmRota <= 100, vigencia: versaoAtiva };
     }
     if (regional.aplicar) {
@@ -611,6 +661,9 @@ export const CotacaoPortal: React.FC<{
       if (regional.nome) nova.regiao = regional.nome;
     }
     const vigente = regional.aplicar ? regional.vigenciaUsada : versaoAtiva;
+    nova.vigencia = vigente;
+    nova.kmRota = kmRota;
+    nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
     const usouMinimo = regional.aplicar ? Boolean(regional.conta.usouMinimo) : kmRota <= 100;
     return { nova, usouMinimo, vigencia: vigente };
   };
@@ -623,6 +676,8 @@ export const CotacaoPortal: React.FC<{
         ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
         : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo })
     ));
+    const enquadrar = (raiz as HTMLElement & { enquadrarParaProposta?: () => Promise<void> }).enquadrarParaProposta;
+    if (enquadrar) await enquadrar();
     const { printDoMapaVisivel } = await import('./abrirPdfCotacao');
     return printDoMapaVisivel(raiz, fundo.startsWith('data:image/') ? fundo : null);
   };
@@ -718,7 +773,7 @@ export const CotacaoPortal: React.FC<{
     let ativo = true;
     const gerarPdf = async () => {
       await new Promise((resolver) => window.setTimeout(resolver, 80));
-      const artigo = document.querySelector('[data-proposta-pdf="1"]');
+      const artigo = document.querySelector('[data-proposta-pdf="preview"]');
       if (!(artigo instanceof HTMLElement) || !ativo) return;
       await Promise.all(Array.from(artigo.querySelectorAll('img')).map((imagem) => (
         imagem.complete ? null : new Promise<void>((resolver) => {
@@ -876,6 +931,7 @@ export const CotacaoPortal: React.FC<{
           cena={cena}
           printMapa={printMapa}
           operacoes={operacoes}
+          marcaPdf="preview"
           onFechar={() => setPreviewPdf(null)}
         />
       )}

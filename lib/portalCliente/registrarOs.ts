@@ -14,6 +14,22 @@ type SupabaseAdmin = {
 
 const LOCAL_PORTAL = 'Solicitação do portal — aguardando fornecedor';
 
+/** Grava o nome da tabela e da rota no snapshot que já existe. Sem snapshot, não cria outro. */
+export function anexarNomesDaCotacao(
+  snapshot: Record<string, unknown> | null,
+  pedido: { nomeLinhaVigencia?: string | null; nomeRotaVigencia?: string | null },
+): Record<string, unknown> | null {
+  if (!snapshot) return null;
+  const linha = String(pedido.nomeLinhaVigencia || '').trim();
+  const rota = String(pedido.nomeRotaVigencia || '').trim();
+  if (!linha && !rota) return snapshot;
+  return {
+    ...snapshot,
+    ...(linha ? { nomeTabelaCotacao: linha } : {}),
+    ...(rota ? { nomeRotaCotacao: rota } : {}),
+  };
+}
+
 function escapar(valor: string): string {
   return valor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -58,7 +74,7 @@ function payloadOs(
     toll_value: null,
     toll_value_provider: null,
     billing_approved: false,
-    snapshot_data: extras?.snapshot || null,
+    snapshot_data: anexarNomesDaCotacao(extras?.snapshot || null, pedido),
     snapshot_approved_by: null,
     snapshot_approved_at: null,
     current_location: LOCAL_PORTAL,
@@ -220,6 +236,8 @@ export async function enviarEmailSolicitacao(input: {
     ['Origem', pedido.origem],
     ['Destino', pedido.destino],
     ['Operação', pedido.operacao],
+    ['Tabela', pedido.nomeLinhaVigencia || ''],
+    ['Rota', pedido.nomeRotaVigencia || ''],
     ['Controle interno da OS', pedido.identificacao],
     ['Motorista', pedido.motorista],
     ['Veículo', pedido.placa],

@@ -1,4 +1,4 @@
-import type { PropostaPortal } from './cotacao.js';
+import { nomesDaVigencia, type PropostaPortal } from './cotacao.js';
 
 export const MARCA_TMSEG = {
   nome: 'Grupo TM SEG',
@@ -96,8 +96,12 @@ export function condicoesDaProposta(proposta: PropostaPortal): string[] {
     `Acionamento: ${moeda(proposta.acionamento)}.`,
     `A franquia contempla ${quantidade(proposta.kmFranquia)} km e ${quantidade(proposta.horasFranquia)} horas.`,
     `Acima da franquia, o quilômetro extra custa ${moeda(proposta.kmExtra)} e a hora extra custa ${moeda(proposta.horaExtra)}.`,
+    proposta.kmRota != null && proposta.kmRota > 0 ? `Km da rota: ${quantidade(proposta.kmRota)} km.` : '',
+    proposta.duracaoMin != null && proposta.duracaoMin > 0 ? `Tempo: ${Math.round(proposta.duracaoMin)} min.` : '',
+    nomesDaVigencia(proposta.origem, proposta.destino, proposta.vigencia).tabela,
+    nomesDaVigencia(proposta.origem, proposta.destino, proposta.vigencia).rota,
     AVISO_PEDAGIO,
-  ];
+  ].filter(Boolean);
 }
 
 export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | null): string {

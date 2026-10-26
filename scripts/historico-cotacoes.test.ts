@@ -18,6 +18,7 @@ import {
 } from '../lib/portalCliente/historicoCotacoes';
 import { listarHistoricoCotacoes, registrarCotacaoPortal } from '../lib/portalCliente/cotacaoHttp';
 import { HistoricoVazio } from '../components/ceva/HistoricoCotacoes';
+import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
 
 const AGORA = new Date('2026-10-26T15:00:00.000Z');
 
@@ -86,6 +87,8 @@ describe('histórico de cotações do portal', () => {
     assert.equal(proposta.regiao, 'SUDESTE SP/RJ');
     assert.equal(proposta.origem, 'Rod. Pres. Dutra, 17744 - Cumbica');
     assert.equal(lerSnapshot(String(registro.linha.contract_details))?.duracaoMin, 46);
+    assert.equal(proposta.vigencia, '2026');
+    assert.equal(proposta.kmRota, 47.7);
     assert.equal(lerSnapshot('{"kind":"outro"}'), null);
   });
 
@@ -168,5 +171,39 @@ describe('histórico de cotações do portal', () => {
     assert.equal(gravado.status, 201);
     if (!('ok' in gravado.corpo)) return;
     assert.equal(gravado.corpo.id, 'q-portal');
+  });
+
+  it('a proposta de captura marca os blocos e o sufixo da vigência', () => {
+    const html = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
+      frase: '',
+      mostrando: true,
+      modoCaptura: true,
+      marcaPdf: 'historico',
+      proposta: {
+        acordada: false,
+        regiao: 'NORDESTE',
+        origem: 'Salvador, BA',
+        destino: 'São Paulo, SP',
+        paradas: [],
+        acionamento: 830,
+        kmFranquia: 100,
+        horasFranquia: 3,
+        kmExtra: 8.3,
+        horaExtra: 207.5,
+        operacao: 'TABELA 2027 - NORDESTE',
+        vigencia: '2027',
+        kmRota: 1986,
+        duracaoMin: 1609,
+      },
+      pedido: { regiao: 'NORDESTE', origem: 'Salvador, BA', destino: 'São Paulo, SP', paradas: [], km: 1986 },
+      onFechar: () => undefined,
+    }));
+    assert.match(html, /data-proposta-pdf="historico"/);
+    assert.match(html, /data-proposta-bloco/);
+    assert.match(html, /Tabela: Salvador x São Paulo \(2027-\)/);
+    assert.match(html, /Rota: Salvador x São Paulo \(2027-\)/);
+    assert.match(html, /1\.986 km/);
+    assert.match(html, /1609 min/);
+    assert.ok(html.split('data-proposta-bloco').length - 1 >= 6);
   });
 });

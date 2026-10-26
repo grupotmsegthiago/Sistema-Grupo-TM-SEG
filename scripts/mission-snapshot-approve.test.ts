@@ -11,6 +11,7 @@ import {
   snapshotTabelaNaCriacao,
 } from '../lib/missionSnapshot.ts';
 import { datetimeLocalToIsoBR, toDatetimeLocalValueBR } from '../lib/dateUtils.ts';
+import { anexarNomesDaCotacao } from '../lib/portalCliente/registrarOs.ts';
 
 describe('Snapshot de faturamento — Aprovar zerada / recusada', () => {
   it('snapshot vazio (null, {}, string) não é utilizável', () => {
@@ -30,6 +31,17 @@ describe('Snapshot de faturamento — Aprovar zerada / recusada', () => {
       billingApproved: true,
       existingSnapshot: criacao,
     }), true);
+    const comNome = anexarNomesDaCotacao(criacao, {
+      nomeLinhaVigencia: 'Tabela: Salvador x São Paulo (2027-)',
+      nomeRotaVigencia: 'Rota: Salvador x São Paulo (2027-)',
+    });
+    assert.equal(snapshotEhSoTabelaNaCriacao(comNome), true);
+    assert.equal(shouldWriteBillingSnapshot({
+      approve: true,
+      billingApproved: true,
+      existingSnapshot: comNome,
+    }), true);
+    assert.equal(anexarNomesDaCotacao(null, { nomeLinhaVigencia: 'Tabela: Salvador x São Paulo (2026-)' }), null);
   });
 
   it('Aprovar financeiro com snapshot nulo (caso Giovanna / GTM-7186) deve gravar snapshot', () => {

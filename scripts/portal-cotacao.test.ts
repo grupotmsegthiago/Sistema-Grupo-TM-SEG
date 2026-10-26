@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { cartaDaProposta, marcoDeOperacoes, SERVICOS_TMSEG } from '../lib/portalCliente/apresentacao.ts';
-import { logoConhecido, pedidoDaCarreta, slugVisual, urlMapaEstatico } from '../lib/portalCliente/frotaVisual.ts';
+import { logoConhecido, pedidoDaCarreta, slugVisual, urlMapaEstatico, urlMapaPorEnderecos } from '../lib/portalCliente/frotaVisual.ts';
+import { nomesDaVigencia } from '../lib/portalCliente/cotacao.ts';
+import { paginasDosBlocos } from '../lib/portalCliente/pdfBlocos.ts';
 import {
   chaveDoMapaNoServidor,
   destinoDirections,
@@ -95,6 +97,12 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.match(carta, /Fiscal de rota/);
   assert.match(carta, /www\.grupotmseg\.com\.br/);
   assert.match(carta, /pedágio será cobrado à parte/);
+  assert.match(carta, /Tabela: Santos x Diadema \(2026-\)/);
+  assert.match(carta, /Rota: Santos x Diadema \(2026-\)/);
+  assert.equal(nomesDaVigencia('Salvador, BA', 'São Paulo, SP', '2027').tabela, 'Tabela: Salvador x São Paulo (2027-)');
+  assert.equal(nomesDaVigencia('Salvador, BA', 'São Paulo, SP', null).rota, 'Rota: Salvador x São Paulo (2026-)');
+  assert.deepEqual(paginasDosBlocos([80, 80, 40], 180), [0, 0, 1]);
+  assert.deepEqual(paginasDosBlocos([200], 180), [0]);
   assert.match(carta, /R\$\s*7,10/);
   assert.match(carta, /500\+/);
   assert.equal(marcoDeOperacoes(8120), '8 mil+');
@@ -263,6 +271,13 @@ test('a carreta não pede marca desenhada e o mapa estático usa a rota recebida
   assert.match(mapa || '', /enc%3AencodedPolylineOk|enc:encodedPolylineOk/);
   assert.match(mapa || '', /label%3AA|label:A/);
   assert.match(mapa || '', /label%3AB|label:B/);
+  assert.match(mapa || '', /visible=/);
+  const porNome = urlMapaPorEnderecos({ origem: 'Salvador, BA', destino: 'São Paulo, SP', chave: 'chave-teste' });
+  assert.ok(porNome);
+  assert.match(porNome || '', /label%3AA|label:A/);
+  assert.match(porNome || '', /visible=/);
+  assert.match(porNome || '', /Salvador/);
+  assert.equal(urlMapaPorEnderecos({ origem: 'A', destino: 'B', chave: 'chave-teste' }), null);
   assert.doesNotMatch(mapa || '', /Santos|Rio/);
   assert.equal(urlMapaEstatico({ polyline: 'curta', chave: 'chave-teste' }), null);
   const longa = 'A'.repeat(5000);

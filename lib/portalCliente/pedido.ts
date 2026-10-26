@@ -32,6 +32,10 @@ export type PedidoPortal = {
   tsp: string | null;
   franquiaHora: string | null;
   franquiaKm: string | null;
+  /** Nome da tabela na proposta. Não renomeia linha de preço já gravada. */
+  nomeLinhaVigencia: string | null;
+  /** Nome da rota na proposta. Não renomeia rota já gravada. */
+  nomeRotaVigencia: string | null;
 };
 
 const CHAVES_PRECO = ['preco', 'preço', 'valor', 'revenue', 'tabela', 'price', 'tarifa', 'custo'];
@@ -128,6 +132,12 @@ export function validarPedidoPortal(
   if (!placa || placa.length < 7) return { ok: false, error: 'Informe a placa do veículo.' };
   const telefone = texto(source.telefone, 30).replace(/[^\d+()\-\s]/g, '');
   if (telefone.replace(/\D/g, '').length < 8) return { ok: false, error: 'Informe o telefone.' };
+  const nomeVigencia = (valor: unknown, prefixo: 'Tabela' | 'Rota'): string | null => {
+    const limpo = texto(valor, 180);
+    if (!limpo) return null;
+    if (!new RegExp(`^${prefixo}: .+ \\(202[67]-\\)$`).test(limpo)) return null;
+    return limpo;
+  };
 
   return {
     ok: true,
@@ -152,6 +162,8 @@ export function validarPedidoPortal(
       tsp: opcional(source.tsp, 160),
       franquiaHora: null,
       franquiaKm: null,
+      nomeLinhaVigencia: nomeVigencia(source.nomeLinhaVigencia, 'Tabela'),
+      nomeRotaVigencia: nomeVigencia(source.nomeRotaVigencia, 'Rota'),
     },
   };
 }

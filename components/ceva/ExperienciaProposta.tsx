@@ -11,10 +11,9 @@ import {
   caminhoDaProposta,
   regiaoLegivel,
 } from '../../lib/portalCliente/apresentacao';
-import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { nomesDaVigencia, type PropostaPortal } from '../../lib/portalCliente/cotacao';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
 import { authFetch } from '../../lib/authFetch';
-import { prepararImagensDoElemento } from '../../lib/precificacao/imageUtils';
 import ImagemSegura from '../ImagemSegura';
 import { CenaRotaVisual } from './ClientTruckVisual';
 import { usePortalCliente } from './portalMarca';
@@ -31,30 +30,6 @@ function dataDaProposta(): string {
   return new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
-function imprimirPropostaOnline(): boolean {
-  const artigo = document.getElementById('proposta-tmseg-online');
-  const janela = window.open('', '_blank', 'width=980,height=1200');
-  if (!artigo || !janela) return false;
-  const copia = artigo.cloneNode(true) as HTMLElement;
-  copia.querySelector('[data-proposta-acoes]')?.remove();
-  copia.querySelector('[aria-label="Fechar"]')?.remove();
-  janela.document.open();
-  janela.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Proposta Grupo TM SEG</title></head><body></body></html>');
-  janela.document.close();
-  document.querySelectorAll('link[rel="stylesheet"], style').forEach((folha) => {
-    janela.document.head.appendChild(folha.cloneNode(true));
-  });
-  const ajuste = janela.document.createElement('style');
-  ajuste.textContent = '@page{size:A4;margin:8mm}html,body{margin:0;background:#fff!important}#proposta-tmseg-online,#proposta-tmseg-online [data-proposta-corpo]{height:auto!important;max-height:none!important;overflow:visible!important;box-shadow:none!important}#proposta-tmseg-online{width:100%!important;max-width:none!important;border-radius:0!important}figure,section{break-inside:avoid}';
-  janela.document.head.appendChild(ajuste);
-  void prepararImagensDoElemento(copia).then(() => {
-    janela.document.body.appendChild(copia);
-    janela.focus();
-    janela.print();
-  });
-  return true;
-}
-
 export const ExperienciaProposta: React.FC<{
   frase: string;
   mostrando: boolean;
@@ -69,19 +44,48 @@ export const ExperienciaProposta: React.FC<{
   /** Fora da tela, sem opacidade zero, para o html2canvas ler a proposta salva. */
   modoCaptura?: boolean;
   dataTexto?: string;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto }) => {
+  /** Separa o artigo do histórico do artigo que está na tela. */
+  marcaPdf?: string;
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1' }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState('');
   const caminho = caminhoDaProposta(proposta);
+  const nomes = nomesDaVigencia(proposta.origem, proposta.destino, proposta.vigencia);
   const data = dataTexto || dataDaProposta();
   const visivel = mostrando || modoCaptura;
+  const artigoRef = React.useRef<HTMLElement | null>(null);
+
+  const pdfDaTela = async (): Promise<string> => {
+    const artigo = artigoRef.current;
+    if (!artigo) throw new Error('A proposta ainda não está pronta para o PDF.');
+    const { pdfBase64DaProposta } = await import('./abrirPdfCotacao');
+    return pdfBase64DaProposta(artigo);
+  };
+
+  const salvarPdf = async () => {
+    setOcupado('salvar');
+    setAviso('');
+    const janela = window.open('', '_blank');
+    try {
+      const artigo = artigoRef.current;
+      if (!artigo) throw new Error('A proposta ainda não está pronta para o PDF.');
+      const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
+      await abrirPdfDaProposta(artigo, 'Proposta-Grupo-TM-SEG.pdf', janela);
+    } catch (falha) {
+      try { janela?.close(); } catch { /* a janela pode já ter fechado */ }
+      setAviso(falha instanceof Error ? falha.message : 'Não foi possível gerar o PDF.');
+    } finally {
+      setOcupado('');
+    }
+  };
 
   const postar = async (acao: 'salvar' | 'email') => {
     setOcupado(acao);
     setAviso('');
     try {
+      const pdf = acao === 'email' ? await pdfDaTela() : undefined;
       if (clienteInterno) {
         if (acao === 'salvar') {
           const { supabase } = await import('../../lib/supabase');
@@ -99,7 +103,7 @@ export const ExperienciaProposta: React.FC<{
         } else {
           const resposta = await authFetch('/api/proposta-escolta/email', {
             method: 'POST',
-            body: JSON.stringify({ para: email, proposta }),
+            body: JSON.stringify({ para: email, proposta, pdf }),
           });
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
@@ -110,7 +114,7 @@ export const ExperienciaProposta: React.FC<{
       const resposta = await fetch(portal.url('/cotacao'), {
         method: 'POST',
         headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao, ...pedido, para: email }),
+        body: JSON.stringify({ acao, ...pedido, para: email, pdf }),
       });
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
@@ -136,6 +140,7 @@ export const ExperienciaProposta: React.FC<{
           .tmseg-anda { display: none; }
           .tmseg-parado { display: block; }
         }
+        [data-proposta-bloco] { break-inside: avoid; page-break-inside: avoid; }
       `}</style>
       {!visivel && (
         <div className="w-full max-w-xl text-center text-white" style={{ fontFamily: 'Outfit, sans-serif' }}>
@@ -156,15 +161,17 @@ export const ExperienciaProposta: React.FC<{
         </div>
       )}
       {visivel && (
-        <article id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={modoCaptura ? '1' : undefined} className={modoCaptura ? 'relative flex w-full flex-col bg-[#f7f5f2] text-[#161616]' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
+        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#f7f5f2] text-[#161616]' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
           {!modoCaptura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
           <div data-proposta-corpo className={modoCaptura ? '' : 'min-h-0 flex-1 overflow-auto'}>
-            <header className="relative overflow-hidden bg-[#0c0d10] px-8 pb-10 pt-8 text-white sm:px-12">
+            <header data-proposta-bloco className="relative overflow-hidden bg-[#0c0d10] px-8 pb-10 pt-8 text-white sm:px-12">
               <div className="pointer-events-none absolute -right-10 top-8 h-56 w-56 rounded-full bg-[#d0121a]/30 blur-3xl" />
               <ImagemSegura src="/marca-grupotmseg.webp" alt="Grupo TM SEG" className="h-14 w-auto" />
               <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Proposta comercial</p>
               <h2 className="mt-3 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl" style={{ fontFamily: 'Oswald, sans-serif' }}>{caminho}</h2>
               <p className="mt-4 text-sm text-white/70">{regiaoLegivel(proposta.regiao)} · {data}</p>
+              <p className="mt-3 text-sm font-semibold text-white" data-testid="nome-tabela-vigencia">{nomes.tabela}</p>
+              <p className="text-sm font-semibold text-white" data-testid="nome-rota-vigencia">{nomes.rota}</p>
               <p className="mt-6 max-w-xl text-lg text-white/90">{MARCA_TMSEG.chamada}</p>
               {(printMapa || cena?.mapa) && (
                 <figure className="mt-8 overflow-hidden rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.35)]">
@@ -182,7 +189,7 @@ export const ExperienciaProposta: React.FC<{
               </svg>
             </header>
 
-            <section className="grid gap-0 bg-[#0c0d10] text-white sm:grid-cols-4">
+            <section data-proposta-bloco className="grid gap-0 bg-[#0c0d10] text-white sm:grid-cols-4">
               {numerosDaProposta(operacoes).map((item) => (
                 <div key={item.rotulo} className="border-t border-white/10 px-8 py-6 sm:px-6">
                   <p className="text-3xl font-semibold text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>{item.valor}</p>
@@ -191,7 +198,7 @@ export const ExperienciaProposta: React.FC<{
               ))}
             </section>
 
-            <section className="grid gap-8 px-8 py-10 sm:px-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
+            <section data-proposta-bloco className="grid gap-8 px-8 py-10 sm:px-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
               <figure className="relative">
                 <img src={FOTO_SALA} alt="Sala do Grupo TM SEG" className="h-80 w-full object-cover" />
                 <figcaption className="absolute bottom-4 left-4 bg-[#d0121a] px-4 py-3 text-white">
@@ -208,11 +215,13 @@ export const ExperienciaProposta: React.FC<{
             </section>
 
             <section className="bg-white px-8 py-10 sm:px-12">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>O que a operação cobre</p>
-              <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Serviços</h3>
+              <div data-proposta-bloco>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>O que a operação cobre</p>
+                <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Serviços</h3>
+              </div>
               <div className="mt-8 grid gap-5 sm:grid-cols-2">
                 {SERVICOS_TMSEG.map((servico) => (
-                  <figure key={servico.titulo} className="overflow-hidden bg-[#f7f5f2]">
+                  <figure key={servico.titulo} data-proposta-bloco className="overflow-hidden bg-[#f7f5f2]">
                     <img src={servico.foto} alt="" className="h-52 w-full object-cover" />
                     <figcaption className="px-4 py-4">
                       <p className="text-lg font-semibold">{servico.titulo}</p>
@@ -223,7 +232,7 @@ export const ExperienciaProposta: React.FC<{
               </div>
             </section>
 
-            <section className="px-8 py-10 sm:px-12">
+            <section data-proposta-bloco className="px-8 py-10 sm:px-12">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Por que a TM SEG</p>
               <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Diferenciais</h3>
               <div className="mt-8 grid gap-6 sm:grid-cols-2">
@@ -236,7 +245,7 @@ export const ExperienciaProposta: React.FC<{
               </div>
             </section>
 
-            <section className="bg-[#f3efe6] px-8 py-10 sm:px-12">
+            <section data-proposta-bloco className="bg-[#f3efe6] px-8 py-10 sm:px-12">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Quem confia a carga</p>
               <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Empresas que operam com a TM SEG</h3>
               <div className="mt-8 grid grid-cols-3 gap-3 sm:grid-cols-5">
@@ -248,7 +257,7 @@ export const ExperienciaProposta: React.FC<{
               </div>
             </section>
 
-            <section className="bg-white px-8 py-10 sm:px-12">
+            <section data-proposta-bloco className="bg-white px-8 py-10 sm:px-12">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Esta rota</p>
               <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Condições comerciais</h3>
               <div className="mt-8 grid gap-8 border-y border-black/10 py-8 sm:grid-cols-3">
@@ -269,6 +278,16 @@ export const ExperienciaProposta: React.FC<{
                 <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor do km extra</span><span className="mt-1 block text-3xl font-semibold">{reais(proposta.kmExtra)}</span></p>
                 <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor da hora extra</span><span className="mt-1 block text-3xl font-semibold">{reais(proposta.horaExtra)}</span></p>
               </div>
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">
+                {proposta.kmRota != null && proposta.kmRota > 0 && (
+                  <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km da rota</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.kmRota)} km</span></p>
+                )}
+                {proposta.duracaoMin != null && proposta.duracaoMin > 0 && (
+                  <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Tempo</span><span className="mt-1 block text-3xl font-semibold">{Math.round(proposta.duracaoMin)} min</span></p>
+                )}
+              </div>
+              <p className="mt-6 text-base font-semibold">{nomes.tabela}</p>
+              <p className="text-base font-semibold">{nomes.rota}</p>
               <p className="mt-8 border-l-4 border-[#d0121a] pl-4 text-base font-medium">{AVISO_PEDAGIO}</p>
               {proposta.acordada && <p className="mt-4 text-sm text-[#4b4b4b]">Esta rota já está acordada na tabela do cliente.</p>}
             </section>
@@ -276,7 +295,7 @@ export const ExperienciaProposta: React.FC<{
 
           {!modoCaptura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
             <div className="flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => { if (!imprimirPropostaOnline()) setAviso('O navegador bloqueou a janela de impressão. Permita a janela e tente de novo.'); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white">Salvar em PDF</button>
+              <button type="button" disabled={ocupado === 'salvar'} onClick={() => { void salvarPdf(); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white disabled:opacity-50">Salvar em PDF</button>
               {!proposta.acordada && (
                 <button type="button" disabled={ocupado === 'salvar'} onClick={() => postar('salvar')} className="h-11 rounded-full border border-black/15 px-4 text-xs font-semibold disabled:opacity-50">
                   Salvar essa proposta em nosso banco de dados

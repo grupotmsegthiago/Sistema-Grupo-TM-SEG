@@ -252,7 +252,33 @@ export type PropostaPortal = {
   kmExtra: number;
   horaExtra: number;
   operacao: string;
+  /** Vigência do snapshot. Sem marca, a proposta fica em 2026. */
+  vigencia?: '2026' | '2027' | null;
+  /** Km percorrido na rota. A franquia faturada continua em kmFranquia. */
+  kmRota?: number | null;
+  duracaoMin?: number | null;
 };
+
+/** Primeiro trecho do endereço, como a pessoa vê na proposta. */
+export function lugarDaProposta(endereco: string): string {
+  const parte = String(endereco || '').split(',')[0]?.trim() || '';
+  return parte || '—';
+}
+
+/**
+ * Nomes da proposta e da OS nascida dela.
+ * O sufixo literal é (2026-) ou (2027-). Sem marca, fica 2026.
+ * Não altera o nome de uma linha de preço já gravada.
+ */
+export function nomesDaVigencia(
+  origem: string,
+  destino: string,
+  vigencia: string | null | undefined,
+): { tabela: string; rota: string; sufixo: '(2026-)' | '(2027-)' } {
+  const sufixo = vigencia === '2027' ? '(2027-)' : '(2026-)';
+  const trecho = `${lugarDaProposta(origem)} x ${lugarDaProposta(destino)} ${sufixo}`;
+  return { tabela: `Tabela: ${trecho}`, rota: `Rota: ${trecho}`, sufixo };
+}
 
 export function montarProposta(entrada: {
   tabelas: TabelaCotacao[];

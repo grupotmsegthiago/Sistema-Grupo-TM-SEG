@@ -313,14 +313,20 @@ const LISTA_VAZIA: Record<CampoListaSolicitacao, string[]> = {
   tsp: [],
   atendimentoPgr: [],
 };
-function enderecoVindoDaCotacao(campo: 'origem' | 'destino'): string {
+function dadosVindosDaCotacao(): { origem: string; destino: string; nomeLinhaVigencia: string; nomeRotaVigencia: string } {
+  const vazio = { origem: '', destino: '', nomeLinhaVigencia: '', nomeRotaVigencia: '' };
   try {
     const bruto = sessionStorage.getItem('tmseg-cotacao-os');
-    if (!bruto) return '';
-    const dados = JSON.parse(bruto) as { origem?: string; destino?: string };
-    return String(dados[campo] || '');
+    if (!bruto) return vazio;
+    const dados = JSON.parse(bruto) as { origem?: string; destino?: string; nomeLinhaVigencia?: string; nomeRotaVigencia?: string };
+    return {
+      origem: String(dados.origem || ''),
+      destino: String(dados.destino || ''),
+      nomeLinhaVigencia: String(dados.nomeLinhaVigencia || ''),
+      nomeRotaVigencia: String(dados.nomeRotaVigencia || ''),
+    };
   } catch {
-    return '';
+    return vazio;
   }
 }
 
@@ -338,8 +344,9 @@ export const SolicitarEscolta: React.FC<Props> = ({ onFechar, onCriada, somenteV
   const { isLoaded } = useLoadScript(googleMapsLoadConfig);
   const origemRef = useRef<google.maps.places.Autocomplete | null>(null);
   const destinoRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const [origem, setOrigem] = useState(() => enderecoVindoDaCotacao('origem'));
-  const [destino, setDestino] = useState(() => enderecoVindoDaCotacao('destino'));
+  const [nomesCotacao] = useState(() => dadosVindosDaCotacao());
+  const [origem, setOrigem] = useState(() => nomesCotacao.origem);
+  const [destino, setDestino] = useState(() => nomesCotacao.destino);
   useEffect(() => {
     const timer = window.setTimeout(() => sessionStorage.removeItem('tmseg-cotacao-os'), 400);
     return () => window.clearTimeout(timer);
@@ -443,6 +450,8 @@ export const SolicitarEscolta: React.FC<Props> = ({ onFechar, onCriada, somenteV
           tsp,
           contrato,
           quantidade: copias,
+          nomeLinhaVigencia: nomesCotacao.nomeLinhaVigencia,
+          nomeRotaVigencia: nomesCotacao.nomeRotaVigencia,
         }),
       });
       const data = await response.json().catch(() => ({}));

@@ -1,24 +1,84 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { paginasDosBlocos } from '../../lib/portalCliente/pdfBlocos';
 import { prepararImagensDoElemento } from '../../lib/precificacao/imageUtils';
 
+const MARGEM_MM = 8;
+
+function liberarRolagem(artigo: HTMLElement): () => void {
+  const corpo = artigo.querySelector('[data-proposta-corpo]');
+  const alvos = [artigo, corpo].filter((el): el is HTMLElement => el instanceof HTMLElement);
+  const antes = alvos.map((el) => ({
+    el,
+    height: el.style.height,
+    maxHeight: el.style.maxHeight,
+    overflow: el.style.overflow,
+  }));
+  for (const el of alvos) {
+    el.style.height = 'auto';
+    el.style.maxHeight = 'none';
+    el.style.overflow = 'visible';
+  }
+  return () => {
+    for (const item of antes) {
+      item.el.style.height = item.height;
+      item.el.style.maxHeight = item.maxHeight;
+      item.el.style.overflow = item.overflow;
+    }
+  };
+}
+
+/**
+ * Cada bloco da proposta vira uma imagem inteira.
+ * O bloco que não cabe no restante da folha começa na próxima.
+ * Um bloco mais alto que a folha é reduzido para caber nela, sem corte no meio.
+ */
 async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
   await prepararImagensDoElemento(artigo);
-  const canvas = await html2canvas(artigo, { scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#f7f5f2', logging: false });
-  const imagem = canvas.toDataURL('image/png');
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const largura = pdf.internal.pageSize.getWidth();
   const alturaPagina = pdf.internal.pageSize.getHeight();
-  const altura = (canvas.height * largura) / canvas.width;
-  let restante = altura;
-  let posicao = 0;
-  pdf.addImage(imagem, 'PNG', 0, posicao, largura, altura);
-  restante -= alturaPagina;
-  while (restante > 0) {
-    posicao = restante - altura;
-    pdf.addPage();
-    pdf.addImage(imagem, 'PNG', 0, posicao, largura, altura);
-    restante -= alturaPagina;
+  const larguraUtil = largura - MARGEM_MM * 2;
+  const alturaUtil = alturaPagina - MARGEM_MM * 2;
+  const blocos = Array.from(artigo.querySelectorAll('[data-proposta-bloco]')).filter((el): el is HTMLElement => el instanceof HTMLElement);
+  const restaurar = liberarRolagem(artigo);
+  try {
+    const desenhos: Array<{ imagem: string; largura: number; altura: number }> = [];
+    for (const bloco of blocos) {
+      if (bloco.getClientRects().length === 0) continue;
+      const canvas = await html2canvas(bloco, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#f7f5f2',
+        logging: false,
+      });
+      if (canvas.width < 8 || canvas.height < 8) continue;
+      let alturaMm = (canvas.height * larguraUtil) / canvas.width;
+      let larguraMm = larguraUtil;
+      if (alturaMm > alturaUtil) {
+        const fator = alturaUtil / alturaMm;
+        alturaMm = alturaUtil;
+        larguraMm = larguraUtil * fator;
+      }
+      desenhos.push({ imagem: canvas.toDataURL('image/jpeg', 0.86), largura: larguraMm, altura: alturaMm });
+    }
+    const paginas = paginasDosBlocos(desenhos.map((item) => item.altura), alturaUtil);
+    let paginaAtual = -1;
+    let cursor = MARGEM_MM;
+    desenhos.forEach((desenho, indice) => {
+      const pagina = paginas[indice] ?? 0;
+      if (pagina !== paginaAtual) {
+        if (paginaAtual >= 0) pdf.addPage();
+        paginaAtual = pagina;
+        cursor = MARGEM_MM;
+      }
+      const x = MARGEM_MM + (larguraUtil - desenho.largura) / 2;
+      pdf.addImage(desenho.imagem, 'JPEG', x, cursor, desenho.largura, desenho.altura);
+      cursor += desenho.altura;
+    });
+  } finally {
+    restaurar();
   }
   return pdf;
 }

@@ -2,7 +2,9 @@
 
 # Próxima Execução Proposta
 
-Publicado nesta entrega, no projeto sistema-grupo-tm-seg: Editar e Remover na lista de pessoas do portal, o botão Redefinir senha com o texto de usuário novo, e o print do mapa na proposta. O plano do PDF único continua só registrado: o código dele não foi executado. A branch da tarifa duplicada do portal não entrou.
+Executado em 26/10/2026 depois de "Fluxo aprovado, pode executar". O PDF único da cotação foi codificado e ainda não foi publicado. Ver PDF, Salvar em PDF, o preview e os anexos de e-mail usam `desenharPdf`. O mapa espera o idle e centraliza A e B. A proposta e a OS nascida dela levam o sufixo `(2026-)` ou `(2027-)`. A linha de preço já gravada não muda de nome. O motor da OS não mudou.
+
+Publicado na entrega anterior, no projeto sistema-grupo-tm-seg: Editar e Remover na lista de pessoas do portal, o botão Redefinir senha com o texto de usuário novo, e o print do mapa na proposta. A branch da tarifa duplicada do portal não entrou.
 
 ## Editar e remover pessoa do portal (26/10/2026)
 
@@ -30,7 +32,7 @@ Banco: nenhuma coluna nova. A escrita usa `system_users` e, quando a linha já e
 
 ## PDF único da cotação e mapa centrado em A e B (26/10/2026)
 
-Plano aguardando aprovação. A próxima alteração de código desse plano só começa depois de "Fluxo aprovado, pode executar". O print do mapa que já está na proposta entra nesta publicação. O restante deste plano não foi codificado.
+Executado depois de "Fluxo aprovado, pode executar". Ainda não publicado. O print do mapa que já estava na proposta continua. O desenho deixou de fatiar uma imagem alta: cada bloco com `data-proposta-bloco` entra inteiro, e o CSS pede `page-break-inside: avoid`.
 
 - **Objetivo da Tarefa:** o download, o Ver PDF e o anexo de e-mail saem do mesmo artigo oficial, sem corte no meio do bloco. Ao gerar a proposta, o mapa fica centrado com o ponto A na origem e o ponto B no destino, os dois dentro do quadro.
 - **Passo a Passo Sequencial:** 1. Marcar os blocos da proposta e completar rota, km faturado, tempo, acionamento, km extra, hora extra e pedágio à parte. 2. Antes da foto, enquadrar o mapa no retângulo da origem e do destino, com folga para o A e o B não ficarem sob o painel. 3. O mapa estático da proposta usa `visible` nesses dois pontos, para o centro da imagem ser o meio do trecho. 4. A espera do `idle` do mapa acontece antes da captura. 5. O PDF A4 empilha bloco inteiro, com margem, sem fatiar um card. 6. Salvar em PDF, preview, Ver PDF e os dois e-mails usam esse mesmo arquivo. 7. A OS nascida da cotação grava tabela e rota como `Origem x Destino (2026-)` ou `(2027-)`, pela vigência do snapshot.

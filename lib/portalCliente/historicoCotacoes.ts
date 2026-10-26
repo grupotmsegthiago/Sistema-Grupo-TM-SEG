@@ -249,6 +249,9 @@ export function propostaDoHistorico(linha: Pick<LinhaHistoricoCotacao, 'origin' 
       kmExtra: salvo.kmExtra,
       horaExtra: salvo.horaExtra,
       operacao: salvo.operacao || `${linha.origin} X ${linha.destination}`,
+      vigencia: salvo.vigencia,
+      kmRota: numero(linha.total_km),
+      duracaoMin: salvo.duracaoMin,
     };
   }
   return {
@@ -263,6 +266,9 @@ export function propostaDoHistorico(linha: Pick<LinhaHistoricoCotacao, 'origin' 
     kmExtra: 0,
     horaExtra: 0,
     operacao: `${linha.origin} X ${linha.destination}`,
+    vigencia: '2026',
+    kmRota: numero(linha.total_km),
+    duracaoMin: null,
   };
 }
 
