@@ -37,7 +37,7 @@ function selo(tom: 'ativa' | 'convertida' | 'expirada', rotulo: string) {
     : tom === 'convertida'
       ? 'bg-sky-50 text-sky-800'
       : 'bg-slate-100 text-slate-500';
-  return <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-black ${classe}`}>{rotulo}</span>;
+  return <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-black ${classe}`}>{rotulo}</span>;
 }
 
 export const HistoricoCotacoes: React.FC<{
@@ -181,7 +181,7 @@ export const HistoricoCotacoes: React.FC<{
                     <td className="px-3 py-3 font-semibold text-slate-900">{formatarDataHoraCotacao(linha.created_at)}</td>
                     <td className="px-3 py-3">
                       <span className="block font-semibold text-slate-900">{linha.created_by || '—'}</span>
-                      {salvo?.solicitanteEmail ? <span className="text-[11px] text-slate-400">{salvo.solicitanteEmail}</span> : null}
+                      {salvo?.solicitanteEmail ? <span className="mt-0.5 block text-[11px] text-slate-400">{salvo.solicitanteEmail}</span> : null}
                     </td>
                     <td className="px-3 py-3">{resumirEndereco(linha.origin)}</td>
                     <td className="px-3 py-3">{resumirEndereco(linha.destination)}</td>
