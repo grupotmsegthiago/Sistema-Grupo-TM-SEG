@@ -541,11 +541,13 @@ export type NumerosCotacaoRegional =
       horaExtra: number | null;
       region: RegiaoTabela | null;
       nome: string;
+      vigenciaUsada: VersaoTabelaRegional;
     };
 
 /**
  * Conta da cotação regional. Rota acordada e cliente DHL/IBL não entram.
- * Sem a linha TABELA 20xx, usa a tarifa já gravada na região do cliente.
+ * Com o seletor em 2027, a linha TABELA 2027 da origem vem primeiro e a 2026 só entra se ela não existir.
+ * Com o seletor em 2026, a linha 2027 não é lida. Sem linha do cliente, usa a tarifa já resolvida no botão.
  */
 export function numerosDaCotacaoRegional(input: {
   cliente: string;
@@ -555,6 +557,7 @@ export function numerosDaCotacaoRegional(input: {
   linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }>;
   tarifaKmFallback?: number | null;
   horaExtraFallback?: number | null;
+  vigenciaFallback?: VersaoTabelaRegional | null;
   acordada?: boolean;
 }): NumerosCotacaoRegional {
   if (input.acordada) return { aplicar: false, motivo: 'acordada' };
@@ -566,15 +569,19 @@ export function numerosDaCotacaoRegional(input: {
     versao: input.versao,
     linhas: input.linhas,
   });
+  const usouLinha = lida.tarifaKm != null && Number.isFinite(lida.tarifaKm) && lida.tarifaKm > 0;
   const fallback = Number(input.tarifaKmFallback);
-  const taxa = lida.tarifaKm != null && Number.isFinite(lida.tarifaKm) && lida.tarifaKm > 0
+  const taxa = usouLinha
     ? lida.tarifaKm
     : (Number.isFinite(fallback) && fallback > 0 ? fallback : null);
   const km = Number(input.km);
   if (taxa == null) return { aplicar: false, motivo: 'sem_tarifa' };
   if (!Number.isFinite(km) || km < 0) return { aplicar: false, motivo: 'sem_km' };
-  const horaLida = lida.horaExtra != null && Number.isFinite(lida.horaExtra) ? lida.horaExtra : null;
+  const horaLida = usouLinha && lida.horaExtra != null && Number.isFinite(lida.horaExtra) ? lida.horaExtra : null;
   const horaFallback = Number(input.horaExtraFallback);
+  const vigenciaUsada = usouLinha
+    ? (lida.vigenciaUsada || input.versao)
+    : (input.vigenciaFallback === '2026' || input.vigenciaFallback === '2027' ? input.vigenciaFallback : input.versao);
   return {
     aplicar: true,
     conta: calculateTripCost(km, taxa),
@@ -582,6 +589,7 @@ export function numerosDaCotacaoRegional(input: {
     horaExtra: horaLida ?? (Number.isFinite(horaFallback) ? horaFallback : null),
     region: lida.region,
     nome: lida.nome || nomeRegiao(lida.region),
+    vigenciaUsada,
   };
 }
 
@@ -650,22 +658,30 @@ export function tarifaKmParaOrigem(input: {
   origem: string;
   versao: VersaoTabelaRegional;
   linhas: Array<{ operation_type?: string | null; price_per_extra_km?: number | null; price_per_extra_hour?: number | null }>;
-}): { contratual: boolean; region: RegiaoTabela | null; nome: string; tarifaKm: number | null; horaExtra: number | null } {
+}): { contratual: boolean; region: RegiaoTabela | null; nome: string; tarifaKm: number | null; horaExtra: number | null; vigenciaUsada: VersaoTabelaRegional | null } {
+  const vazio = { contratual: false, region: null as RegiaoTabela | null, nome: '', tarifaKm: null, horaExtra: null, vigenciaUsada: null as VersaoTabelaRegional | null };
   const local = getRegionFromLocation(input.origem, '', input.cliente);
   if (local.clienteContratual) {
-    return { contratual: true, region: null, nome: '', tarifaKm: null, horaExtra: null };
+    return { ...vazio, contratual: true };
   }
-  if (!local.region) return { contratual: false, region: null, nome: '', tarifaKm: null, horaExtra: null };
+  if (!local.region) return vazio;
   const faixa = FAIXAS_REGIONAIS.find((item) => item.region === local.region);
-  if (!faixa) return { contratual: false, region: local.region, nome: '', tarifaKm: null, horaExtra: null };
-  const nome = nomeLinhaPadrao(input.versao, faixa);
-  const linha = input.linhas.find((item) => String(item.operation_type || '').trim().toUpperCase() === nome);
-  if (!linha) return { contratual: false, region: local.region, nome, tarifaKm: null, horaExtra: null };
-  return {
-    contratual: false,
-    region: local.region,
-    nome,
-    tarifaKm: Number(linha.price_per_extra_km),
-    horaExtra: Number(linha.price_per_extra_hour),
-  };
+  if (!faixa) return { ...vazio, region: local.region };
+  const ordem: VersaoTabelaRegional[] = input.versao === '2026' ? ['2026'] : ['2027', '2026'];
+  for (const versao of ordem) {
+    const nome = nomeLinhaPadrao(versao, faixa);
+    const linha = input.linhas.find((item) => String(item.operation_type || '').trim().toUpperCase() === nome.toUpperCase());
+    const km = Number(linha?.price_per_extra_km);
+    if (!linha || !Number.isFinite(km) || km <= 0) continue;
+    const hora = Number(linha.price_per_extra_hour);
+    return {
+      contratual: false,
+      region: local.region,
+      nome,
+      tarifaKm: km,
+      horaExtra: Number.isFinite(hora) ? hora : null,
+      vigenciaUsada: versao,
+    };
+  }
+  return { ...vazio, region: local.region, nome: nomeLinhaPadrao(input.versao, faixa) };
 }

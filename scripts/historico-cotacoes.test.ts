@@ -134,6 +134,37 @@ describe('histórico de cotações do portal', () => {
       regiao: 'SUDESTE SP/RJ',
       usouMinimo: true,
     });
+    const registro2027 = pedidoParaRegistro({
+      origem: 'Salvador, BA',
+      destino: 'São Paulo, SP',
+      km: 80,
+      valor: 830,
+      horas: 3,
+      kmExtra: 8.3,
+      horaExtra: 207.5,
+      acionamento: 830,
+      vigencia: '2027',
+    }, { id: 4, name: 'CEVA LOGISTICS LTDA' }, { name: 'Portal', email: 'portal@ceva.com' });
+    assert.equal(registro2027.ok, true);
+    if (registro2027.ok) {
+      assert.equal(registro2027.snapshot.vigencia, '2027');
+      assert.equal(registro2027.snapshot.kmExtra, 8.3);
+      assert.equal(registro2027.snapshot.horaExtra, 207.5);
+      assert.equal(registro2027.linha.total_value, 830);
+    }
+    const registro2026 = pedidoParaRegistro({
+      origem: 'Salvador, BA',
+      destino: 'São Paulo, SP',
+      km: 80,
+      valor: 1000,
+      horas: 3,
+      kmExtra: 10,
+      horaExtra: 250,
+      acionamento: 1000,
+      vigencia: '2026',
+    }, { id: 4, name: 'CEVA LOGISTICS LTDA' }, { name: 'Portal', email: 'portal@ceva.com' });
+    assert.equal(registro2026.ok, true);
+    if (registro2026.ok) assert.equal(registro2026.snapshot.vigencia, '2026');
     assert.equal(gravado.status, 201);
     if (!('ok' in gravado.corpo)) return;
     assert.equal(gravado.corpo.id, 'q-portal');

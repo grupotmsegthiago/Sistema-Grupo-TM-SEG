@@ -1,5 +1,13 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+# Próxima Execução Proposta
+
+Não há alteração de código pendente. A prioridade da Tabela 2027 na cotação foi autorizada e gravada nesta entrega. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+
+## Prioridade da Tabela 2027 na cotação (26/10/2026)
+
+Ainda não publicado. Baseline `ad3074fa`. Fluxo aprovado com o ajuste do seletor: Tabela 2027 começa selecionada e tem prioridade; se o operador muda para Tabela 2026, valem as tarifas 2026 daquele cliente. A vigência continua no prefixo do nome da operação, sem coluna nova e sem migration. Linha antiga de R$ 10,00 não cobre a `TABELA 2027 - NORDESTE`. Sem linha 2027, usa a 2026 do cliente; sem as duas, a faixa de `tabela2027.ts`. O snapshot grava `vigencia` 2027 ou 2026 conforme o que foi usado. Cotação antiga sem marca permanece em 2026. DHL e IBL não entram. `calculateMissionFinancials` não foi alterado. Rollback: reverter este commit.
+
 ## Ações do histórico e painel do mapa (26/10/2026)
 
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Thiago validou no localhost as colunas, o menu e o painel do mapa. Baseline `882cd3c1`. O histórico passa a mostrar o km e a hora extra gravados na cotação. O menu inativa na hora, pede confirmação para excluir, devolve origem, destino e paradas ao formulário e envia o PDF pelo SMTP que já existe. Não há coluna deleted_at e a migration não foi criada. Administrador, diretoria e o autor inativam e excluem; o servidor grava system_logs. O mapa usa o painel Informações da Rota com a cidade, a distância e o tempo da rota calculada, e o caminhão 3D fica sobre o traçado. O PDF preview não insere cotação. Sem função nova na Vercel e sem alteração em calculateMissionFinancials. Rollback: reverter este commit.

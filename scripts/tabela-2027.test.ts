@@ -349,6 +349,41 @@ describe('edição da linha regional', () => {
     assert.equal(cruzado.ok, false);
     assert.equal(linhas[1].client, 'CLIENTE B');
 
+    const ceva = numerosDaCotacaoRegional({
+      cliente: 'CEVA LOGISTICS LTDA',
+      origem: 'Salvador, BA',
+      km: 80,
+      versao: '2027',
+      linhas: [
+        { operation_type: 'NORDESTE - ROTA ANTIGA', price_per_extra_km: 10, price_per_extra_hour: 250 },
+        { operation_type: 'TABELA 2027 - NORDESTE', price_per_extra_km: 8.3, price_per_extra_hour: 207.5 },
+      ],
+      tarifaKmFallback: 10,
+      horaExtraFallback: 250,
+    });
+    assert.equal(ceva.aplicar, true);
+    if (ceva.aplicar) {
+      assert.equal(ceva.tarifaKm, 8.3);
+      assert.equal(ceva.horaExtra, 207.5);
+      assert.equal(ceva.vigenciaUsada, '2027');
+      assert.equal(ceva.conta.valor, 830);
+    }
+    const manual = numerosDaCotacaoRegional({
+      cliente: 'CEVA LOGISTICS LTDA',
+      origem: 'Salvador, BA',
+      km: 80,
+      versao: '2026',
+      linhas: [
+        { operation_type: 'TABELA 2026 - NORDESTE', price_per_extra_km: 10, price_per_extra_hour: 250 },
+        { operation_type: 'TABELA 2027 - NORDESTE', price_per_extra_km: 8.3, price_per_extra_hour: 207.5 },
+      ],
+    });
+    assert.equal(manual.aplicar, true);
+    if (manual.aplicar) {
+      assert.equal(manual.tarifaKm, 10);
+      assert.equal(manual.horaExtra, 250);
+      assert.equal(manual.vigenciaUsada, '2026');
+    }
     const dhl = numerosDaCotacaoRegional({
       cliente: 'DHL EXPRESS',
       origem: 'Guarulhos - SP',

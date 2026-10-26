@@ -1,6 +1,15 @@
 /** Cotação do portal. Não entra em OS, NF, Asaas nem no motor de faturamento. */
 
-import { getRegionFromLocation, type RegiaoTabela } from '../precificacao/tabela2027';
+import {
+  ehLinhaPadraoRegional,
+  FAIXAS_REGIONAIS,
+  getRegionFromLocation,
+  nomeLinhaPadrao,
+  valorKmDaFaixa,
+  versaoDaLinhaTarifaria,
+  type RegiaoTabela,
+  type VersaoTabelaRegional,
+} from '../precificacao/tabela2027';
 
 export const KM_MINIMO_COTACAO = 100;
 export const HORAS_MINIMAS_COTACAO = 3;
@@ -69,13 +78,105 @@ export type ResultadoCotacao = {
 };
 
 export function regiaoDaOperacao(operacao: string): string {
-  const nome = operacao.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const nome = operacao.trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/^TABELA 20(?:26|27)\s*-\s*/, '');
   if (nome.startsWith('CENTRO-OESTE') || nome.startsWith('CENTRO OESTE')) return 'CENTRO-OESTE';
   if (nome.startsWith('NORDESTE')) return 'NORDESTE';
   if (nome.startsWith('SUDESTE')) return 'SUDESTE';
   if (nome.startsWith('NORTE')) return 'NORTE';
   if (nome.startsWith('SUL')) return 'SUL';
   return 'OUTRAS';
+}
+
+const PARADA_NOME = ['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'S/A.', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'];
+
+function citarFiltroCliente(valor: string): string {
+  return /[(),.:]/.test(valor) ? `"${valor.replace(/"/g, '\\"')}"` : valor;
+}
+
+/** Mesmo recorte do cadastro: nome inteiro ou as primeiras letras do segundo nome. A consulta fica neste arquivo. */
+export function consultaDoCliente(nome: string): string {
+  const limpo = String(nome || '').trim();
+  if (!limpo) return 'client.eq.';
+  const palavras = limpo.split(/\s+/).filter((parte) => !PARADA_NOME.includes(parte.toUpperCase()));
+  const curto = palavras.length >= 2
+    ? `${palavras[0]} ${palavras[1].slice(0, Math.min(6, palavras[1].length))}`
+    : (palavras[0] || limpo);
+  return `client.eq.${citarFiltroCliente(limpo)},client.ilike.${citarFiltroCliente(`%${curto}%`)}`;
+}
+
+export type TarifaResolvida = {
+  tabela: TabelaCotacao;
+  vigencia: VersaoTabelaRegional;
+};
+
+const FAIXA_DO_BOTAO: Partial<Record<RegiaoBotaoCotacao, RegiaoTabela>> = {
+  NORTE: 'norte',
+  NORDESTE: 'nordeste',
+  'CENTRO-OESTE': 'centro_oeste',
+  SUL: 'sul',
+};
+
+function catalogoDoBotao(regiao: string, versao: VersaoTabelaRegional): TabelaCotacao | null {
+  const id = FAIXA_DO_BOTAO[regiao as RegiaoBotaoCotacao];
+  if (!id) return null;
+  const faixa = FAIXAS_REGIONAIS.find((item) => item.region === id);
+  if (!faixa) return null;
+  const km = valorKmDaFaixa(faixa, versao);
+  return {
+    id: regiao,
+    operacao: nomeLinhaPadrao(versao, faixa),
+    regiao,
+    acionamento: centavos(KM_MINIMO_COTACAO * km),
+    franquiaHoras: HORAS_MINIMAS_COTACAO,
+    franquiaKm: KM_MINIMO_COTACAO,
+    kmExtra: km,
+    horaExtra: faixa.hora2026,
+  };
+}
+
+function escolherLinhaDaVersao(lista: TabelaCotacao[], regiao: string, versao: VersaoTabelaRegional): TabelaCotacao | null {
+  const daVersao = lista.filter((item) => item.regiao === regiao && versaoDaLinhaTarifaria(item.operacao) === versao);
+  const padrao = daVersao.filter((item) => ehLinhaPadraoRegional(item.operacao) && item.kmExtra > 0);
+  if (regiao === 'SUDESTE' && padrao.length > 1) return null;
+  if (padrao.length > 0) return [...padrao].sort((a, b) => a.operacao.localeCompare(b.operacao, 'pt-BR'))[0];
+  return valoresDaRegiao(daVersao);
+}
+
+/**
+ * Tabela 2027 do cliente vem primeiro. Sem essa linha, usa a 2026 do cliente.
+ * Sem as duas, usa a faixa regional. No seletor 2026, a linha 2027 não entra.
+ * SUDESTE com SP/RJ e MG/ES ao mesmo tempo espera a UF da origem.
+ */
+export function tarifaDoBotao(lista: TabelaCotacao[], regiao: string, versao: VersaoTabelaRegional): TarifaResolvida | null {
+  if (!regiao) return null;
+  if (versao === '2026') {
+    const linha = escolherLinhaDaVersao(lista, regiao, '2026');
+    if (linha) return { tabela: linha, vigencia: '2026' };
+    const catalogo = catalogoDoBotao(regiao, '2026');
+    return catalogo ? { tabela: catalogo, vigencia: '2026' } : null;
+  }
+  const padrao2027 = lista.filter((item) => item.regiao === regiao && versaoDaLinhaTarifaria(item.operacao) === '2027' && ehLinhaPadraoRegional(item.operacao) && item.kmExtra > 0);
+  if (regiao === 'SUDESTE' && padrao2027.length > 1) return null;
+  const linha2027 = escolherLinhaDaVersao(lista, regiao, '2027');
+  if (linha2027) return { tabela: linha2027, vigencia: '2027' };
+  const linha2026 = escolherLinhaDaVersao(lista, regiao, '2026');
+  if (linha2026) return { tabela: linha2026, vigencia: '2026' };
+  const catalogo = catalogoDoBotao(regiao, '2027');
+  return catalogo ? { tabela: catalogo, vigencia: '2027' } : null;
+}
+
+export function regiaoTemLinha(lista: TabelaCotacao[], regiao: string, versao: VersaoTabelaRegional): boolean {
+  const versoes: VersaoTabelaRegional[] = versao === '2027' ? ['2027', '2026'] : ['2026'];
+  return lista.some((item) => item.regiao === regiao && versoes.includes(versaoDaLinhaTarifaria(item.operacao)) && item.kmExtra > 0);
+}
+
+export function primeiraRegiaoComTarifa(lista: TabelaCotacao[], versao: VersaoTabelaRegional): string {
+  if (versao === '2027') {
+    const com2027 = REGIOES_COTACAO.find((item) => lista.some((tabela) => tabela.regiao === item && versaoDaLinhaTarifaria(tabela.operacao) === '2027' && tabela.kmExtra > 0));
+    if (com2027) return com2027;
+  }
+  return REGIOES_COTACAO.find((item) => regiaoTemLinha(lista, item, versao)) || '';
 }
 
 function numero(valor: unknown): number {

@@ -19,7 +19,10 @@ import {
 import {
   calcularCotacaoPortal,
   horasDaRota,
+  consultaDoCliente,
+  primeiraRegiaoComTarifa,
   regiaoDaOperacao,
+  tarifaDoBotao,
   tabelaPadraoDaRegiao,
   cidadeDaRota,
   montarProposta,
@@ -140,6 +143,35 @@ test('NORTE não absorve NORDESTE', () => {
   assert.equal(regiaoDaOperacao('NORDESTE - ESTADO DE PE'), 'NORDESTE');
   assert.equal(regiaoDaOperacao('NORTE - ESTADO DO PA'), 'NORTE');
   assert.equal(regiaoDaOperacao('CENTRO-OESTE - ESTADO DE DF'), 'CENTRO-OESTE');
+  assert.equal(regiaoDaOperacao('TABELA 2027 - NORDESTE'), 'NORDESTE');
+  assert.equal(regiaoDaOperacao('TABELA 2027 - NORTE'), 'NORTE');
+  assert.equal(regiaoDaOperacao('TABELA 2027 - SUDESTE SP/RJ'), 'SUDESTE');
+});
+
+test('a Tabela 2027 do cliente vence a linha antiga e a 2026 manual não lê a 2027', () => {
+  const lista = [
+    { id: 'antiga', operacao: 'NORDESTE - ROTA ANTIGA', regiao: 'NORDESTE', acionamento: 1000, franquiaHoras: 3, franquiaKm: 100, kmExtra: 10, horaExtra: 250 },
+    { id: 'nova', operacao: 'TABELA 2027 - NORDESTE', regiao: 'NORDESTE', acionamento: 830, franquiaHoras: 3, franquiaKm: 100, kmExtra: 8.3, horaExtra: 207.5 },
+  ];
+  const atual = tarifaDoBotao(lista, 'NORDESTE', '2027');
+  assert.equal(atual?.vigencia, '2027');
+  assert.equal(atual?.tabela.kmExtra, 8.3);
+  assert.equal(atual?.tabela.horaExtra, 207.5);
+  assert.equal(atual?.tabela.acionamento, 830);
+  const manual = tarifaDoBotao(lista, 'NORDESTE', '2026');
+  assert.equal(manual?.vigencia, '2026');
+  assert.equal(manual?.tabela.kmExtra, 10);
+  assert.equal(manual?.tabela.horaExtra, 250);
+  const so2026 = tarifaDoBotao([lista[0]], 'NORDESTE', '2027');
+  assert.equal(so2026?.vigencia, '2026');
+  assert.equal(so2026?.tabela.kmExtra, 10);
+  assert.equal(primeiraRegiaoComTarifa([
+    { id: 'n', operacao: 'NORTE - ESTADO DO PA', regiao: 'NORTE', acionamento: 1, franquiaHoras: 3, franquiaKm: 100, kmExtra: 10, horaExtra: 1 },
+    lista[1],
+  ], '2027'), 'NORDESTE');
+  assert.match(consultaDoCliente('CEVA LOGISTICS LTDA'), /%CEVA LOGIST%/);
+  const cotacoes = readFileSync(new URL('../components/QuoteList.tsx', import.meta.url), 'utf8');
+  assert.match(cotacoes, /useState<VersaoTabelaRegional>\('2027'\)/);
 });
 
 test('rota já cadastrada devolve a tabela acordada', () => {

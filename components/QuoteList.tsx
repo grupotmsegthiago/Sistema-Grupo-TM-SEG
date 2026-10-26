@@ -41,7 +41,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
   const [isDirector, setIsDirector] = useState(false);
   const [isCommercial, setIsCommercial] = useState(false);
   const [canViewValues, setCanViewValues] = useState(false);
-  const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2026');
+  const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
   const versaoAtiva = versao ?? versaoLocal;
   const trocarVersao = (proxima: VersaoTabelaRegional) => {
     if (onVersao) onVersao(proxima);

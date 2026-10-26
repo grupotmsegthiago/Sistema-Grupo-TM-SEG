@@ -1,6 +1,6 @@
 import { colunaRegionalAusente } from '../precificacao/tabela2027.js';
 import { cartaDaProposta, marcoDeOperacoes } from './apresentacao.js';
-import { montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
+import { consultaDoCliente, montarProposta, tabelaDeLinha, valoresDaRegiao, type PropostaPortal, type TabelaCotacao } from './cotacao.js';
 import {
   JANELA_HISTORICO_VIGENCIA,
   TAMANHO_PAGINA_HISTORICO,
@@ -35,7 +35,7 @@ export async function listarTabelasCotacao(
   const { data, error } = await sb
     .from('client_price_tables')
     .select('id, operation_type, activation_fee, franchise_hours, franchise_km, price_per_extra_km, price_per_extra_hour')
-    .in('client', nomes);
+    .or(nomes.map((nome) => consultaDoCliente(nome)).join(','));
   if (error) return { status: 500, corpo: { error: 'Não foi possível ler a tabela do cliente.' } };
 
   const tabelas = ((data || []) as Parameters<typeof tabelaDeLinha>[0][])

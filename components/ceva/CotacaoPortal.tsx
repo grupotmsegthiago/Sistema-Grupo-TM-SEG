@@ -24,28 +24,24 @@ import {
 } from '../../lib/portalCliente/rotaCotacao';
 import {
   REGIOES_COTACAO,
+  consultaDoCliente,
   montarProposta,
+  primeiraRegiaoComTarifa,
   regiaoAcompanhaOrigem,
+  regiaoTemLinha,
   tabelaDeLinha,
+  tarifaDoBotao,
   textoCardRegiao,
-  valoresDaRegiao,
   type PropostaPortal,
   type TabelaCotacao,
 } from '../../lib/portalCliente/cotacao';
 import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
-import { numerosDaCotacaoRegional, versaoDaLinhaTarifaria, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
+import { getRegionFromLocation, numerosDaCotacaoRegional, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { nomePdfCotacao, pedidoParaRegistro } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
-
-function filtroDoCliente(nome: string): string {
-  const limpo = nome.trim().replace(/"/g, '');
-  const citar = (valor: string) => (/[(),.:]/.test(valor) ? `"${valor}"` : valor);
-  const primeira = limpo.split(/\s+/).find((parte) => !['LTDA', 'LTDA.', 'S.A.', 'S.A', 'SA', 'S/A', 'DO', 'DE', 'DA', 'E', 'DAS', 'DOS'].includes(parte.toUpperCase())) || limpo;
-  return `client.eq.${citar(limpo)},client.ilike.${citar(`%${primeira}%`)}`;
-}
 
 const FRASES_NOVA = [
   'Recebendo dados..',
@@ -441,7 +437,7 @@ export const CotacaoPortal: React.FC<{
       import('../../lib/supabase').then(({ supabase }) => supabase
         .from('client_price_tables')
         .select('id, operation_type, activation_fee, franchise_hours, franchise_km, price_per_extra_km, price_per_extra_hour')
-        .or(filtroDoCliente(clienteNome)))
+        .or(consultaDoCliente(clienteNome)))
         .then(({ data, error }) => {
           if (!ativo) return;
           if (error) throw error;
@@ -449,8 +445,6 @@ export const CotacaoPortal: React.FC<{
             .map((linha) => tabelaDeLinha(linha))
             .filter((linha): linha is TabelaCotacao => linha != null);
           setTabelas(lista);
-          const primeira = REGIOES_COTACAO.find((item) => valoresDaRegiao(lista.filter((tabela) => tabela.regiao === item))) || '';
-          setRegiao((atual) => atual || primeira);
         })
         .then(() => {
           if (!ativo) return;
@@ -479,8 +473,6 @@ export const CotacaoPortal: React.FC<{
       .then((lista) => {
         if (!ativo) return;
         setTabelas(lista);
-        const primeira = REGIOES_COTACAO.find((item) => valoresDaRegiao(lista.filter((tabela) => tabela.regiao === item))) || '';
-        setRegiao((atual) => atual || primeira);
       })
       .catch((falha: unknown) => {
         if (ativo) setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar a tabela.');
@@ -495,26 +487,34 @@ export const CotacaoPortal: React.FC<{
   useEffect(() => {
     setRegiao((atual) => regiaoAcompanhaOrigem(origem, clienteDaRegiao, atual));
   }, [origem, clienteDaRegiao]);
-  const linhasDaVersao = useMemo(
-    () => tabelas
-      .filter((item) => versaoDaLinhaTarifaria(item.operacao) === versaoAtiva)
-      .map((item) => ({
-        operation_type: item.operacao,
-        price_per_extra_km: item.kmExtra,
-        price_per_extra_hour: item.horaExtra,
-      })),
-    [tabelas, versaoAtiva],
-  );
-  const regioes = useMemo(
-    () => REGIOES_COTACAO.filter((item) => valoresDaRegiao(tabelas.filter((tabela) => tabela.regiao === item))),
+  useEffect(() => {
+    setRegiao((atual) => {
+      if (atual && regiaoTemLinha(tabelas, atual, versaoAtiva)) return atual;
+      return primeiraRegiaoComTarifa(tabelas, versaoAtiva) || atual;
+    });
+  }, [tabelas, versaoAtiva]);
+  const linhasTarifa = useMemo(
+    () => tabelas.map((item) => ({
+      operation_type: item.operacao,
+      price_per_extra_km: item.kmExtra,
+      price_per_extra_hour: item.horaExtra,
+    })),
     [tabelas],
   );
-  const tabela = useMemo(
-    () => valoresDaRegiao(tabelas.filter((item) => item.regiao === regiao)),
-    [tabelas, regiao],
+  const regioes = useMemo(
+    () => REGIOES_COTACAO.filter((item) => regiaoTemLinha(tabelas, item, versaoAtiva)),
+    [tabelas, versaoAtiva],
   );
+  const resolvida = useMemo(
+    () => tarifaDoBotao(tabelas, regiao, versaoAtiva),
+    [tabelas, regiao, versaoAtiva],
+  );
+  const tabela = resolvida?.tabela ?? null;
   const frases = proposta?.acordada ? FRASES_ACORDADA : FRASES_NOVA;
-  const podeGerar = Boolean(tabela && origem.trim() && destino.trim() && kmRota != null && kmRota > 0);
+  const podeGerar = Boolean(
+    origem.trim() && destino.trim() && kmRota != null && kmRota > 0
+    && (tabela || getRegionFromLocation(origem, '', clienteDaRegiao).region),
+  );
 
   useEffect(() => {
     if (etapa !== 'animando') return;
@@ -526,8 +526,27 @@ export const CotacaoPortal: React.FC<{
     return () => window.clearTimeout(espera);
   }, [etapa, passo, frases.length]);
 
-  const montarAtual = (): { nova: PropostaPortal; usouMinimo: boolean } | null => {
-    if (!tabela || kmRota == null) return null;
+  const montarAtual = (): { nova: PropostaPortal; usouMinimo: boolean; vigencia: VersaoTabelaRegional } | null => {
+    if (kmRota == null) return null;
+    const regional = numerosDaCotacaoRegional({
+      cliente: clienteNome || portal.marca.rotulo,
+      origem,
+      km: kmRota,
+      versao: versaoAtiva,
+      linhas: linhasTarifa,
+      tarifaKmFallback: tabela?.kmExtra,
+      horaExtraFallback: tabela?.horaExtra,
+      vigenciaFallback: resolvida?.vigencia,
+      acordada: false,
+    });
+    const tabelaRegiao = tabela ?? (regional.aplicar ? {
+      acionamento: regional.conta.valor,
+      franquiaHoras: regional.conta.horasFaturadas,
+      franquiaKm: regional.conta.kmFaturado,
+      kmExtra: regional.tarifaKm,
+      horaExtra: regional.horaExtra ?? 0,
+    } : null);
+    if (!tabelaRegiao) return null;
     const nova = montarProposta({
       tabelas,
       regiao,
@@ -535,18 +554,11 @@ export const CotacaoPortal: React.FC<{
       destino,
       paradas: paradas.map((item) => item.texto),
       kmRota,
-      tabelaRegiao: tabela,
+      tabelaRegiao,
     });
-    const regional = numerosDaCotacaoRegional({
-      cliente: clienteNome || portal.marca.rotulo,
-      origem,
-      km: kmRota,
-      versao: versaoAtiva,
-      linhas: linhasDaVersao,
-      tarifaKmFallback: tabela.kmExtra,
-      horaExtraFallback: tabela.horaExtra,
-      acordada: nova.acordada,
-    });
+    if (nova.acordada) {
+      return { nova, usouMinimo: kmRota <= 100, vigencia: versaoAtiva };
+    }
     if (regional.aplicar) {
       nova.acionamento = regional.conta.valor;
       nova.kmFranquia = regional.conta.kmFaturado;
@@ -555,8 +567,9 @@ export const CotacaoPortal: React.FC<{
       if (regional.horaExtra != null) nova.horaExtra = regional.horaExtra;
       if (regional.nome) nova.regiao = regional.nome;
     }
+    const vigente = regional.aplicar ? regional.vigenciaUsada : versaoAtiva;
     const usouMinimo = regional.aplicar ? Boolean(regional.conta.usouMinimo) : kmRota <= 100;
-    return { nova, usouMinimo };
+    return { nova, usouMinimo, vigencia: vigente };
   };
 
   const gerar = () => {
@@ -565,7 +578,7 @@ export const CotacaoPortal: React.FC<{
     setProposta(feito.nova);
     setPasso(0);
     setEtapa('animando');
-    void gravarNoHistorico(feito.nova, feito.usouMinimo);
+    void gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
   };
 
   const preverPdf = () => {
@@ -586,7 +599,7 @@ export const CotacaoPortal: React.FC<{
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean) => {
+  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional) => {
     setAvisoHistorico('');
     const pedido = {
       origem,
@@ -604,7 +617,7 @@ export const CotacaoPortal: React.FC<{
       acordada: nova.acordada,
       operacao: nova.operacao,
       usouMinimo,
-      vigencia: versaoAtiva,
+      vigencia,
     };
     try {
       if (clienteNome) {
@@ -786,7 +799,7 @@ export const CotacaoPortal: React.FC<{
         <QuoteCalculatorCard
           cliente={clienteVisual}
           versao={versaoAtiva}
-          linhas={linhasDaVersao}
+          linhas={linhasTarifa}
           origem={origem}
           destino={destino}
           km={kmRota == null ? '' : String(kmRota)}

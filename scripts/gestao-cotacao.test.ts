@@ -116,6 +116,46 @@ describe('gestão da cotação', () => {
     }));
     assert.match(html, /Tarifa:/);
     assert.match(html, /8,30/);
+    const ceva = renderToStaticMarkup(React.createElement(QuoteCalculatorCard, {
+      cliente: 'CEVA LOGISTICS LTDA',
+      versao: '2027',
+      origem: 'Salvador, BA',
+      destino: 'São Paulo, SP',
+      km: '80',
+      onOrigem: () => undefined,
+      onDestino: () => undefined,
+      onKm: () => undefined,
+      tarifaKm: 10,
+      horaExtra: 250,
+      ocultarCampos: true,
+      linhas: [
+        { operation_type: 'NORDESTE - ROTA ANTIGA', price_per_extra_km: 10, price_per_extra_hour: 250 },
+        { operation_type: 'TABELA 2027 - NORDESTE', price_per_extra_km: 8.3, price_per_extra_hour: 207.5 },
+      ],
+    }));
+    assert.match(ceva, /8,30/);
+    assert.match(ceva, /207,50/);
+    assert.doesNotMatch(ceva, /250,00/);
+    const manual = renderToStaticMarkup(React.createElement(QuoteCalculatorCard, {
+      cliente: 'CEVA LOGISTICS LTDA',
+      versao: '2026',
+      origem: 'Salvador, BA',
+      destino: 'São Paulo, SP',
+      km: '80',
+      onOrigem: () => undefined,
+      onDestino: () => undefined,
+      onKm: () => undefined,
+      tarifaKm: 8.3,
+      horaExtra: 207.5,
+      ocultarCampos: true,
+      linhas: [
+        { operation_type: 'TABELA 2026 - NORDESTE', price_per_extra_km: 10, price_per_extra_hour: 250 },
+        { operation_type: 'TABELA 2027 - NORDESTE', price_per_extra_km: 8.3, price_per_extra_hour: 207.5 },
+      ],
+    }));
+    assert.match(manual, /10,00/);
+    assert.match(manual, /250,00/);
+    assert.doesNotMatch(manual, /8,30/);
   });
 
   it('preenche o painel do mapa com a rota da tela e não cria função nova', () => {
