@@ -2,6 +2,21 @@
 
 # Próxima Execução Proposta
 
+Executado nesta branch, sem publicar. O pedido para colocar o botão Redefinir senha, gerando a senha nova com o mesmo texto de um usuário recém-criado, autorizou este ajuste. O plano do PDF único da cotação não faz parte desta entrega.
+
+## Redefinir senha com o texto de usuário novo (26/10/2026)
+
+Baseline `fb58e567`. Na edição do usuário, abaixo da senha de acesso, o botão Redefinir senha gera a senha, grava no cadastro e abre a mesma mensagem da criação (`textoDaMensagem`: acesso criado, login, senha e link). No portal, a mensagem é a de acesso ao portal e a senha entra na tabela que a pessoa já usa. O e-mail com link e o WhatsApp com o texto de senha redefinida continuam nos botões que já existiam.
+
+- **Objetivo da Tarefa:** o operador copia a mensagem de acesso novo, com a senha que ficou gravada, sem depender do link de e-mail nem do texto de redefinição do WhatsApp.
+- **Passo a Passo Sequencial:** 1. O botão chama o pedido de senha que já existe, no canal `texto`. 2. O servidor gera a senha temporária e grava em `system_users`, com troca no próximo acesso. 3. Se a pessoa já tem linha no portal, a mesma senha entra nessa linha e pede a troca. 4. A tela abre o quadro de credenciais com `textoDaMensagem`. 5. Fechar o quadro permanece na ficha.
+- **Ficheiros Afetados:** `components/UserForm.tsx`, `lib/passwordReset.ts`, `scripts/password-reset-whatsapp.test.ts`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas. Sem migration. Sem tabela nova. A rota de e-mail e a de WhatsApp permanecem.
+
+Banco: nenhuma coluna nova. A escrita usa `system_users` e, quando a linha já existe, a tabela de usuários do portal. Rollback: reverter o commit desta branch. Não publicado.
+
+## Unificação de 26/10/2026
+
 Publicado nesta entrega, no projeto sistema-grupo-tm-seg. A unificação autorizada em 26/10/2026 (Tabela 2027, rota Salvador, Nova Rota, fuso de Brasília e o gate de fluxo) é a execução desta entrega. A branch da tarifa duplicada do portal não entrou. Não há outro plano de código aberto. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
 
 ## Gate de aprovação prévia (26/10/2026)
