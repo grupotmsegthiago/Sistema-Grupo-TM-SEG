@@ -4,7 +4,7 @@ import test from 'node:test';
 import { cartaDaProposta, marcoDeOperacoes, SERVICOS_TMSEG } from '../lib/portalCliente/apresentacao.ts';
 import { logoConhecido, pedidoDaCarreta, slugVisual, urlMapaEstatico, urlMapaPorEnderecos } from '../lib/portalCliente/frotaVisual.ts';
 import { nomesDaVigencia } from '../lib/portalCliente/cotacao.ts';
-import { paginasDosBlocos } from '../lib/portalCliente/pdfBlocos.ts';
+import { faixasCobertas, faixasVerticais, gruposNaFolha, paginasDosBlocos } from '../lib/portalCliente/pdfBlocos.ts';
 import {
   chaveDoMapaNoServidor,
   destinoDirections,
@@ -103,6 +103,35 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.equal(nomesDaVigencia('Salvador, BA', 'São Paulo, SP', null).rota, 'Rota: Salvador x São Paulo (2026-)');
   assert.deepEqual(paginasDosBlocos([80, 80, 40], 180), [0, 0, 1]);
   assert.deepEqual(paginasDosBlocos([200], 180), [0]);
+  assert.deepEqual(faixasVerticais([
+    { top: 0, bottom: 80 },
+    { top: 200, bottom: 280 },
+    { top: 200, bottom: 300 },
+    { top: 360, bottom: 420 },
+  ]), [
+    { inicio: 0, fim: 80 },
+    { inicio: 200, fim: 300 },
+    { inicio: 360, fim: 420 },
+  ]);
+  assert.deepEqual(faixasCobertas([
+    { top: 0, bottom: 80 },
+    { top: 200, bottom: 300 },
+    { top: 360, bottom: 420 },
+  ], 500), [
+    { inicio: 0, fim: 200 },
+    { inicio: 200, fim: 360 },
+    { inicio: 360, fim: 500 },
+  ]);
+  assert.deepEqual(gruposNaFolha([
+    { inicio: 0, fim: 80 },
+    { inicio: 80, fim: 160 },
+    { inicio: 160, fim: 200 },
+  ], 180), [[0, 1], [2]]);
+  assert.deepEqual(gruposNaFolha([
+    { inicio: 0, fim: 200 },
+    { inicio: 200, fim: 360 },
+    { inicio: 360, fim: 500 },
+  ], 180), [[0], [1], [2]]);
   assert.match(carta, /R\$\s*7,10/);
   assert.match(carta, /500\+/);
   assert.equal(marcoDeOperacoes(8120), '8 mil+');

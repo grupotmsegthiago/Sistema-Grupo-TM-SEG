@@ -55,6 +55,37 @@ export type EdicaoCotacao = {
   regiao?: string;
 };
 
+async function esperarPropostaHistorico(aindaAtivo: () => boolean): Promise<HTMLElement | null> {
+  const prazo = Date.now() + 4000;
+  let artigo: HTMLElement | null = null;
+  while (Date.now() < prazo) {
+    if (!aindaAtivo()) return null;
+    const achado = document.querySelector('[data-proposta-pdf="historico"]');
+    if (achado instanceof HTMLElement) {
+      artigo = achado;
+      break;
+    }
+    await new Promise((resolver) => window.setTimeout(resolver, 40));
+  }
+  if (!artigo || !aindaAtivo()) return null;
+  const fontes = document.fonts;
+  if (fontes?.ready) {
+    try { await fontes.ready; } catch { /* a fonte do sistema segue no PDF */ }
+  }
+  if (!aindaAtivo()) return null;
+  const imagens = Array.from(artigo.querySelectorAll('img'));
+  await Promise.all(imagens.map((imagem) => {
+    if (imagem.complete) return Promise.resolve();
+    return new Promise<void>((resolver) => {
+      imagem.addEventListener('load', () => resolver(), { once: true });
+      imagem.addEventListener('error', () => resolver(), { once: true });
+    });
+  }));
+  if (!aindaAtivo()) return null;
+  await new Promise((resolver) => window.setTimeout(resolver, 60));
+  return aindaAtivo() ? artigo : null;
+}
+
 async function mapaEstaticoDaLinha(
   linha: LinhaHistoricoCotacao,
   clienteNome: string | undefined,
@@ -198,17 +229,15 @@ export const HistoricoCotacoes: React.FC<{
     const janela = janelaPdf.current;
     let ativo = true;
     const gerar = async () => {
-      await new Promise((resolver) => window.setTimeout(resolver, 120));
-      const artigo = document.querySelector('[data-proposta-pdf="historico"]');
-      if (!(artigo instanceof HTMLElement) || !ativo) return;
-      const imagem = artigo.querySelector('img[alt="Mapa da rota na tela"]');
-      if (imagem instanceof HTMLImageElement && !imagem.complete) {
-        await new Promise<void>((resolver) => {
-          imagem.onload = () => resolver();
-          imagem.onerror = () => resolver();
-        });
-      }
+      let artigo: HTMLElement | null = null;
       try {
+        artigo = await esperarPropostaHistorico(() => ativo);
+        if (!ativo) return;
+        if (!(artigo instanceof HTMLElement)) {
+          setErroPdf('Não foi possível montar o PDF desta cotação.');
+          try { janela?.close(); } catch { /* popup bloqueado */ }
+          return;
+        }
         if (modo === 'email') {
           const { pdfBase64DaProposta } = await import('./abrirPdfCotacao');
           const pdf = await pdfBase64DaProposta(artigo);

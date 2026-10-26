@@ -179,6 +179,7 @@ describe('gestão da cotação', () => {
     assert.match(proposta, /printMapa/);
     assert.match(proposta, /Mapa da rota na tela/);
     assert.match(proposta, /data-proposta-bloco/);
+    assert.match(proposta, /data-captura-proposta/);
     assert.match(proposta, /page-break-inside: avoid/);
     assert.match(proposta, /pdfBase64DaProposta/);
     assert.match(tela, /enquadrarParaProposta/);
@@ -188,8 +189,12 @@ describe('gestão da cotação', () => {
     assert.match(historico, /data-proposta-pdf="historico"/);
     assert.match(historico, /printMapa=\{mapaCaptura\}/);
     assert.match(historico, /nomeLinhaVigencia/);
+    assert.match(historico, /esperarPropostaHistorico/);
+    assert.match(historico, /Não foi possível montar o PDF desta cotação/);
     const pdf = readFileSync(new URL('../components/ceva/abrirPdfCotacao.ts', import.meta.url), 'utf8');
-    assert.match(pdf, /paginasDosBlocos/);
+    assert.match(pdf, /faixasCobertas/);
+    assert.match(pdf, /gruposNaFolha/);
+    assert.match(pdf, /data-captura-proposta/);
     assert.doesNotMatch(pdf, /while \(restante > 0\)/);
     assert.doesNotMatch(pdf, /financialUtils/);
     const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')) as { functions: Record<string, unknown> };

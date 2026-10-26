@@ -199,6 +199,7 @@ describe('histórico de cotações do portal', () => {
       onFechar: () => undefined,
     }));
     assert.match(html, /data-proposta-pdf="historico"/);
+    assert.match(html, /data-captura-proposta="historico"/);
     assert.match(html, /data-proposta-bloco/);
     assert.match(html, /Tabela: Salvador x São Paulo \(2027-\)/);
     assert.match(html, /Rota: Salvador x São Paulo \(2027-\)/);

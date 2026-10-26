@@ -1,6 +1,6 @@
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { paginasDosBlocos } from '../../lib/portalCliente/pdfBlocos';
+import { faixasCobertas, gruposNaFolha } from '../../lib/portalCliente/pdfBlocos';
 import { prepararImagensDoElemento } from '../../lib/precificacao/imageUtils';
 
 const MARGEM_MM = 8;
@@ -28,57 +28,132 @@ function liberarRolagem(artigo: HTMLElement): () => void {
   };
 }
 
+/** O histórico deixa a proposta em left negativo. O html2canvas corta o que está fora da janela. */
+function exporCaptura(artigo: HTMLElement): () => void {
+  const host = artigo.closest('[data-captura-proposta]');
+  if (!(host instanceof HTMLElement)) return () => undefined;
+  const antes = {
+    left: host.style.left,
+    top: host.style.top,
+    opacity: host.style.opacity,
+    visibility: host.style.visibility,
+    zIndex: host.style.zIndex,
+  };
+  host.style.left = '0px';
+  host.style.top = '0px';
+  host.style.opacity = '1';
+  host.style.visibility = 'visible';
+  host.style.zIndex = '-1';
+  return () => {
+    host.style.left = antes.left;
+    host.style.top = antes.top;
+    host.style.opacity = antes.opacity;
+    host.style.visibility = antes.visibility;
+    host.style.zIndex = antes.zIndex;
+  };
+}
+
+/** Botão de fechar e a barra de ações não entram na folha. */
+function esconderForaDoCorpo(artigo: HTMLElement): () => void {
+  const corpo = artigo.querySelector('[data-proposta-corpo]');
+  const escondidos: Array<{ el: HTMLElement; display: string }> = [];
+  for (const filho of Array.from(artigo.children)) {
+    if (!(filho instanceof HTMLElement) || filho === corpo) continue;
+    escondidos.push({ el: filho, display: filho.style.display });
+    filho.style.display = 'none';
+  }
+  return () => {
+    for (const item of escondidos) item.el.style.display = item.display;
+  };
+}
+
+function recortarFaixa(canvas: HTMLCanvasElement, inicio: number, fim: number): HTMLCanvasElement {
+  const y0 = Math.max(0, Math.min(canvas.height - 1, Math.round(inicio)));
+  const y1 = Math.max(y0 + 1, Math.min(canvas.height, Math.round(fim)));
+  const altura = y1 - y0;
+  const saida = document.createElement('canvas');
+  saida.width = canvas.width;
+  saida.height = altura;
+  const ctx = saida.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.fillStyle = '#f7f5f2';
+  ctx.fillRect(0, 0, saida.width, saida.height);
+  ctx.drawImage(canvas, 0, y0, canvas.width, altura, 0, 0, canvas.width, altura);
+  return saida;
+}
+
 /**
- * Cada bloco da proposta vira uma imagem inteira.
- * O bloco que não cabe no restante da folha começa na próxima.
- * Um bloco mais alto que a folha é reduzido para caber nela, sem corte no meio.
+ * Uma foto do artigo oficial.
+ * A folha corta só no vão entre faixas verticais, então dois cards lado a lado
+ * permanecem na mesma página e nenhum bloco é partido no meio.
+ * A faixa mais alta que a folha é reduzida para caber nela.
  */
 async function desenharPdf(artigo: HTMLElement): Promise<jsPDF> {
-  await prepararImagensDoElemento(artigo);
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const largura = pdf.internal.pageSize.getWidth();
   const alturaPagina = pdf.internal.pageSize.getHeight();
   const larguraUtil = largura - MARGEM_MM * 2;
   const alturaUtil = alturaPagina - MARGEM_MM * 2;
-  const blocos = Array.from(artigo.querySelectorAll('[data-proposta-bloco]')).filter((el): el is HTMLElement => el instanceof HTMLElement);
-  const restaurar = liberarRolagem(artigo);
+  const restaurarExposicao = exporCaptura(artigo);
+  const restaurarRolagem = liberarRolagem(artigo);
+  const restaurarChrome = esconderForaDoCorpo(artigo);
   try {
-    const desenhos: Array<{ imagem: string; largura: number; altura: number }> = [];
-    for (const bloco of blocos) {
-      if (bloco.getClientRects().length === 0) continue;
-      const canvas = await html2canvas(bloco, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: '#f7f5f2',
-        logging: false,
-      });
-      if (canvas.width < 8 || canvas.height < 8) continue;
-      let alturaMm = (canvas.height * larguraUtil) / canvas.width;
+    artigo.getBoundingClientRect();
+    await prepararImagensDoElemento(artigo);
+    const retanguloArtigo = artigo.getBoundingClientRect();
+    const blocos = Array.from(artigo.querySelectorAll('[data-proposta-bloco]')).filter((el): el is HTMLElement => (
+      el instanceof HTMLElement && el.getClientRects().length > 0
+    ));
+    const canvas = await html2canvas(artigo, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: '#f7f5f2',
+      logging: false,
+      windowWidth: Math.max(window.innerWidth, Math.ceil(artigo.scrollWidth)),
+      windowHeight: Math.max(window.innerHeight, Math.ceil(artigo.scrollHeight)),
+      onclone: (documento, clonado) => {
+        const host = clonado.closest('[data-captura-proposta]') || documento.querySelector('[data-captura-proposta]');
+        if (!(host instanceof HTMLElement)) return;
+        host.style.left = '0px';
+        host.style.top = '0px';
+        host.style.opacity = '1';
+        host.style.visibility = 'visible';
+        host.style.zIndex = '-1';
+      },
+    });
+    if (canvas.width < 8 || canvas.height < 8) return pdf;
+    const escala = canvas.width / Math.max(1, retanguloArtigo.width);
+    const retangulos = blocos.map((bloco) => {
+      const retangulo = bloco.getBoundingClientRect();
+      return {
+        top: (retangulo.top - retanguloArtigo.top) * escala,
+        bottom: (retangulo.bottom - retanguloArtigo.top) * escala,
+      };
+    });
+    const faixas = faixasCobertas(retangulos, canvas.height);
+    const alturaUtilPx = (alturaUtil * canvas.width) / larguraUtil;
+    const grupos = gruposNaFolha(faixas, alturaUtilPx);
+    grupos.forEach((grupo, indice) => {
+      if (grupo.length === 0) return;
+      if (indice > 0) pdf.addPage();
+      const inicio = faixas[grupo[0]].inicio;
+      const fim = faixas[grupo[grupo.length - 1]].fim;
+      const recorte = recortarFaixa(canvas, inicio, fim);
       let larguraMm = larguraUtil;
+      let alturaMm = (recorte.height * larguraUtil) / Math.max(1, recorte.width);
       if (alturaMm > alturaUtil) {
         const fator = alturaUtil / alturaMm;
         alturaMm = alturaUtil;
         larguraMm = larguraUtil * fator;
       }
-      desenhos.push({ imagem: canvas.toDataURL('image/jpeg', 0.86), largura: larguraMm, altura: alturaMm });
-    }
-    const paginas = paginasDosBlocos(desenhos.map((item) => item.altura), alturaUtil);
-    let paginaAtual = -1;
-    let cursor = MARGEM_MM;
-    desenhos.forEach((desenho, indice) => {
-      const pagina = paginas[indice] ?? 0;
-      if (pagina !== paginaAtual) {
-        if (paginaAtual >= 0) pdf.addPage();
-        paginaAtual = pagina;
-        cursor = MARGEM_MM;
-      }
-      const x = MARGEM_MM + (larguraUtil - desenho.largura) / 2;
-      pdf.addImage(desenho.imagem, 'JPEG', x, cursor, desenho.largura, desenho.altura);
-      cursor += desenho.altura;
+      const x = MARGEM_MM + (larguraUtil - larguraMm) / 2;
+      pdf.addImage(recorte.toDataURL('image/jpeg', 0.86), 'JPEG', x, MARGEM_MM, larguraMm, alturaMm);
     });
   } finally {
-    restaurar();
+    restaurarChrome();
+    restaurarRolagem();
+    restaurarExposicao();
   }
   return pdf;
 }

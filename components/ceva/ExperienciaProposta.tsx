@@ -41,7 +41,7 @@ export const ExperienciaProposta: React.FC<{
   printMapa?: string | null;
   operacoes?: string | null;
   onFechar: () => void;
-  /** Fora da tela, sem opacidade zero, para o html2canvas ler a proposta salva. */
+  /** Fora da tela, sem opacidade zero. O PDF traz o bloco para a esquerda só na hora da foto. */
   modoCaptura?: boolean;
   dataTexto?: string;
   /** Separa o artigo do histórico do artigo que está na tela. */
@@ -128,7 +128,7 @@ export const ExperienciaProposta: React.FC<{
   };
 
   return (
-    <div className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
+    <div data-captura-proposta={modoCaptura ? marcaPdf : undefined} className={modoCaptura ? 'pointer-events-none fixed left-[-14000px] top-0 z-[-1] w-[960px]' : 'fixed inset-0 z-50 flex items-center justify-center bg-[#0c0d10]/80 p-3 backdrop-blur-md sm:p-6'} aria-hidden={modoCaptura || undefined}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=Outfit:wght@400;500;600&display=swap');
         @keyframes tmseg-subir { from { opacity: 0; transform: translateY(36px) rotateX(8deg); } to { opacity: 1; transform: translateY(0) rotateX(0); } }

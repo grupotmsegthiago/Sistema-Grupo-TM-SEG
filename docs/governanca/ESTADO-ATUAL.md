@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. O botão Ver PDF do histórico usa o mesmo desenho do Salvar em PDF. A proposta salva fica fora da tela e, na hora da foto, volta para a esquerda da janela. O PDF é uma imagem do artigo inteiro, cortada só no vão entre as faixas, então os cards lado a lado não viram página cheia e nenhum bloco parte no meio. Se o artigo não montar, a janela "Gerando o PDF" fecha e a tela avisa. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. O PDF único da cotação foi codificado depois da aprovação do fluxo. Ver PDF, Salvar em PDF, o preview e os dois e-mails passam pelo mesmo desenho: cada bloco entra inteiro na folha, com `page-break-inside: avoid`. O mapa ao vivo espera o `idle` e enquadra a origem e o destino com folga à esquerda do painel. O mapa estático usa `visible` para o meio do trecho ficar no centro. A proposta mostra `Tabela: Origem x Destino (2026-)` ou `(2027-)`, e a OS nascida da cotação grava esses nomes no snapshot que já existia. Sem marca, fica 2026. Linha de preço já gravada não é renomeada. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Em Liberar uma pessoa, cada linha ganhou Editar e, no analista, Remover. Administrador não remove administrador. Editar grava nome, e-mail e perfil na mesma pessoa, sem senha nova. O bloqueio e a reativação continuam. O motor da OS não mudou.
