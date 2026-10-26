@@ -165,6 +165,46 @@ describe('histórico de cotações do portal', () => {
     assert.equal(lerSnapshot('{"kind":"outro"}'), null);
   });
 
+  it('grava no snapshot a tarifa 2027 do Nordeste da CEVA', () => {
+    const registro = pedidoParaRegistro({
+      origem: 'Salvador, BA',
+      destino: 'Recife, PE',
+      km: 80,
+      valor: 830,
+      horas: 3,
+      regiao: 'NORDESTE',
+      kmFranquia: 100,
+      kmExtra: 8.3,
+      horaExtra: 207.5,
+      acionamento: 830,
+      paradas: [],
+      acordada: false,
+      operacao: 'TABELA 2027 - NORDESTE',
+      usouMinimo: true,
+      vigencia: '2027',
+    }, { id: 4, name: 'CEVA LOGISTICS LTDA' }, { name: 'Portal CEVA', email: 'portal@ceva.com' });
+    assert.equal(registro.ok, true);
+    if (!registro.ok) return;
+    assert.equal(registro.linha.client_id, 4);
+    assert.equal(registro.linha.total_value, 830);
+    const salvo = lerSnapshot(String(registro.linha.contract_details));
+    assert.equal(salvo?.kmExtra, 8.3);
+    assert.equal(salvo?.horaExtra, 207.5);
+    assert.equal(salvo?.acionamento, 830);
+    assert.equal(salvo?.vigencia, '2027');
+    const proposta = propostaDoHistorico({
+      origin: 'Salvador, BA',
+      destination: 'Recife, PE',
+      total_km: 80,
+      total_hours: 3,
+      total_value: 830,
+      contract_details: String(registro.linha.contract_details),
+    });
+    assert.equal(proposta.kmExtra, 8.3);
+    assert.equal(proposta.horaExtra, 207.5);
+    assert.equal(proposta.acionamento, 830);
+  });
+
   it('lista só o cliente do portal e grava a cotação sem converter em OS', async () => {
     const linhas = [
       { id: 'nova', client_id: 7, client_name: 'CEVA', origin: 'A', destination: 'B', total_km: 10, total_hours: 3, total_value: 100, created_at: '2026-10-26T12:00:00Z', created_by: 'Ana', status: 'Enviada', is_active: true, contract_details: null },
