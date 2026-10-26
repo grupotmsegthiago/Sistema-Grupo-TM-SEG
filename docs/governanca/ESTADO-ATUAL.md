@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Gate de fluxo: antes de criar, editar ou apagar código ou tabela, o agente desenha o plano no chat e na seção `# Próxima Execução Proposta` de `RELATORIO_ULTIMA_EXECUCAO.md`, e só executa depois de aprovação expressa (exemplo: "Fluxo aprovado, pode executar"). Desvio ou dúvida volta o plano ao chat e ao relatório, sem implementação. Permanecem o motor da OS em `lib/financialUtils.ts`, os contratos DHL e IBL, o limite de 50 funções na Vercel e o horário de Brasília em 24 horas.
+
 Atualizado em 2026-10-26. O padrão temporal oficial fica em `America/Sao_Paulo` (Horário de Brasília), hora em 24h (`HH:mm`, sem AM/PM) e data em `DD/MM/AAAA`, no portal, nos relatórios, nos PDFs e no que for persistido. O smoke check antes de publicar exige `GET /api/health`, `npm run build`, os testes do escopo e, quando a alteração mexe em notificação ou faturamento, `scripts/email-health-check.ts`. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Na tela Nova Rota saíram Tipo da rota e Região. Rota nova grava só o trajeto. Na edição, uma rota que já tinha tipo continua gravando essa classificação. O consumo de rota esporádica na OS e o motor da OS não mudaram.

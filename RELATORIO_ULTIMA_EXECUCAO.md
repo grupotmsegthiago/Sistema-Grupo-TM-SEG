@@ -2,7 +2,20 @@
 
 # Próxima Execução Proposta
 
-Não há alteração de código pendente além da unificação já autorizada. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+A unificação autorizada em 26/10/2026 (Tabela 2027, rota Salvador, Nova Rota, fuso de Brasília e o gate de fluxo) é a execução desta entrega. Não há outro plano de código aberto. A próxima alteração de código ou de tabela substitui este plano, reapresenta no chat e espera nova aprovação expressa.
+
+## Gate de aprovação prévia (26/10/2026)
+
+Autorizado na mesma mensagem pelo pedido de gravar o complemento. Não altera código de aplicação nem tabela.
+
+- **Objetivo da Tarefa:** consolidar o gate de desenho e aprovação antes de qualquer alteração de código ou de tabela.
+- **Passo a Passo Sequencial:** 1. Ler o protocolo, o estado atual e este relatório. 2. Incluir a cláusula no protocolo. 3. Registrar a nota no topo do estado atual. 4. Registrar este plano nesta seção. 5. Conferir o texto gravado.
+- **Ficheiros Afetados:** `.cursor/rules/protocolo-alteracao-tmseg.mdc`, `docs/governanca/ESTADO-ATUAL.md`, `RELATORIO_ULTIMA_EXECUCAO.md`.
+- **Garantias de Não Impacto:** não altera `lib/financialUtils.ts`, não altera os contratos DHL e IBL, não mexe no limite de 50 funções da Vercel e não muda o padrão de Brasília em 24 horas.
+
+## Fuso de Brasília e smoke check (26/10/2026)
+
+O padrão temporal oficial fica em `America/Sao_Paulo`, hora em 24h (`HH:mm`, sem AM/PM) e data em `DD/MM/AAAA`, na constituição e no artigo 2. O checklist de entrega exige `GET /api/health`, `npm run build`, os testes do escopo e, em notificação ou faturamento, `scripts/email-health-check.ts`. `calculateMissionFinancials` não foi alterado.
 
 ## Nova Rota sem tipo e região (26/10/2026)
 
