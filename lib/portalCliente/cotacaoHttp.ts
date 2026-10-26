@@ -6,6 +6,7 @@ import {
   TAMANHO_PAGINA_HISTORICO,
   normalizarLinhaHistorico,
   pedidoParaRegistro,
+  reservarNumeroCotacao,
   vigenciaDaCotacao,
   type LinhaHistoricoCotacao,
   type PedidoRegistroCotacao,
@@ -150,15 +151,20 @@ export async function registrarCotacaoPortal(
   cliente: { id?: unknown; name?: string | null } | null,
   solicitante: { name?: string | null; email?: string | null },
   pedido: PedidoRegistroCotacao,
-): Promise<{ status: number; corpo: { ok: true; id: string; created_at: string | null } | { error: string } }> {
-  const registro = pedidoParaRegistro(pedido, cliente || {}, solicitante);
+): Promise<{ status: number; corpo: { ok: true; id: string; created_at: string | null; numero: number | null } | { error: string } }> {
+  const numero = await reservarNumeroCotacao(async (inicio, fim) => {
+    const { data, error } = await sb.from('quotes').select('id, contract_details').order('created_at', { ascending: true }).range(inicio, fim);
+    if (error) return null;
+    return { linhas: Array.isArray(data) ? data : [] };
+  });
+  const registro = pedidoParaRegistro({ ...pedido, numero }, cliente || {}, solicitante);
   if (!registro.ok) return { status: 400, corpo: { error: registro.error } };
   const { data, error } = await sb.from('quotes').insert(registro.linha).select('id, created_at').single();
   if (error) {
     if (colunaRegionalAusente(error)) return { status: 503, corpo: { error: 'O histórico de cotações ainda não está disponível neste banco.' } };
     return { status: 500, corpo: { error: 'Não foi possível gravar a cotação no histórico.' } };
   }
-  return { status: 201, corpo: { ok: true, id: String(data?.id || ''), created_at: data?.created_at ? String(data.created_at) : null } };
+  return { status: 201, corpo: { ok: true, id: String(data?.id || ''), created_at: data?.created_at ? String(data.created_at) : null, numero } };
 }
 
 export async function propostaParaEmail(

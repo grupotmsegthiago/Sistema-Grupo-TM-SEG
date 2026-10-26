@@ -23,6 +23,7 @@ export type CotacaoGestao = {
   destination?: string | null;
   total_km?: number | null;
   total_value?: number | null;
+  contract_details?: string | null;
 };
 
 function normalizar(valor: string | null | undefined): string {

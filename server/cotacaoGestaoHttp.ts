@@ -15,7 +15,7 @@ import {
   type AtorCotacao,
   type CotacaoGestao,
 } from '../lib/portalCliente/gestaoCotacao.js';
-import { lerSnapshot } from '../lib/portalCliente/historicoCotacoes.js';
+import { lerSnapshot, nomePdfCotacao } from '../lib/portalCliente/historicoCotacoes.js';
 
 type Banco = {
   from: (tabela: string) => any;
@@ -197,7 +197,16 @@ export async function atenderGestaoCotacao(req: Request, res: Response, acao: 'i
       cc: copias.lista.length ? copias.lista : undefined,
       subject: `Proposta Grupo TM SEG — ${cotacao.origin || 'Cotação'}`,
       text: texto,
-      attachments: [{ filename: `Cotacao-${id.slice(0, 12)}.pdf`, content: conteudo, contentType: 'application/pdf' }],
+      attachments: [{
+        filename: nomePdfCotacao({
+          cliente: String(cotacao.client_name || 'Cliente'),
+          origem: String(cotacao.origin || ''),
+          destino: String(cotacao.destination || ''),
+          numero: lerSnapshot(cotacao.contract_details)?.numero ?? null,
+        }),
+        content: conteudo,
+        contentType: 'application/pdf',
+      }],
     });
     res.status(200).json({ ok: true, enviado: true });
   } catch (error) {

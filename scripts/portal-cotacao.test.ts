@@ -97,8 +97,10 @@ test('a carta apresenta a empresa, os serviços e o pedágio à parte', () => {
   assert.match(carta, /Fiscal de rota/);
   assert.match(carta, /www\.grupotmseg\.com\.br/);
   assert.match(carta, /pedágio será cobrado à parte/);
-  assert.match(carta, /Tabela: Santos x Diadema \(2026-\)/);
-  assert.match(carta, /Rota: Santos x Diadema \(2026-\)/);
+  assert.match(carta, /Tabela: Santos x Diadema/);
+  assert.match(carta, /Rota: Santos x Diadema/);
+  assert.doesNotMatch(carta, /\(2026-\)/);
+  assert.doesNotMatch(carta, /\(2027-\)/);
   assert.equal(nomesDaVigencia('Salvador, BA', 'São Paulo, SP', '2027').tabela, 'Tabela: Salvador x São Paulo (2027-)');
   assert.equal(nomesDaVigencia('Salvador, BA', 'São Paulo, SP', null).rota, 'Rota: Salvador x São Paulo (2026-)');
   assert.deepEqual(paginasDosBlocos([80, 80, 40], 180), [0, 0, 1]);

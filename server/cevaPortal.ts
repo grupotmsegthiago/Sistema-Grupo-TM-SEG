@@ -101,6 +101,7 @@ export function registerCevaPortalRoutes(app: Express): void {
     };
     try {
       const { pdfAnexoAceito } = await import('../lib/portalCliente/gestaoCotacao.js');
+      const { nomeAnexoPdf } = await import('../lib/portalCliente/historicoCotacoes.js');
       const anexo = String(req.body?.pdf || '').trim() ? pdfAnexoAceito(String(req.body?.pdf || '')) : null;
       if (anexo && !anexo.ok) {
         res.status(400).json({ error: anexo.error });
@@ -113,7 +114,12 @@ export function registerCevaPortalRoutes(app: Express): void {
         subject: `Proposta Grupo TM SEG — ${proposta.operacao}`,
         text: cartaDaProposta(proposta, operacoes),
         attachments: anexo && anexo.ok ? [{
-          filename: 'Proposta-Grupo-TM-SEG.pdf',
+          filename: nomeAnexoPdf(req.body?.nomePdf, {
+            cliente: '',
+            origem: proposta.origem,
+            destino: proposta.destino,
+            numero: proposta.numero,
+          }),
           content: Buffer.from(anexo.base64, 'base64'),
           contentType: 'application/pdf',
         }] : undefined,

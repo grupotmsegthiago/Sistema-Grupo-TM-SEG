@@ -257,6 +257,8 @@ export type PropostaPortal = {
   /** Km percorrido na rota. A franquia faturada continua em kmFranquia. */
   kmRota?: number | null;
   duracaoMin?: number | null;
+  /** Número visível da cotação. Não substitui o id técnico da linha. */
+  numero?: number | null;
 };
 
 /** Primeiro trecho do endereço, como a pessoa vê na proposta. */
@@ -270,6 +272,12 @@ export function lugarDaProposta(endereco: string): string {
  * O sufixo literal é (2026-) ou (2027-). Sem marca, fica 2026.
  * Não altera o nome de uma linha de preço já gravada.
  */
+/** Rótulos impressos no PDF, sem o ano da vigência. A OS continua com o sufixo. */
+export function rotulosSemAno(origem: string, destino: string): { tabela: string; rota: string } {
+  const trecho = `${lugarDaProposta(origem)} x ${lugarDaProposta(destino)}`;
+  return { tabela: `Tabela: ${trecho}`, rota: `Rota: ${trecho}` };
+}
+
 export function nomesDaVigencia(
   origem: string,
   destino: string,

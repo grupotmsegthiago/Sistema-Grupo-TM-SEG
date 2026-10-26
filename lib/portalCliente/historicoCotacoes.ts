@@ -8,6 +8,7 @@ import {
   type VersaoTabelaRegional,
 } from '../precificacao/tabela2027';
 import type { PropostaPortal } from './cotacao';
+import { cidadeUfTraco } from './rotaCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
 export const TAMANHO_PAGINA_HISTORICO = 10;
@@ -29,6 +30,7 @@ export type SnapshotCotacaoPortal = {
   acordada: boolean;
   operacao: string;
   vigencia: VersaoTabelaRegional;
+  numero: number | null;
 };
 
 export type LinhaHistoricoCotacao = CotacaoPrazo & {
@@ -66,6 +68,7 @@ export type PedidoRegistroCotacao = {
   operacao?: unknown;
   usouMinimo?: unknown;
   vigencia?: unknown;
+  numero?: unknown;
 };
 
 function numero(valor: unknown): number {
@@ -113,11 +116,92 @@ export function dataLongaCotacao(iso: string | null | undefined): string {
   });
 }
 
-export function nomePdfCotacao(cliente: string, id: string): string {
-  const palavra = String(cliente || 'Cliente').trim().split(/\s+/)[0] || 'Cliente';
-  const limpa = palavra.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]/g, '') || 'Cliente';
-  const sufixo = String(id || 'sem-id').replace(/[^A-Za-z0-9-]/g, '').slice(0, 12) || 'sem-id';
-  return `Cotacao-${limpa}-${sufixo}.pdf`;
+function limparTrechoArquivo(valor: string, limite: number): string {
+  return valor.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limite);
+}
+
+/** Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf */
+export function nomePdfCotacao(entrada: {
+  cliente: string;
+  origem: string;
+  destino: string;
+  numero?: number | string | null;
+}): string {
+  const cliente = limparTrechoArquivo(String(entrada.cliente || ''), 80) || 'Cliente';
+  const origem = cidadeUfTraco(entrada.origem);
+  const destino = cidadeUfTraco(entrada.destino);
+  const bruto = Number(entrada.numero);
+  const numero = Number.isInteger(bruto) && bruto > 0 ? String(bruto) : '';
+  const base = `Cotação ${cliente} - ${origem} x ${destino}`;
+  const nome = numero ? `${base} - ${numero}.pdf` : `${base}.pdf`;
+  return nome.length <= 180 ? nome : `${nome.slice(0, 176).trimEnd()}.pdf`;
+}
+
+/** O anexo usa o nome enviado pela tela quando ele segue o padrão. Senão monta de novo. */
+export function nomeAnexoPdf(
+  pedido: unknown,
+  reserva: { cliente?: string | null; origem?: string | null; destino?: string | null; numero?: unknown },
+): string {
+  const nome = String(pedido || '').trim();
+  if (nome.startsWith('Cotação ') && nome.endsWith('.pdf') && nome.length <= 180 && !/[\\/:*?"<>|]/.test(nome)) return nome;
+  return nomePdfCotacao({
+    cliente: String(reserva.cliente || 'Cliente'),
+    origem: String(reserva.origem || ''),
+    destino: String(reserva.destino || ''),
+    numero: numeroInformado(reserva.numero),
+  });
+}
+
+export function numeroInformado(valor: unknown): number | null {
+  const n = Number(valor);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+
+export function numeroNoSnapshot(bruto: string | null | undefined): number | null {
+  if (!bruto) return null;
+  try {
+    const dados = JSON.parse(bruto) as { numero?: unknown };
+    return numeroInformado(dados?.numero);
+  } catch {
+    return null;
+  }
+}
+
+export function numerosNaPagina(linhas: Array<{ id?: unknown; contract_details?: unknown }>): number[] {
+  const lista: number[] = [];
+  for (const linha of linhas) {
+    const gravado = numeroNoSnapshot(linha.contract_details == null ? null : String(linha.contract_details));
+    if (gravado) lista.push(gravado);
+    const id = String(linha.id || '');
+    if (/^\d+$/.test(id)) lista.push(Number(id));
+  }
+  return lista;
+}
+
+export function proximoNumeroCotacao(usados: Array<number | null | undefined>): number {
+  let maior = 0;
+  for (const item of usados) {
+    const n = Number(item);
+    if (Number.isInteger(n) && n > maior) maior = n;
+  }
+  return maior + 1;
+}
+
+/** Lê as páginas até o fim. Se a leitura falhar ou não fechar, não inventa o número. */
+export async function reservarNumeroCotacao(
+  ler: (inicio: number, fim: number) => Promise<{ linhas: Array<{ id?: unknown; contract_details?: unknown }> } | null>,
+): Promise<number | null> {
+  const usados: number[] = [];
+  const tamanho = 200;
+  for (let pagina = 0; pagina < 50; pagina += 1) {
+    const inicio = pagina * tamanho;
+    const lote = await ler(inicio, inicio + tamanho - 1);
+    if (!lote) return null;
+    usados.push(...numerosNaPagina(lote.linhas));
+    if (lote.linhas.length < tamanho) return proximoNumeroCotacao(usados);
+  }
+  return null;
 }
 
 export function diasRestantesCotacao(cotacao: CotacaoPrazo, agora = new Date()): number {
@@ -190,6 +274,7 @@ export function montarSnapshot(entrada: {
   acordada?: boolean;
   operacao?: string;
   vigencia?: VersaoTabelaRegional | null;
+  numero?: number | null;
 }): SnapshotCotacaoPortal {
   return {
     kind: KIND_PORTAL_COTACAO,
@@ -206,6 +291,7 @@ export function montarSnapshot(entrada: {
     acordada: Boolean(entrada.acordada),
     operacao: texto(entrada.operacao, 180),
     vigencia: entrada.vigencia === '2027' ? '2027' : '2026',
+    numero: numeroInformado(entrada.numero),
   };
 }
 
@@ -228,6 +314,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       acordada: dados.acordada,
       operacao: dados.operacao,
       vigencia: vigenciaInformada(dados.vigencia),
+      numero: numeroInformado(dados.numero),
     });
   } catch {
     return null;
@@ -252,6 +339,7 @@ export function propostaDoHistorico(linha: Pick<LinhaHistoricoCotacao, 'origin' 
       vigencia: salvo.vigencia,
       kmRota: numero(linha.total_km),
       duracaoMin: salvo.duracaoMin,
+      numero: salvo.numero,
     };
   }
   return {
@@ -300,6 +388,7 @@ export function pedidoParaRegistro(
     acordada: Boolean(pedido.acordada),
     operacao: texto(pedido.operacao, 180),
     vigencia: vigenciaInformada(pedido.vigencia) || '2026',
+    numero: numeroInformado(pedido.numero),
   });
   return {
     ok: true,

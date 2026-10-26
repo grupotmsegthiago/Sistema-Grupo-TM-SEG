@@ -44,7 +44,7 @@ import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
 import { getRegionFromLocation, numerosDaCotacaoRegional, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
-import { nomePdfCotacao, pedidoParaRegistro } from '../../lib/portalCliente/historicoCotacoes';
+import { nomePdfCotacao, pedidoParaRegistro, reservarNumeroCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
 
@@ -687,11 +687,12 @@ export const CotacaoPortal: React.FC<{
     if (!feito) return;
     void (async () => {
       const print = await colarPrintDoMapa();
+      const numero = await gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
+      if (numero) feito.nova.numero = numero;
       setPrintMapa(print);
       setProposta(feito.nova);
       setPasso(0);
       setEtapa('animando');
-      void gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
     })();
   };
 
@@ -719,7 +720,7 @@ export const CotacaoPortal: React.FC<{
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional) => {
+  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional): Promise<number | null> => {
     setAvisoHistorico('');
     const pedido = {
       origem,
@@ -749,22 +750,30 @@ export const CotacaoPortal: React.FC<{
         }
         let usuario: { name?: string; email?: string } = {};
         try { usuario = JSON.parse(localStorage.getItem('userData') || '{}') as { name?: string; email?: string }; } catch { usuario = {}; }
-        const registro = pedidoParaRegistro(pedido, { id: idCliente, name: clienteNome }, { name: usuario.name || '', email: usuario.email || '' });
+        const numero = await reservarNumeroCotacao(async (inicio, fim) => {
+          const { data, error } = await supabase.from('quotes').select('id, contract_details').order('created_at', { ascending: true }).range(inicio, fim);
+          if (error) return null;
+          return { linhas: Array.isArray(data) ? data : [] };
+        });
+        const registro = pedidoParaRegistro({ ...pedido, numero }, { id: idCliente, name: clienteNome }, { name: usuario.name || '', email: usuario.email || '' });
         if (!registro.ok) throw new Error(registro.error);
         const { error } = await supabase.from('quotes').insert(registro.linha);
         if (error) throw new Error('A proposta abriu, mas o histórico não gravou.');
-      } else {
-        const resposta = await fetch(portal.url('/cotacao'), {
-          method: 'POST',
-          headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ acao: 'registrar', ...pedido }),
-        });
-        const corpo = await resposta.json().catch(() => ({}));
-        if (!resposta.ok) throw new Error(corpo.error || 'A proposta abriu, mas o histórico não gravou.');
+        setRecargaHistorico((atual) => atual + 1);
+        return numero;
       }
+      const resposta = await fetch(portal.url('/cotacao'), {
+        method: 'POST',
+        headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acao: 'registrar', ...pedido }),
+      });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) throw new Error(corpo.error || 'A proposta abriu, mas o histórico não gravou.');
       setRecargaHistorico((atual) => atual + 1);
+      return typeof corpo.numero === 'number' ? corpo.numero : null;
     } catch (falha) {
       setAvisoHistorico(falha instanceof Error ? falha.message : 'A proposta abriu, mas o histórico não gravou.');
+      return null;
     }
   };
 
@@ -783,7 +792,11 @@ export const CotacaoPortal: React.FC<{
       )));
       try {
         const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
-        await abrirPdfDaProposta(artigo, nomePdfCotacao(clienteNome || portal.marca.rotulo, 'preview'), null);
+        await abrirPdfDaProposta(artigo, nomePdfCotacao({
+          cliente: clienteNome || portal.marca.rotulo,
+          origem: previewPdf.origem,
+          destino: previewPdf.destino,
+        }), null);
       } catch (falha) {
         if (ativo) setAvisoHistorico(falha instanceof Error ? falha.message : 'Não foi possível abrir o PDF.');
       } finally {

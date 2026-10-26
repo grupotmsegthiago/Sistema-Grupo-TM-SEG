@@ -15,6 +15,7 @@ import {
   lerSnapshot,
   nomePdfCotacao,
   normalizarLinhaHistorico,
+  reservarNumeroCotacao,
   propostaDoHistorico,
   resumirEndereco,
   rotuloValidade,
@@ -222,6 +223,25 @@ export const HistoricoCotacoes: React.FC<{
     return () => { ativo = false; };
   }, [clienteNome, clientId, pagina, portal, recarga, versaoAtiva]);
 
+  const garantirNumero = async (linha: LinhaHistoricoCotacao): Promise<number | null> => {
+    const salvo = lerSnapshot(linha.contract_details);
+    if (salvo?.numero) return salvo.numero;
+    if (/^\d+$/.test(linha.id)) return Number(linha.id);
+    if (!salvo || !clienteNome) return null;
+    const reservado = await reservarNumeroCotacao(async (inicio, fim) => {
+      const { data, error } = await supabase.from('quotes').select('id, contract_details').order('created_at', { ascending: true }).range(inicio, fim);
+      if (error) return null;
+      return { linhas: Array.isArray(data) ? data : [] };
+    });
+    if (!reservado) return null;
+    const atualizado = { ...salvo, numero: reservado };
+    const { error } = await supabase.from('quotes').update({ contract_details: JSON.stringify(atualizado) }).eq('id', linha.id);
+    if (error) return null;
+    const corpo = JSON.stringify(atualizado);
+    setLinhas((lista) => lista.map((item) => item.id === linha.id ? { ...item, contract_details: corpo } : item));
+    return reservado;
+  };
+
   useEffect(() => {
     if (!captura) return;
     const linha = captura.linha;
@@ -238,6 +258,7 @@ export const HistoricoCotacoes: React.FC<{
           try { janela?.close(); } catch { /* popup bloqueado */ }
           return;
         }
+        const numero = await garantirNumero(linha);
         if (modo === 'email') {
           const { pdfBase64DaProposta } = await import('./abrirPdfCotacao');
           const pdf = await pdfBase64DaProposta(artigo);
@@ -252,7 +273,12 @@ export const HistoricoCotacoes: React.FC<{
           else setToast('Proposta enviada por e-mail.');
         } else {
           const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
-          await abrirPdfDaProposta(artigo, nomePdfCotacao(linha.client_name || 'CEVA', linha.id), janela);
+          await abrirPdfDaProposta(artigo, nomePdfCotacao({
+            cliente: linha.client_name || 'Cliente',
+            origem: linha.origin,
+            destino: linha.destination,
+            numero,
+          }), janela);
         }
       } catch (falha) {
         if (ativo) setErroPdf(falha instanceof Error ? falha.message : 'Não foi possível reabrir o PDF.');

@@ -245,6 +245,16 @@ export function rotuloCidadeUf(endereco: string | null | undefined): string {
   return `${cidade}, ${uf}`;
 }
 
+/** Cidade-UF para o nome do PDF. Salvador, BA vira Salvador-BA. */
+export function cidadeUfTraco(endereco: string | null | undefined): string {
+  const partes = String(endereco || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const cidade = (partes[0] || '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  const uf = extrairUf(String(endereco || ''), '');
+  if (!cidade) return 'Rota';
+  if (!uf || cidade.toUpperCase().includes(uf)) return cidade;
+  return `${cidade}-${uf}`;
+}
+
 /** 1.608 min (26h 48m). Os números vêm da rota calculada, não de um exemplo fixo. */
 export function textoTempoMonitor(minutos: number | null | undefined): string {
   if (minutos == null || !Number.isFinite(minutos) || minutos <= 0) return '—';

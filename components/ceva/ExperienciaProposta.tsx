@@ -11,7 +11,8 @@ import {
   caminhoDaProposta,
   regiaoLegivel,
 } from '../../lib/portalCliente/apresentacao';
-import { nomesDaVigencia, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { rotulosSemAno, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
 import { authFetch } from '../../lib/authFetch';
 import ImagemSegura from '../ImagemSegura';
@@ -52,7 +53,13 @@ export const ExperienciaProposta: React.FC<{
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState('');
   const caminho = caminhoDaProposta(proposta);
-  const nomes = nomesDaVigencia(proposta.origem, proposta.destino, proposta.vigencia);
+  const nomes = rotulosSemAno(proposta.origem, proposta.destino);
+  const arquivoPdf = nomePdfCotacao({
+    cliente: clienteInterno || portal.marca.rotulo,
+    origem: proposta.origem,
+    destino: proposta.destino,
+    numero: proposta.numero,
+  });
   const data = dataTexto || dataDaProposta();
   const visivel = mostrando || modoCaptura;
   const artigoRef = React.useRef<HTMLElement | null>(null);
@@ -72,7 +79,7 @@ export const ExperienciaProposta: React.FC<{
       const artigo = artigoRef.current;
       if (!artigo) throw new Error('A proposta ainda não está pronta para o PDF.');
       const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
-      await abrirPdfDaProposta(artigo, 'Proposta-Grupo-TM-SEG.pdf', janela);
+      await abrirPdfDaProposta(artigo, arquivoPdf, janela);
     } catch (falha) {
       try { janela?.close(); } catch { /* a janela pode já ter fechado */ }
       setAviso(falha instanceof Error ? falha.message : 'Não foi possível gerar o PDF.');
@@ -103,7 +110,7 @@ export const ExperienciaProposta: React.FC<{
         } else {
           const resposta = await authFetch('/api/proposta-escolta/email', {
             method: 'POST',
-            body: JSON.stringify({ para: email, proposta, pdf }),
+            body: JSON.stringify({ para: email, proposta, pdf, nomePdf: arquivoPdf }),
           });
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
@@ -114,7 +121,7 @@ export const ExperienciaProposta: React.FC<{
       const resposta = await fetch(portal.url('/cotacao'), {
         method: 'POST',
         headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao, ...pedido, para: email, pdf }),
+        body: JSON.stringify({ acao, ...pedido, para: email, pdf, nomePdf: arquivoPdf }),
       });
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');

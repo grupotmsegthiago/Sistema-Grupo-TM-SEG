@@ -34,7 +34,17 @@ describe('histórico de cotações do portal', () => {
     assert.equal(textoDistanciaTempo(47.7, 46), '47,7 km | 46 min');
     assert.equal(formatarValorCotacao(690).replace(/\u00a0/g, ' '), 'R$ 690,00');
     assert.equal(textoRegiaoFranquia('SUDESTE SP/RJ', true), 'SUDESTE SP/RJ · franquia mínima');
-    assert.equal(nomePdfCotacao('CEVA LOGISTICS LTDA', 'abc-123'), 'Cotacao-CEVA-abc-123.pdf');
+    assert.equal(nomePdfCotacao({
+      cliente: 'CEVA LOGISTICS LTDA',
+      origem: 'Salvador, BA, Brasil',
+      destino: 'São Paulo, SP, Brasil',
+      numero: 42,
+    }), 'Cotação CEVA LOGISTICS LTDA - Salvador-BA x São Paulo-SP - 42.pdf');
+    assert.equal(nomePdfCotacao({
+      cliente: 'CEVA',
+      origem: 'Santos, SP',
+      destino: 'Diadema, SP',
+    }), 'Cotação CEVA - Santos-SP x Diadema-SP.pdf');
     assert.equal(formatarDataHoraCotacao('2026-10-26T14:41:00.000Z'), '26/10/2026 11:41');
   });
 
@@ -201,8 +211,10 @@ describe('histórico de cotações do portal', () => {
     assert.match(html, /data-proposta-pdf="historico"/);
     assert.match(html, /data-captura-proposta="historico"/);
     assert.match(html, /data-proposta-bloco/);
-    assert.match(html, /Tabela: Salvador x São Paulo \(2027-\)/);
-    assert.match(html, /Rota: Salvador x São Paulo \(2027-\)/);
+    assert.match(html, /Tabela: Salvador x São Paulo/);
+    assert.match(html, /Rota: Salvador x São Paulo/);
+    assert.doesNotMatch(html, /\(2027-\)/);
+    assert.doesNotMatch(html, /\(2026-\)/);
     assert.match(html, /1\.986 km/);
     assert.match(html, /1609 min/);
     assert.ok(html.split('data-proposta-bloco').length - 1 >= 6);

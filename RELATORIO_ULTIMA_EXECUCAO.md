@@ -2,7 +2,9 @@
 
 # Próxima Execução Proposta
 
-Publicado nesta entrega, em 26/10/2026, no projeto sistema-grupo-tm-seg, depois de "Fluxo aprovado, pode executar" e do pedido de publicar. O Ver PDF do histórico espera o artigo, as fontes e as imagens, traz a proposta para dentro da janela só na foto e usa o mesmo `desenharPdf` do Salvar em PDF: uma imagem do artigo, cortada entre faixas, sem partir bloco. O mapa espera o idle e centraliza A e B. A proposta e a OS nascida dela levam o sufixo `(2026-)` ou `(2027-)`. A linha de preço já gravada não muda de nome. O motor da OS não mudou.
+Executado em 26/10/2026 a partir do pedido direto de mudar o nome do PDF. Ao salvar, o arquivo fica `Cotação Cliente - Cidade-UF x Cidade-UF - número.pdf`. O texto da folha deixa de mostrar `(2026-)` e `(2027-)`. Cada cotação nova recebe um número no snapshot que já existe. A OS continua gravando o sufixo. Ainda não foi publicado. O motor da OS não mudou.
+
+Publicado na entrega anterior, em 26/10/2026, no projeto sistema-grupo-tm-seg, depois de "Fluxo aprovado, pode executar" e do pedido de publicar. O Ver PDF do histórico espera o artigo, as fontes e as imagens, traz a proposta para dentro da janela só na foto e usa o mesmo `desenharPdf` do Salvar em PDF: uma imagem do artigo, cortada entre faixas, sem partir bloco. O mapa espera o idle e centraliza A e B. A OS nascida da cotação leva o sufixo `(2026-)` ou `(2027-)`. A folha do PDF, a partir do pedido seguinte, não imprime esse ano. A linha de preço já gravada não muda de nome. O motor da OS não mudou.
 
 Publicado na entrega anterior, no projeto sistema-grupo-tm-seg: Editar e Remover na lista de pessoas do portal, o botão Redefinir senha com o texto de usuário novo, e o print do mapa na proposta. A branch da tarifa duplicada do portal não entrou.
 
