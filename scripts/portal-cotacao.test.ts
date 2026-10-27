@@ -367,8 +367,11 @@ test('a Tabela 2027 do cliente vence a linha antiga e a 2026 manual não lê a 2
     lista[1],
   ], '2027'), 'NORDESTE');
   assert.match(consultaDoCliente('CEVA LOGISTICS LTDA'), /%CEVA LOGIST%/);
-  const cotacoes = readFileSync(new URL('../components/QuoteList.tsx', import.meta.url), 'utf8');
-  assert.match(cotacoes, /useState<VersaoTabelaRegional>\('2027'\)/);
+  const telaCotacao = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
+  const listaCotacoes = readFileSync(new URL('../components/QuoteList.tsx', import.meta.url), 'utf8');
+  assert.match(telaCotacao, /const versaoAtiva = versao === '2026' \? '2026' : '2027'/);
+  assert.doesNotMatch(listaCotacoes, /SeletorVigencia/);
+  assert.doesNotMatch(listaCotacoes, /useState<VersaoTabelaRegional>/);
 });
 
 test('rota já cadastrada devolve a tabela acordada', () => {

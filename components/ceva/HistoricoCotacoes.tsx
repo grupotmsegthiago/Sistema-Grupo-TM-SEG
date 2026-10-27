@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Copy, FileDown, Link2, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { authFetch } from '../../lib/authFetch';
-import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
+import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel } from '../../lib/precificacao/tabela2027';
 import { COPIA_FIXA_COTACAO, cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
 import { nomesDaVigencia } from '../../lib/portalCliente/cotacao';
 import { cartaDaProposta } from '../../lib/portalCliente/apresentacao';
@@ -25,10 +25,8 @@ import {
   resumirEndereco,
   rotuloValidade,
   textoRegiaoFranquia,
-  vigenciaDaCotacao,
   type LinhaHistoricoCotacao,
 } from '../../lib/portalCliente/historicoCotacoes';
-import { SeletorVigencia } from '../precificacao/SeletorVigencia';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { cenaDaProposta } from './ClientTruckVisual';
 import { usePortalCliente } from './portalMarca';
@@ -215,13 +213,9 @@ export const HistoricoCotacoes: React.FC<{
   clientId?: string | number | null;
   recarga: number;
   aviso?: string;
-  versao?: VersaoTabelaRegional;
-  onVersao?: (versao: VersaoTabelaRegional) => void;
   onEditar?: (edicao: EdicaoCotacao) => void;
-}> = ({ clienteNome, clientId, recarga, aviso, versao, onVersao, onEditar }) => {
+}> = ({ clienteNome, clientId, recarga, aviso, onEditar }) => {
   const portal = usePortalCliente();
-  const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
-  const versaoAtiva = versao ?? versaoLocal;
   const [linhas, setLinhas] = useState<LinhaHistoricoCotacao[]>([]);
   const [pagina, setPagina] = useState(0);
   const [temMais, setTemMais] = useState(false);
@@ -254,22 +248,6 @@ export const HistoricoCotacoes: React.FC<{
     if (!sessao) return { nome: '', email: '', perfil: '', portalCliente: portal.marca.rotulo };
     return { nome: sessao.user.name, email: sessao.user.email, perfil: sessao.user.perfil, portalCliente: portal.marca.rotulo };
   }, [clienteNome, portal]);
-  const versaoVista = useRef(versaoAtiva);
-
-  const trocarVersao = (proxima: VersaoTabelaRegional) => {
-    setLinhas([]);
-    setPagina(0);
-    if (onVersao) onVersao(proxima);
-    else setVersaoLocal(proxima);
-  };
-
-  useEffect(() => {
-    if (versaoVista.current === versaoAtiva) return;
-    versaoVista.current = versaoAtiva;
-    setLinhas([]);
-    setPagina(0);
-  }, [versaoAtiva]);
-
   useEffect(() => {
     let ativo = true;
     setLinhas([]);
@@ -278,7 +256,7 @@ export const HistoricoCotacoes: React.FC<{
     const ler = async () => {
       try {
         if (!clienteNome) {
-          const resposta = await fetch(portal.url(`/cotacao?lista=historico&pagina=${pagina}&vigencia=${versaoAtiva}`), { headers: portal.cabecalhos() });
+          const resposta = await fetch(portal.url(`/cotacao?lista=historico&pagina=${pagina}`), { headers: portal.cabecalhos() });
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível ler o histórico.');
           if (!ativo) return;
@@ -302,7 +280,7 @@ export const HistoricoCotacoes: React.FC<{
         if (!ativo) return;
         const daVigencia = ((data || []) as Record<string, unknown>[])
           .map((item) => normalizarLinhaHistorico(item))
-          .filter((item) => vigenciaDaCotacao(item) === versaoAtiva && !cotacaoExcluida(item));
+          .filter((item) => !cotacaoExcluida(item));
         setLinhas(daVigencia.slice(inicio, inicio + TAMANHO_PAGINA_HISTORICO));
         setTemMais(daVigencia.length > inicio + TAMANHO_PAGINA_HISTORICO);
       } catch (falha) {
@@ -316,7 +294,7 @@ export const HistoricoCotacoes: React.FC<{
     };
     void ler();
     return () => { ativo = false; };
-  }, [clienteNome, clientId, pagina, portal, recarga, versaoAtiva]);
+  }, [clienteNome, clientId, pagina, portal, recarga]);
 
   const garantirNumero = async (linha: LinhaHistoricoCotacao): Promise<number | null> => {
     const salvo = lerSnapshot(linha.contract_details);
@@ -531,9 +509,8 @@ export const HistoricoCotacoes: React.FC<{
           <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Cotações</p>
           <h2 className="mt-1 text-lg font-black text-slate-900">Histórico de Cotações Recentes</h2>
         </div>
-        <SeletorVigencia versao={versaoAtiva} onChange={trocarVersao} testId="seletor-vigencia-historico" />
       </div>
-      <p className="mt-1 text-xs text-slate-500">As 10 mais recentes da Tabela {versaoAtiva}. A validade é de {PRAZO_COTACAO_DIAS} dias.</p>
+      <p className="mt-1 text-xs text-slate-500">As 10 mais recentes. A validade é de {PRAZO_COTACAO_DIAS} dias.</p>
       {toast && <p className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-testid="toast-cotacao">{toast}</p>}
       {(aviso || erro || erroPdf) && (
         <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">{erroPdf || aviso || erro}</p>
@@ -541,7 +518,7 @@ export const HistoricoCotacoes: React.FC<{
       {carregando && (
         <p className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-500"><Loader2 className="animate-spin" size={16} /> Lendo cotações…</p>
       )}
-      {!carregando && linhas.length === 0 && <div className="mt-4"><HistoricoVazio texto={`Nenhuma cotação da Tabela ${versaoAtiva} deste cliente.`} /></div>}
+      {!carregando && linhas.length === 0 && <div className="mt-4"><HistoricoVazio /></div>}
       {!carregando && linhas.length > 0 && (
         <div className="mt-4 max-h-[420px] overflow-auto rounded-2xl border border-slate-100">
           <table className="min-w-[1180px] w-full text-left text-xs text-slate-700">

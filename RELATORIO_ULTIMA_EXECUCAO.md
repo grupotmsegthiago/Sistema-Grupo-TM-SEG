@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. Os botões Tabela 2026 e Tabela 2027 saíram da cotação e da lista. Gerar proposta abre a tela, limpa origem e destino e não grava ao fechar. O botão Salvar cotação grava no histórico. Ainda não foi publicado. O motor da OS não mudou.
+
 Publicado nesta entrega, em 26/10/2026, no projeto sistema-grupo-tm-seg. A coluna Distância / Tempo do histórico mostra o km faturado e as horas salvos na cotação. Na cotação 50 isso é 943 km e 24 h. Região, tarifa e total continuam os gravados (SUDESTE, R$ 6,60, R$ 9.583,80). A tela aberta e o tempo do Google não reescrevem a linha. O link público devolve o mesmo snapshot. O motor da OS não mudou.
 
 Executado em 26/10/2026. O link da cotação 49 passa a mostrar a faixa da origem, com o mapa inteiro e a carreta no centro. O endereço já emitido continua o mesmo por 10 dias. O motor da OS não mudou.

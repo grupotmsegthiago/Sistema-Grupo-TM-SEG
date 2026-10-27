@@ -225,7 +225,7 @@ describe('gestão da cotação', () => {
     assert.match(tela, /esperarMapaParado/);
     assert.match(tela, /left: 300/);
     assert.match(historico, /data-proposta-pdf="historico"/);
-    assert.match(historico, /printMapa=\{mapaCaptura\}/);
+    assert.match(historico, /cenaDaProposta\(linhaCaptura\.client_name \|\| clienteNome \|\| '', mapaCaptura\)/);
     assert.match(tela, /data-fora-pdf="painel"/);
     assert.match(historico, /nomeLinhaVigencia/);
     assert.match(historico, /esperarPropostaHistorico/);
@@ -237,6 +237,17 @@ describe('gestão da cotação', () => {
     assert.match(pdf, /\[data-fora-pdf\]/);
     assert.doesNotMatch(pdf, /while \(restante > 0\)/);
     assert.doesNotMatch(pdf, /financialUtils/);
+    assert.match(tela, /data-testid="salvar-cotacao"/);
+    assert.match(tela, /data-testid="gerar-proposta"/);
+    assert.doesNotMatch(historico, /SeletorVigencia/);
+    assert.match(proposta, /salvar-cotacao-proposta/);
+    assert.match(proposta, /Salvar essa proposta em nosso banco de dados/);
+    const corpoGerar = tela.slice(tela.indexOf('const gerar = () => {'), tela.indexOf('const salvarCotacaoAtual'));
+    assert.match(corpoGerar, /setOrigem\(''\)/);
+    assert.match(corpoGerar, /setDestino\(''\)/);
+    assert.doesNotMatch(corpoGerar, /gravarNoHistorico/);
+    const fechar = tela.slice(tela.indexOf('const fecharProposta'), tela.indexOf('const preverPdf'));
+    assert.doesNotMatch(fechar, /gravarNoHistorico/);
     const vercel = JSON.parse(readFileSync(new URL('../vercel.json', import.meta.url), 'utf8')) as { functions: Record<string, unknown> };
     assert.equal(Object.keys(vercel.functions).length, 50);
   });

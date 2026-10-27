@@ -12,9 +12,7 @@ import {
   resultadoFromQuoteItems,
 } from '../lib/comercial/tabelaPrecosRegionais';
 import { checkAndExpireQuotations } from '../lib/precificacao/expirarCotacoes';
-import { cotacaoSelecionavel, cotacaoVencida, patchExpiracaoCotacao, type VersaoTabelaRegional } from '../lib/precificacao/tabela2027';
-import { vigenciaDaCotacao } from '../lib/portalCliente/historicoCotacoes';
-import { SeletorVigencia } from './precificacao/SeletorVigencia';
+import { cotacaoSelecionavel, cotacaoVencida, patchExpiracaoCotacao } from '../lib/precificacao/tabela2027';
 
 interface Props {
   onAdd: () => void;
@@ -22,8 +20,6 @@ interface Props {
   clientName?: string;
   clientId?: string | number | null;
   embedded?: boolean;
-  versao?: VersaoTabelaRegional;
-  onVersao?: (versao: VersaoTabelaRegional) => void;
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -31,7 +27,7 @@ const formatCurrency = (val: number | null | undefined) => {
     return val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
-const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embedded = false, versao, onVersao }) => {
+const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embedded = false }) => {
   const { showNotification } = useNotification();
   const [searchTerm, setSearchTerm] = useState('');
   const [quotes, setQuotes] = useState<Quote[]>([]);
@@ -41,13 +37,6 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
   const [isDirector, setIsDirector] = useState(false);
   const [isCommercial, setIsCommercial] = useState(false);
   const [canViewValues, setCanViewValues] = useState(false);
-  const [versaoLocal, setVersaoLocal] = useState<VersaoTabelaRegional>('2027');
-  const versaoAtiva = versao ?? versaoLocal;
-  const trocarVersao = (proxima: VersaoTabelaRegional) => {
-    if (onVersao) onVersao(proxima);
-    else setVersaoLocal(proxima);
-  };
-  
   const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
   const [clientMap, setClientMap] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -187,8 +176,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
     }
   };
 
-  const daVigencia = quotes.filter((q) => vigenciaDaCotacao(q) === versaoAtiva);
-  const filtered = daVigencia.filter(q => {
+  const filtered = quotes.filter(q => {
     const clientDisplay = clientMap[q.client_name] || q.client_name;
     return (clientDisplay?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
            (q.origin || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -208,14 +196,13 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
       )}
       {embedded && clientName?.trim() && (
         <div className="rounded-xl border border-gray-200 bg-slate-50 p-4">
-          <CotacaoPortal clienteNome={clientName.trim()} clientId={clientId} versao={versaoAtiva} onVersao={trocarVersao} />
+          <CotacaoPortal clienteNome={clientName.trim()} clientId={clientId} />
         </div>
       )}
       <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${embedded ? 'border-t' : ''}`}>
         <div className="p-5 border-b border-gray-100 bg-gray-50/50">
            <div className="flex flex-wrap items-center gap-3">
-            <SeletorVigencia versao={versaoAtiva} onChange={trocarVersao} testId="seletor-vigencia-cotacoes" />
             <div className="relative max-w-md w-full">
               <input type="text" placeholder="Buscar origem ou destino..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
               <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
@@ -234,7 +221,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {isLoading ? (<tr><td colSpan={5} className="text-center p-4">Carregando...</td></tr>) : 
-                 filtered.length === 0 ? (<tr><td colSpan={5} className="text-center p-4 text-gray-500" data-testid="cotacoes-vigencia-vazia">{quotes.length > 0 ? `Nenhuma cotação da Tabela ${versaoAtiva}.` : 'Nenhuma cotação encontrada na sua carteira.'}</td></tr>) :
+                 filtered.length === 0 ? (<tr><td colSpan={5} className="text-center p-4 text-gray-500" data-testid="cotacoes-vigencia-vazia">{quotes.length > 0 ? 'Nenhuma cotação encontrada nessa busca.' : 'Nenhuma cotação encontrada na sua carteira.'}</td></tr>) :
                  filtered.map((item) => {
                     const selecionavel = cotacaoSelecionavel(item);
                     const expirada = !selecionavel && (cotacaoVencida(item) || String(item.status || '').toLowerCase() === 'expirada' || item.is_active === false);

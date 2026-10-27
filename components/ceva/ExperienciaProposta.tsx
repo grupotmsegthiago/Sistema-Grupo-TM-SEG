@@ -58,7 +58,9 @@ export const ExperienciaProposta: React.FC<{
   somenteLeitura?: boolean;
   validadeTexto?: string;
   idCotacao?: string | null;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao }) => {
+  /** Grava a cotação no histórico. Não grava ao fechar a tela. */
+  onSalvarCotacao?: () => Promise<boolean>;
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao, onSalvarCotacao }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
@@ -369,6 +371,9 @@ export const ExperienciaProposta: React.FC<{
           {!modoCaptura && !somenteLeitura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" disabled={isGenerating} onClick={() => { void salvarPdf(); }} className="h-11 rounded-full bg-[#0c0d10] px-4 text-xs font-semibold text-white disabled:opacity-50">Salvar em PDF</button>
+              {onSalvarCotacao && (
+                <button type="button" disabled={isGenerating || ocupado === 'cotacao' || Boolean(idCotacao)} data-testid="salvar-cotacao-proposta" onClick={() => { void (async () => { setOcupado('cotacao'); setAviso(''); const ok = await onSalvarCotacao(); setOcupado(''); if (ok) setAviso('Cotação salva.'); })(); }} className="h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">{idCotacao ? 'Cotação salva' : 'Salvar cotação'}</button>
+              )}
               {idCotacao && (
                 <button type="button" onClick={() => { void copiarLink(); }} data-testid="link-visualizacao-proposta" className="h-11 rounded-full border border-black/15 px-4 text-xs font-semibold">Link de visualização</button>
               )}

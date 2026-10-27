@@ -273,10 +273,12 @@ function MapaCotacao(props: {
   logo: string | null;
   podeGerar: boolean;
   gerando: boolean;
+  salvando: boolean;
   exigirAceite: boolean;
   aceite: boolean;
   onAceite: (marcado: boolean) => void;
   onGerar: () => void;
+  onSalvar: () => void;
   onPdf: () => void;
 }) {
   const mapa = useRef<google.maps.Map | null>(null);
@@ -469,8 +471,11 @@ function MapaCotacao(props: {
         {props.exigirAceite && (
           <AceiteClienteOs marcado={props.aceite} onChange={props.onAceite} />
         )}
-        <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando || (props.exigirAceite && !props.aceite)} className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
+        <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando || (props.exigirAceite && !props.aceite)} data-testid="gerar-proposta" className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
           <FileText size={16} /> Gerar proposta
+        </button>
+        <button type="button" onClick={props.onSalvar} disabled={!props.podeGerar || props.salvando || props.gerando || (props.exigirAceite && !props.aceite)} data-testid="salvar-cotacao" className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/30 bg-white/15 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+          {props.salvando ? 'Salvando cotação…' : 'Salvar cotação'}
         </button>
         {!props.podeGerar && <p className="mt-2 text-[11px] font-semibold text-slate-300">{props.km == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
         {props.exigirAceite && props.podeGerar && !props.aceite && <p className="mt-2 text-[11px] font-semibold text-slate-300">Marque o aceite para gerar a proposta.</p>}
@@ -493,19 +498,29 @@ function MapaCotacao(props: {
   );
 }
 
+type ContextoGravacao = {
+  origem: string;
+  destino: string;
+  paradas: string[];
+  km: number;
+  duracaoMin: number | null;
+  aceite: boolean;
+};
+
+type RascunhoCotacao = ContextoGravacao & {
+  nova: PropostaPortal;
+  usouMinimo: boolean;
+  vigencia: VersaoTabelaRegional;
+  id: string | null;
+};
+
 export const CotacaoPortal: React.FC<{
   clienteNome?: string;
   clientId?: string | number | null;
   versao?: VersaoTabelaRegional;
-  onVersao?: (versao: VersaoTabelaRegional) => void;
-}> = ({ clienteNome, clientId, versao, onVersao }) => {
+}> = ({ clienteNome, clientId, versao }) => {
   const portal = usePortalCliente();
-  const [versaoInterna, setVersaoInterna] = useState<VersaoTabelaRegional>('2027');
-  const versaoAtiva = versao ?? versaoInterna;
-  const trocarVersao = (proxima: VersaoTabelaRegional) => {
-    if (onVersao) onVersao(proxima);
-    else setVersaoInterna(proxima);
-  };
+  const versaoAtiva = versao === '2026' ? '2026' : '2027';
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [tabelas, setTabelas] = useState<TabelaCotacao[]>([]);
   const [erro, setErro] = useState('');
@@ -536,6 +551,9 @@ export const CotacaoPortal: React.FC<{
   const [isGenerating, setIsGenerating] = useState(false);
   const [idCotacaoAberta, setIdCotacaoAberta] = useState<string | null>(null);
   const [aceiteCliente, setAceiteCliente] = useState(false);
+  const [salvandoCotacao, setSalvandoCotacao] = useState(false);
+  const [avisoSalva, setAvisoSalva] = useState('');
+  const [rascunhoAberto, setRascunhoAberto] = useState<RascunhoCotacao | null>(null);
   const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
@@ -717,20 +735,80 @@ export const CotacaoPortal: React.FC<{
     return foto;
   };
 
+  const contextoAtual = (): ContextoGravacao | null => {
+    if (kmRota == null || kmRota <= 0) return null;
+    return {
+      origem,
+      destino,
+      paradas: paradas.map((item) => item.texto).filter(Boolean),
+      km: kmRota,
+      duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
+      aceite: aceiteCliente,
+    };
+  };
+
   const gerar = () => {
     if (exigirAceite && !aceiteCliente) return;
     const feito = montarAtual();
-    if (!feito) return;
+    const contexto = contextoAtual();
+    if (!feito || !contexto) return;
+    const rascunho: RascunhoCotacao = { ...feito, ...contexto, id: null };
     void (async () => {
       const print = await colarPrintDoMapa();
-      const gravado = await gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia);
-      if (gravado?.numero) feito.nova.numero = gravado.numero;
-      setIdCotacaoAberta(gravado?.id ?? null);
       setPrintMapa(print);
+      setRascunhoAberto(rascunho);
       setProposta(feito.nova);
+      setIdCotacaoAberta(null);
       setPasso(0);
       setEtapa('animando');
+      setAvisoSalva('');
+      setOrigem('');
+      setDestino('');
+      setCoordOrigem(null);
+      setCoordDestino(null);
+      setPlaceOrigem(null);
+      setPlaceDestino(null);
     })();
+  };
+
+  const salvarCotacaoAtual = () => {
+    if (salvandoCotacao || (exigirAceite && !aceiteCliente)) return;
+    const feito = montarAtual();
+    const contexto = contextoAtual();
+    if (!feito || !contexto) {
+      setAvisoSalva('');
+      setAvisoHistorico('Escolha origem, destino e espere a rota para salvar.');
+      return;
+    }
+    setSalvandoCotacao(true);
+    void (async () => {
+      const gravado = await gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia, contexto);
+      setSalvandoCotacao(false);
+      if (gravado) setAvisoSalva('Cotação salva.');
+    })();
+  };
+
+  const salvarRascunhoAberto = async (): Promise<boolean> => {
+    if (!rascunhoAberto || salvandoCotacao) return false;
+    if (rascunhoAberto.id) return true;
+    setSalvandoCotacao(true);
+    const gravado = await gravarNoHistorico(rascunhoAberto.nova, rascunhoAberto.usouMinimo, rascunhoAberto.vigencia, rascunhoAberto);
+    setSalvandoCotacao(false);
+    if (!gravado) return false;
+    const numero = gravado.numero ?? rascunhoAberto.nova.numero;
+    const nova = { ...rascunhoAberto.nova, numero };
+    setRascunhoAberto({ ...rascunhoAberto, id: gravado.id, nova });
+    setProposta(nova);
+    setIdCotacaoAberta(gravado.id);
+    return true;
+  };
+
+  const fecharProposta = () => {
+    setEtapa('parada');
+    setProposta(null);
+    setPasso(0);
+    setIdCotacaoAberta(null);
+    setRascunhoAberto(null);
   };
 
   const preverPdf = () => {
@@ -765,14 +843,14 @@ export const CotacaoPortal: React.FC<{
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional): Promise<{ numero: number | null; id: string | null } | null> => {
+  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional, contexto: ContextoGravacao): Promise<{ numero: number | null; id: string | null } | null> => {
     setAvisoHistorico('');
     const pedido = {
-      origem,
-      destino,
-      paradas: paradas.map((item) => item.texto).filter(Boolean),
-      km: kmRota,
-      duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
+      origem: contexto.origem,
+      destino: contexto.destino,
+      paradas: contexto.paradas,
+      km: contexto.km,
+      duracaoMin: contexto.duracaoMin,
       valor: nova.acionamento,
       horas: nova.horasContadas ?? nova.horasFranquia,
       regiao: nova.regiao,
@@ -786,7 +864,7 @@ export const CotacaoPortal: React.FC<{
       operacao: nova.operacao,
       usouMinimo,
       vigencia,
-      ...(exigirAceite && aceiteCliente ? { aceiteCliente: { texto: TEXTO_ACEITE_OS, em: new Date().toISOString() } } : {}),
+      ...(exigirAceite && contexto.aceite ? { aceiteCliente: { texto: TEXTO_ACEITE_OS, em: new Date().toISOString() } } : {}),
     };
     try {
       if (clienteNome) {
@@ -806,7 +884,7 @@ export const CotacaoPortal: React.FC<{
         const registro = pedidoParaRegistro({ ...pedido, numero }, { id: idCliente, name: clienteNome }, { name: usuario.name || '', email: usuario.email || '' });
         if (!registro.ok) throw new Error(registro.error);
         const { data, error } = await supabase.from('quotes').insert(registro.linha).select('id').single();
-        if (error) throw new Error('A proposta abriu, mas o histórico não gravou.');
+        if (error) throw new Error('A cotação não foi salva.');
         setRecargaHistorico((atual) => atual + 1);
         return { numero, id: data?.id ? String(data.id) : null };
       }
@@ -816,14 +894,14 @@ export const CotacaoPortal: React.FC<{
         body: JSON.stringify({ acao: 'registrar', ...pedido }),
       });
       const corpo = await resposta.json().catch(() => ({}));
-      if (!resposta.ok) throw new Error(corpo.error || 'A proposta abriu, mas o histórico não gravou.');
+      if (!resposta.ok) throw new Error(corpo.error || 'A cotação não foi salva.');
       setRecargaHistorico((atual) => atual + 1);
       return {
         numero: typeof corpo.numero === 'number' ? corpo.numero : null,
         id: typeof corpo.id === 'string' && corpo.id ? corpo.id : null,
       };
     } catch (falha) {
-      setAvisoHistorico(falha instanceof Error ? falha.message : 'A proposta abriu, mas o histórico não gravou.');
+      setAvisoHistorico(falha instanceof Error ? falha.message : 'A cotação não foi salva.');
       return null;
     }
   };
@@ -986,8 +1064,9 @@ export const CotacaoPortal: React.FC<{
           conta={contaAtual}
           ocultarCampos
         />
-        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onPdf={preverPdf} />
-        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} versao={versaoAtiva} onVersao={trocarVersao} onEditar={editarCotacao} />
+        {avisoSalva && <p className="rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-testid="aviso-cotacao-salva">{avisoSalva}</p>}
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} salvando={salvandoCotacao} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onSalvar={salvarCotacaoAtual} onPdf={preverPdf} />
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} onEditar={editarCotacao} />
         {isGenerating && (
           <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">
             <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
@@ -1017,13 +1096,14 @@ export const CotacaoPortal: React.FC<{
           frase={frases[Math.min(passo, frases.length - 1)] || ''}
           mostrando={etapa === 'proposta'}
           proposta={proposta}
-          pedido={{ regiao, origem, destino, paradas: paradas.map((item) => item.texto).filter(Boolean), km: kmRota || 0 }}
+          pedido={{ regiao: rascunhoAberto?.nova.regiao || proposta.regiao, origem: rascunhoAberto?.origem || proposta.origem, destino: rascunhoAberto?.destino || proposta.destino, paradas: rascunhoAberto?.paradas || proposta.paradas, km: rascunhoAberto?.km || proposta.kmRota || 0 }}
           clienteInterno={clienteNome}
           cena={cena}
           printMapa={printMapa}
           operacoes={operacoes}
           idCotacao={idCotacaoAberta}
-          onFechar={() => { setEtapa('parada'); setProposta(null); setPasso(0); setIdCotacaoAberta(null); }}
+          onSalvarCotacao={salvarRascunhoAberto}
+          onFechar={fecharProposta}
         />
       )}
     </section>

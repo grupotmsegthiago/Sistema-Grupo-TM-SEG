@@ -2325,7 +2325,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           />
       )}
       {activeTab === 'routes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientRouteList onAdd={onAddRoute} onEdit={onEditRoute} clientName={formData.name} embedded={true} /></div>}
-      {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} clientId={id} embedded={true} versao={tabelaVigencia} onVersao={setTabelaVigencia} /></div>}
+      {activeTab === 'quotes' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><QuoteList onAdd={onAddQuote} onEdit={onEditQuote} clientName={formData.name} clientId={id} embedded={true} /></div>}
     </div>
   );
 };

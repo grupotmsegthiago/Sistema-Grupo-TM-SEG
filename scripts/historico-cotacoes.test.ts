@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { PRAZO_COTACAO_MS, cotacaoSelecionavel } from '../lib/precificacao/tabela2027';
@@ -494,6 +495,49 @@ describe('histórico de cotações do portal', () => {
     assert.match(tela, /data-proposta-mapa="1"/);
     assert.match(tela, /Mapa da rota na tela/);
     assert.match(tela, /PDF completo da proposta vai em anexo/);
+    assert.doesNotMatch(tela, /salvar-cotacao-proposta/);
+  });
+
+  it('a proposta abre com Salvar cotação e o fechamento não grava', () => {
+    const base = {
+      frase: '',
+      mostrando: true,
+      proposta: {
+        acordada: false,
+        regiao: 'SUDESTE',
+        origem: 'Salvador, BA',
+        destino: 'São Paulo, SP',
+        paradas: [],
+        acionamento: 9583.8,
+        kmFranquia: 943,
+        horasFranquia: 24,
+        kmExtra: 6.6,
+        horaExtra: 160,
+        operacao: 'SUDESTE',
+        vigencia: '2027' as const,
+        kmFaturado: 943,
+        horasContadas: 24,
+      },
+      pedido: { regiao: 'SUDESTE', origem: 'Salvador, BA', destino: 'São Paulo, SP', paradas: [], km: 942.5 },
+      onFechar: () => undefined,
+      onSalvarCotacao: async () => true,
+    };
+    const aberta = renderToStaticMarkup(React.createElement(ExperienciaProposta, base));
+    assert.match(aberta, /salvar-cotacao-proposta/);
+    assert.match(aberta, /Salvar cotação/);
+    assert.match(aberta, /Salvar essa proposta em nosso banco de dados/);
+    assert.match(aberta, /aria-label="Fechar"/);
+    const salva = renderToStaticMarkup(React.createElement(ExperienciaProposta, { ...base, idCotacao: 'q50' }));
+    assert.match(salva, /Cotação salva/);
+    const portal = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
+    const historico = readFileSync(new URL('../components/ceva/HistoricoCotacoes.tsx', import.meta.url), 'utf8');
+    assert.doesNotMatch(historico, /SeletorVigencia/);
+    assert.doesNotMatch(historico, /TABELA 2026/);
+    assert.match(portal, /data-testid="salvar-cotacao"/);
+    const gerar = portal.slice(portal.indexOf('const gerar = () => {'), portal.indexOf('const salvarCotacaoAtual'));
+    assert.doesNotMatch(gerar, /gravarNoHistorico/);
+    assert.match(gerar, /setOrigem\(''\)/);
+    assert.match(gerar, /setDestino\(''\)/);
   });
 
   it('o usuário do cliente marca o aceite antes de gerar a proposta', () => {
