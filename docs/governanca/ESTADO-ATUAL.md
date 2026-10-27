@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-27. A CEVA usa o caminhão branco sem fundo na proposta e no mapa. A IA só tirou o fundo dessa foto. A página não desenha imagem nova. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-27. Publicado nesta entrega, no projeto sistema-grupo-tm-seg, a partir de `cursor/proposta-premium-ia-f513`. A proposta pública abre o cartaz escuro, o PDF baixa essa tela numa folha só e a CEVA usa o caminhão branco sem fundo. A página não desenha imagem nova. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A proposta de 980 px ganhou cartões com relevo, luz e o mapa inclinado. Os valores continuam os da cotação. Ainda não foi publicado. O motor da OS não mudou.
 
@@ -76,7 +76,7 @@ Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-s
 | --- | --- |
 | Última fase concluída | Escolha da tabela pelo histórico aprovado, na `main` |
 | Próxima etapa | Gestor Fiscal, etapa 1. Correção da Fase 2 não autorizada |
-| Produção agora | Publicação de 26/10/2026 na `main`, projeto `sistema-grupo-tm-seg`. O PDF único da cotação e o Ver PDF do histórico entram nesta publicação (código em `6b817d6c`): a mesma folha do Salvar em PDF, mapa centrado em A e B, sufixo `(2026-)` ou `(2027-)`. Continuam Editar e Remover, Redefinir senha e o print do mapa, a partir de `03484557`. A tarifa duplicada do portal não entrou. O motor da OS não mudou |
+| Produção agora | Publicação de 27/10/2026 na `main`, projeto `sistema-grupo-tm-seg`, a partir de `cursor/proposta-premium-ia-f513`. A proposta pública é o cartaz escuro, o PDF baixa essa tela numa folha só e a CEVA usa o caminhão branco sem fundo. Continuam o PDF único da cotação, o Ver PDF do histórico, Editar e Remover, Redefinir senha e o print do mapa. A tarifa duplicada do portal não entrou. O motor da OS não mudou |
 | `origin/dev` | avançada junto com esta publicação, sem commit exclusivo |
 | Working tree na abertura da Fase 1 | limpa, em cima do baseline `7a009601` |
 | Supabase do app | `ajhmmjuewdsukecaimik`. OS = `missions` |

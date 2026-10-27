@@ -2,7 +2,7 @@
 
 # Próxima Execução Proposta
 
-Executado em 27/10/2026. A proposta da CEVA passou a mostrar o caminhão branco enviado, sem o céu e sem a estrada. O mesmo recorte entra no mapa. Não virou vetor para não estragar as letras da CEVA. Ainda não foi publicado. O motor da OS não mudou.
+Publicado nesta entrega, em 27/10/2026, no projeto sistema-grupo-tm-seg, a partir de `cursor/proposta-premium-ia-f513`. A proposta pública abre o cartaz escuro. Baixar Proposta em PDF grava essa tela numa folha só. A CEVA usa o caminhão branco sem fundo, também no mapa. A página não desenha imagem nova. O motor da OS não mudou.
 
 Executado em 26/10/2026. Os cartões da proposta ganharam relevo, a capa ficou com moldura e o mapa inclinou na tela. O PDF achata só a inclinação para a foto não sair vazia. Os valores da cotação não mudaram. Ainda não foi publicado. O motor da OS não mudou.
 
