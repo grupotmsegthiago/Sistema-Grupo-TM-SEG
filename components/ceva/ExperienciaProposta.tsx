@@ -9,7 +9,7 @@ import { numerosDaTela, rotulosSemAno, type PropostaPortal } from '../../lib/por
 import { COPIA_FIXA_COTACAO } from '../../lib/portalCliente/gestaoCotacao';
 import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
-import type { ImagensPremium } from '../../lib/portalCliente/propostaPremium';
+import { nomeArquivoPdfProposta, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import { authFetch } from '../../lib/authFetch';
 import { PropostaPremium } from './PropostaPremium';
 import { usePortalCliente } from './portalMarca';
@@ -44,8 +44,8 @@ export const ExperienciaProposta: React.FC<{
   somenteLeitura?: boolean;
   validadeTexto?: string;
   idCotacao?: string | null;
-  /** Grava a cotação no histórico. Não grava ao fechar a tela. */
-  onSalvarCotacao?: () => Promise<boolean>;
+  /** Grava a cotação no histórico. Não grava ao fechar a tela. Devolve o id quando grava. */
+  onSalvarCotacao?: () => Promise<boolean | string | null>;
   /** Cena ilustrativa. Sem imagem, a proposta usa a carreta já publicada. */
   hero?: string | null;
   pecas?: Partial<ImagensPremium> | null;
@@ -123,14 +123,46 @@ export const ExperienciaProposta: React.FC<{
     }
   };
 
+  const baixarPdf = () => {
+    const anterior = document.title;
+    document.title = nomeArquivoPdfProposta(idCotacao, clienteInterno || portal.marca.rotulo);
+    const voltar = () => {
+      document.title = anterior;
+      window.removeEventListener('afterprint', voltar);
+    };
+    window.addEventListener('afterprint', voltar);
+    window.print();
+  };
+
+  const garantirLink = async (): Promise<string | null> => {
+    let id = idCotacao || null;
+    if (!id && onSalvarCotacao) {
+      const salvo = await onSalvarCotacao();
+      if (typeof salvo === 'string' && salvo) id = salvo;
+    }
+    if (!id) return null;
+    try {
+      const init = { method: 'POST' };
+      const resposta = clienteInterno
+        ? await authFetch(`/api/cotacoes/${id}/link-visualizacao`, init)
+        : await fetch(`/api/cotacoes/${id}/link-visualizacao`, { ...init, headers: portal.cabecalhos() });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok || typeof corpo.caminho !== 'string') return null;
+      return `${window.location.origin}${corpo.caminho}`;
+    } catch {
+      return null;
+    }
+  };
+
   const postar = async (acao: 'salvar' | 'email') => {
     if (isGenerating) return;
     setOcupado(acao);
     if (acao === 'email') setIsGenerating(true);
     setAviso('');
     try {
-      const pdf = acao === 'email' ? await pdfDaTela() : undefined;
-      if (acao === 'email' && !pdf) throw new Error('O PDF completo da proposta não ficou pronto.');
+      const link = acao === 'email' ? await garantirLink() : null;
+      const pdf = acao === 'email' && !link ? await pdfDaTela() : undefined;
+      if (acao === 'email' && !pdf && !link) throw new Error('Salve a cotação para abrir o link da proposta.');
       if (clienteInterno) {
         if (acao === 'salvar') {
           const { supabase } = await import('../../lib/supabase');
@@ -148,7 +180,7 @@ export const ExperienciaProposta: React.FC<{
         } else {
           const resposta = await authFetch('/api/proposta-escolta/email', {
             method: 'POST',
-            body: JSON.stringify({ para: email, proposta, pdf, nomePdf: arquivoPdf }),
+            body: JSON.stringify({ para: email, proposta, pdf, nomePdf: arquivoPdf, link }),
           });
           const corpo = await resposta.json().catch(() => ({}));
           if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
@@ -159,7 +191,7 @@ export const ExperienciaProposta: React.FC<{
       const resposta = await fetch(portal.url('/cotacao'), {
         method: 'POST',
         headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ acao, ...pedido, para: email, pdf, nomePdf: arquivoPdf }),
+        body: JSON.stringify({ acao, ...pedido, para: email, pdf, nomePdf: arquivoPdf, link }),
       });
       const corpo = await resposta.json().catch(() => ({}));
       if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível concluir.');
@@ -196,6 +228,25 @@ export const ExperienciaProposta: React.FC<{
         }
         [data-proposta-pdf], [data-proposta-pdf] * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         [data-proposta-bloco] { break-inside: avoid; page-break-inside: avoid; }
+        @page { margin: 0; size: A4 landscape; }
+        @media print {
+          html, body, [data-proposta-pdf] {
+            background: #07080d !important;
+            color: #fff !important;
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          [data-proposta-pdf] {
+            position: static !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+            box-shadow: none !important;
+          }
+          [data-proposta-corpo] { overflow: visible !important; height: auto !important; max-height: none !important; }
+          [data-print-oculto], [data-proposta-acoes] { display: none !important; }
+        }
       `}</style>
       {!visivel && (
         <div className="w-full max-w-xl text-center text-white" style={{ fontFamily: 'Outfit, sans-serif' }}>
@@ -218,9 +269,12 @@ export const ExperienciaProposta: React.FC<{
       {visivel && (
         <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#07080d] text-white' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-[#07080d] text-white' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#07080d] text-white shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
           {somenteLeitura && (
-            <p className="bg-[#0c0d10] px-6 py-3 text-center text-sm text-white" data-testid="aviso-link-proposta">
-              Visualização da proposta{validadeTexto ? `. Válida até ${validadeTexto}` : ''}. Este link não abre o restante do sistema.
-            </p>
+            <div data-print-oculto className="flex flex-wrap items-center justify-center gap-3 bg-[#0c0d10] px-6 py-3 text-center text-sm text-white">
+              <p data-testid="aviso-link-proposta">
+                Visualização da proposta{validadeTexto ? ` • Válida até ${validadeTexto}` : ''} • Este link não abre o restante do sistema.
+              </p>
+              <button type="button" onClick={baixarPdf} data-testid="baixar-proposta-pdf" className="h-10 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white">Baixar Proposta em PDF</button>
+            </div>
           )}
           {!modoCaptura && !somenteLeitura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
           <div data-proposta-corpo data-proposta-bloco className={modoCaptura ? '' : 'min-h-0 flex-1 overflow-auto'}>
@@ -272,7 +326,7 @@ export const ExperienciaProposta: React.FC<{
               </label>
               <button type="submit" disabled={isGenerating || ocupado === 'email'} data-testid="enviar-proposta-email" className="h-11 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white disabled:opacity-50">{isGenerating ? 'Gerando PDF da proposta, aguarde...' : 'Enviar para o e-mail'}</button>
             </form>
-            <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail leva as informações do Grupo TM SEG. O PDF completo da proposta vai em anexo, com a foto do mapa e as condições da rota. Cópia para {COPIA_FIXA_COTACAO} e para quem fez a cotação.</p>
+            <p className="mt-2 text-[11px] text-[#6b6b6b]">O e-mail abre a proposta no link de visualização e traz o resumo da cotação. O PDF só vai em anexo quando o link não puder ser gerado. Cópia para {COPIA_FIXA_COTACAO} e para quem fez a cotação.</p>
             {aviso && <p className="mt-3 text-sm font-medium">{aviso}</p>}
             {linkAviso && <p className="mt-2 text-sm font-medium" data-testid="aviso-link-copiado">{linkAviso}</p>}
           </footer>}

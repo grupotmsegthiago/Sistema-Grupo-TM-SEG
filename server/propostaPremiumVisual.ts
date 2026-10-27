@@ -3,15 +3,10 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import sharp from 'sharp';
-import { gerarImagemIlustrativa, servicoDeImagemDisponivel } from './propostaImagemIa.js';
 import {
-  LIMITE_MENSAL_PADRAO_USD,
   PECAS_PREMIUM,
   arquivoDaPeca,
   chaveDaCena,
-  pedidoDaPeca,
-  podeGerarImagem,
   rotuloDeContagem,
   type ImagensPremium,
   type PecaPremium,
@@ -30,28 +25,11 @@ export type CenaPremium = {
 
 const memoria = new Map<string, CenaPremium>();
 const voos = new Map<string, Promise<CenaPremium>>();
-const gasto = { mes: '', usd: 0 };
 const indicadoresGuardados: { expira: number; operacoes: string | null; parceiros: string | null } = {
   expira: 0,
   operacoes: null,
   parceiros: null,
 };
-
-function limiteMensal(): number {
-  const bruto = Number(process.env.PROPOSTA_IA_LIMITE_MENSAL_USD || LIMITE_MENSAL_PADRAO_USD);
-  return Number.isFinite(bruto) && bruto > 0 ? bruto : LIMITE_MENSAL_PADRAO_USD;
-}
-
-function reservar(custo: number): boolean {
-  const mes = new Date().toISOString().slice(0, 7);
-  if (gasto.mes !== mes) {
-    gasto.mes = mes;
-    gasto.usd = 0;
-  }
-  if (!podeGerarImagem(gasto.usd, custo, limiteMensal())) return false;
-  gasto.usd += custo;
-  return true;
-}
 
 function vazio(): ImagensPremium {
   return { capa: null, central: null, fiscal: null, escolta: null, acompanhamento: null, guincho: null };
@@ -68,31 +46,11 @@ async function arquivoPronto(publico: string): Promise<string | null> {
   }
 }
 
-async function guardar(publico: string, buffer: Buffer, largura: number): Promise<string | null> {
-  const relativo = publico.replace(/^\//, '');
-  const arquivo = path.join(process.cwd(), 'public', relativo);
-  try {
-    const webp = await sharp(buffer).rotate().resize({ width: largura, withoutEnlargement: true }).webp({ quality: 82 }).toBuffer();
-    await fs.mkdir(path.dirname(arquivo), { recursive: true });
-    await fs.writeFile(arquivo, webp);
-    return publico;
-  } catch (erro) {
-    console.error('[proposta-premium] arquivo', erro instanceof Error ? erro.message : erro);
-    return null;
-  }
-}
-
-async function produzir(cliente: string, peca: PecaPremium): Promise<{ url: string | null; servico: CenaPremium['servico']; custo: number }> {
-  const publicado = arquivoDaPeca(cliente, peca);
+async function produzir(peca: PecaPremium): Promise<{ url: string | null; servico: CenaPremium['servico']; custo: number }> {
+  const publicado = arquivoDaPeca('', peca);
+  if (!publicado) return { url: null, servico: 'arquivo', custo: 0 };
   const pronto = await arquivoPronto(publicado);
-  if (pronto) return { url: pronto, servico: 'arquivo', custo: 0 };
-  if (servicoDeImagemDisponivel() === 'nenhum') return { url: null, servico: 'nenhum', custo: 0 };
-  const reserva = 0.08;
-  if (!reservar(reserva)) return { url: null, servico: 'nenhum', custo: 0 };
-  const gerada = await gerarImagemIlustrativa(pedidoDaPeca(peca), peca === 'capa' ? 'paisagem' : 'cartao');
-  if (!gerada) return { url: null, servico: 'nenhum', custo: 0 };
-  const url = await guardar(publicado, gerada.buffer, peca === 'capa' ? 1600 : 1024);
-  return { url, servico: gerada.servico, custo: gerada.custoUsd };
+  return { url: pronto, servico: 'arquivo', custo: 0 };
 }
 
 async function indicadores(): Promise<{ operacoes: string | null; parceiros: string | null }> {
@@ -125,8 +83,7 @@ async function montar(cliente: string): Promise<CenaPremium> {
   let custo = 0;
   let algumaNova = false;
   for (const peca of PECAS_PREMIUM) {
-    const pecaCliente = peca === 'capa' ? cliente : 'compartilhado';
-    const feita = await produzir(pecaCliente, peca);
+    const feita = await produzir(peca);
     imagens[peca] = feita.url;
     custo += feita.custo;
     if (feita.servico === 'openai' || feita.servico === 'gemini') {

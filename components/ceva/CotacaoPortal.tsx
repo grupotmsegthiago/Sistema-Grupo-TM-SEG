@@ -4,7 +4,7 @@ import { ArrowLeftRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Rout
 import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
 import { authFetch } from '../../lib/authFetch';
 import { logoConhecido, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
-import { heroUtil, imagensSeguras, TEMPO_CENA_MS, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
+import { pecasPublicadas, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import {
   destinoDirections,
   ESTILO_MAPA_COTACAO,
@@ -765,57 +765,46 @@ export const CotacaoPortal: React.FC<{
     const contexto = contextoAtual();
     if (!feito || !contexto) return;
     const rascunho: RascunhoCotacao = { ...feito, ...contexto, id: null };
+    const cliente = (clienteNome || portal.marca.rotulo).slice(0, 120);
     setHeroPremium(null);
-    setPecasPremium(null);
+    setPecasPremium(pecasPublicadas(cliente));
     setMapaLimpo(null);
+    setPrintMapa(null);
+    setRascunhoAberto(rascunho);
+    setProposta(feito.nova);
+    setIdCotacaoAberta(null);
+    setPasso(frases.length);
+    setEsperandoCena(false);
+    setEtapa('proposta');
+    setAvisoSalva('');
+    setOrigem('');
+    setDestino('');
+    setCoordOrigem(null);
+    setCoordDestino(null);
+    setPlaceOrigem(null);
+    setPlaceDestino(null);
     void (async () => {
-      const controle = new AbortController();
-      const relogio = window.setTimeout(() => controle.abort(), TEMPO_CENA_MS);
-      const corpo = JSON.stringify({ cliente: (clienteNome || portal.marca.rotulo).slice(0, 120) });
-      const visual = (clienteNome
-        ? authFetch('/api/proposta-escolta/premium', { method: 'POST', body: corpo, signal: controle.signal })
-        : fetch('/api/proposta-escolta/premium', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo, signal: controle.signal })
-      ).then(async (resposta) => {
-        const dados = await resposta.json().catch(() => ({}));
-        if (!resposta.ok || !dados || typeof dados !== 'object') return null;
-        const registro = dados as { hero?: unknown; imagens?: unknown; operacoes?: unknown; parceiros?: unknown };
-        return {
-          hero: heroUtil(registro.hero),
-          imagens: imagensSeguras(registro.imagens),
-          operacoes: typeof registro.operacoes === 'string' ? registro.operacoes : null,
-          parceiros: typeof registro.parceiros === 'string' ? registro.parceiros : null,
-        };
-      }).catch(() => null);
-      const print = await colarPrintDoMapa();
       if (trajeto) {
         const enviar = (pedido: string) => (clienteNome
           ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: pedido })
           : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: pedido }));
-        void pedirMapaBase64(trajeto, enviar, 'vermelho').then((foto) => {
-          if (foto.startsWith('data:image/')) setMapaLimpo(foto);
-        }).catch(() => undefined);
+        const foto = await pedirMapaBase64(trajeto, enviar, 'vermelho').catch(() => '');
+        if (foto.startsWith('data:image/')) setMapaLimpo(foto);
       }
-      setPrintMapa(print);
-      setRascunhoAberto(rascunho);
-      setProposta(feito.nova);
-      setIdCotacaoAberta(null);
-      setPasso(0);
-      setEsperandoCena(true);
-      setEtapa('animando');
-      setAvisoSalva('');
-      setOrigem('');
-      setDestino('');
-      setCoordOrigem(null);
-      setCoordDestino(null);
-      setPlaceOrigem(null);
-      setPlaceDestino(null);
-      const cenaPronta = await visual;
-      window.clearTimeout(relogio);
-      setHeroPremium(cenaPronta?.hero || null);
-      setPecasPremium(cenaPronta?.imagens || null);
-      setOperacoesRealizadas(cenaPronta?.operacoes || null);
-      setParceirosAtivos(cenaPronta?.parceiros || null);
-      setEsperandoCena(false);
+      const numeros = await (clienteNome
+        ? authFetch('/api/proposta-escolta/indicadores')
+        : fetch('/api/proposta-escolta/indicadores', { headers: portal.cabecalhos() })
+      ).then(async (resposta) => {
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok || !dados || typeof dados !== 'object') return null;
+        const registro = dados as { operacoes?: unknown; parceiros?: unknown };
+        return {
+          operacoes: typeof registro.operacoes === 'string' ? registro.operacoes : null,
+          parceiros: typeof registro.parceiros === 'string' ? registro.parceiros : null,
+        };
+      }).catch(() => null);
+      setOperacoesRealizadas(numeros?.operacoes || null);
+      setParceirosAtivos(numeros?.parceiros || null);
     })();
   };
 
@@ -836,19 +825,19 @@ export const CotacaoPortal: React.FC<{
     })();
   };
 
-  const salvarRascunhoAberto = async (): Promise<boolean> => {
-    if (!rascunhoAberto || salvandoCotacao) return false;
-    if (rascunhoAberto.id) return true;
+  const salvarRascunhoAberto = async (): Promise<string | null> => {
+    if (!rascunhoAberto || salvandoCotacao) return null;
+    if (rascunhoAberto.id) return rascunhoAberto.id;
     setSalvandoCotacao(true);
     const gravado = await gravarNoHistorico(rascunhoAberto.nova, rascunhoAberto.usouMinimo, rascunhoAberto.vigencia, rascunhoAberto);
     setSalvandoCotacao(false);
-    if (!gravado) return false;
+    if (!gravado?.id) return null;
     const numero = gravado.numero ?? rascunhoAberto.nova.numero;
     const nova = { ...rascunhoAberto.nova, numero };
     setRascunhoAberto({ ...rascunhoAberto, id: gravado.id, nova });
     setProposta(nova);
     setIdCotacaoAberta(gravado.id);
-    return true;
+    return gravado.id;
   };
 
   const fecharProposta = () => {

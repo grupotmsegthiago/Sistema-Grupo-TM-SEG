@@ -36,8 +36,27 @@ export type CenaOficial = {
 
 const SEM_TEXTO = 'Não desenhe texto, letra, número, logotipo, placa, mapa legível, preço, pessoa identificável nem marca comercial.';
 
-/** Arquivo novo quando o pedido do serviço muda. A capa e a central já publicadas continuam. */
-const VERSAO_SERVICO = '2';
+/** Fotos já publicadas no site. A capa é o caminhão oficial, sem imagem desenhada. */
+const ARQUIVO_REAL: Record<PecaPremium, string | null> = {
+  capa: null,
+  central: '/proposta-tmseg/about-team-original.webp',
+  fiscal: '/proposta-tmseg/service-fiscal-rota.png',
+  escolta: '/proposta-tmseg/service-escolta.png',
+  acompanhamento: '/proposta-tmseg/service-acompanhamento.png',
+  guincho: '/proposta-tmseg/service-guincho.png',
+};
+
+/** O nome sugerido na impressão. O navegador grava esse título como PDF. */
+export function nomeArquivoPdfProposta(id: string | null | undefined, cliente: string | null | undefined): string {
+  const numero = String(id || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || 'sem-id';
+  const nome = String(cliente || 'Cliente')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48) || 'Cliente';
+  return `Proposta_${numero}_${nome}.pdf`;
+}
 
 /** Arquivo já publicado. Marca desconhecida fica na carreta neutra, sem logotipo inventado. */
 export function cenaOficial(cliente: string): CenaOficial {
@@ -73,10 +92,8 @@ export function chaveDaCena(cliente: string): string {
   return slugVisual(cliente || 'generico');
 }
 
-export function arquivoDaPeca(cliente: string, peca: PecaPremium): string {
-  if (peca === 'capa') return `/propostas-premium/capas/${chaveDaCena(cliente)}.webp`;
-  if (peca === 'central') return `/propostas-premium/compartilhado/${peca}.webp`;
-  return `/propostas-premium/compartilhado/${peca}-${VERSAO_SERVICO}.webp`;
+export function arquivoDaPeca(_cliente: string, peca: PecaPremium): string | null {
+  return ARQUIVO_REAL[peca];
 }
 
 /** 481 minutos aparecem como 8h01min. O número guardado na cotação não muda. */

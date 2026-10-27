@@ -494,7 +494,7 @@ describe('histórico de cotações do portal', () => {
     assert.match(tela, /Enviar para o e-mail/);
     assert.match(tela, /data-proposta-mapa="1"/);
     assert.match(tela, /Mapa da rota na tela/);
-    assert.match(tela, /PDF completo da proposta vai em anexo/);
+    assert.match(tela, /O e-mail abre a proposta no link de visualização/);
     assert.doesNotMatch(tela, /salvar-cotacao-proposta/);
   });
 

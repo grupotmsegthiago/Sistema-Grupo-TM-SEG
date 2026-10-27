@@ -9,12 +9,16 @@ import {
   cenaOficial,
   chaveDaCena,
   heroUtil,
+  nomeArquivoPdfProposta,
+  pecasPublicadas,
   pedidoCenaIlustrativa,
   pedidoDaPeca,
   podeGerarImagem,
   rotuloDeContagem,
   textoDuracaoViagem,
 } from '../lib/portalCliente/propostaPremium';
+import { htmlDaProposta } from '../lib/portalCliente/apresentacao';
+import { urlDoLinkPublico } from '../lib/portalCliente/linkProposta';
 import { percursoUtil } from '../lib/portalCliente/historicoCotacoes';
 import { decodificarPolyline, tituloCidade } from '../lib/portalCliente/rotaCotacao';
 import { urlMapaEstatico } from '../lib/portalCliente/frotaVisual';
@@ -121,13 +125,14 @@ describe('proposta premium', () => {
     assert.doesNotMatch(html, /500\+|50\+/);
     const portal = readFileSync(new URL('../server/cevaPortal.ts', import.meta.url), 'utf8');
     const visual = readFileSync(new URL('../server/propostaPremiumVisual.ts', import.meta.url), 'utf8');
-    assert.match(portal, /\/api\/proposta-escolta\/premium/);
-    assert.match(visual, /pedidoDaPeca\(peca\)/);
-    assert.doesNotMatch(visual, /origem|destino|kmExtra|acionamento|e-mail/);
+    assert.match(portal, /\/api\/proposta-escolta\/indicadores/);
+    assert.doesNotMatch(visual, /gerarImagemIlustrativa|pedidoDaPeca/);
+    assert.doesNotMatch(visual, /kmExtra|acionamento/);
     const tela = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
     const gerar = tela.slice(tela.indexOf('const gerar = () => {'), tela.indexOf('const salvarCotacaoAtual'));
-    assert.match(gerar, /proposta-escolta\/premium/);
-    assert.match(gerar, /TEMPO_CENA_MS/);
+    assert.match(gerar, /pecasPublicadas/);
+    assert.match(gerar, /setEtapa\('proposta'\)/);
+    assert.doesNotMatch(gerar, /proposta-escolta\/premium|TEMPO_CENA_MS|gerarImagem/);
     assert.doesNotMatch(gerar, /gravarNoHistorico/);
     assert.match(tela, /duracaoMin: duracaoSeg != null && duracaoSeg > 0 \? Math\.round\(duracaoSeg \/ 60\) : null/);
     assert.doesNotMatch(tela, /duracaoMin:\s*48/);
@@ -150,5 +155,66 @@ describe('proposta premium', () => {
     const cartaz = readFileSync(new URL('../components/ceva/PropostaPremium.tsx', import.meta.url), 'utf8');
     assert.match(cartaz, /proposta\.duracaoMin/);
     assert.doesNotMatch(cartaz, /48 min|R\$ 690/);
+    const fotos = pecasPublicadas('CEVA LOGISTICS');
+    assert.equal(fotos.fiscal, '/proposta-tmseg/service-fiscal-rota.png');
+    assert.equal(fotos.escolta, '/proposta-tmseg/service-escolta.png');
+    assert.equal(fotos.central, '/proposta-tmseg/about-team-original.webp');
+    assert.equal(fotos.capa, null);
+    assert.equal(nomeArquivoPdfProposta('52', 'CEVA LOGISTICS LTDA'), 'Proposta_52_CEVA_LOGISTICS_LTDA.pdf');
+    const endereco = 'http://127.0.0.1:5000/proposta/v/52/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    assert.equal(urlDoLinkPublico(endereco, 'http://127.0.0.1:5000'), endereco);
+    assert.equal(urlDoLinkPublico('https://evil.example/proposta/v/52/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'http://127.0.0.1:5000'), null);
+    const carta = htmlDaProposta({
+      acordada: false,
+      regiao: 'SUDESTE',
+      origem: 'Serra, ES',
+      destino: 'Rio de Janeiro, RJ',
+      paradas: [],
+      acionamento: 4121.58,
+      kmFranquia: 564.6,
+      horasFranquia: 14,
+      kmExtra: 7.3,
+      horaExtra: 169,
+      operacao: 'SUDESTE',
+    }, null, endereco);
+    assert.match(carta, /Acessar Proposta Comercial/);
+    assert.match(carta, /proposta\/v\/52\//);
+  });
+
+  it('o link público imprime a mesma tela e não desenha imagem', () => {
+    const html = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
+      frase: '',
+      mostrando: true,
+      somenteLeitura: true,
+      idCotacao: '52',
+      validadeTexto: '05/11/2026',
+      proposta: {
+        acordada: false,
+        regiao: 'SUDESTE',
+        origem: 'Serra, ES',
+        destino: 'Rio de Janeiro, RJ',
+        paradas: [],
+        acionamento: 4121.58,
+        kmFranquia: 564.6,
+        horasFranquia: 14,
+        kmExtra: 7.3,
+        horaExtra: 169,
+        operacao: 'SUDESTE',
+        kmRota: 564.6,
+        duracaoMin: 481,
+      },
+      pedido: { regiao: 'SUDESTE', origem: 'Serra, ES', destino: 'Rio de Janeiro, RJ', paradas: [], km: 564.6 },
+      clienteInterno: 'CEVA LOGISTICS LTDA',
+      pecas: pecasPublicadas('CEVA'),
+      onFechar: () => undefined,
+    }));
+    assert.match(html, /Baixar Proposta em PDF/);
+    assert.match(html, /Válida até 05\/11\/2026/);
+    assert.match(html, /Este link não abre o restante do sistema/);
+    assert.match(html, /print-color-adjust: exact !important/);
+    assert.match(html, /service-fiscal-rota\.png/);
+    assert.match(html, /8h01min/);
+    assert.match(html, /4\.121,58/);
+    assert.doesNotMatch(html, /fiscal-2\.webp|Gerando Imagem|Salvar cotação|Enviar para o e-mail/);
   });
 });

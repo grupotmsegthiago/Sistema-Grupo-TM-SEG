@@ -77,18 +77,21 @@ export function registerCevaPortalRoutes(app: Express): void {
       return;
     }
     const { cartaDaProposta, htmlDaProposta, propostaRecebida } = await import('../lib/portalCliente/apresentacao.js');
+    const { urlDoLinkPublico } = await import('../lib/portalCliente/linkProposta.js');
     const proposta = propostaRecebida(req.body?.proposta);
     if (!proposta) {
       res.status(400).json({ error: 'Proposta incompleta.' });
       return;
     }
+    const origemLink = String(req.headers.origin || req.headers.referer || '');
+    const link = urlDoLinkPublico(req.body?.link, origemLink || null);
     const { rotuloDeOperacoes } = await import('../lib/portalCliente/cotacaoHttp.js');
     const operacoes = bancoAtor ? await rotuloDeOperacoes(bancoAtor) : null;
     try {
       const { pdfAnexoAceito } = await import('../lib/portalCliente/gestaoCotacao.js');
       const { nomeAnexoPdf } = await import('../lib/portalCliente/historicoCotacoes.js');
       const anexo = pdfAnexoAceito(String(req.body?.pdf || ''));
-      if (!anexo.ok) {
+      if (!anexo.ok && !link) {
         res.status(400).json({ error: anexo.error });
         return;
       }
@@ -98,9 +101,9 @@ export function registerCevaPortalRoutes(app: Express): void {
         to: destinos.para,
         cc: destinos.copias.length ? destinos.copias : undefined,
         subject: `Proposta Grupo TM SEG — ${proposta.operacao}`,
-        text: cartaDaProposta(proposta, operacoes),
-        html: htmlDaProposta(proposta, operacoes),
-        attachments: [{
+        text: cartaDaProposta(proposta, operacoes, link),
+        html: htmlDaProposta(proposta, operacoes, link),
+        attachments: anexo.ok ? [{
           filename: nomeAnexoPdf(req.body?.nomePdf, {
             cliente: '',
             origem: proposta.origem,
@@ -109,7 +112,7 @@ export function registerCevaPortalRoutes(app: Express): void {
           }),
           content: Buffer.from(anexo.base64, 'base64'),
           contentType: 'application/pdf',
-        }],
+        }] : undefined,
       });
       res.status(200).json({ ok: true, enviado: true, para: destinos.para, copias: destinos.copias });
     } catch (error) {
@@ -133,6 +136,17 @@ export function registerCevaPortalRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json(resultado);
   });
+  app.get('/api/proposta-escolta/indicadores', async (req, res) => {
+    const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
+    if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {
+      res.status(401).json({ error: 'Entre novamente.' });
+      return;
+    }
+    const { indicadoresPublicos } = await import('./propostaPremiumVisual.js');
+    const numeros = await indicadoresPublicos();
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(200).json(numeros);
+  });
   app.post('/api/proposta-escolta/premium', async (req, res) => {
     const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
     if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {
@@ -144,10 +158,19 @@ export function registerCevaPortalRoutes(app: Express): void {
       res.status(400).json({ error: 'Informe o cliente.' });
       return;
     }
-    const { visualizarCenaPremium } = await import('./propostaPremiumVisual.js');
-    const cena = await visualizarCenaPremium(cliente);
+    const { pecasPublicadas } = await import('../lib/portalCliente/propostaPremium.js');
+    const { indicadoresPublicos } = await import('./propostaPremiumVisual.js');
+    const imagens = pecasPublicadas(cliente);
+    const numeros = await indicadoresPublicos();
     res.setHeader('Cache-Control', 'private, no-store');
-    res.status(200).json(cena);
+    res.status(200).json({
+      hero: null,
+      imagens,
+      cache: true,
+      servico: 'arquivo',
+      custoEstimadoUsd: 0,
+      ...numeros,
+    });
   });
   app.patch('/api/cotacoes/:id/inativar', async (req, res) => {
     const { atenderGestaoCotacao } = await import('./cotacaoGestaoHttp.js');

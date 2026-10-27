@@ -201,7 +201,7 @@ export async function registrarCotacaoPortal(
 export async function propostaParaEmail(
   sb: { from: (tabela: string) => any },
   cliente: ClientePortal,
-  pedido: { para?: unknown; autor?: unknown; regiao?: unknown; origem?: unknown; destino?: unknown; paradas?: unknown; km?: unknown },
+  pedido: { para?: unknown; autor?: unknown; regiao?: unknown; origem?: unknown; destino?: unknown; paradas?: unknown; km?: unknown; link?: unknown },
 ): Promise<{ status: number; corpo: { error: string } | { ok: true; para: string; copias: string[]; assunto: string; texto: string; html: string } }> {
   const destinos = montarDestinatariosEnvio({
     selecionados: String(pedido.para || ''),
@@ -213,6 +213,8 @@ export async function propostaParaEmail(
   const proposta = montarPropostaDoPedido(tabelas, pedido, String(cliente?.name || cliente?.trading_name || ''));
   if ('error' in proposta) return { status: 400, corpo: proposta };
   const operacoes = await rotuloDeOperacoes(sb);
+  const { urlDoLinkPublico } = await import('./linkProposta.js');
+  const link = urlDoLinkPublico(pedido.link);
   return {
     status: 200,
     corpo: {
@@ -221,7 +223,7 @@ export async function propostaParaEmail(
       copias: destinos.copias,
       assunto: `Proposta Grupo TM SEG — ${proposta.operacao}`,
       texto: textoDaProposta(proposta, operacoes),
-      html: htmlDaProposta(proposta, operacoes),
+      html: htmlDaProposta(proposta, operacoes, link),
     },
   };
 }

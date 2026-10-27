@@ -105,7 +105,7 @@ function IconeDiferencial(props: { indice: number }) {
 
 const RESERVA_SERVICO: Record<string, string | null> = {
   'Fiscal de rota': '/proposta-tmseg/service-fiscal-rota.png',
-  'Intermediação de escolta armada': null,
+  'Intermediação de escolta armada': '/proposta-tmseg/service-escolta.png',
   'Acompanhamento logístico': '/proposta-tmseg/service-acompanhamento.png',
   Guincho: '/proposta-tmseg/service-guincho.png',
 };

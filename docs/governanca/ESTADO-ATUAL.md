@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. O link público abre a própria tela da proposta, com as fotos já publicadas e o mapa da rota. Não há geração de imagem. O PDF sai da impressão dessa tela e o e-mail leva o botão para o link. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. A cotação passa a gravar a polyline da rota. O link público desenha esse traço em vermelho no mapa do Google. O tempo da proposta aparece em horas e minutos, e os indicadores continuam a consulta do banco. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A proposta compartilhada ganha o layout premium no clique de Gerar proposta. A cena ilustrativa sai do Gemini já usado, sem preço e sem endereço. O mapa continua o do Google e os valores continuam os da cotação. Se a imagem falhar, a carreta oficial aparece. Ainda não foi publicado. O motor da OS não mudou.

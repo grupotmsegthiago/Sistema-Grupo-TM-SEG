@@ -65,6 +65,7 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
       frase=""
       mostrando
       somenteLeitura
+      idCotacao={id}
       validadeTexto={vista.validade}
       proposta={vista.proposta}
       clienteInterno={vista.cliente}

@@ -40,6 +40,27 @@ export function caminhoLinkProposta(id: string, token: string): string {
   return `/proposta/v/${encodeURIComponent(id)}/${token}`;
 }
 
+/** Só aceita o endereço desta proposta. Outro site ou outra rota não entra no e-mail. */
+export function urlDoLinkPublico(bruto: unknown, origem?: string | null): string | null {
+  const texto = String(bruto || '').trim();
+  let url: URL;
+  try {
+    url = new URL(texto);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (!/\/proposta\/v\/[^/]+\/[a-f0-9]{32,64}\/?$/i.test(url.pathname)) return null;
+  if (origem) {
+    try {
+      if (url.host !== new URL(origem).host) return null;
+    } catch {
+      return null;
+    }
+  }
+  return url.toString();
+}
+
 export function lerCaminhoLinkProposta(pathname: string): { id: string; token: string } | null {
   const achado = String(pathname || '').match(/\/proposta\/v\/([^/]+)\/([a-f0-9]{32,64})\/?$/i);
   if (!achado) return null;

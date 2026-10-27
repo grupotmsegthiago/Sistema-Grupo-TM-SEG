@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. Gerar proposta abre a tela na hora, com as fotos do site e o mapa do Google. O link público é essa mesma tela. Baixar Proposta em PDF imprime o tema escuro sem captura pesada. O e-mail tem o botão Acessar Proposta Comercial. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. Salvar cotação grava a polyline e os pontos da rota. O link público redesenha o traço vermelho com esses dados; cotação antiga sem polyline pede o percurso ao Google e não regrava o snapshot. O tempo na proposta sai em horas e minutos, sem mudar o número usado no cálculo. Os indicadores continuam a contagem do banco. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. Gerar proposta monta a apresentação premium com a carreta oficial, o mapa do Google e os valores já calculados. A IA só pede uma cena sem texto, com tempo limite e cache por transportadora. O link público continua o de 10 dias, depois de Salvar cotação. Ainda não foi publicado. O motor da OS não mudou.

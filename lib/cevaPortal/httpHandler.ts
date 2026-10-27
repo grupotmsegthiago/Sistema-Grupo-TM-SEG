@@ -1796,7 +1796,10 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           return;
         }
         if (String(body?.acao || '') === 'email') {
-          const preparado = await propostaParaEmail(sb, cliente, { ...(body || {}), autor: session.email });
+          const { urlDoLinkPublico } = await import('../portalCliente/linkProposta.js');
+          const origemLink = String(req.headers?.origin || req.headers?.referer || '');
+          const link = urlDoLinkPublico(body?.link, origemLink || null);
+          const preparado = await propostaParaEmail(sb, cliente, { ...(body || {}), autor: session.email, link });
           if (preparado.status !== 200 || !('ok' in preparado.corpo)) {
             res.status(preparado.status).json(preparado.corpo);
             return;
@@ -1805,7 +1808,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
             const { pdfAnexoAceito } = await import('../portalCliente/gestaoCotacao.js');
             const { nomeAnexoPdf } = await import('../portalCliente/historicoCotacoes.js');
             const anexo = pdfAnexoAceito(String(body?.pdf || ''));
-            if (!anexo.ok) {
+            if (!anexo.ok && !link) {
               res.status(400).json({ error: anexo.error });
               return;
             }
@@ -1815,9 +1818,9 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
               to: preparado.corpo.para,
               cc: preparado.corpo.copias.length ? preparado.corpo.copias : undefined,
               subject: preparado.corpo.assunto,
-              text: preparado.corpo.texto,
+              text: link ? `${preparado.corpo.texto}\n\nAcessar Proposta Comercial: ${link}` : preparado.corpo.texto,
               html: preparado.corpo.html,
-              attachments: [{
+              attachments: anexo.ok ? [{
                 filename: nomeAnexoPdf(body?.nomePdf, {
                   origem: String(body?.origem || ''),
                   destino: String(body?.destino || ''),
@@ -1826,7 +1829,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
                 }),
                 content: Buffer.from(anexo.base64, 'base64'),
                 contentType: 'application/pdf',
-              }],
+              }] : undefined,
             });
             res.status(200).json({ ok: true, enviado: true, para: preparado.corpo.para, copias: preparado.corpo.copias });
           } catch (error) {

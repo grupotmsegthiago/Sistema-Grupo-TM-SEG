@@ -150,7 +150,7 @@ export function condicoesDaProposta(proposta: PropostaPortal): string[] {
   ].filter(Boolean);
 }
 
-export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | null): string {
+export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | null, link?: string | null): string {
   const servicos = SERVICOS_TMSEG.map((item) => `${item.titulo}. ${item.texto}`).join('\n');
   return [
     MARCA_TMSEG.nome,
@@ -177,7 +177,7 @@ export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | n
     'Empresas que operam com a TM SEG',
     CLIENTES_TMSEG.map((item) => item.nome).join(', '),
     '',
-    'A proposta completa segue em anexo, com o mapa da rota.',
+    link ? `Acessar Proposta Comercial: ${link}` : 'A proposta completa segue em anexo, com o mapa da rota.',
     '',
     'Acionamento da rota',
     ...linhasDaTabelaEmail(proposta).map((item) => `${item.rotulo}: ${item.valor}`),
@@ -221,16 +221,20 @@ export function propostaRecebida(bruto: unknown): PropostaPortal | null {
 }
 
 /** O mesmo texto da carta, em HTML, com a tabela do acionamento. */
-export function htmlDaProposta(proposta: PropostaPortal, operacoes?: string | null): string {
+export function htmlDaProposta(proposta: PropostaPortal, operacoes?: string | null, link?: string | null): string {
   const linhas = linhasDaTabelaEmail(proposta).map((item) => (
     `<tr><td style="padding:8px 10px;border-bottom:1px solid #e7e1d6;color:#5c564e;">${escaparHtml(item.rotulo)}</td><td style="padding:8px 10px;border-bottom:1px solid #e7e1d6;font-weight:700;color:#161513;">${escaparHtml(item.valor)}</td></tr>`
   )).join('');
-  const texto = escaparHtml(cartaDaProposta(proposta, operacoes)).replace(/\n/g, '<br>');
+  const texto = escaparHtml(cartaDaProposta(proposta, operacoes, link)).replace(/\n/g, '<br>');
+  const botao = link
+    ? `<p style="margin:20px 0;"><a href="${escaparHtml(link)}" style="display:inline-block;background:#d0121a;color:#ffffff;padding:12px 18px;border-radius:999px;font-weight:700;text-decoration:none;">Acessar Proposta Comercial</a></p>`
+    : '';
   return [
     '<!DOCTYPE html><html lang="pt-BR"><body style="margin:0;background:#f7f5f2;color:#161513;">',
     '<div style="max-width:640px;margin:0 auto;padding:24px;font-family:Arial,sans-serif;">',
     `<p style="margin:0 0 8px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#d0121a;">${escaparHtml(MARCA_TMSEG.nome)}</p>`,
     '<h1 style="margin:0 0 16px;font-size:22px;">Proposta comercial de escolta</h1>',
+    botao,
     '<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:12px;">',
     linhas,
     '</table>',
