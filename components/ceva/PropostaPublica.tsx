@@ -2,12 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { cenaDaProposta } from './ClientTruckVisual';
 import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { pecasPublicadas } from '../../lib/portalCliente/propostaPremium';
 
 type Vista = {
   cliente: string;
   validade: string;
   proposta: PropostaPortal;
   mapa: string | null;
+  operacoes: string | null;
+  parceiros: string | null;
 };
 
 /** Quem recebe o link vê só esta proposta. Não há menu, login nem outras telas. */
@@ -28,6 +31,8 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
           validade: String(corpo.validade || ''),
           proposta: corpo.proposta as PropostaPortal,
           mapa: typeof corpo.mapa === 'string' ? corpo.mapa : null,
+          operacoes: typeof corpo.operacoes === 'string' ? corpo.operacoes : null,
+          parceiros: typeof corpo.parceiros === 'string' ? corpo.parceiros : null,
         });
       } catch (falha) {
         if (ativo) setErro(falha instanceof Error ? falha.message : 'Link inválido ou vencido.');
@@ -64,6 +69,9 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
       proposta={vista.proposta}
       clienteInterno={vista.cliente}
       cena={cenaDaProposta(vista.cliente, vista.mapa)}
+      pecas={pecasPublicadas(vista.cliente)}
+      operacoesRealizadas={vista.operacoes}
+      parceiros={vista.parceiros}
       pedido={{
         regiao: vista.proposta.regiao,
         origem: vista.proposta.origem,

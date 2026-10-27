@@ -1,0 +1,117 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  ETAPAS_PROPOSTA_PREMIUM,
+  TEMPO_CENA_MS,
+  cenaOficial,
+  chaveDaCena,
+  heroUtil,
+  pedidoCenaIlustrativa,
+  pedidoDaPeca,
+  podeGerarImagem,
+  rotuloDeContagem,
+} from '../lib/portalCliente/propostaPremium';
+import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
+
+describe('proposta premium', () => {
+  it('a cena ilustrativa não leva preço, endereço nem logotipo', () => {
+    const pedido = pedidoCenaIlustrativa();
+    assert.match(pedido, /Não desenhe texto/);
+    assert.doesNotMatch(pedido, /R\$|km extra|Guarulhos|Faria Lima|@|acionamento/);
+    assert.equal(TEMPO_CENA_MS, 45_000);
+    assert.deepEqual([...ETAPAS_PROPOSTA_PREMIUM], [
+      'Preparando sua proposta comercial...',
+      'Consultando informações da operação...',
+      'Montando apresentação personalizada...',
+      'Finalizando proposta...',
+    ]);
+  });
+
+  it('CEVA, DHL e IBL usam a imagem oficial e o restante fica neutro', () => {
+    assert.equal(cenaOficial('CEVA LOGISTICS LTDA').veiculo, '/caminhoes/3d/ceva-veiculo.webp');
+    assert.equal(cenaOficial('CEVA LOGISTICS LTDA').logo, '/logo_ceva_portal.png');
+    assert.equal(cenaOficial('DHL').recorte, '/caminhoes/3d/dhl-recorte.webp');
+    assert.equal(cenaOficial('IBL Logística').logo, '/logo_ibl_portal.png');
+    assert.equal(cenaOficial('Transportadora Nova').veiculo, '/caminhoes/3d/generico-veiculo.webp');
+    assert.equal(cenaOficial('Transportadora Nova').logo, null);
+    assert.equal(chaveDaCena('CEVA LOGISTICS'), 'ceva');
+    assert.equal(heroUtil('https://evil.example/truck.png'), null);
+    assert.equal(heroUtil('/caminhoes/../segredo.png'), null);
+    assert.equal(heroUtil('/caminhoes/3d/ceva-veiculo.webp'), '/caminhoes/3d/ceva-veiculo.webp');
+    assert.equal(heroUtil('/propostas-premium/capas/ceva.webp'), '/propostas-premium/capas/ceva.webp');
+    assert.equal(rotuloDeContagem(6152), '6.152+');
+    assert.equal(rotuloDeContagem(0), '0');
+    assert.equal(rotuloDeContagem(null), null);
+    assert.equal(podeGerarImagem(24.9, 0.08, 25), true);
+    assert.equal(podeGerarImagem(25, 0.08, 25), false);
+    for (const peca of ['capa', 'central', 'fiscal', 'escolta', 'acompanhamento', 'guincho'] as const) {
+      const pedido = pedidoDaPeca(peca);
+      assert.match(pedido, /Não desenhe texto/);
+      assert.doesNotMatch(pedido, /R\$|Guarulhos|Faria Lima|CEVA|DHL|IBL/);
+    }
+  });
+
+  it('a proposta premium mostra a rota real e os valores da cotação', () => {
+    const html = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
+      frase: 'Preparando sua proposta comercial...',
+      mostrando: true,
+      proposta: {
+        acordada: false,
+        regiao: 'SUDESTE SP/RJ',
+        origem: 'Rodovia Presidente Dutra, 17744 - Cumbica, Guarulhos - SP',
+        destino: 'Av. Brigadeiro Faria Lima, 2232 - Jardim Paulistano, São Paulo - SP',
+        paradas: [],
+        acionamento: 9583.8,
+        kmFranquia: 943,
+        horasFranquia: 24,
+        kmExtra: 6.6,
+        horaExtra: 160,
+        operacao: 'SUDESTE',
+        vigencia: '2027',
+        kmRota: 28,
+        duracaoMin: 52,
+        kmFaturado: 943,
+        horasContadas: 24,
+      },
+      pedido: { regiao: 'SUDESTE', origem: 'Guarulhos', destino: 'São Paulo', paradas: [], km: 28 },
+      clienteInterno: 'CEVA LOGISTICS LTDA',
+      cena: { mapa: 'data:image/png;base64,iVBORw0KGgo=', carreta: '/caminhoes/3d/ceva-recorte.webp', logo: '/logo_ceva_portal.png', sobreporLogo: true },
+      onFechar: () => undefined,
+      onSalvarCotacao: async () => true,
+    }));
+    assert.match(html, /proposta-premium/);
+    assert.match(html, /Escolta armada/);
+    assert.match(html, /Rodovia Presidente Dutra/);
+    assert.match(html, /Faria Lima/);
+    assert.match(html, /logo_ceva_portal\.png/);
+    assert.match(html, /caminhoes\/3d\/ceva-veiculo\.webp/);
+    assert.match(html, /28 km/);
+    assert.match(html, /52 min/);
+    assert.match(html, /9\.583,80/);
+    assert.match(html, /Mapa: Google/);
+    assert.match(html, /data-proposta-mapa="1"/);
+    assert.match(html, /Salvar cotação/);
+    assert.match(html, /Salvar essa proposta em nosso banco de dados/);
+    assert.match(html, /Quem acompanha a carga/);
+    assert.match(html, /Fiscal de rota/);
+    assert.match(html, /Guincho/);
+    assert.match(html, /Condições comerciais/);
+    assert.match(html, /Empresas que operam com a TM SEG/);
+    assert.match(html, /indicador-operacoes/);
+    assert.doesNotMatch(html, /gerar-imagem|Gerar imagem/);
+    assert.doesNotMatch(html, /500\+|50\+/);
+    const portal = readFileSync(new URL('../server/cevaPortal.ts', import.meta.url), 'utf8');
+    const visual = readFileSync(new URL('../server/propostaPremiumVisual.ts', import.meta.url), 'utf8');
+    assert.match(portal, /\/api\/proposta-escolta\/premium/);
+    assert.match(visual, /pedidoDaPeca\(peca\)/);
+    assert.doesNotMatch(visual, /origem|destino|kmExtra|acionamento|e-mail/);
+    const tela = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
+    const gerar = tela.slice(tela.indexOf('const gerar = () => {'), tela.indexOf('const salvarCotacaoAtual'));
+    assert.match(gerar, /proposta-escolta\/premium/);
+    assert.match(gerar, /TEMPO_CENA_MS/);
+    assert.doesNotMatch(gerar, /gravarNoHistorico/);
+  });
+});

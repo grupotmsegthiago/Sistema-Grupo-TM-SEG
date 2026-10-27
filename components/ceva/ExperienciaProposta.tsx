@@ -1,13 +1,7 @@
 import React, { useState } from 'react';
 import { Loader2, Mail, X } from 'lucide-react';
 import {
-  AVISO_PEDAGIO,
-  CLIENTES_TMSEG,
-  DIFERENCIAIS_TMSEG,
-  FOTO_SALA,
   MARCA_TMSEG,
-  numerosDaProposta,
-  SERVICOS_TMSEG,
   caminhoDaProposta,
   regiaoLegivel,
 } from '../../lib/portalCliente/apresentacao';
@@ -15,18 +9,10 @@ import { numerosDaTela, rotulosSemAno, type PropostaPortal } from '../../lib/por
 import { COPIA_FIXA_COTACAO } from '../../lib/portalCliente/gestaoCotacao';
 import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
+import type { ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import { authFetch } from '../../lib/authFetch';
-import ImagemSegura from '../ImagemSegura';
-import { CenaRotaVisual } from './ClientTruckVisual';
+import { PropostaPremium } from './PropostaPremium';
 import { usePortalCliente } from './portalMarca';
-
-function reais(valor: number): string {
-  return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
-function numero(valor: number): string {
-  return valor.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-}
 
 function textoEnvio(corpo: { para?: unknown; copias?: unknown }, digitado: string): string {
   const para = typeof corpo.para === 'string' && corpo.para ? corpo.para : digitado;
@@ -60,7 +46,15 @@ export const ExperienciaProposta: React.FC<{
   idCotacao?: string | null;
   /** Grava a cotação no histórico. Não grava ao fechar a tela. */
   onSalvarCotacao?: () => Promise<boolean>;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao, onSalvarCotacao }) => {
+  /** Cena ilustrativa. Sem imagem, a proposta usa a carreta já publicada. */
+  hero?: string | null;
+  pecas?: Partial<ImagensPremium> | null;
+  /** OS concluídas e parceiros ativos. Sem consulta, o card fica em branco. */
+  operacoesRealizadas?: string | null;
+  parceiros?: string | null;
+  /** Mapa estático da rota, sem o painel da tela. */
+  mapaLimpo?: string | null;
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao, onSalvarCotacao, hero, pecas, operacoesRealizadas, parceiros, mapaLimpo }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
@@ -222,150 +216,35 @@ export const ExperienciaProposta: React.FC<{
         </div>
       )}
       {visivel && (
-        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#f7f5f2] text-[#161616]' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-[#f7f5f2] text-[#161616]' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#f7f5f2] text-[#161616] shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
+        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#07080d] text-white' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-[#07080d] text-white' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#07080d] text-white shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
           {somenteLeitura && (
             <p className="bg-[#0c0d10] px-6 py-3 text-center text-sm text-white" data-testid="aviso-link-proposta">
               Visualização da proposta{validadeTexto ? `. Válida até ${validadeTexto}` : ''}. Este link não abre o restante do sistema.
             </p>
           )}
           {!modoCaptura && !somenteLeitura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
-          <div data-proposta-corpo className={modoCaptura ? '' : 'min-h-0 flex-1 overflow-auto'}>
-            <header data-proposta-bloco className="relative overflow-hidden bg-[#0c0d10] px-8 pb-10 pt-8 text-white sm:px-12">
-              <div className="pointer-events-none absolute -right-10 top-8 h-56 w-56 rounded-full bg-[#d0121a]/30 blur-3xl" />
-              <ImagemSegura src="/marca-grupotmseg.webp" alt="Grupo TM SEG" className="h-14 w-auto" />
-              <p className="mt-8 text-[11px] font-semibold uppercase tracking-[0.28em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Proposta comercial</p>
-              <h2 className="mt-3 max-w-3xl text-4xl font-semibold leading-tight sm:text-5xl" style={{ fontFamily: 'Oswald, sans-serif' }}>{caminho}</h2>
-              <p className="mt-4 text-sm text-white/70">{regiaoLegivel(proposta.regiao)} · {data}</p>
-              <p className="mt-3 text-sm font-semibold text-white" data-testid="nome-tabela-vigencia">{nomes.tabela}</p>
-              <p className="text-sm font-semibold text-white" data-testid="nome-rota-vigencia">{nomes.rota}</p>
-              <p className="mt-6 max-w-xl text-lg text-white/90">{MARCA_TMSEG.chamada}</p>
-              <svg viewBox="0 0 640 90" className="mt-8 h-16 w-full max-w-xl" aria-hidden="true">
-                <path d="M8 70 C 120 68, 180 18, 250 28 S 390 78, 632 16" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" />
-                <circle cx="8" cy="70" r="5" fill="#ffffff" />
-                <circle cx="632" cy="16" r="6" fill="#d0121a" />
-              </svg>
-            </header>
-
-            {(printMapa || cena?.mapa) && (
-              <section data-proposta-bloco data-proposta-mapa="1" className="bg-[#0c0d10] px-8 pb-10 sm:px-12">
-                <figure className="overflow-hidden rounded-3xl shadow-[0_24px_50px_rgba(0,0,0,0.35)]">
-                  {printMapa ? (
-                    <img src={printMapa} alt="Mapa da rota na tela" className="block h-auto w-full" />
-                  ) : cena?.mapa ? (
-                    <CenaRotaVisual mapa={cena.mapa} carreta={cena.carreta} logo={cena.logo} />
-                  ) : null}
-                </figure>
-              </section>
-            )}
-
-            <section data-proposta-bloco className="grid gap-0 bg-[#0c0d10] text-white sm:grid-cols-4">
-              {numerosDaProposta(operacoes).map((item) => (
-                <div key={item.rotulo} className="border-t border-white/10 px-8 py-6 sm:px-6">
-                  <p className="text-3xl font-semibold text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>{item.valor}</p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.16em] text-white/70">{item.rotulo}</p>
-                </div>
-              ))}
-            </section>
-
-            <section data-proposta-bloco className="grid gap-8 px-8 py-10 sm:px-12 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
-              <figure className="relative">
-                <img src={FOTO_SALA} alt="Sala do Grupo TM SEG" className="h-80 w-full object-cover" />
-                <figcaption className="absolute bottom-4 left-4 bg-[#d0121a] px-4 py-3 text-white">
-                  <span className="block text-3xl leading-none" style={{ fontFamily: 'Oswald, sans-serif' }}>24/7</span>
-                  <span className="text-[10px] uppercase tracking-[0.16em]">Atendimento</span>
-                </figcaption>
-              </figure>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>A empresa</p>
-                <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Quem acompanha a carga</h3>
-                <p className="mt-4 text-base leading-relaxed text-[#3a3a3a]">{MARCA_TMSEG.quem}</p>
-                <p className="mt-3 text-base leading-relaxed text-[#3a3a3a]">{MARCA_TMSEG.missao}</p>
-              </div>
-            </section>
-
-            <section className="bg-white px-8 py-10 sm:px-12">
-              <div data-proposta-bloco>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>O que a operação cobre</p>
-                <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Serviços</h3>
-              </div>
-              <div className="mt-8 grid gap-5 sm:grid-cols-2">
-                {SERVICOS_TMSEG.map((servico) => (
-                  <figure key={servico.titulo} data-proposta-bloco className="overflow-hidden bg-[#f7f5f2]">
-                    <img src={servico.foto} alt="" className="h-52 w-full object-cover" />
-                    <figcaption className="px-4 py-4">
-                      <p className="text-lg font-semibold">{servico.titulo}</p>
-                      <p className="mt-2 text-sm leading-relaxed text-[#4b4b4b]">{servico.texto}</p>
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            </section>
-
-            <section data-proposta-bloco className="px-8 py-10 sm:px-12">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Por que a TM SEG</p>
-              <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Diferenciais</h3>
-              <div className="mt-8 grid gap-6 sm:grid-cols-2">
-                {DIFERENCIAIS_TMSEG.map((item) => (
-                  <div key={item.titulo} className="border-t border-black/10 pt-4">
-                    <p className="text-lg font-semibold">{item.titulo}</p>
-                    <p className="mt-2 text-sm leading-relaxed text-[#4b4b4b]">{item.texto}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section data-proposta-bloco className="bg-[#f3efe6] px-8 py-10 sm:px-12">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Quem confia a carga</p>
-              <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Empresas que operam com a TM SEG</h3>
-              <div className="mt-8 grid grid-cols-3 gap-3 sm:grid-cols-5">
-                {CLIENTES_TMSEG.map((cliente) => (
-                  <div key={cliente.nome} className="flex h-16 items-center justify-center bg-white px-3">
-                    <img src={cliente.logo} alt={cliente.nome} className="max-h-10 w-full object-contain" />
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section data-proposta-bloco className="bg-white px-8 py-10 sm:px-12">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Esta rota</p>
-              <h3 className="mt-2 text-3xl font-semibold" style={{ fontFamily: 'Oswald, sans-serif' }}>Condições comerciais</h3>
-              <div className="mt-8 grid gap-8 border-y border-black/10 py-8 sm:grid-cols-3">
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Total</p>
-                  <p className="mt-2 text-4xl font-semibold" data-testid="proposta-total">{reais(tela.total)}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>KM faturado</p>
-                  <p className="mt-2 text-4xl font-semibold" data-testid="proposta-km">{numero(tela.kmFaturado)}</p>
-                </div>
-                <div>
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Horas</p>
-                  <p className="mt-2 text-4xl font-semibold" data-testid="proposta-horas">{numero(tela.horas)}</p>
-                </div>
-              </div>
-              <div className="mt-8 grid gap-6 sm:grid-cols-2">
-                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor do km extra</span><span className="mt-1 block text-3xl font-semibold">{reais(tela.kmExtra)}</span></p>
-                <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Valor da hora extra</span><span className="mt-1 block text-3xl font-semibold">{reais(tela.horaExtra)}</span></p>
-              </div>
-              {tela.mostraFranquiaIncluida && (
-                <p className="mt-6 text-base text-[#3a3a3a]" data-testid="proposta-franquia-incluida">Franquia incluída: {numero(tela.franquiaKm)} km e {numero(tela.franquiaHoras)} h.</p>
-              )}
-              {tela.pernoite != null && (
-                <p className="mt-4 text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Pernoite</span><span className="mt-1 block text-3xl font-semibold">{reais(tela.pernoite)}</span></p>
-              )}
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                {proposta.kmRota != null && proposta.kmRota > 0 && proposta.kmRota !== tela.kmFaturado && (
-                  <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Km da rota</span><span className="mt-1 block text-3xl font-semibold">{numero(proposta.kmRota)} km</span></p>
-                )}
-                {proposta.duracaoMin != null && proposta.duracaoMin > 0 && (
-                  <p className="text-lg leading-snug"><span className="block text-[11px] uppercase tracking-[0.18em] text-[#8a8a8a]" style={{ fontFamily: 'Oswald, sans-serif' }}>Tempo</span><span className="mt-1 block text-3xl font-semibold">{Math.round(proposta.duracaoMin)} min</span></p>
-                )}
-              </div>
-              <p className="mt-6 text-base font-semibold">{nomes.tabela}</p>
-              <p className="text-base font-semibold">{nomes.rota}</p>
-              <p className="mt-8 border-l-4 border-[#d0121a] pl-4 text-base font-medium">{AVISO_PEDAGIO}</p>
-              {proposta.acordada && <p className="mt-4 text-sm text-[#4b4b4b]">Esta rota já está acordada na tabela do cliente.</p>}
-            </section>
+          <div data-proposta-corpo data-proposta-bloco className={modoCaptura ? '' : 'min-h-0 flex-1 overflow-auto'}>
+            <PropostaPremium
+              cliente={clienteInterno || portal.marca.rotulo}
+              caminho={caminho}
+              tabela={nomes.tabela}
+              rota={nomes.rota}
+              regiao={regiaoLegivel(proposta.regiao)}
+              data={data}
+              validade={validadeTexto}
+              proposta={proposta}
+              tela={tela}
+              cena={cena}
+              printMapa={printMapa}
+              hero={hero}
+              pecas={pecas}
+              operacoes={operacoes}
+              operacoesRealizadas={operacoesRealizadas}
+              parceiros={parceiros}
+              mapaLimpo={mapaLimpo}
+              linkPublico={somenteLeitura}
+              altMapa="Mapa da rota na tela"
+            />
           </div>
 
           {!modoCaptura && !somenteLeitura && <footer data-proposta-acoes className="border-t border-black/10 bg-white px-8 py-4 sm:px-12">

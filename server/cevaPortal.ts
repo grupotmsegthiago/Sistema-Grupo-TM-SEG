@@ -133,6 +133,22 @@ export function registerCevaPortalRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json(resultado);
   });
+  app.post('/api/proposta-escolta/premium', async (req, res) => {
+    const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
+    if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {
+      res.status(401).json({ error: 'Entre novamente para preparar a proposta.' });
+      return;
+    }
+    const cliente = String(req.body?.cliente || '').trim().slice(0, 120);
+    if (!cliente) {
+      res.status(400).json({ error: 'Informe o cliente.' });
+      return;
+    }
+    const { visualizarCenaPremium } = await import('./propostaPremiumVisual.js');
+    const cena = await visualizarCenaPremium(cliente);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(200).json(cena);
+  });
   app.patch('/api/cotacoes/:id/inativar', async (req, res) => {
     const { atenderGestaoCotacao } = await import('./cotacaoGestaoHttp.js');
     await atenderGestaoCotacao(req, res, 'inativar');
@@ -158,6 +174,7 @@ export function registerCevaPortalRoutes(app: Express): void {
     const paradasPonto = paradasBrutas.filter((item: unknown) => item && typeof item === 'object');
     const paradasTexto = paradasBrutas.map((item: unknown) => (typeof item === 'string' ? item : '')).filter(Boolean);
     const chave = chaveDoMapaNoServidor(process.env);
+    const traco = req.body?.traco === 'vermelho' ? 'vermelho' : 'ciano';
     const url = urlMapaEstatico({
       polyline: String(req.body?.polyline || '').slice(0, 20000),
       chave,
@@ -165,6 +182,7 @@ export function registerCevaPortalRoutes(app: Express): void {
       fim: req.body?.fim,
       paradas: paradasPonto,
       pontos,
+      traco,
     }) || urlMapaPorEnderecos({
       origem: String(req.body?.origem || ''),
       destino: String(req.body?.destino || ''),
@@ -225,7 +243,9 @@ export function registerCevaPortalRoutes(app: Express): void {
     }
     const proposta = resultado.corpo.proposta as { origem?: string; destino?: string; paradas?: string[] };
     const mapa = await mapaPorEndereco(String(proposta.origem || ''), String(proposta.destino || ''), Array.isArray(proposta.paradas) ? proposta.paradas : [], String(req.headers.origin || req.headers.referer || ''));
-    res.status(200).json({ ...resultado.corpo, mapa });
+    const { indicadoresPublicos } = await import('./propostaPremiumVisual.js');
+    const numeros = await indicadoresPublicos();
+    res.status(200).json({ ...resultado.corpo, mapa, operacoes: numeros.operacoes, parceiros: numeros.parceiros });
   });
 }
 

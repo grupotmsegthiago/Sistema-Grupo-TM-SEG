@@ -2,6 +2,10 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. A proposta passou a seguir a referência premium inteira. Gerar proposta pede as imagens ilustrativas no backend, guarda o arquivo e reaproveita na próxima. Sem `OPENAI_API_KEY`, usa o Gemini já configurado. Preço, franquia e pedágio continuam os da cotação. O link público continua o de 10 dias, depois de Salvar cotação, e não gera imagem de novo. Ainda não foi publicado. O motor da OS não mudou.
+
+Executado em 26/10/2026. Gerar proposta monta a apresentação premium com a carreta oficial, o mapa do Google e os valores já calculados. A IA só pede uma cena sem texto, com tempo limite e cache por transportadora. O link público continua o de 10 dias, depois de Salvar cotação. Ainda não foi publicado. O motor da OS não mudou.
+
 Publicado nesta entrega, em 26/10/2026, no projeto sistema-grupo-tm-seg. Os botões Tabela 2026 e Tabela 2027 saíram da cotação e da lista. Gerar proposta abre a tela, limpa origem e destino e não grava ao fechar. O botão Salvar cotação grava no histórico. A redefinição de senha por e-mail e WhatsApp já estava na main. O motor da OS não mudou.
 
 Publicado nesta entrega, em 26/10/2026, no projeto sistema-grupo-tm-seg. A coluna Distância / Tempo do histórico mostra o km faturado e as horas salvos na cotação. Na cotação 50 isso é 943 km e 24 h. Região, tarifa e total continuam os gravados (SUDESTE, R$ 6,60, R$ 9.583,80). A tela aberta e o tempo do Google não reescrevem a linha. O link público devolve o mesmo snapshot. O motor da OS não mudou.

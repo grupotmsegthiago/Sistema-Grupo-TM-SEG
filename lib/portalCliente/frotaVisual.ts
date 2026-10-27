@@ -114,7 +114,16 @@ function amostrarPontos(pontos: PontoMapa[], maximo: number): PontoMapa[] {
   return saida;
 }
 
-function camadasDoTrajeto(miolo: string): string[] {
+export type TracoMapa = 'ciano' | 'vermelho';
+
+function camadasDoTrajeto(miolo: string, traco: TracoMapa = 'ciano'): string[] {
+  if (traco === 'vermelho') {
+    return [
+      `color:0x7f1d1dcc|weight:16|${miolo}`,
+      `color:0xef4444ff|weight:7|${miolo}`,
+      `color:0xffe4e6ff|weight:2|${miolo}`,
+    ];
+  }
   return [
     `color:0x7dd3fc99|weight:14|${miolo}`,
     `color:0x38bdf8ff|weight:6|${miolo}`,
@@ -211,18 +220,20 @@ export function urlMapaEstatico(entrada: {
   fim?: PontoMapa | null;
   paradas?: PontoMapa[];
   pontos?: PontoMapa[];
+  /** O mapa da cotação continua ciano. A proposta premium pede o traço vermelho. */
+  traco?: TracoMapa;
 }): string | null {
   const chave = String(entrada.chave || '').trim();
   if (!chave) return null;
   const linha = polylineUtil(entrada.polyline);
   if (linha) {
-    const url = montarUrlMapa(chave, camadasDoTrajeto(`enc:${linha}`), entrada);
+    const url = montarUrlMapa(chave, camadasDoTrajeto(`enc:${linha}`, entrada.traco), entrada);
     if (url.length <= LIMITE_URL_MAPA) return url;
   }
   let pontos = amostrarPontos(entrada.pontos || [], 80);
   while (pontos.length >= 2) {
     const miolo = pontos.map((ponto) => `${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`).join('|');
-    const url = montarUrlMapa(chave, camadasDoTrajeto(miolo), entrada);
+    const url = montarUrlMapa(chave, camadasDoTrajeto(miolo, entrada.traco), entrada);
     if (url.length <= LIMITE_URL_MAPA) return url;
     const proximo = Math.max(2, Math.floor(pontos.length * 0.65));
     if (proximo >= pontos.length) return null;

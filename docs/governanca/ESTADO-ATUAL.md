@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. Gerar proposta monta o cartaz premium da referência: capa, indicadores reais, mapa do Google, institucional, serviços, diferenciais, clientes e condições. As imagens ilustrativas saem da OpenAI quando `OPENAI_API_KEY` existe; sem essa chave, do Gemini já usado. A referência aprovada não vai para o modelo. OS concluídas e parceiros ativos vêm do banco. O link de 10 dias continua depois de Salvar cotação. Ainda não foi publicado. O motor da OS não mudou.
+
+Atualizado em 2026-10-26. A proposta compartilhada ganha o layout premium no clique de Gerar proposta. A cena ilustrativa sai do Gemini já usado, sem preço e sem endereço. O mapa continua o do Google e os valores continuam os da cotação. Se a imagem falhar, a carreta oficial aparece. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. Na cotação, os botões Tabela 2026 e Tabela 2027 ficam ocultos. Gerar proposta abre a tela e limpa origem e destino, sem gravar ao fechar. Salvar cotação é que grava no histórico. A redefinição de senha por e-mail e WhatsApp já estava na main. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. Publicado nesta entrega, no projeto sistema-grupo-tm-seg. No histórico, Distância / Tempo mostra o km faturado e as horas gravados na hora da cotação. A cotação 50 permanece 943 km e 24 h, região SUDESTE, R$ 6,60 e total R$ 9.583,80. O km da rota e o tempo do Google não substituem esse par depois de salvo. O link público lê o mesmo snapshot. O motor da OS não mudou.

@@ -4,6 +4,7 @@ import { ArrowLeftRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Rout
 import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
 import { authFetch } from '../../lib/authFetch';
 import { logoConhecido, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
+import { heroUtil, imagensSeguras, TEMPO_CENA_MS, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import {
   destinoDirections,
   ESTILO_MAPA_COTACAO,
@@ -50,18 +51,17 @@ import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
 
 const FRASES_NOVA = [
-  'Recebendo dados..',
-  'Verificando rota..',
-  'Carregando Informações..',
-  'Aguarde mais um instante, estamos verificando a melhor proposta..',
-  'Hmmmm.. vamos lá! consegui algo legal pra você..',
+  'Preparando sua proposta comercial...',
+  'Consultando informações da operação...',
+  'Montando apresentação personalizada...',
+  'Finalizando proposta...',
 ];
 
 const FRASES_ACORDADA = [
-  'Recebendo dados..',
-  'Verificando rota..',
-  'Carregando Informações..',
-  'Opa, essa rota já temos aqui acordada, segue os valores..',
+  'Preparando sua proposta comercial...',
+  'Consultando informações da operação...',
+  'Essa rota já está acordada. Montando a apresentação...',
+  'Finalizando proposta...',
 ];
 
 function CampoLugar(props: {
@@ -171,7 +171,7 @@ type TrajetoMapa = {
 };
 
 /** Pede o mapa estático em Base64 na rota que já existe. A URL https fica só se o servidor não devolver a imagem. */
-async function pedirMapaBase64(alvo: TrajetoMapa, enviar: (corpo: string) => Promise<Response>): Promise<string> {
+async function pedirMapaBase64(alvo: TrajetoMapa, enviar: (corpo: string) => Promise<Response>, traco?: 'ciano' | 'vermelho'): Promise<string> {
   const mapaUrl = urlMapaEstatico({
     polyline: alvo.polyline,
     pontos: alvo.pontos,
@@ -179,6 +179,7 @@ async function pedirMapaBase64(alvo: TrajetoMapa, enviar: (corpo: string) => Pro
     inicio: alvo.inicio,
     fim: alvo.fim,
     paradas: alvo.paradas,
+    traco,
   }) || '';
   try {
     const corpo = JSON.stringify({
@@ -187,6 +188,7 @@ async function pedirMapaBase64(alvo: TrajetoMapa, enviar: (corpo: string) => Pro
       fim: alvo.fim,
       paradas: alvo.paradas,
       pontos: alvo.pontos,
+      traco: traco === 'vermelho' ? 'vermelho' : undefined,
     });
     const resposta = await enviar(corpo);
     const dados = await resposta.json().catch(() => ({}));
@@ -554,6 +556,12 @@ export const CotacaoPortal: React.FC<{
   const [salvandoCotacao, setSalvandoCotacao] = useState(false);
   const [avisoSalva, setAvisoSalva] = useState('');
   const [rascunhoAberto, setRascunhoAberto] = useState<RascunhoCotacao | null>(null);
+  const [heroPremium, setHeroPremium] = useState<string | null>(null);
+  const [pecasPremium, setPecasPremium] = useState<Partial<ImagensPremium> | null>(null);
+  const [mapaLimpo, setMapaLimpo] = useState<string | null>(null);
+  const [operacoesRealizadas, setOperacoesRealizadas] = useState<string | null>(null);
+  const [parceirosAtivos, setParceirosAtivos] = useState<string | null>(null);
+  const [esperandoCena, setEsperandoCena] = useState(false);
   const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
   const marcarEdicao = (id: string, ativo: boolean) => {
@@ -662,13 +670,13 @@ export const CotacaoPortal: React.FC<{
 
   useEffect(() => {
     if (etapa !== 'animando') return;
-    if (passo >= frases.length) {
+    if (passo >= frases.length && !esperandoCena) {
       setEtapa('proposta');
       return;
     }
     const espera = window.setTimeout(() => setPasso((atual) => atual + 1), 1600);
     return () => window.clearTimeout(espera);
-  }, [etapa, passo, frases.length]);
+  }, [etapa, passo, frases.length, esperandoCena]);
 
   const montarAtual = (): { nova: PropostaPortal; usouMinimo: boolean; vigencia: VersaoTabelaRegional } | null => {
     if (kmRota == null) return null;
@@ -753,13 +761,42 @@ export const CotacaoPortal: React.FC<{
     const contexto = contextoAtual();
     if (!feito || !contexto) return;
     const rascunho: RascunhoCotacao = { ...feito, ...contexto, id: null };
+    setHeroPremium(null);
+    setPecasPremium(null);
+    setMapaLimpo(null);
     void (async () => {
+      const controle = new AbortController();
+      const relogio = window.setTimeout(() => controle.abort(), TEMPO_CENA_MS);
+      const corpo = JSON.stringify({ cliente: (clienteNome || portal.marca.rotulo).slice(0, 120) });
+      const visual = (clienteNome
+        ? authFetch('/api/proposta-escolta/premium', { method: 'POST', body: corpo, signal: controle.signal })
+        : fetch('/api/proposta-escolta/premium', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo, signal: controle.signal })
+      ).then(async (resposta) => {
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok || !dados || typeof dados !== 'object') return null;
+        const registro = dados as { hero?: unknown; imagens?: unknown; operacoes?: unknown; parceiros?: unknown };
+        return {
+          hero: heroUtil(registro.hero),
+          imagens: imagensSeguras(registro.imagens),
+          operacoes: typeof registro.operacoes === 'string' ? registro.operacoes : null,
+          parceiros: typeof registro.parceiros === 'string' ? registro.parceiros : null,
+        };
+      }).catch(() => null);
       const print = await colarPrintDoMapa();
+      if (trajeto) {
+        const enviar = (pedido: string) => (clienteNome
+          ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: pedido })
+          : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: pedido }));
+        void pedirMapaBase64(trajeto, enviar, 'vermelho').then((foto) => {
+          if (foto.startsWith('data:image/')) setMapaLimpo(foto);
+        }).catch(() => undefined);
+      }
       setPrintMapa(print);
       setRascunhoAberto(rascunho);
       setProposta(feito.nova);
       setIdCotacaoAberta(null);
       setPasso(0);
+      setEsperandoCena(true);
       setEtapa('animando');
       setAvisoSalva('');
       setOrigem('');
@@ -768,6 +805,13 @@ export const CotacaoPortal: React.FC<{
       setCoordDestino(null);
       setPlaceOrigem(null);
       setPlaceDestino(null);
+      const cenaPronta = await visual;
+      window.clearTimeout(relogio);
+      setHeroPremium(cenaPronta?.hero || null);
+      setPecasPremium(cenaPronta?.imagens || null);
+      setOperacoesRealizadas(cenaPronta?.operacoes || null);
+      setParceirosAtivos(cenaPronta?.parceiros || null);
+      setEsperandoCena(false);
     })();
   };
 
@@ -809,6 +853,10 @@ export const CotacaoPortal: React.FC<{
     setPasso(0);
     setIdCotacaoAberta(null);
     setRascunhoAberto(null);
+    setEsperandoCena(false);
+    setHeroPremium(null);
+    setPecasPremium(null);
+    setMapaLimpo(null);
   };
 
   const preverPdf = () => {
@@ -1093,14 +1141,19 @@ export const CotacaoPortal: React.FC<{
       )}
       {etapa !== 'parada' && proposta && (
         <ExperienciaProposta
-          frase={frases[Math.min(passo, frases.length - 1)] || ''}
+          frase={frases[(esperandoCena ? passo : Math.min(passo, frases.length - 1)) % frases.length] || ''}
           mostrando={etapa === 'proposta'}
           proposta={proposta}
           pedido={{ regiao: rascunhoAberto?.nova.regiao || proposta.regiao, origem: rascunhoAberto?.origem || proposta.origem, destino: rascunhoAberto?.destino || proposta.destino, paradas: rascunhoAberto?.paradas || proposta.paradas, km: rascunhoAberto?.km || proposta.kmRota || 0 }}
           clienteInterno={clienteNome}
           cena={cena}
           printMapa={printMapa}
+          mapaLimpo={mapaLimpo}
+          hero={heroPremium}
+          pecas={pecasPremium}
           operacoes={operacoes}
+          operacoesRealizadas={operacoesRealizadas}
+          parceiros={parceirosAtivos}
           idCotacao={idCotacaoAberta}
           onSalvarCotacao={salvarRascunhoAberto}
           onFechar={fecharProposta}
