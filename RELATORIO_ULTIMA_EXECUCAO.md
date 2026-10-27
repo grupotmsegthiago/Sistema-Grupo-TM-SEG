@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. Baixar Proposta em PDF captura o miolo escuro com html2canvas e grava uma folha na proporção da tela. O caminho bege do Salvar em PDF interno permanece. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. O backend devolve o JSON da cotação pelo motor já existente, sem desenhar imagem. A tela injeta origem, destino, km, tempo, sub-região e os valores nos cards. Um JSON com total diferente é ignorado. O PDF continua numa folha só. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. O PDF deixou de sair em seis folhas A4. A impressão mede a altura da tela e gera uma folha contínua de 1100 px, com quatro colunas nos serviços e nos diferenciais e o caminhão limitado a 220 px sem esticar. Ainda não foi publicado. O motor da OS não mudou.

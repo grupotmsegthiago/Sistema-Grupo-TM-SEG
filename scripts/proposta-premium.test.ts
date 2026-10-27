@@ -23,6 +23,7 @@ import { percursoUtil } from '../lib/portalCliente/historicoCotacoes';
 import { decodificarPolyline, tituloCidade } from '../lib/portalCliente/rotaCotacao';
 import { urlMapaEstatico } from '../lib/portalCliente/frotaVisual';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
+import { folhaDoEspelho } from '../components/ceva/abrirPdfCotacao';
 import { dadosConfiaveis, dadosDaProposta } from '../lib/portalCliente/dadosProposta';
 
 describe('proposta premium', () => {
@@ -251,6 +252,19 @@ describe('proposta premium', () => {
     assert.equal(dados.franquiaHoras, 14);
     assert.equal(dados.kmExtra, 7.3);
     assert.equal(dados.horaExtra, 169);
+    const folha = folhaDoEspelho(1100, 2800);
+    assert.ok(folha.alturaPt > folha.larguraPt);
+    assert.ok(Math.abs(folha.larguraPt - 825) < 1);
+    assert.ok(folha.alturaPt > 2000);
+    const espelho = readFileSync(new URL('../components/ceva/abrirPdfCotacao.ts', import.meta.url), 'utf8');
+    const funcao = espelho.slice(espelho.indexOf('export async function baixarEspelhoDaProposta'), espelho.indexOf('export async function abrirPdfDaProposta'));
+    assert.match(funcao, /FUNDO_ESPELHO/);
+    assert.match(espelho.slice(espelho.indexOf('const FUNDO_ESPELHO'), espelho.indexOf('export function folhaDoEspelho')), /#07080d/);
+    assert.doesNotMatch(funcao, /#f7f5f2|format: 'a4'/);
+    const botao = readFileSync(new URL('../components/ceva/ExperienciaProposta.tsx', import.meta.url), 'utf8');
+    const clique = botao.slice(botao.indexOf('const baixarPdf'), botao.indexOf('const garantirLink'));
+    assert.match(clique, /baixarEspelhoDaProposta/);
+    assert.doesNotMatch(clique, /window\.print/);
     assert.equal(dadosConfiaveis({ ...dados, total: 1 }, {
       acordada: false,
       regiao: 'SUDESTE MG/ES',

@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. O botão Baixar Proposta em PDF grava a tela escura numa folha só, sem o diálogo de impressão e sem o fundo bege. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. A proposta recebe um JSON do motor da cotação (origem, destino, km, tempo, sub-região e valores). A tela só injeta esses campos. Não há desenho por IA. O PDF é uma folha contínua. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. O PDF da proposta deixa de ser A4 fatiado. A impressão sai numa folha contínua de 1100 px, com os cards de serviços, diferenciais e condições em grade. Ainda não foi publicado. O motor da OS não mudou.

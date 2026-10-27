@@ -425,6 +425,77 @@ export async function printDoMapaVisivel(raiz: HTMLElement, mapaFundo: string | 
   }
 }
 
+const FUNDO_ESPELHO = '#07080d';
+
+/** Medida da folha única, na mesma proporção da tela. Não corta em A4. */
+export function folhaDoEspelho(larguraPx: number, alturaPx: number): { larguraPt: number; alturaPt: number } {
+  const ponto = 72 / 96;
+  return {
+    larguraPt: Math.max(1, larguraPx) * ponto,
+    alturaPt: Math.max(1, alturaPx) * ponto,
+  };
+}
+
+/**
+ * Baixa a proposta visível numa folha só, com o fundo escuro e os cards.
+ * O botão e a faixa de aviso ficam de fora: a foto é só o miolo.
+ */
+export async function baixarEspelhoDaProposta(miolo: HTMLElement, nomeArquivo: string): Promise<void> {
+  const artigo = miolo.closest('[data-proposta-pdf]');
+  const restaurarRolagem = artigo instanceof HTMLElement ? liberarRolagem(artigo) : () => undefined;
+  const restaurarChrome = artigo instanceof HTMLElement ? esconderForaDoCorpo(artigo) : () => undefined;
+  const restaurarFoto = prepararFoto(miolo);
+  try {
+    await prepararImagensDoElemento(miolo);
+    await new Promise<void>((resolver) => {
+      window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolver()));
+    });
+    const larguraCss = Math.max(miolo.scrollWidth, miolo.offsetWidth, 1);
+    const alturaCss = Math.max(miolo.scrollHeight, miolo.offsetHeight, 1);
+    const escala = escalaDaCaptura(alturaCss);
+    const canvas = await html2canvas(miolo, {
+      scale: escala,
+      useCORS: true,
+      allowTaint: false,
+      backgroundColor: FUNDO_ESPELHO,
+      logging: false,
+      imageTimeout: 8000,
+      width: larguraCss,
+      height: alturaCss,
+      windowWidth: Math.max(window.innerWidth, 1280),
+      windowHeight: Math.max(alturaCss, window.innerHeight),
+      onclone: (documento, clonado) => {
+        travaAnimacao(documento);
+        prepararClone(clonado);
+        cravarCores(clonado);
+        clonado.style.backgroundColor = FUNDO_ESPELHO;
+        clonado.style.width = `${larguraCss}px`;
+        clonado.style.height = 'auto';
+        clonado.style.overflow = 'visible';
+        clonado.querySelectorAll<HTMLElement>('.mapa-perspectiva, .mapa-perspectiva *').forEach((el) => {
+          el.style.transform = 'none';
+        });
+      },
+    });
+    if (!fotoTemConteudo(canvas)) {
+      throw new Error('O PDF não trouxe o texto nem as imagens da proposta. Tente baixar de novo.');
+    }
+    const folha = folhaDoEspelho(canvas.width / escala, canvas.height / escala);
+    const pdf = new jsPDF({
+      orientation: folha.alturaPt >= folha.larguraPt ? 'portrait' : 'landscape',
+      unit: 'pt',
+      format: [folha.larguraPt, folha.alturaPt],
+      compress: true,
+    });
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, folha.larguraPt, folha.alturaPt, undefined, 'FAST');
+    pdf.save(nomeArquivo.endsWith('.pdf') ? nomeArquivo : `${nomeArquivo}.pdf`);
+  } finally {
+    restaurarFoto();
+    restaurarChrome();
+    restaurarRolagem();
+  }
+}
+
 /** Abre o PDF já com as imagens em Base64 e também baixa o arquivo. A janela precisa ter sido aberta no clique. */
 export async function abrirPdfDaProposta(artigo: HTMLElement, nomeArquivo: string, janela: Window | null): Promise<void> {
   const pdf = await desenharPdf(artigo);

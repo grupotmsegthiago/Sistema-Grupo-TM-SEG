@@ -64,6 +64,7 @@ export const ExperienciaProposta: React.FC<{
   const [ocupado, setOcupado] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [linkAviso, setLinkAviso] = useState('');
+  const [erroPdf, setErroPdf] = useState('');
   const caminho = caminhoDaProposta(proposta);
   const nomes = rotulosSemAno(proposta.origem, proposta.destino);
   const arquivoPdf = nomePdfCotacao({
@@ -155,15 +156,21 @@ export const ExperienciaProposta: React.FC<{
   }, [somenteLeitura, proposta, pecas, cena]);
 
   const baixarPdf = () => {
-    const anterior = document.title;
-    document.title = nomeArquivoPdfProposta(idCotacao, clienteInterno || portal.marca.rotulo);
-    medirPagina();
-    const voltar = () => {
-      document.title = anterior;
-      window.removeEventListener('afterprint', voltar);
-    };
-    window.addEventListener('afterprint', voltar);
-    window.print();
+    if (isGenerating) return;
+    const miolo = artigoRef.current?.querySelector('.proposta-container');
+    if (!(miolo instanceof HTMLElement)) return;
+    setErroPdf('');
+    setIsGenerating(true);
+    void (async () => {
+      try {
+        const { baixarEspelhoDaProposta } = await import('./abrirPdfCotacao');
+        await baixarEspelhoDaProposta(miolo, nomeArquivoPdfProposta(idCotacao, clienteInterno || portal.marca.rotulo));
+      } catch (falha) {
+        setErroPdf(falha instanceof Error ? falha.message : 'Não foi possível baixar o PDF.');
+      } finally {
+        setIsGenerating(false);
+      }
+    })();
   };
 
   const garantirLink = async (): Promise<string | null> => {
@@ -279,7 +286,7 @@ export const ExperienciaProposta: React.FC<{
             margin: 0 !important;
           }
           [data-proposta-corpo] { overflow: visible !important; height: auto !important; max-height: none !important; }
-          [data-print-oculto], [data-proposta-acoes] { display: none !important; }
+          [data-print-oculto], [data-proposta-acoes], .no-print { display: none !important; }
           .proposta-container {
             width: 1100px !important;
             max-width: 1100px !important;
@@ -341,11 +348,12 @@ export const ExperienciaProposta: React.FC<{
       {visivel && (
         <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#07080d] text-white' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-[#07080d] text-white' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#07080d] text-white shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
           {somenteLeitura && (
-            <div data-print-oculto className="flex flex-wrap items-center justify-center gap-3 bg-[#0c0d10] px-6 py-3 text-center text-sm text-white">
+            <div data-print-oculto className="no-print flex flex-wrap items-center justify-center gap-3 bg-[#0c0d10] px-6 py-3 text-center text-sm text-white">
               <p data-testid="aviso-link-proposta">
                 Visualização da proposta{validadeTexto ? ` • Válida até ${validadeTexto}` : ''} • Este link não abre o restante do sistema.
               </p>
               <button type="button" onClick={baixarPdf} data-testid="baixar-proposta-pdf" className="h-10 rounded-full bg-[#d0121a] px-4 text-xs font-semibold text-white">Baixar Proposta em PDF</button>
+              {erroPdf ? <p className="w-full text-xs text-red-300" data-testid="erro-pdf-proposta">{erroPdf}</p> : null}
             </div>
           )}
           {!modoCaptura && !somenteLeitura && <button type="button" onClick={onFechar} className="absolute right-4 top-4 z-10 grid h-9 w-9 place-items-center rounded-full bg-[#0c0d10] text-white shadow-lg" aria-label="Fechar"><X size={16} /></button>}
