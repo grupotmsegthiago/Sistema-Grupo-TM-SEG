@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a sugerir tabela pelas 10 OS aprovadas (`billing_approved`) da mesma rota. Com fornecedor, cliente e custo saem desse par. Sem o par, só a tabela do cliente. Sem histórico, o cálculo manual segue. Portal e auditoria não mudaram. O motor da OS não mudou. Ainda não foi publicado.
+
+Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
+
 # Próxima Execução Proposta
 
 Publicado nesta entrega, em 27/10/2026, no projeto sistema-grupo-tm-seg, a partir de `cursor/proposta-premium-ia-f513`. A proposta pública abre o cartaz escuro. Baixar Proposta em PDF grava essa tela numa folha só. A CEVA usa o caminhão branco sem fundo, também no mapa. A página não desenha imagem nova. O motor da OS não mudou.

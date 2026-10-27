@@ -279,6 +279,72 @@ export interface EscolhaTabelaProxima {
   mesmaRota: boolean;
 }
 
+/** Maior frequência. Empate fica com o created_at mais recente. */
+export function getTopTabelaId(ordens: { tabela_id: string | null | undefined; created_at: string | null | undefined }[]): string | null {
+  const contagem = new Map<string, { total: number; maisRecente: string }>();
+  for (const os of ordens) {
+    const id = os.tabela_id ? String(os.tabela_id) : '';
+    if (!id) continue;
+    const criado = os.created_at || '';
+    const atual = contagem.get(id) || { total: 0, maisRecente: criado };
+    contagem.set(id, {
+      total: atual.total + 1,
+      maisRecente: criado > atual.maisRecente ? criado : atual.maisRecente,
+    });
+  }
+  const ordenado = [...contagem.entries()].sort((a, b) => {
+    if (b[1].total !== a[1].total) return b[1].total - a[1].total;
+    return new Date(b[1].maisRecente).getTime() - new Date(a[1].maisRecente).getTime();
+  });
+  return ordenado[0]?.[0] || null;
+}
+
+export interface SugestaoTabelas {
+  tabelaClienteSugeridaId: string | null;
+  tabelaFornecedorSugeridaId: string | null;
+}
+
+/**
+ * Top 1 da amostra (até 10 OS aprovadas da mesma rota).
+ * Com fornecedor, o par vem na frente. Sem esse par, a tabela de cliente
+ * sai do grupo inteiro e a de custo fica vazia.
+ */
+export function resolverSugestaoTop1(entrada: {
+  cliente: string;
+  fornecedor?: string | null;
+  origem: string;
+  destino: string;
+  historico: OsRotaAprovada[];
+}): SugestaoTabelas {
+  const vazio: SugestaoTabelas = { tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null };
+  const rota = rotaDaOs(entrada.origem, entrada.destino);
+  if (!rota) return vazio;
+  const amostra = entrada.historico.filter((os) => (
+    !!os.clientTableId
+    && mesmoCliente(os.cliente, entrada.cliente)
+    && osEstaNaRota(os.origem, os.destino, entrada.origem, entrada.destino)
+  ));
+  if (!amostra.length) return vazio;
+
+  const linhas = (lista: OsRotaAprovada[], campo: 'clientTableId' | 'providerTableId') => (
+    lista.map((os) => ({ tabela_id: os[campo], created_at: os.aprovadaEm || '' }))
+  );
+  const fornecedor = String(entrada.fornecedor || '').trim();
+  if (fornecedor) {
+    const doPar = amostra.filter((os) => mesmoFornecedor(os.fornecedor || '', fornecedor));
+    if (doPar.length) {
+      return {
+        tabelaClienteSugeridaId: getTopTabelaId(linhas(doPar, 'clientTableId')),
+        tabelaFornecedorSugeridaId: getTopTabelaId(linhas(doPar, 'providerTableId')),
+      };
+    }
+  }
+  return {
+    tabelaClienteSugeridaId: getTopTabelaId(linhas(amostra, 'clientTableId')),
+    tabelaFornecedorSugeridaId: null,
+  };
+}
+
 function maisAplicada(lista: OsRotaAprovada[], campo: 'clientTableId' | 'providerTableId'): OsRotaAprovada | null {
   const contagem = new Map<string, { vezes: number; recente: number; os: OsRotaAprovada }>();
   for (const os of lista) {

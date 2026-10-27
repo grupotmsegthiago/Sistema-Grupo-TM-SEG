@@ -52,6 +52,7 @@ export function fetchDasTabelasProtegidas(original: typeof fetch): typeof fetch 
     const metodo = String(init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
     let body: string | null = null;
     if (typeof init?.body === 'string') body = init.body;
+    const sinal = init?.signal || (input instanceof Request ? input.signal : undefined);
     const resposta = await original('/api/dados-protegidos', {
       method: 'POST',
       credentials: 'include',
@@ -59,6 +60,7 @@ export function fetchDasTabelasProtegidas(original: typeof fetch): typeof fetch 
         'content-type': 'application/json',
         authorization: token ? `Bearer ${token}` : '',
       },
+      signal: sinal,
       body: JSON.stringify({
         method: metodo,
         url,

@@ -23,10 +23,10 @@ import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, eva
 import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
-import { historicoDaMesmaRota } from '../lib/billing/tabelaNaCriacao';
+import { destinoBloqueiaSugestao, SEM_TABELA_CUSTO_SUGERIDA } from '../lib/billing/tabelaNaCriacao';
+import { useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
-import { escolherTabelaProxima } from '../lib/rotaAprovadaTabela';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
 import { consumirPrefillSolicitacao } from '../lib/solicitacaoEscolta/prefill';
@@ -158,6 +158,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_se_number: '',
     dhl_sm_number: '',
     dhl_deslocamento_km: ''
+  });
+  const [buscaImediata, setBuscaImediata] = useState(false);
+  const sugestaoTabela = useTabelaSuggestion({
+    clienteId: formData.client,
+    fornecedorId: formData.provider,
+    origem: formData.origin,
+    destino: formData.destination,
+    isRotaPredefinida: buscaImediata,
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
   const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both'; saveAsDefault: boolean }>({ open: false, preferred: 'both', saveAsDefault: false });
@@ -1138,7 +1146,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
 
           let cstTable: any = null;
-          if (currentFlags.isSameOs) { cost = 0; details.push(`CUSTO: ZERADO (MESMA OS)`); } 
+          if (currentFlags.isSameOs) { cost = 0; details.push(`CUSTO: ZERADO (MESMA OS)`); }
+          else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) {
+              details.push('CUSTO: SEM HISTÓRICO DESTE FORNECEDOR');
+          }
           else {
               if (cstTableId) {
                   cstTable = providerCostTables.find(t => t.id.toString() === cstTableId);
@@ -1186,6 +1197,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           setCalcDetails(details.join(' | '));
           if (revTable) setManualRevenueTableId(revTable.id.toString());
           if (cstTable) setManualCostTableId(cstTable.id.toString());
+          else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) setManualCostTableId('');
       } finally { setIsCalculating(false); }
   }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
 
@@ -1364,69 +1376,73 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       });
   };
 
-  const handleRouteSelect = async (route: ClientRoute) => {
+  const lastAutoRouteRef = useRef('');
+  const handleRouteSelect = (route: ClientRoute) => {
+      const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
+      setBuscaImediata(true);
       setSelectedRouteId(route.id.toString());
       setRouteSearchTerm(route.name);
       setActiveDropdown(null);
       setTollDetails(null);
       setTollFetchDone(false);
       lastTollRouteRef.current = '';
+      lastAutoRouteRef.current = '';
       setOperatorConfirmedCalc(false);
-
-      const routeDist = parseFloat(route.distance) || 0;
-      const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
-      const gResult = await resolveRouteDistance(endpoints.origin, endpoints.destination);
-      if (gResult) {
-          if (gResult.distKm > 0) {
-              if (routeDist <= 0) (route as any).distance = gResult.distKm.toString();
-              (route as any)._googleDistKm = gResult.distKm;
-              (route as any).origin = endpoints.origin;
-              (route as any).destination = endpoints.destination;
-          }
-          if (gResult.durationMin > 0) {
-              (route as any)._googleDurationMin = gResult.durationMin;
-          }
-      }
-
-      const kmRota = parseFloat(String((route as any).distance || '0')) || Number((route as any)._googleDistKm) || 0;
-      const escolha = await sugerirTabelaDaRota(route.origin, route.destination, formData.provider, kmRota);
-      await calculatePricing(route, undefined, escolha?.clientTableId, escolha?.providerTableId);
-      await applyTollForRoute(route.origin, getTollDestination(route.destination));
-
+      setFormData(prev => ({ ...prev, origin: endpoints.origin, destination: endpoints.destination }));
       if (manualOverrides.toll) {
           showNotification('Pedágio Manual', 'Valor de pedágio mantido (editado manualmente). Cálculo automático desativado.', 'info');
       }
   };
 
-  const lastAutoRouteRef = useRef('');
   useEffect(() => {
       if (!formData.client) return;
       const origin = (formData.origin || '').trim();
       const destination = (formData.destination || '').trim();
-      if (!origin || !destination) return;
-      if (/RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(destination)) return;
-      if (selectedRouteId && clientRoutes.some(r => r.id.toString() === selectedRouteId)) return;
-      const key = `${origin}|||${destination}|||${formData.provider}`;
-      if (lastAutoRouteRef.current === key) return;
+      if (!origin || !destination || destinoBloqueiaSugestao(destination)) return;
+      if (sugestaoTabela.loadingSugestao) return;
 
-      const handle = setTimeout(async () => {
-          lastAutoRouteRef.current = key;
+      const rev = sugestaoTabela.tabelaClienteSugeridaId || '';
+      const cst = sugestaoTabela.tabelaFornecedorSugeridaId || '';
+      const key = `${formData.client}|||${origin}|||${destination}|||${formData.provider}|||${rev}|||${cst}|||${clientPriceTables.length}|||${providerCostTables.length}`;
+      if (lastAutoRouteRef.current === key) return;
+      lastAutoRouteRef.current = key;
+
+      let cancelado = false;
+      (async () => {
           setOperatorConfirmedCalc(false);
-          setSelectedRouteId('manual');
-          setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
+          const catalogo = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+          if (!catalogo) {
+              setSelectedRouteId('manual');
+              setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
+          }
 
           const gResult = await resolveRouteDistance(origin, destination);
-          const distKm = (gResult && gResult.distKm > 0) ? gResult.distKm : 0;
-
-          const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
+          if (cancelado) return;
+          const distKm = (gResult && gResult.distKm > 0) ? gResult.distKm : (parseFloat(catalogo?.distance || '0') || 0);
+          const virtualRoute: any = {
+              ...(catalogo || { toll_cost: 0 }),
+              id: catalogo ? catalogo.id : 'manual',
+              name: catalogo?.name || `${origin.split(',')[0]} → ${destination.split(',')[0]}`,
+              origin,
+              destination,
+              distance: String(distKm),
+          };
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
           if (gResult && gResult.distKm > 0) virtualRoute._googleDistKm = gResult.distKm;
-          const escolha = await sugerirTabelaDaRota(origin, destination, formData.provider, distKm);
-          await calculatePricing(virtualRoute, undefined, escolha?.clientTableId, escolha?.providerTableId);
-          await applyTollForRoute(origin, destination);
-      }, 1200);
-      return () => clearTimeout(handle);
-  }, [formData.origin, formData.destination, formData.client, formData.provider, selectedRouteId, clientRoutes]);
+
+          const tabelaCliente = sugestaoTabela.tabelaClienteSugeridaId || undefined;
+          const tabelaCusto = !formData.provider
+              ? undefined
+              : (tabelaCliente ? (sugestaoTabela.tabelaFornecedorSugeridaId || SEM_TABELA_CUSTO_SUGERIDA) : undefined);
+          await calculatePricing(virtualRoute, undefined, tabelaCliente, tabelaCusto);
+          if (cancelado) return;
+          await applyTollForRoute(origin, catalogo ? getTollDestination(destination) : destination);
+      })();
+      return () => {
+          cancelado = true;
+          lastAutoRouteRef.current = '';
+      };
+  }, [formData.origin, formData.destination, formData.client, formData.provider, sugestaoTabela.loadingSugestao, sugestaoTabela.tabelaClienteSugeridaId, sugestaoTabela.tabelaFornecedorSugeridaId, clientPriceTables.length, providerCostTables.length]);
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
@@ -1475,34 +1491,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       else { setManualCostTableId(val); calculatePricing(route, undefined, manualRevenueTableId, val); }
   };
 
-  const sugerirTabelaDaRota = async (origem: string, destino: string, fornecedor: string, km: number) => {
-      if (!formData.client || !origem || !destino) return null;
-      try {
-          const historico = await historicoDaMesmaRota(supabase, formData.client, origem, destino);
-          return escolherTabelaProxima({
-              cliente: formData.client,
-              origem,
-              destino,
-              fornecedorAtual: fornecedor,
-              kmAtual: km,
-              historico,
-          });
-      } catch (erro) {
-          console.warn('[Tabela da criação] histórico indisponível', erro);
-          return null;
-      }
-  };
-
-  const handleProviderSelection = async (newProviderName: string) => {
+  const handleProviderSelection = (newProviderName: string) => {
+      setBuscaImediata(false);
       setProviderSearchTerm(newProviderName);
-      
-      const route = getActiveRoute();
-      if(route) {
-          const km = parseFloat(formData.totalDistance) || parseFloat(String(route.distance || '0')) || 0;
-          const escolha = await sugerirTabelaDaRota(route.origin, route.destination, newProviderName, km);
-          calculatePricing(route, newProviderName, escolha?.clientTableId || manualRevenueTableId, escolha?.providerTableId);
-      }
-      setFormData(prev => ({ ...prev, provider: newProviderName })); 
+      setFormData(prev => ({ ...prev, provider: newProviderName }));
       setActiveDropdown(null);
   };
 
@@ -2051,10 +2043,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <select required className={SELECT_CLASS} value={formData.client} disabled={isCommercialUser} data-testid="select-client" onChange={e => {
                               const clientName = e.target.value;
                               const isVTC = (clientName || '').toUpperCase().includes('VTC');
+                              setBuscaImediata(false);
                               setFormData(prev => {
                                   const next = { ...prev, client: clientName, applyVtc02h: isVTC, clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '', clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '', driver_name: '', driver_phone: '', driver_name_2: '', driver_phone_2: '' };
-                                  const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
-                                  if (route) { setTimeout(() => calculatePricing(route, undefined, '', '', { ceva200km: next.applyCeva200km, vtc02h: next.applyVtc02h, isSameOs: next.isSameOs }), 100); }
                                   return next;
                               });
                               setProviderPending(false);
@@ -2846,14 +2837,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       onLoad={ac => { originAutocompleteRef.current = ac; }}
                                       onPlaceChanged={() => {
                                           const place = originAutocompleteRef.current?.getPlace();
-                                          if (place?.formatted_address) setFormData(prev => ({...prev, origin: place.formatted_address!.toUpperCase()}));
+                                          if (place?.formatted_address) {
+                                              setBuscaImediata(false);
+                                              setFormData(prev => ({...prev, origin: place.formatted_address!.toUpperCase()}));
+                                          }
                                       }}
                                       options={{ componentRestrictions: { country: 'br' } }}
                                   >
                                       <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de origem..." data-testid="input-origin" />
                                   </Autocomplete>
                               ) : (
-                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Rua das Flores, 100 - São Paulo, SP" value={formData.origin} onChange={e => setFormData(prev => ({...prev, origin: e.target.value}))} data-testid="input-origin" />
+                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Rua das Flores, 100 - São Paulo, SP" value={formData.origin} onChange={e => { setBuscaImediata(false); setFormData(prev => ({...prev, origin: e.target.value})); }} data-testid="input-origin" />
                               )}
                               <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 pointer-events-none z-10" />
                           </div>
@@ -2866,14 +2860,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       onLoad={ac => { destinationAutocompleteRef.current = ac; }}
                                       onPlaceChanged={() => {
                                           const place = destinationAutocompleteRef.current?.getPlace();
-                                          if (place?.formatted_address) setFormData(prev => ({...prev, destination: place.formatted_address!.toUpperCase()}));
+                                          if (place?.formatted_address) {
+                                              setBuscaImediata(false);
+                                              setFormData(prev => ({...prev, destination: place.formatted_address!.toUpperCase()}));
+                                          }
                                       }}
                                       options={{ componentRestrictions: { country: 'br' } }}
                                   >
                                       <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de destino..." data-testid="input-destination" />
                                   </Autocomplete>
                               ) : (
-                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Av. Brasil, 500 - Jundiaí, SP" value={formData.destination} onChange={e => setFormData(prev => ({...prev, destination: e.target.value}))} data-testid="input-destination" />
+                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Av. Brasil, 500 - Jundiaí, SP" value={formData.destination} onChange={e => { setBuscaImediata(false); setFormData(prev => ({...prev, destination: e.target.value})); }} data-testid="input-destination" />
                               )}
                               <Flag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none z-10" />
                           </div>
@@ -3178,9 +3175,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tag size={12} /> Selecionar Tabelas</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
+                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {sugestaoTabela.loadingSugestao ? <span className="text-amber-600">buscando…</span> : manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
                                   <div className="relative">
-                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5">
+                                      {sugestaoTabela.loadingSugestao && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" data-testid="sugestao-tabela-loading" />}
+                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5" aria-busy={sugestaoTabela.loadingSugestao}>
                                           <option value="">Selecione a tabela...</option>
                                           {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
@@ -3190,9 +3188,10 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   {!ocultaFinanceiro && manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
                               </div>
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {manualCostTableId && <span className="text-red-600">✓</span>}</label>
+                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {sugestaoTabela.loadingSugestao ? <span className="text-amber-600">buscando…</span> : manualCostTableId && <span className="text-red-600">✓</span>}</label>
                                   <div className="relative">
-                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5">
+                                      {sugestaoTabela.loadingSugestao && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" />}
+                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5" aria-busy={sugestaoTabela.loadingSugestao}>
                                           <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o fornecedor primeiro'}</option>
                                           {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>

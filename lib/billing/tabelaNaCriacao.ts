@@ -5,7 +5,7 @@
 
 import { calculateMissionFinancials } from '../financialUtils';
 import { computeRouteDistanceKm } from '../routeDistance';
-import { osEstaNaRota, quilometragemRegistrada, rotaDaOs, type OsRotaAprovada } from '../rotaAprovadaTabela';
+import { osEstaNaRota, quilometragemRegistrada, resolverSugestaoTop1, rotaDaOs, type OsRotaAprovada, type SugestaoTabelas } from '../rotaAprovadaTabela';
 
 type Consulta = { from: (tabela: string) => any };
 
@@ -111,4 +111,61 @@ export async function receitaDaTabelaNaCriacao(
   );
   const receita = Math.round((Number(fin?.client?.serviceTotal) || 0) * 100) / 100;
   return { receita, km };
+}
+
+/** A sugestão não escolheu tabela de custo. O cálculo da Nova OS não preenche sozinho. */
+export const SEM_TABELA_CUSTO_SUGERIDA = '__sem_tabela_custo_sugerida__';
+
+const SUGESTAO_VAZIA: SugestaoTabelas = { tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null };
+
+/** Destino em aberto não consulta histórico. */
+export function destinoBloqueiaSugestao(destino: string): boolean {
+  const texto = String(destino || '').trim();
+  if (!texto) return true;
+  return /RAIO\b|A DEFINIR|ACOMPANHAMENTO/i.test(texto);
+}
+
+/**
+ * Últimas 10 OS aprovadas da mesma rota, com tabela gravada.
+ * clienteId e fornecedorId são os nomes já usados na OS (não há id nessas colunas).
+ * Aprovação no banco: billing_approved = true. A janela de 80 só existe para
+ * descartar cidade parecida antes de ficar com as 10.
+ */
+export async function fetchTopTabelasSugestao(
+  sb: Consulta,
+  clienteId: string,
+  fornecedorId: string | null | undefined,
+  rotaOrigem: string,
+  rotaDestino: string,
+  signal?: AbortSignal,
+): Promise<SugestaoTabelas> {
+  if (destinoBloqueiaSugestao(rotaDestino)) return SUGESTAO_VAZIA;
+  const rota = rotaDaOs(rotaOrigem, rotaDestino);
+  const token = tokenDoCliente(clienteId);
+  if (!rota || token.length < 4 || !String(rotaOrigem || '').trim()) return SUGESTAO_VAZIA;
+
+  let consulta = sb.from('missions')
+    .select(`${COLUNAS_HISTORICO},billing_approved`)
+    .eq('billing_approved', true)
+    .ilike('client', `%${token}%`)
+    .ilike('origin', `%${rota.origem}%`)
+    .ilike('destination', `%${rota.destino}%`)
+    .not('snapshot_data', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(80);
+  if (signal && typeof consulta.abortSignal === 'function') consulta = consulta.abortSignal(signal);
+  const { data, error } = await consulta;
+  if (signal?.aborted) return SUGESTAO_VAZIA;
+  if (error || !Array.isArray(data)) return SUGESTAO_VAZIA;
+
+  const historico = mapearHistorico(data.filter((row: { billing_approved?: boolean }) => row?.billing_approved === true))
+    .filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino))
+    .slice(0, 10);
+  return resolverSugestaoTop1({
+    cliente: clienteId,
+    fornecedor: fornecedorId,
+    origem: rotaOrigem,
+    destino: rotaDestino,
+    historico,
+  });
 }
