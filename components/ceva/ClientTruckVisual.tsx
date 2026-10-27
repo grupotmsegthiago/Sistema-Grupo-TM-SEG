@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { logoConhecido, type CenaVisual } from '../../lib/portalCliente/frotaVisual';
 
 const CARRETAS: Record<string, string> = {
-  ceva: '/caminhoes/3d/ceva-recorte.webp',
+  ceva: '/caminhoes/3d/ceva-sem-fundo.webp',
   dhl: '/caminhoes/3d/dhl-recorte.webp',
   ibl: '/caminhoes/3d/ibl-recorte.webp',
 };

@@ -445,7 +445,7 @@ describe('histórico de cotações do portal', () => {
     assert.match(html, /26h49min/);
     assert.ok(html.split('data-proposta-bloco').length - 1 >= 6);
     const cena = cenaDaProposta('CEVA LOGISTICS', 'data:image/png;base64,iVBORw0KGgo=');
-    assert.equal(cena?.carreta, '/caminhoes/3d/ceva-recorte.webp');
+    assert.equal(cena?.carreta, '/caminhoes/3d/ceva-sem-fundo.webp');
     const comMapa = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
       frase: '',
       mostrando: true,
@@ -468,7 +468,7 @@ describe('histórico de cotações do portal', () => {
       onFechar: () => undefined,
     }));
     assert.match(comMapa, /data-proposta-mapa="1"/);
-    assert.match(comMapa, /\/caminhoes\/3d\/ceva-recorte\.webp/);
+    assert.match(comMapa, /\/caminhoes\/3d\/ceva-sem-fundo\.webp/);
     assert.match(comMapa, /Mapa da rota calculada no Google/);
     const tela = renderToStaticMarkup(React.createElement(ExperienciaProposta, {
       frase: '',

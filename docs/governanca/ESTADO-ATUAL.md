@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-27. A CEVA usa o caminhão branco sem fundo na proposta e no mapa. A IA só tirou o fundo dessa foto. A página não desenha imagem nova. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. A proposta de 980 px ganhou cartões com relevo, luz e o mapa inclinado. Os valores continuam os da cotação. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A proposta fica numa folha de 980 px, com a foto da capa por baixo da rota e os valores da cotação nos cartões. O PDF continua a foto dessa tela. Ainda não foi publicado. O motor da OS não mudou.

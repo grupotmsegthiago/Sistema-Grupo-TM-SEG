@@ -38,7 +38,7 @@ export const PropostaPremiumDemo: React.FC = () => {
           proposta={proposta}
           cena={{
             mapa: '/propostas-premium/demo-mapa-ceva.png',
-            carreta: '/caminhoes/3d/ceva-recorte.webp',
+            carreta: '/caminhoes/3d/ceva-sem-fundo.webp',
             logo: '/logo_ceva_portal.png',
             sobreporLogo: true,
           }}

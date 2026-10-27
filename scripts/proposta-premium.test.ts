@@ -41,7 +41,8 @@ describe('proposta premium', () => {
   });
 
   it('CEVA, DHL e IBL usam a imagem oficial e o restante fica neutro', () => {
-    assert.equal(cenaOficial('CEVA LOGISTICS LTDA').veiculo, '/caminhoes/3d/ceva-veiculo.webp');
+    assert.equal(cenaOficial('CEVA LOGISTICS LTDA').veiculo, '/caminhoes/3d/ceva-sem-fundo.webp');
+    assert.equal(cenaOficial('CEVA LOGISTICS LTDA').recorte, '/caminhoes/3d/ceva-sem-fundo.webp');
     assert.equal(cenaOficial('CEVA LOGISTICS LTDA').logo, '/logo_ceva_portal.png');
     assert.equal(cenaOficial('DHL').recorte, '/caminhoes/3d/dhl-recorte.webp');
     assert.equal(cenaOficial('IBL Logística').logo, '/logo_ibl_portal.png');
@@ -88,7 +89,7 @@ describe('proposta premium', () => {
       },
       pedido: { regiao: 'SUDESTE', origem: 'Guarulhos', destino: 'São Paulo', paradas: [], km: 28 },
       clienteInterno: 'CEVA LOGISTICS LTDA',
-      cena: { mapa: 'data:image/png;base64,iVBORw0KGgo=', carreta: '/caminhoes/3d/ceva-recorte.webp', logo: '/logo_ceva_portal.png', sobreporLogo: true },
+      cena: { mapa: 'data:image/png;base64,iVBORw0KGgo=', carreta: '/caminhoes/3d/ceva-sem-fundo.webp', logo: '/logo_ceva_portal.png', sobreporLogo: true },
       onFechar: () => undefined,
       onSalvarCotacao: async () => true,
     }));
@@ -97,8 +98,7 @@ describe('proposta premium', () => {
     assert.match(html, /Rodovia Presidente Dutra/);
     assert.match(html, /Faria Lima/);
     assert.match(html, /logo_ceva_portal\.png/);
-    assert.match(html, /propostas-premium\/capas\/ceva\.webp/);
-    assert.match(html, /caminhoes\/3d\/ceva-recorte\.webp/);
+    assert.match(html, /caminhoes\/3d\/ceva-sem-fundo\.webp/);
     assert.match(html, /28 km/);
     assert.match(html, /52min/);
     assert.equal(textoDuracaoViagem(481), '8h01min');

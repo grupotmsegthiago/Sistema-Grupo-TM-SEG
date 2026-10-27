@@ -87,18 +87,6 @@ function Escudo() {
   );
 }
 
-function Viatura(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 86 36" className={props.className || 'h-8 w-20'} aria-hidden="true">
-      <rect x="8" y="14" width="70" height="14" rx="4" fill="#111827" />
-      <path d="M20 14 28 6h28l8 8" fill="#1f2937" />
-      <rect x="36" y="3" width="14" height="4" rx="1" fill="#f59e0b" />
-      <circle cx="24" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
-      <circle cx="64" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
-    </svg>
-  );
-}
-
 function IconeDiferencial(props: { indice: number }) {
   const comum = { viewBox: '0 0 24 24', className: 'h-5 w-5', 'aria-hidden': true } as const;
   if (props.indice === 1) {
@@ -174,7 +162,7 @@ export const PropostaPremium: React.FC<{
   const carreta = cena?.carreta || oficial.recorte;
   const logo = cena?.logo || oficial.logo;
   const capa = pecas?.capa || hero || null;
-  const capaMarca = ['ceva', 'dhl', 'ibl'].includes(oficial.slug) ? `/propostas-premium/capas/${oficial.slug}.webp` : '';
+  const capaMarca = ['dhl', 'ibl'].includes(oficial.slug) ? `/propostas-premium/capas/${oficial.slug}.webp` : '';
   const [capaFalhou, setCapaFalhou] = useState(false);
   const [marcaFalhou, setMarcaFalhou] = useState(false);
   useEffect(() => { setCapaFalhou(false); setMarcaFalhou(false); }, [capa, capaMarca]);
@@ -225,8 +213,7 @@ export const PropostaPremium: React.FC<{
         )}
         {!fundo ? (
           <figure className="banner-caminhao pointer-events-none absolute inset-y-0 right-0 w-[46%]">
-            <img src={oficial.veiculo} alt="" className="caminhao-proposta absolute bottom-2 right-2 h-44 w-auto max-w-full object-contain" />
-            <Viatura className="absolute bottom-3 right-3 h-8 w-20" />
+            <img src={oficial.veiculo} alt="" className="caminhao-proposta absolute bottom-1 right-1 h-52 w-auto max-w-[58%] object-contain drop-shadow-[0_22px_18px_rgba(0,0,0,0.65)] sm:h-60" />
           </figure>
         ) : null}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#07090e] via-[#07090e]/78 to-transparent" />
@@ -281,7 +268,7 @@ export const PropostaPremium: React.FC<{
           {mapa ? (
             <figure className="mapa-perspectiva mapa-palco px-3 pb-3">
               <div className="mapa-placa overflow-hidden rounded-xl shadow-[0_28px_36px_rgba(0,0,0,0.55),0_0_22px_rgba(208,18,26,0.28)]">
-                <CenaRotaVisual mapa={mapa} carreta={carreta} logo={logo} faixa={false} />
+                <CenaRotaVisual mapa={mapa} carreta={carreta} logo={oficial.slug === 'ceva' ? null : logo} faixa={false} />
               </div>
               <figcaption className="mt-2 text-[10px] text-white/45">Mapa: Google. O traçado vermelho é o da rota calculada.</figcaption>
             </figure>

@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 27/10/2026. A proposta da CEVA passou a mostrar o caminhão branco enviado, sem o céu e sem a estrada. O mesmo recorte entra no mapa. Não virou vetor para não estragar as letras da CEVA. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. Os cartões da proposta ganharam relevo, a capa ficou com moldura e o mapa inclinou na tela. O PDF achata só a inclinação para a foto não sair vazia. Os valores da cotação não mudaram. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. A proposta passou a 980 px, com a capa publicada atrás da origem e do destino e os cartões mais próximos. Total, km, franquia e tarifas continuam os da cotação. O PDF fotografa esse container. Ainda não foi publicado. O motor da OS não mudou.

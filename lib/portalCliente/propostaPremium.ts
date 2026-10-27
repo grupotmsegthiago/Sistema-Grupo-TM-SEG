@@ -64,8 +64,8 @@ export function cenaOficial(cliente: string): CenaOficial {
   const base = MARCAS.has(slug) ? slug : 'generico';
   return {
     slug,
-    veiculo: `/caminhoes/3d/${base}-veiculo.webp`,
-    recorte: `/caminhoes/3d/${base}-recorte.webp`,
+    veiculo: slug === 'ceva' ? '/caminhoes/3d/ceva-sem-fundo.webp' : `/caminhoes/3d/${base}-veiculo.webp`,
+    recorte: slug === 'ceva' ? '/caminhoes/3d/ceva-sem-fundo.webp' : `/caminhoes/3d/${base}-recorte.webp`,
     logo: logoConhecido(cliente),
   };
 }
