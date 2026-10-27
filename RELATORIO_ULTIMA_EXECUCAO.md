@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. Os cartões da proposta ganharam relevo, a capa ficou com moldura e o mapa inclinou na tela. O PDF achata só a inclinação para a foto não sair vazia. Os valores da cotação não mudaram. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. A proposta passou a 980 px, com a capa publicada atrás da origem e do destino e os cartões mais próximos. Total, km, franquia e tarifas continuam os da cotação. O PDF fotografa esse container. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. Baixar Proposta em PDF captura o miolo escuro com html2canvas e grava uma folha na proporção da tela. O caminho bege do Salvar em PDF interno permanece. Ainda não foi publicado. O motor da OS não mudou.

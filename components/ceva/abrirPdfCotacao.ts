@@ -450,7 +450,7 @@ export async function baixarEspelhoDaProposta(miolo: HTMLElement, nomeArquivo: s
     await new Promise<void>((resolver) => {
       window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolver()));
     });
-    const larguraCss = Math.max(miolo.scrollWidth, miolo.offsetWidth, 1);
+    const larguraCss = Math.max(miolo.clientWidth || miolo.offsetWidth, 1);
     const alturaCss = Math.max(miolo.scrollHeight, miolo.offsetHeight, 1);
     const escala = escalaDaCaptura(alturaCss);
     const canvas = await html2canvas(miolo, {

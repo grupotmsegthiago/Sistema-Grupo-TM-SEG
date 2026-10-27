@@ -266,6 +266,9 @@ export const ExperienciaProposta: React.FC<{
           .tmseg-parado { display: block; }
         }
         [data-proposta-pdf], [data-proposta-pdf] * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .cartao-3d { background-image: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0) 34%); box-shadow: 0 16px 30px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.16); }
+        .mapa-palco { perspective: 1100px; }
+        .mapa-placa { transform: rotateX(12deg); transform-origin: center bottom; }
         @page { margin: 0; }
         @media print {
           html, body, [data-proposta-pdf] {
