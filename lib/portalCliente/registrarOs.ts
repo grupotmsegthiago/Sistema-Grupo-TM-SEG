@@ -2,14 +2,15 @@
 
 import type { PortalServidor } from '../cevaPortal/portalServidor';
 import { sendMail, SMTP_FROM } from '../email/smtp';
-import { historicoDaMesmaRota, receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
+import { fetchTopTabelasSugestao, receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
 import { snapshotTabelaNaCriacao } from '../missionSnapshot';
-import { escolherTabelaProxima } from '../rotaAprovadaTabela';
 import type { PedidoPortal } from './pedido';
 import { emailsDaSolicitacao } from './pedido';
+import { formatarIdGtm, proximoNumeroGtm } from './numeroOs';
 
 type SupabaseAdmin = {
   from: (tabela: string) => any;
+  rpc?: (fn: string, args?: Record<string, unknown>) => PromiseLike<{ data: unknown; error: { message?: string; code?: string } | null }>;
 };
 
 const LOCAL_PORTAL = 'Solicitação do portal — aguardando fornecedor';
@@ -34,15 +35,16 @@ function escapar(valor: string): string {
   return valor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-async function proximoNumero(sb: SupabaseAdmin): Promise<number> {
-  const { data, error } = await sb.from('missions').select('id').order('created_at', { ascending: false }).limit(40);
-  if (error) throw error;
-  let max = 0;
-  for (const row of data || []) {
-    const numero = Number(String(row.id || '').split('-')[1]);
-    if (Number.isFinite(numero) && numero > max) max = numero;
-  }
-  return max + 1;
+function erroDaGravacao(error: { message?: string; code?: string; details?: string; hint?: string }): Error {
+  const falha = new Error(error.message || 'Não foi possível abrir a OS.') as Error & {
+    code?: string;
+    details?: string;
+    hint?: string;
+  };
+  if (error.code) falha.code = error.code;
+  if (error.details) falha.details = error.details;
+  if (error.hint) falha.hint = error.hint;
+  return falha;
 }
 
 function payloadOs(
@@ -90,19 +92,13 @@ function payloadOs(
 
 async function tabelaEValorIniciais(sb: SupabaseAdmin, cliente: string, pedido: PedidoPortal) {
   try {
-    const historico = await historicoDaMesmaRota(sb, cliente, pedido.origem, pedido.destino);
-    const escolha = escolherTabelaProxima({
-      cliente,
-      origem: pedido.origem,
-      destino: pedido.destino,
-      historico,
-    });
-    if (!escolha?.clientTableId) return null;
-    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.clientTableId);
+    const escolha = await fetchTopTabelasSugestao(sb, cliente, null, pedido.origem, pedido.destino);
+    if (!escolha.tabelaClienteSugeridaId) return null;
+    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.tabelaClienteSugeridaId);
     return {
       receita: valor?.receita || 0,
       km: valor?.km || 0,
-      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.clientTableId }),
+      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.tabelaClienteSugeridaId }),
     };
   } catch (erro) {
     console.warn('[portal] tabela da criação', erro);
@@ -130,9 +126,9 @@ async function inserirOs(
   const agora = new Date().toISOString();
   const extras = await tabelaEValorIniciais(sb, cliente, pedido);
   let comValorZero = false;
-  for (let tentativa = 0; tentativa < 8; tentativa += 1) {
-    const numero = await proximoNumero(sb);
-    const id = `GTM-${String(numero).padStart(4, '0')}`;
+  let numero = await proximoNumeroGtm(sb);
+  for (let colisao = 0; colisao < 2; colisao += 1) {
+    const id = formatarIdGtm(numero);
     let payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero, extras);
     let resultado = await sb.from('missions').insert([payload]);
     for (let ajuste = 0; ajuste < 6 && resultado.error; ajuste += 1) {
@@ -149,8 +145,11 @@ async function inserirOs(
       resultado = await sb.from('missions').insert([payload]);
     }
     if (!resultado.error) return id;
-    if (resultado.error.code === '23505') continue;
-    throw new Error(resultado.error.message || 'Não foi possível abrir a OS.');
+    if (resultado.error.code === '23505' && colisao === 0) {
+      numero = await proximoNumeroGtm(sb);
+      continue;
+    }
+    throw erroDaGravacao(resultado.error);
   }
   throw new Error('Não foi possível numerar a OS.');
 }

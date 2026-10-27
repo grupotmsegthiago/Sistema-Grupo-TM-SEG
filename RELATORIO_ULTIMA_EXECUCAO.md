@@ -1,5 +1,9 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 27/10/2026 na `dev`. O 500 do portal vinha da numeração GTM lendo só 40 OS. Agora a gravação pede `proximo_numero_gtm` e, enquanto a função não existir, usa o maior número da base. O e-mail sai depois do insert e a falha de SMTP não vira 500. Constraint devolve código e campo. A migration `migrations/2026_10_27_os_gtm_seq.sql` não foi aplicada. TSP, PGR, autorizador, motorista e placa já cabem nas tabelas do portal. O motor da OS não mudou. Ainda não foi publicado.
+
+Executado em 27/10/2026 na `dev`. A OS do portal passa a escolher a tabela do cliente pelas 10 OS aprovadas da mesma rota. Sem fornecedor, a tabela de custo não entra. Quando o fornecedor é escolhido depois, a de custo sai desse par. O aviso vermelho do portal não foi alterado. O motor da OS não mudou. Ainda não foi publicado.
+
 Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a sugerir tabela pelas 10 OS aprovadas (`billing_approved`) da mesma rota. Com fornecedor, cliente e custo saem desse par. Sem o par, só a tabela do cliente. Sem histórico, o cálculo manual segue. Portal e auditoria não mudaram. O motor da OS não mudou. Ainda não foi publicado.
 
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.

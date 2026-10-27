@@ -1708,6 +1708,7 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
         const { emailsDaSolicitacao } = await import('../portalCliente/pedido.js');
         const criadas: string[] = [];
         let incompleto = false;
+        let ultimaFalha: unknown = null;
         for (let copia = 0; copia < copias.value; copia += 1) {
           try {
             const criado = await registrarSolicitacaoPortal(sb, cfg(), draft.value, {
@@ -1717,20 +1718,28 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
             criadas.push(criado.os);
           } catch (error) {
             incompleto = true;
-            console.error(`[${cfg().logPrefix}] solicitação`, error instanceof Error ? error.message : error);
+            ultimaFalha = error;
+            const { registrarFalhaSolicitacao } = await import('../portalCliente/erroRegistro.js');
+            registrarFalhaSolicitacao(cfg().logPrefix, error, body);
             break;
           }
         }
         if (criadas.length === 0) {
-          res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+          const { corpoErroSolicitacao } = await import('../portalCliente/erroRegistro.js');
+          res.status(500).json(corpoErroSolicitacao(ultimaFalha));
           return;
         }
-        const emailEnviado = await enviarEmailSolicitacao({
-          destinatarios: emailsDaSolicitacao(cliente.operational_email),
-          os: criadas.join(', '),
-          cliente: nomeCliente,
-          pedido: draft.value,
-        });
+        let emailEnviado = false;
+        try {
+          emailEnviado = await enviarEmailSolicitacao({
+            destinatarios: emailsDaSolicitacao(cliente.operational_email),
+            os: criadas.join(', '),
+            cliente: nomeCliente,
+            pedido: draft.value,
+          });
+        } catch (error) {
+          console.error(`[${cfg().logPrefix}] e-mail da solicitação`, error instanceof Error ? error.message : error);
+        }
         res.status(201).json({
           os: criadas[0],
           oss: criadas,
@@ -1740,9 +1749,9 @@ async function executarPortalHttp(req: any, res: any): Promise<void> {
           status: 'Solicitada',
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'falha';
-        console.error(`[${cfg().logPrefix}] solicitação`, message);
-        res.status(500).json({ error: 'Não foi possível registrar a solicitação.' });
+        const { registrarFalhaSolicitacao, corpoErroSolicitacao } = await import('../portalCliente/erroRegistro.js');
+        registrarFalhaSolicitacao(cfg().logPrefix, error, body);
+        res.status(500).json(corpoErroSolicitacao(error));
       }
       return;
     }

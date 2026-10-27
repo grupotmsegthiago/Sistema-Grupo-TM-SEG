@@ -52,7 +52,7 @@ import {
   shouldWriteBillingSnapshot,
   snapshotEhSoTabelaNaCriacao,
 } from '../lib/missionSnapshot';
-import { historicoDaMesmaRota } from '../lib/billing/tabelaNaCriacao';
+import { fetchTopTabelasSugestao, historicoDaMesmaRota } from '../lib/billing/tabelaNaCriacao';
 import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -1180,21 +1180,24 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               if (currentMission.provider && tabelaCriacao.providerTableId) {
                   setManualProviderTableId(tabelaCriacao.providerTableId);
               } else if (currentMission.provider && !tabelaCriacao.providerTableId) {
-                  const historico = await historicoDaMesmaRota(supabase, String(currentMission.originalClientName || currentMission.client || ''), currentMission.origin || '', currentMission.destination || '');
-                  const escolha = escolherTabelaProxima({
-                      cliente: String(currentMission.originalClientName || currentMission.client || ''),
-                      origem: currentMission.origin || '',
-                      destino: currentMission.destination || '',
-                      fornecedorAtual: currentMission.provider,
-                      kmAtual: quilometragemRegistrada(currentMission.startKm, currentMission.endKm, currentMission.totalDistance),
-                      historico,
-                  });
-                  if (escolha?.providerTableId) {
-                      setManualProviderTableId(escolha.providerTableId);
+                  const escolha = await fetchTopTabelasSugestao(
+                      supabase,
+                      String(currentMission.originalClientName || currentMission.client || ''),
+                      currentMission.provider,
+                      currentMission.origin || '',
+                      currentMission.destination || '',
+                  );
+                  if (escolha.tabelaClienteSugeridaId) setManualClientTableId(escolha.tabelaClienteSugeridaId);
+                  if (escolha.tabelaFornecedorSugeridaId) {
+                      setManualProviderTableId(escolha.tabelaFornecedorSugeridaId);
                       const atual = (currentMission as any).snapshot_data;
                       if (atual && typeof atual === 'object') {
                           const gravadoTabela = await gravarMissaoConfirmada(currentMission.id, {
-                              snapshot_data: { ...atual, providerTableId: escolha.providerTableId },
+                              snapshot_data: {
+                                  ...atual,
+                                  clientTableId: escolha.tabelaClienteSugeridaId || atual.clientTableId,
+                                  providerTableId: escolha.tabelaFornecedorSugeridaId,
+                              },
                           });
                           if (gravadoTabela.error) {
                               console.warn('[auditoria] tabela do fornecedor não ficou no snapshot', gravadoTabela.error.message);
