@@ -97,7 +97,8 @@ describe('proposta premium', () => {
     assert.match(html, /Rodovia Presidente Dutra/);
     assert.match(html, /Faria Lima/);
     assert.match(html, /logo_ceva_portal\.png/);
-    assert.match(html, /caminhoes\/3d\/ceva-veiculo\.webp/);
+    assert.match(html, /propostas-premium\/capas\/ceva\.webp/);
+    assert.match(html, /caminhoes\/3d\/ceva-recorte\.webp/);
     assert.match(html, /28 km/);
     assert.match(html, /52min/);
     assert.equal(textoDuracaoViagem(481), '8h01min');
@@ -220,6 +221,8 @@ describe('proposta premium', () => {
     assert.match(html, /Este link não abre o restante do sistema/);
     assert.match(html, /print-color-adjust: exact !important/);
     assert.match(html, /proposta-container/);
+    assert.match(html, /max-w-\[980px\]/);
+    assert.match(html, /#07090e/);
     assert.match(html, /grade-quatro/);
     assert.match(html, /card-servico/);
     assert.match(html, /repeat\(4, minmax\(0, 1fr\)\)/);

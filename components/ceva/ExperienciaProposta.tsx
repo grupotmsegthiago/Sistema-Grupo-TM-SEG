@@ -138,7 +138,7 @@ export const ExperienciaProposta: React.FC<{
       estilo.id = 'proposta-pagina-continua';
       document.head.appendChild(estilo);
     }
-    estilo.textContent = `@page { size: 1100px ${pagina}px; margin: 0; }`;
+    estilo.textContent = `@page { size: 980px ${pagina}px; margin: 0; }`;
     document.body.appendChild(estilo);
   };
 
@@ -269,7 +269,7 @@ export const ExperienciaProposta: React.FC<{
         @page { margin: 0; }
         @media print {
           html, body, [data-proposta-pdf] {
-            background: #07080d !important;
+            background: #07090e !important;
             color: #fff !important;
             margin: 0 !important;
             -webkit-print-color-adjust: exact !important;
@@ -277,8 +277,8 @@ export const ExperienciaProposta: React.FC<{
           }
           [data-proposta-pdf] {
             position: static !important;
-            width: 1100px !important;
-            max-width: 1100px !important;
+            width: 980px !important;
+            max-width: 980px !important;
             height: auto !important;
             max-height: none !important;
             overflow: visible !important;
@@ -288,17 +288,17 @@ export const ExperienciaProposta: React.FC<{
           [data-proposta-corpo] { overflow: visible !important; height: auto !important; max-height: none !important; }
           [data-print-oculto], [data-proposta-acoes], .no-print { display: none !important; }
           .proposta-container {
-            width: 1100px !important;
-            max-width: 1100px !important;
+            width: 980px !important;
+            max-width: 980px !important;
             margin: 0 auto !important;
-            background-color: #07080d !important;
+            background-color: #07090e !important;
             color: #ffffff !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
           .cabecalho-proposta { display: flex !important; flex-wrap: nowrap !important; align-items: center !important; justify-content: space-between !important; }
           .hero-proposta { min-height: 0 !important; }
-          .grade-hero { display: grid !important; grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr) !important; align-items: end !important; }
+          .grade-hero { display: block !important; max-width: 560px !important; }
           .grade-quatro { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 12px !important; }
           .grade-empresa, .grade-origem { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
           .grade-comercial { display: grid !important; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) !important; }
@@ -346,7 +346,7 @@ export const ExperienciaProposta: React.FC<{
         </div>
       )}
       {visivel && (
-        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative flex w-full flex-col bg-[#07080d] text-white' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-5xl flex-col bg-[#07080d] text-white' : 'relative flex h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] bg-[#07080d] text-white shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
+        <article ref={artigoRef} id={modoCaptura ? undefined : 'proposta-tmseg-online'} data-proposta-pdf={marcaPdf} className={modoCaptura ? 'relative mx-auto flex w-full max-w-[980px] flex-col bg-[#07090e] text-white' : somenteLeitura ? 'relative mx-auto flex min-h-screen w-full max-w-[980px] flex-col bg-[#07090e] text-white' : 'relative flex h-[92vh] w-full max-w-[980px] flex-col overflow-hidden rounded-[28px] bg-[#07090e] text-white shadow-[0_40px_90px_rgba(0,0,0,0.45)]'} style={modoCaptura || somenteLeitura ? { fontFamily: 'Outfit, sans-serif' } : { animation: 'tmseg-subir 0.7s ease', fontFamily: 'Outfit, sans-serif' }}>
           {somenteLeitura && (
             <div data-print-oculto className="no-print flex flex-wrap items-center justify-center gap-3 bg-[#0c0d10] px-6 py-3 text-center text-sm text-white">
               <p data-testid="aviso-link-proposta">

@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. A proposta fica numa folha de 980 px, com a foto da capa por baixo da rota e os valores da cotação nos cartões. O PDF continua a foto dessa tela. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. O botão Baixar Proposta em PDF grava a tela escura numa folha só, sem o diálogo de impressão e sem o fundo bege. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A proposta recebe um JSON do motor da cotação (origem, destino, km, tempo, sub-região e valores). A tela só injeta esses campos. Não há desenho por IA. O PDF é uma folha contínua. Ainda não foi publicado. O motor da OS não mudou.

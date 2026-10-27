@@ -2,6 +2,8 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. A proposta passou a 980 px, com a capa publicada atrás da origem e do destino e os cartões mais próximos. Total, km, franquia e tarifas continuam os da cotação. O PDF fotografa esse container. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. Baixar Proposta em PDF captura o miolo escuro com html2canvas e grava uma folha na proporção da tela. O caminho bege do Salvar em PDF interno permanece. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. O backend devolve o JSON da cotação pelo motor já existente, sem desenhar imagem. A tela injeta origem, destino, km, tempo, sub-região e os valores nos cards. Um JSON com total diferente é ignorado. O PDF continua numa folha só. Ainda não foi publicado. O motor da OS não mudou.

@@ -487,7 +487,7 @@ export async function baixarEspelhoDaProposta(miolo: HTMLElement, nomeArquivo: s
       format: [folha.larguraPt, folha.alturaPt],
       compress: true,
     });
-    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, folha.larguraPt, folha.alturaPt, undefined, 'FAST');
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', 0, 0, folha.larguraPt, folha.alturaPt, undefined, 'FAST');
     pdf.save(nomeArquivo.endsWith('.pdf') ? nomeArquivo : `${nomeArquivo}.pdf`);
   } finally {
     restaurarFoto();
