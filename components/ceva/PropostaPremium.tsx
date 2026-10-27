@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { CLIENTES_TMSEG, DIFERENCIAIS_TMSEG, MARCA_TMSEG, SERVICOS_TMSEG, AVISO_PEDAGIO } from '../../lib/portalCliente/apresentacao';
 import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
+import { dadosDaProposta, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
 import { cenaOficial, textoDuracaoViagem, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import { rotuloCidadeUf, tituloCidade } from '../../lib/portalCliente/rotaCotacao';
 import { CenaRotaVisual } from './ClientTruckVisual';
@@ -121,17 +122,7 @@ export const PropostaPremium: React.FC<{
   data: string;
   validade?: string;
   proposta: PropostaPortal;
-  tela: {
-    total: number;
-    kmFaturado: number;
-    horas: number;
-    franquiaKm: number;
-    franquiaHoras: number;
-    kmExtra: number;
-    horaExtra: number;
-    pernoite: number | null;
-    mostraFranquiaIncluida: boolean;
-  };
+  dados?: DadosProposta | null;
   cena?: CenaVisual | null;
   printMapa?: string | null;
   mapaLimpo?: string | null;
@@ -142,7 +133,7 @@ export const PropostaPremium: React.FC<{
   parceiros?: string | null;
   linkPublico?: boolean;
   altMapa: string;
-}> = ({ cliente, caminho, tabela, rota, regiao, data, validade, proposta, tela, cena, printMapa, mapaLimpo, hero, pecas, operacoesRealizadas, parceiros, linkPublico, altMapa }) => {
+}> = ({ cliente, caminho, tabela, rota, regiao, data, validade, proposta, dados: dadosInformados, cena, printMapa, mapaLimpo, hero, pecas, operacoesRealizadas, parceiros, linkPublico, altMapa }) => {
   const oficial = cenaOficial(cliente);
   const origem = tituloCidade(proposta.origem);
   const destino = tituloCidade(proposta.destino);
@@ -157,11 +148,13 @@ export const PropostaPremium: React.FC<{
   const fonte = { fontFamily: 'Oswald, sans-serif' } as const;
   const operacoesTexto = operacoesRealizadas || '—';
   const parceirosTexto = parceiros || '—';
-  const tempoViagem = textoDuracaoViagem(proposta.duracaoMin);
+  const dados = dadosInformados ?? dadosDaProposta(proposta);
+  const tempoViagem = textoDuracaoViagem(dados.tempoMin ?? proposta.duracaoMin);
+  const kmMostrado = dados.distanciaKm;
 
   return (
-    <div data-testid="proposta-premium" className="bg-[#07080d] text-white">
-      <header data-proposta-bloco className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 px-5 py-4 sm:px-8">
+    <div data-testid="proposta-premium" className="proposta-container bg-[#07080d] text-white">
+      <header data-proposta-bloco className="cabecalho-proposta flex flex-wrap items-center justify-between gap-4 border-b border-white/10 px-5 py-4 sm:px-8">
         <img src="/marca-grupotmseg.webp" alt="Grupo TM SEG" className="h-14 w-auto" />
         <p className="text-center text-[11px] font-semibold uppercase leading-5 tracking-[0.22em] text-white/85" style={fonte}>
           Escolta armada<br />Pronta resposta<br />Gestão integrada
@@ -173,14 +166,14 @@ export const PropostaPremium: React.FC<{
         </div>
       </header>
 
-      <section data-proposta-bloco className="relative min-h-[440px] overflow-hidden px-5 pb-6 pt-6 sm:px-8">
+      <section data-proposta-bloco className="hero-proposta secao-bloco relative min-h-[440px] overflow-hidden px-5 pb-6 pt-6 sm:px-8">
         {fundo ? (
           <Foto src={fundo} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" onVazio={() => setCapaFalhou(true)} />
         ) : (
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_42%,rgba(208,18,26,0.42),transparent_46%),linear-gradient(90deg,#07080d,#141820)]" />
         )}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#07080d] via-[#07080d]/78 to-transparent" />
-        <div className="relative grid items-end gap-4 lg:grid-cols-[0.82fr_1.18fr]">
+        <div className="grade-hero relative grid items-end gap-4 lg:grid-cols-[0.82fr_1.18fr]">
           <div>
             <p className="text-[12px] font-semibold uppercase tracking-[0.28em] text-[#d0121a]" style={fonte}>Proposta comercial</p>
             <h2 className="mt-2 max-w-xl text-4xl font-semibold uppercase leading-[0.95] sm:text-6xl" style={fonte}>{origem}<span className="mx-2 text-[#d0121a]">→</span>{destino}</h2>
@@ -192,22 +185,22 @@ export const PropostaPremium: React.FC<{
               <p className="rounded-xl border border-white/10 bg-black/45 px-3 py-2 text-[11px] backdrop-blur-sm" data-testid="nome-rota-vigencia"><span className="block text-[10px] uppercase tracking-wide text-white/50">Rota</span><span className="mt-0.5 line-clamp-2 block font-semibold">{rota}</span></p>
             </div>
           </div>
-          <figure className="relative min-h-[240px] sm:min-h-[300px]">
+          <figure className="banner-caminhao relative min-h-[240px] sm:min-h-[300px]">
             <div className="absolute bottom-4 right-2 z-10 drop-shadow-[0_18px_18px_rgba(0,0,0,0.65)]"><Viatura className="h-12 w-28 sm:h-16 sm:w-36" /></div>
-            <img src={oficial.veiculo} alt="" className="relative z-0 ml-auto h-64 w-auto max-w-full object-contain drop-shadow-[0_28px_28px_rgba(0,0,0,0.7)] sm:h-80" />
+            <img src={oficial.veiculo} alt="" className="caminhao-proposta relative z-0 ml-auto h-64 w-auto max-w-full object-contain drop-shadow-[0_28px_28px_rgba(0,0,0,0.7)] sm:h-80" />
             {logo ? <img src={logo} alt="" className="absolute bottom-16 right-[18%] z-20 h-9 w-auto rounded bg-white px-1.5 py-0.5 object-contain shadow-lg" /> : null}
           </figure>
         </div>
       </section>
 
-      <section data-proposta-bloco className="grid gap-3 px-5 pb-8 sm:grid-cols-4 sm:px-8">
+      <section data-proposta-bloco className="grade-quatro secao-bloco grid gap-3 px-5 pb-8 sm:grid-cols-4 sm:px-8">
         {[
           { valor: operacoesTexto, rotulo: 'Operações realizadas', teste: 'indicador-operacoes' },
           { valor: '24/7', rotulo: 'Atendimento', teste: 'indicador-atendimento' },
           { valor: '100%', rotulo: 'Compromisso', teste: 'indicador-compromisso' },
           { valor: parceirosTexto, rotulo: 'Parceiros ativos', teste: 'indicador-parceiros' },
         ].map((item) => (
-          <div key={item.rotulo} data-testid={item.teste} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
+          <div key={item.rotulo} data-testid={item.teste} className="card-metrica flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
             <Circulo><Escudo /></Circulo>
             <div>
               <p className="text-3xl font-semibold leading-none text-white" style={fonte}>{item.valor}</p>
@@ -218,15 +211,15 @@ export const PropostaPremium: React.FC<{
       </section>
 
       <section data-proposta-bloco data-proposta-mapa="1" className="px-5 pb-8 sm:px-8">
-        <div className="overflow-hidden rounded-[28px] border border-[#d0121a]/50 bg-[#0c1018] shadow-[0_0_40px_rgba(208,18,26,0.18)]">
+        <div className="secao-bloco overflow-hidden rounded-[28px] border border-[#d0121a]/50 bg-[#0c1018] shadow-[0_0_40px_rgba(208,18,26,0.18)]">
           <div className="flex flex-wrap items-start justify-between gap-3 px-5 py-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#d0121a]" style={fonte}>Rota da operação</p>
               <p className="mt-1 max-w-xl text-sm font-semibold">{rota}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs">
-              {proposta.kmRota != null && proposta.kmRota > 0 ? (
-                <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"><span className="block text-[10px] uppercase text-white/50">Distância aproximada</span><span className="text-base font-semibold">{numero(proposta.kmRota)} km</span></p>
+              {kmMostrado != null ? (
+                <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"><span className="block text-[10px] uppercase text-white/50">Distância aproximada</span><span className="text-base font-semibold">{numero(kmMostrado)} km</span></p>
               ) : null}
               {tempoViagem ? (
                 <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"><span className="block text-[10px] uppercase text-white/50">Tempo estimado</span><span className="text-base font-semibold">{tempoViagem}</span></p>
@@ -235,7 +228,7 @@ export const PropostaPremium: React.FC<{
             </div>
           </div>
           {mapa ? (
-            <figure className="px-4 pb-4 [perspective:1400px]">
+            <figure className="mapa-perspectiva px-4 pb-4 [perspective:1400px]">
               <div className="origin-bottom overflow-hidden rounded-2xl shadow-[0_36px_70px_rgba(0,0,0,0.55),0_0_36px_rgba(208,18,26,0.28)] [transform:rotateX(18deg)]">
                 <CenaRotaVisual mapa={mapa} carreta={carreta} logo={logo} faixa={false} />
               </div>
@@ -249,7 +242,7 @@ export const PropostaPremium: React.FC<{
           ) : (
             <p className="px-5 pb-5 text-sm text-white/60">O mapa da rota aparece quando o Google devolve o trajeto.</p>
           )}
-          <div className="grid gap-3 px-5 pb-4 sm:grid-cols-2">
+          <div className="grade-origem grid gap-3 px-5 pb-4 sm:grid-cols-2">
             <p className="rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-xs"><span className="block text-[10px] uppercase tracking-wide text-emerald-400">Origem</span><span className="mt-1 block font-semibold">{proposta.origem}</span></p>
             <p className="rounded-2xl border border-white/10 bg-black/30 px-3 py-3 text-xs"><span className="block text-[10px] uppercase tracking-wide text-[#d0121a]">Destino</span><span className="mt-1 block font-semibold">{proposta.destino}</span></p>
           </div>
@@ -264,7 +257,7 @@ export const PropostaPremium: React.FC<{
         </div>
       </section>
 
-      <section data-proposta-bloco className="grid items-center gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-2">
+      <section data-proposta-bloco className="grade-empresa secao-bloco grid items-center gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-2">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={fonte}>A empresa</p>
           <h3 className="mt-2 text-3xl font-semibold" style={fonte}>Quem acompanha a carga</h3>
@@ -275,20 +268,20 @@ export const PropostaPremium: React.FC<{
           src={pecas?.central}
           reserva="/proposta-tmseg/about-team-original.webp"
           alt=""
-          className="h-72 w-full rounded-[28px] border border-white/10 object-cover"
+          className="foto-empresa h-72 w-full rounded-[28px] border border-white/10 object-cover"
         />
       </section>
 
       <section data-proposta-bloco className="px-5 pb-10 sm:px-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={fonte}>Nossos serviços</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grade-quatro mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {SERVICOS_TMSEG.map((item, indice) => (
-            <article key={item.titulo} className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
+            <article key={item.titulo} className="card-servico secao-bloco overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03]">
               <Foto
                 src={pecas?.[CHAVE_SERVICO[indice]]}
                 reserva={RESERVA_SERVICO[item.titulo]}
                 alt=""
-                className="h-44 w-full object-cover"
+                className="foto-servico h-44 w-full object-cover"
               />
               <div className="px-4 py-4">
                 <Circulo><Escudo /></Circulo>
@@ -302,9 +295,9 @@ export const PropostaPremium: React.FC<{
 
       <section data-proposta-bloco className="px-5 pb-10 sm:px-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={fonte}>Diferenciais</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grade-quatro mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {DIFERENCIAIS_TMSEG.map((item, indice) => (
-            <article key={item.titulo} className="rounded-3xl border border-white/10 bg-white/[0.03] px-4 py-4">
+            <article key={item.titulo} className="card-diferencial secao-bloco rounded-3xl border border-white/10 bg-white/[0.03] px-4 py-4">
               <Circulo><IconeDiferencial indice={indice} /></Circulo>
               <h4 className="mt-3 text-base font-semibold">{item.titulo}</h4>
               <p className="mt-2 text-xs leading-5 text-white/65">{item.texto}</p>
@@ -313,10 +306,10 @@ export const PropostaPremium: React.FC<{
         </div>
       </section>
 
-      <section data-proposta-bloco className="grid gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-[1.05fr_0.95fr]">
+      <section data-proposta-bloco className="grade-comercial secao-bloco grid gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-[1.05fr_0.95fr]">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={fonte}>Empresas que operam com a TM SEG</p>
-          <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
+          <div className="grade-logos mt-4 grid grid-cols-3 gap-2 sm:grid-cols-4">
             {CLIENTES_TMSEG.map((item) => (
               <div key={item.nome} className="grid h-16 place-items-center rounded-2xl border border-white/10 bg-[#10131a] px-2">
                 <img src={item.logo} alt={item.nome} className="max-h-8 max-w-full object-contain" />
@@ -324,39 +317,39 @@ export const PropostaPremium: React.FC<{
             ))}
           </div>
         </div>
-        <div className="rounded-[28px] border border-[#d0121a]/40 bg-[#10131a] px-5 py-5">
+        <div className="card-comercial rounded-[28px] border border-[#d0121a]/40 bg-[#10131a] px-5 py-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={fonte}>Condições comerciais</p>
           <div className="mt-4 grid grid-cols-3 gap-3 border-b border-white/10 pb-4">
             <div>
               <p className="text-[10px] uppercase tracking-[0.14em] text-white/45">Total</p>
-              <p className="mt-1 text-2xl font-semibold" data-testid="proposta-total">{reais(tela.total)}</p>
+              <p className="mt-1 text-2xl font-semibold" data-testid="proposta-total">{reais(dados.total)}</p>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-[0.14em] text-white/45">Franquia de km</p>
-              <p className="mt-1 text-2xl font-semibold">{numero(tela.franquiaKm)}</p>
+              <p className="mt-1 text-2xl font-semibold">{numero(dados.franquiaKm)}</p>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-[0.14em] text-white/45">Franquia de horas</p>
-              <p className="mt-1 text-2xl font-semibold">{numero(tela.franquiaHoras)}</p>
+              <p className="mt-1 text-2xl font-semibold">{numero(dados.franquiaHoras)}</p>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Valor do km extra</span><span className="mt-1 block text-xl font-semibold">{reais(tela.kmExtra)}</span></p>
-            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Valor da hora extra</span><span className="mt-1 block text-xl font-semibold">{reais(tela.horaExtra)}</span></p>
-            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">KM faturado</span><span className="mt-1 block text-xl font-semibold" data-testid="proposta-km">{numero(tela.kmFaturado)}</span></p>
-            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Horas</span><span className="mt-1 block text-xl font-semibold" data-testid="proposta-horas">{numero(tela.horas)}</span></p>
-            {proposta.kmRota != null && proposta.kmRota > 0 ? (
-              <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Distância</span><span className="mt-1 block text-xl font-semibold">{numero(proposta.kmRota)} km</span></p>
+            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Valor do km extra</span><span className="mt-1 block text-xl font-semibold">{reais(dados.kmExtra)}</span></p>
+            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Valor da hora extra</span><span className="mt-1 block text-xl font-semibold">{reais(dados.horaExtra)}</span></p>
+            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">KM faturado</span><span className="mt-1 block text-xl font-semibold" data-testid="proposta-km">{numero(dados.kmFaturado)}</span></p>
+            <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Horas</span><span className="mt-1 block text-xl font-semibold" data-testid="proposta-horas">{numero(dados.horas)}</span></p>
+            {kmMostrado != null ? (
+              <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Distância</span><span className="mt-1 block text-xl font-semibold">{numero(kmMostrado)} km</span></p>
             ) : null}
             {tempoViagem ? (
               <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Tempo estimado</span><span className="mt-1 block text-xl font-semibold">{tempoViagem}</span></p>
             ) : null}
           </div>
-          {tela.mostraFranquiaIncluida ? (
-            <p className="mt-4 text-sm text-white/75" data-testid="proposta-franquia-incluida">Franquia incluída: {numero(tela.franquiaKm)} km e {numero(tela.franquiaHoras)} h.</p>
+          {dados.mostraFranquiaIncluida ? (
+            <p className="mt-4 text-sm text-white/75" data-testid="proposta-franquia-incluida">Franquia incluída: {numero(dados.franquiaKm)} km e {numero(dados.franquiaHoras)} h.</p>
           ) : null}
-          {tela.pernoite != null ? (
-            <p className="mt-3 text-sm text-white/80">Pernoite: {reais(tela.pernoite)}</p>
+          {dados.pernoite != null ? (
+            <p className="mt-3 text-sm text-white/80">Pernoite: {reais(dados.pernoite)}</p>
           ) : null}
           <p className="mt-4 text-sm font-semibold">Tipo de escolta: escolta armada</p>
           <p className="mt-3 border-l-4 border-[#d0121a] pl-3 text-xs leading-5 text-white/70">{AVISO_PEDAGIO}</p>

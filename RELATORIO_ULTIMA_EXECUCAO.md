@@ -2,6 +2,10 @@
 
 # Próxima Execução Proposta
 
+Executado em 26/10/2026. O backend devolve o JSON da cotação pelo motor já existente, sem desenhar imagem. A tela injeta origem, destino, km, tempo, sub-região e os valores nos cards. Um JSON com total diferente é ignorado. O PDF continua numa folha só. Ainda não foi publicado. O motor da OS não mudou.
+
+Executado em 26/10/2026. O PDF deixou de sair em seis folhas A4. A impressão mede a altura da tela e gera uma folha contínua de 1100 px, com quatro colunas nos serviços e nos diferenciais e o caminhão limitado a 220 px sem esticar. Ainda não foi publicado. O motor da OS não mudou.
+
 Executado em 26/10/2026. Gerar proposta abre a tela na hora, com as fotos do site e o mapa do Google. O link público é essa mesma tela. Baixar Proposta em PDF imprime o tema escuro sem captura pesada. O e-mail tem o botão Acessar Proposta Comercial. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. Salvar cotação grava a polyline e os pontos da rota. O link público redesenha o traço vermelho com esses dados; cotação antiga sem polyline pede o percurso ao Google e não regrava o snapshot. O tempo na proposta sai em horas e minutos, sem mudar o número usado no cálculo. Os indicadores continuam a contagem do banco. Ainda não foi publicado. O motor da OS não mudou.

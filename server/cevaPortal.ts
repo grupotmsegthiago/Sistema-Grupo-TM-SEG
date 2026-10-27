@@ -147,6 +147,21 @@ export function registerCevaPortalRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).json(numeros);
   });
+  app.post('/api/proposta-escolta/dados', async (req, res) => {
+    const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
+    if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {
+      res.status(401).json({ error: 'Entre novamente para montar a proposta.' });
+      return;
+    }
+    const proposta = req.body?.proposta;
+    if (!proposta || typeof proposta !== 'object' || Array.isArray(proposta)) {
+      res.status(400).json({ error: 'A cotação não veio para montar a proposta.' });
+      return;
+    }
+    const { dadosDaProposta } = await import('../lib/portalCliente/dadosProposta.js');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.status(200).json({ dados: dadosDaProposta(proposta), imagem: null });
+  });
   app.post('/api/proposta-escolta/premium', async (req, res) => {
     const { pedidoVisualAutorizado } = await import('./frotaVisual.js');
     if (!await pedidoVisualAutorizado(req.headers as Record<string, unknown>)) {
@@ -273,8 +288,10 @@ export function registerCevaPortalRoutes(app: Express): void {
       String(req.headers.origin || req.headers.referer || ''),
     );
     const { indicadoresPublicos } = await import('./propostaPremiumVisual.js');
+    const { dadosDaProposta } = await import('../lib/portalCliente/dadosProposta.js');
     const numeros = await indicadoresPublicos();
-    res.status(200).json({ ...resultado.corpo, mapa, operacoes: numeros.operacoes, parceiros: numeros.parceiros });
+    const dados = dadosDaProposta(resultado.corpo.proposta as Parameters<typeof dadosDaProposta>[0]);
+    res.status(200).json({ ...resultado.corpo, mapa, dados, operacoes: numeros.operacoes, parceiros: numeros.parceiros });
   });
 }
 

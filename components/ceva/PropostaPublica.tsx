@@ -3,6 +3,7 @@ import { ExperienciaProposta } from './ExperienciaProposta';
 import { cenaDaProposta } from './ClientTruckVisual';
 import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
 import { pecasPublicadas } from '../../lib/portalCliente/propostaPremium';
+import { dadosConfiaveis, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
 
 type Vista = {
   cliente: string;
@@ -11,6 +12,7 @@ type Vista = {
   mapa: string | null;
   operacoes: string | null;
   parceiros: string | null;
+  dados: DadosProposta;
 };
 
 /** Quem recebe o link vê só esta proposta. Não há menu, login nem outras telas. */
@@ -26,13 +28,15 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
         const corpo = await resposta.json().catch(() => ({}));
         if (!resposta.ok || !corpo.proposta) throw new Error(corpo.error || 'Link inválido ou vencido.');
         if (!ativo) return;
+        const proposta = corpo.proposta as PropostaPortal;
         setVista({
           cliente: String(corpo.cliente || ''),
           validade: String(corpo.validade || ''),
-          proposta: corpo.proposta as PropostaPortal,
+          proposta,
           mapa: typeof corpo.mapa === 'string' ? corpo.mapa : null,
           operacoes: typeof corpo.operacoes === 'string' ? corpo.operacoes : null,
           parceiros: typeof corpo.parceiros === 'string' ? corpo.parceiros : null,
+          dados: dadosConfiaveis(corpo.dados, proposta),
         });
       } catch (falha) {
         if (ativo) setErro(falha instanceof Error ? falha.message : 'Link inválido ou vencido.');
@@ -68,6 +72,7 @@ export const PropostaPublica: React.FC<{ id: string; token: string }> = ({ id, t
       idCotacao={id}
       validadeTexto={vista.validade}
       proposta={vista.proposta}
+      dados={vista.dados}
       clienteInterno={vista.cliente}
       cena={cenaDaProposta(vista.cliente, vista.mapa)}
       pecas={pecasPublicadas(vista.cliente)}

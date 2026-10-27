@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Loader2, Mail, X } from 'lucide-react';
 import {
   MARCA_TMSEG,
   caminhoDaProposta,
   regiaoLegivel,
 } from '../../lib/portalCliente/apresentacao';
-import { numerosDaTela, rotulosSemAno, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { rotulosSemAno, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import { dadosDaProposta, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
 import { COPIA_FIXA_COTACAO } from '../../lib/portalCliente/gestaoCotacao';
 import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
@@ -54,7 +55,9 @@ export const ExperienciaProposta: React.FC<{
   parceiros?: string | null;
   /** Mapa estático da rota, sem o painel da tela. */
   mapaLimpo?: string | null;
-}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao, onSalvarCotacao, hero, pecas, operacoesRealizadas, parceiros, mapaLimpo }) => {
+  /** JSON consolidado da cotação. Sem ele, a tela lê o mesmo motor. */
+  dados?: DadosProposta | null;
+}> = ({ frase, mostrando, proposta, pedido, clienteInterno, cena, printMapa, operacoes, onFechar, modoCaptura = false, dataTexto, marcaPdf = '1', somenteLeitura = false, validadeTexto, idCotacao, onSalvarCotacao, hero, pecas, operacoesRealizadas, parceiros, mapaLimpo, dados: dadosInformados }) => {
   const portal = usePortalCliente();
   const [email, setEmail] = useState('');
   const [aviso, setAviso] = useState('');
@@ -70,7 +73,7 @@ export const ExperienciaProposta: React.FC<{
     numero: proposta.numero,
   });
   const data = dataTexto || dataDaProposta();
-  const tela = numerosDaTela(proposta);
+  const dados = dadosInformados ?? dadosDaProposta(proposta);
   const visivel = mostrando || modoCaptura;
   const artigoRef = React.useRef<HTMLElement | null>(null);
 
@@ -123,9 +126,38 @@ export const ExperienciaProposta: React.FC<{
     }
   };
 
+  const medirPagina = () => {
+    const artigo = artigoRef.current;
+    const miolo = artigo?.querySelector('.proposta-container') as HTMLElement | null;
+    const altura = Math.ceil((miolo?.offsetHeight || artigo?.scrollHeight || 3200) + 8);
+    const pagina = Math.max(2200, Math.min(altura, 9000));
+    let estilo = document.getElementById('proposta-pagina-continua');
+    if (!estilo) {
+      estilo = document.createElement('style');
+      estilo.id = 'proposta-pagina-continua';
+      document.head.appendChild(estilo);
+    }
+    estilo.textContent = `@page { size: 1100px ${pagina}px; margin: 0; }`;
+    document.body.appendChild(estilo);
+  };
+
+  useEffect(() => {
+    if (!somenteLeitura) return undefined;
+    medirPagina();
+    const artigo = artigoRef.current;
+    const imagens = artigo ? Array.from(artigo.querySelectorAll('img')) : [];
+    imagens.forEach((img) => img.addEventListener('load', medirPagina));
+    const espera = window.setTimeout(medirPagina, 600);
+    return () => {
+      window.clearTimeout(espera);
+      imagens.forEach((img) => img.removeEventListener('load', medirPagina));
+    };
+  }, [somenteLeitura, proposta, pecas, cena]);
+
   const baixarPdf = () => {
     const anterior = document.title;
     document.title = nomeArquivoPdfProposta(idCotacao, clienteInterno || portal.marca.rotulo);
+    medirPagina();
     const voltar = () => {
       document.title = anterior;
       window.removeEventListener('afterprint', voltar);
@@ -227,8 +259,7 @@ export const ExperienciaProposta: React.FC<{
           .tmseg-parado { display: block; }
         }
         [data-proposta-pdf], [data-proposta-pdf] * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        [data-proposta-bloco] { break-inside: avoid; page-break-inside: avoid; }
-        @page { margin: 0; size: A4 landscape; }
+        @page { margin: 0; }
         @media print {
           html, body, [data-proposta-pdf] {
             background: #07080d !important;
@@ -239,13 +270,54 @@ export const ExperienciaProposta: React.FC<{
           }
           [data-proposta-pdf] {
             position: static !important;
+            width: 1100px !important;
+            max-width: 1100px !important;
             height: auto !important;
             max-height: none !important;
             overflow: visible !important;
             box-shadow: none !important;
+            margin: 0 !important;
           }
           [data-proposta-corpo] { overflow: visible !important; height: auto !important; max-height: none !important; }
           [data-print-oculto], [data-proposta-acoes] { display: none !important; }
+          .proposta-container {
+            width: 1100px !important;
+            max-width: 1100px !important;
+            margin: 0 auto !important;
+            background-color: #07080d !important;
+            color: #ffffff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .cabecalho-proposta { display: flex !important; flex-wrap: nowrap !important; align-items: center !important; justify-content: space-between !important; }
+          .hero-proposta { min-height: 0 !important; }
+          .grade-hero { display: grid !important; grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr) !important; align-items: end !important; }
+          .grade-quatro { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 12px !important; }
+          .grade-empresa, .grade-origem { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+          .grade-comercial { display: grid !important; grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr) !important; }
+          .grade-logos { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+          .banner-caminhao { min-height: 0 !important; height: 220px !important; max-height: 220px !important; }
+          .caminhao-proposta { height: 220px !important; max-height: 220px !important; width: 100% !important; object-fit: contain !important; object-position: right center !important; }
+          .card-servico, .card-diferencial, .card-comercial, .card-metrica, .secao-bloco {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+          .card-servico, .card-diferencial, .card-metrica {
+            background: #12151c !important;
+            border: 1px solid rgba(255,255,255,0.14) !important;
+            border-radius: 24px !important;
+            overflow: hidden !important;
+          }
+          .card-comercial { background: #10131a !important; border: 1px solid rgba(208,18,26,0.45) !important; border-radius: 28px !important; }
+          .foto-servico, .foto-empresa { width: 100% !important; object-fit: cover !important; max-height: 220px !important; }
+          .foto-servico { height: 148px !important; }
+          .foto-empresa { height: 220px !important; }
+          .mapa-perspectiva, .mapa-perspectiva > div { transform: none !important; }
+          .proposta-container .line-clamp-1, .proposta-container .line-clamp-2 {
+            overflow: visible !important;
+            display: block !important;
+            -webkit-line-clamp: unset !important;
+          }
         }
       `}</style>
       {!visivel && (
@@ -287,7 +359,7 @@ export const ExperienciaProposta: React.FC<{
               data={data}
               validade={validadeTexto}
               proposta={proposta}
-              tela={tela}
+              dados={dados}
               cena={cena}
               printMapa={printMapa}
               hero={hero}

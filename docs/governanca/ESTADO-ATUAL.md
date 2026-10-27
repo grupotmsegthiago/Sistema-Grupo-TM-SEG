@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-26. A proposta recebe um JSON do motor da cotação (origem, destino, km, tempo, sub-região e valores). A tela só injeta esses campos. Não há desenho por IA. O PDF é uma folha contínua. Ainda não foi publicado. O motor da OS não mudou.
+
+Atualizado em 2026-10-26. O PDF da proposta deixa de ser A4 fatiado. A impressão sai numa folha contínua de 1100 px, com os cards de serviços, diferenciais e condições em grade. Ainda não foi publicado. O motor da OS não mudou.
+
 Atualizado em 2026-10-26. O link público abre a própria tela da proposta, com as fotos já publicadas e o mapa da rota. Não há geração de imagem. O PDF sai da impressão dessa tela e o e-mail leva o botão para o link. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A cotação passa a gravar a polyline da rota. O link público desenha esse traço em vermelho no mapa do Google. O tempo da proposta aparece em horas e minutos, e os indicadores continuam a consulta do banco. Ainda não foi publicado. O motor da OS não mudou.

@@ -23,6 +23,7 @@ import { percursoUtil } from '../lib/portalCliente/historicoCotacoes';
 import { decodificarPolyline, tituloCidade } from '../lib/portalCliente/rotaCotacao';
 import { urlMapaEstatico } from '../lib/portalCliente/frotaVisual';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
+import { dadosConfiaveis, dadosDaProposta } from '../lib/portalCliente/dadosProposta';
 
 describe('proposta premium', () => {
   it('a cena ilustrativa não leva preço, endereço nem logotipo', () => {
@@ -131,6 +132,8 @@ describe('proposta premium', () => {
     const tela = readFileSync(new URL('../components/ceva/CotacaoPortal.tsx', import.meta.url), 'utf8');
     const gerar = tela.slice(tela.indexOf('const gerar = () => {'), tela.indexOf('const salvarCotacaoAtual'));
     assert.match(gerar, /pecasPublicadas/);
+    assert.match(gerar, /dadosDaProposta/);
+    assert.match(gerar, /proposta-escolta\/dados/);
     assert.match(gerar, /setEtapa\('proposta'\)/);
     assert.doesNotMatch(gerar, /proposta-escolta\/premium|TEMPO_CENA_MS|gerarImagem/);
     assert.doesNotMatch(gerar, /gravarNoHistorico/);
@@ -147,6 +150,9 @@ describe('proposta premium', () => {
     const leitura = portal.slice(portal.indexOf("app.get('/api/proposta-publica"), portal.indexOf('async function imagemDoMapa'));
     assert.match(leitura, /indicadoresPublicos/);
     assert.match(leitura, /mapaPublicoDaRota/);
+    assert.match(leitura, /dadosDaProposta/);
+    assert.match(portal, /\/api\/proposta-escolta\/dados/);
+    assert.doesNotMatch(portal.slice(portal.indexOf("app.post('/api/proposta-escolta/dados'"), portal.indexOf("app.patch('/api/cotacoes/:id/inativar'")), /gerarImagemIlustrativa|gemini/);
     assert.match(portal, /traco: 'vermelho'/);
     assert.doesNotMatch(leitura, /visualizarCenaPremium|gerarImagemIlustrativa/);
     const demo = readFileSync(new URL('../components/ceva/PropostaPremiumDemo.tsx', import.meta.url), 'utf8');
@@ -212,9 +218,53 @@ describe('proposta premium', () => {
     assert.match(html, /Válida até 05\/11\/2026/);
     assert.match(html, /Este link não abre o restante do sistema/);
     assert.match(html, /print-color-adjust: exact !important/);
+    assert.match(html, /proposta-container/);
+    assert.match(html, /grade-quatro/);
+    assert.match(html, /card-servico/);
+    assert.match(html, /repeat\(4, minmax\(0, 1fr\)\)/);
+    assert.match(html, /max-height: 220px !important/);
+    assert.doesNotMatch(html, /size:\s*A4/);
     assert.match(html, /service-fiscal-rota\.png/);
     assert.match(html, /8h01min/);
     assert.match(html, /4\.121,58/);
     assert.doesNotMatch(html, /fiscal-2\.webp|Gerando Imagem|Salvar cotação|Enviar para o e-mail/);
+    const dados = dadosDaProposta({
+      acordada: false,
+      regiao: 'SUDESTE MG/ES',
+      origem: 'Serra, ES',
+      destino: 'Rio de Janeiro, RJ',
+      paradas: [],
+      acionamento: 4121.58,
+      kmFranquia: 564.6,
+      horasFranquia: 14,
+      kmExtra: 7.3,
+      horaExtra: 169,
+      operacao: 'SUDESTE',
+      kmRota: 564.6,
+      duracaoMin: 481,
+    });
+    assert.equal(dados.subRegiao, 'SUDESTE MG/ES');
+    assert.equal(dados.distanciaKm, 564.6);
+    assert.equal(dados.tempoMin, 481);
+    assert.equal(dados.total, 4121.58);
+    assert.equal(dados.kmFaturado, 564.6);
+    assert.equal(dados.franquiaHoras, 14);
+    assert.equal(dados.kmExtra, 7.3);
+    assert.equal(dados.horaExtra, 169);
+    assert.equal(dadosConfiaveis({ ...dados, total: 1 }, {
+      acordada: false,
+      regiao: 'SUDESTE MG/ES',
+      origem: 'Serra, ES',
+      destino: 'Rio de Janeiro, RJ',
+      paradas: [],
+      acionamento: 4121.58,
+      kmFranquia: 564.6,
+      horasFranquia: 14,
+      kmExtra: 7.3,
+      horaExtra: 169,
+      operacao: 'SUDESTE',
+      kmRota: 564.6,
+      duracaoMin: 481,
+    }).total, 4121.58);
   });
 });

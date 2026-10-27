@@ -5,6 +5,7 @@ import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
 import { authFetch } from '../../lib/authFetch';
 import { logoConhecido, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
 import { pecasPublicadas, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
+import { dadosConfiaveis, dadosDaProposta, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
 import {
   destinoDirections,
   ESTILO_MAPA_COTACAO,
@@ -562,6 +563,7 @@ export const CotacaoPortal: React.FC<{
   const [mapaLimpo, setMapaLimpo] = useState<string | null>(null);
   const [operacoesRealizadas, setOperacoesRealizadas] = useState<string | null>(null);
   const [parceirosAtivos, setParceirosAtivos] = useState<string | null>(null);
+  const [dadosProposta, setDadosProposta] = useState<DadosProposta | null>(null);
   const [esperandoCena, setEsperandoCena] = useState(false);
   const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
   const digitando = Object.values(editando).some(Boolean);
@@ -768,6 +770,7 @@ export const CotacaoPortal: React.FC<{
     const cliente = (clienteNome || portal.marca.rotulo).slice(0, 120);
     setHeroPremium(null);
     setPecasPremium(pecasPublicadas(cliente));
+    setDadosProposta(dadosDaProposta(feito.nova));
     setMapaLimpo(null);
     setPrintMapa(null);
     setRascunhoAberto(rascunho);
@@ -784,6 +787,14 @@ export const CotacaoPortal: React.FC<{
     setPlaceOrigem(null);
     setPlaceDestino(null);
     void (async () => {
+      try {
+        const pedido = JSON.stringify({ proposta: feito.nova });
+        const resposta = clienteNome
+          ? await authFetch('/api/proposta-escolta/dados', { method: 'POST', body: pedido })
+          : await fetch('/api/proposta-escolta/dados', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: pedido });
+        const corpo = await resposta.json().catch(() => ({}));
+        if (resposta.ok) setDadosProposta(dadosConfiaveis(corpo.dados, feito.nova));
+      } catch { /* a tela permanece com o JSON do motor */ }
       if (trajeto) {
         const enviar = (pedido: string) => (clienteNome
           ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: pedido })
@@ -849,6 +860,7 @@ export const CotacaoPortal: React.FC<{
     setEsperandoCena(false);
     setHeroPremium(null);
     setPecasPremium(null);
+    setDadosProposta(null);
     setMapaLimpo(null);
   };
 
@@ -1138,6 +1150,7 @@ export const CotacaoPortal: React.FC<{
           frase={frases[(esperandoCena ? passo : Math.min(passo, frases.length - 1)) % frases.length] || ''}
           mostrando={etapa === 'proposta'}
           proposta={proposta}
+          dados={dadosProposta}
           pedido={{ regiao: rascunhoAberto?.nova.regiao || proposta.regiao, origem: rascunhoAberto?.origem || proposta.origem, destino: rascunhoAberto?.destino || proposta.destino, paradas: rascunhoAberto?.paradas || proposta.paradas, km: rascunhoAberto?.km || proposta.kmRota || 0 }}
           clienteInterno={clienteNome}
           cena={cena}

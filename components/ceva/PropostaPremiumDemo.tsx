@@ -1,5 +1,5 @@
 import React from 'react';
-import { numerosDaTela, type PropostaPortal } from '../../lib/portalCliente/cotacao';
+import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
 import { pecasPublicadas } from '../../lib/portalCliente/propostaPremium';
 import { PropostaPremium } from './PropostaPremium';
 
@@ -24,7 +24,6 @@ const proposta: PropostaPortal = {
 
 /** Página local da prévia. Não entra no menu e não grava cotação. */
 export const PropostaPremiumDemo: React.FC = () => {
-  const tela = numerosDaTela(proposta);
   return (
     <main className="min-h-screen bg-[#07080d]">
       <div className="mx-auto max-w-6xl">
@@ -37,7 +36,6 @@ export const PropostaPremiumDemo: React.FC = () => {
           data="26 de outubro de 2026"
           validade="05/11/2026"
           proposta={proposta}
-          tela={tela}
           cena={{
             mapa: '/propostas-premium/demo-mapa-ceva.png',
             carreta: '/caminhoes/3d/ceva-recorte.webp',
