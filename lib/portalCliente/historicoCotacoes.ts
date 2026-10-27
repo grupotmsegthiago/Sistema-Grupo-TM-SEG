@@ -11,6 +11,7 @@ import {
 } from '../precificacao/tabela2027';
 import { cidadeDaRota, type PropostaPortal } from './cotacao';
 import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
+import { decodificarPolyline, type Coordenada } from './rotaCotacao';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
 export const TAMANHO_PAGINA_HISTORICO = 10;
@@ -41,6 +42,8 @@ export type SnapshotCotacaoPortal = {
   linkPublico?: { token: string; expiraEm: string } | null;
   /** Aceite do usuário do cliente, antes de gerar a proposta. */
   aceiteCliente?: { texto: string; em: string } | null;
+  /** Traçado calculado. O link público redesenha a rota a partir daqui, não de um desenho solto. */
+  percurso?: { polyline: string; pontos: Coordenada[] } | null;
 };
 
 export type LinhaHistoricoCotacao = CotacaoPrazo & {
@@ -82,6 +85,7 @@ export type PedidoRegistroCotacao = {
   aceiteCliente?: { texto?: unknown; em?: unknown } | null;
   kmFaturado?: unknown;
   horasContadas?: unknown;
+  percurso?: unknown;
 };
 
 /** Texto fixo do cliente antes de gerar a proposta. Vale se a cotação for usada numa OS. */
@@ -447,6 +451,27 @@ export function mensagemCompletaCotacao(linha: LinhaHistoricoCotacao, agora = ne
   return partes.filter(Boolean).join('\n');
 }
 
+/** Aceita a polyline do Google e um conjunto curto de coordenadas. Descarta o resto. */
+export function percursoUtil(bruto: unknown): { polyline: string; pontos: Coordenada[] } | null {
+  if (!bruto || typeof bruto !== 'object') return null;
+  const registro = bruto as { polyline?: unknown; pontos?: unknown };
+  const linha = String(registro.polyline || '').trim();
+  const polyline = /^[\x21-\x7E]{8,12000}$/.test(linha) ? linha : '';
+  const lista = Array.isArray(registro.pontos) ? registro.pontos : [];
+  const pontos: Coordenada[] = [];
+  for (const item of lista) {
+    if (pontos.length >= 80) break;
+    if (!item || typeof item !== 'object') continue;
+    const lat = Number((item as { lat?: unknown }).lat);
+    const lng = Number((item as { lng?: unknown }).lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    pontos.push({ lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5 });
+  }
+  const completos = pontos.length >= 2 ? pontos : (polyline ? decodificarPolyline(polyline) : []);
+  if (!polyline && completos.length < 2) return null;
+  return { polyline, pontos: completos.slice(0, 80) };
+}
+
 export function montarSnapshot(entrada: {
   duracaoMin?: number | null;
   usouMinimo?: boolean;
@@ -464,8 +489,9 @@ export function montarSnapshot(entrada: {
   numero?: number | null;
   kmFaturado?: number | null;
   horasContadas?: number | null;
+  percurso?: unknown;
 }): SnapshotCotacaoPortal {
-  return {
+  const pronto: SnapshotCotacaoPortal = {
     kind: KIND_PORTAL_COTACAO,
     duracaoMin: entrada.duracaoMin != null && Number.isFinite(entrada.duracaoMin) && entrada.duracaoMin > 0 ? Math.round(entrada.duracaoMin) : null,
     usouMinimo: Boolean(entrada.usouMinimo),
@@ -484,6 +510,9 @@ export function montarSnapshot(entrada: {
     ...(numero(entrada.kmFaturado) > 0 ? { kmFaturado: numero(entrada.kmFaturado) } : {}),
     ...(numero(entrada.horasContadas) > 0 ? { horasContadas: numero(entrada.horasContadas) } : {}),
   };
+  const percurso = percursoUtil(entrada.percurso);
+  if (percurso) pronto.percurso = percurso;
+  return pronto;
 }
 
 export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPortal | null {
@@ -517,6 +546,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       numero: numeroInformado(dados.numero),
       kmFaturado: dados.kmFaturado,
       horasContadas: dados.horasContadas,
+      percurso: dados.percurso,
     }),
       ...(linkPublico ? { linkPublico } : {}),
       ...(aceiteCliente ? { aceiteCliente } : {}),
@@ -599,6 +629,7 @@ export function pedidoParaRegistro(
     numero: numeroInformado(pedido.numero),
     kmFaturado: pedido.kmFaturado,
     horasContadas: pedido.horasContadas,
+    percurso: pedido.percurso,
   });
   const aceite = pedido.aceiteCliente;
   if (aceite && aceite.texto === TEXTO_ACEITE_OS && typeof aceite.em === 'string' && aceite.em.trim()) {

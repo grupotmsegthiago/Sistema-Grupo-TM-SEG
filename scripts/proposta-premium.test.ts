@@ -13,7 +13,11 @@ import {
   pedidoDaPeca,
   podeGerarImagem,
   rotuloDeContagem,
+  textoDuracaoViagem,
 } from '../lib/portalCliente/propostaPremium';
+import { percursoUtil } from '../lib/portalCliente/historicoCotacoes';
+import { decodificarPolyline, tituloCidade } from '../lib/portalCliente/rotaCotacao';
+import { urlMapaEstatico } from '../lib/portalCliente/frotaVisual';
 import { ExperienciaProposta } from '../components/ceva/ExperienciaProposta';
 
 describe('proposta premium', () => {
@@ -89,7 +93,19 @@ describe('proposta premium', () => {
     assert.match(html, /logo_ceva_portal\.png/);
     assert.match(html, /caminhoes\/3d\/ceva-veiculo\.webp/);
     assert.match(html, /28 km/);
-    assert.match(html, /52 min/);
+    assert.match(html, /52min/);
+    assert.equal(textoDuracaoViagem(481), '8h01min');
+    assert.equal(tituloCidade('Avenida Talma Rodrigues Ribeiro, 147 - Nova Zelândia, Serra - ES'), 'Serra, ES');
+    assert.equal(tituloCidade('Salvador, BA'), 'Salvador, BA');
+    assert.equal(textoDuracaoViagem(52), '52min');
+    const pontos = decodificarPolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+    assert.equal(pontos.length, 3);
+    assert.ok(Math.abs(pontos[0].lat - 38.5) < 0.01);
+    assert.ok(Math.abs(pontos[2].lng + 126.453) < 0.01);
+    const percurso = percursoUtil({ polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@', pontos: [{ lat: 38.5, lng: -120.2 }, { lat: 'ruim' }, { lat: 99, lng: 0 }] });
+    assert.equal(percurso?.pontos.length, 3);
+    const mapa = urlMapaEstatico({ polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@', chave: 'teste', traco: 'vermelho' });
+    assert.match(mapa || '', /ef4444ff/);
     assert.match(html, /9\.583,80/);
     assert.match(html, /Mapa: Google/);
     assert.match(html, /data-proposta-mapa="1"/);
@@ -125,6 +141,8 @@ describe('proposta premium', () => {
     assert.doesNotMatch(publica, /proposta-escolta\/premium|gerarImagemIlustrativa/);
     const leitura = portal.slice(portal.indexOf("app.get('/api/proposta-publica"), portal.indexOf('async function imagemDoMapa'));
     assert.match(leitura, /indicadoresPublicos/);
+    assert.match(leitura, /mapaPublicoDaRota/);
+    assert.match(portal, /traco: 'vermelho'/);
     assert.doesNotMatch(leitura, /visualizarCenaPremium|gerarImagemIlustrativa/);
     const demo = readFileSync(new URL('../components/ceva/PropostaPremiumDemo.tsx', import.meta.url), 'utf8');
     assert.doesNotMatch(demo, /duracaoMin:\s*\d+/);

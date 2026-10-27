@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { CLIENTES_TMSEG, DIFERENCIAIS_TMSEG, MARCA_TMSEG, SERVICOS_TMSEG, AVISO_PEDAGIO } from '../../lib/portalCliente/apresentacao';
 import type { PropostaPortal } from '../../lib/portalCliente/cotacao';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
-import { cenaOficial, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
-import { rotuloCidadeUf } from '../../lib/portalCliente/rotaCotacao';
+import { cenaOficial, textoDuracaoViagem, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
+import { rotuloCidadeUf, tituloCidade } from '../../lib/portalCliente/rotaCotacao';
 import { CenaRotaVisual } from './ClientTruckVisual';
 
 function reais(valor: number): string {
@@ -53,14 +53,52 @@ function Escudo() {
   );
 }
 
-function Viatura() {
+function Viatura(props: { className?: string }) {
   return (
-    <svg viewBox="0 0 86 36" className="h-8 w-20" aria-hidden="true">
+    <svg viewBox="0 0 86 36" className={props.className || 'h-8 w-20'} aria-hidden="true">
       <rect x="8" y="14" width="70" height="14" rx="4" fill="#111827" />
       <path d="M20 14 28 6h28l8 8" fill="#1f2937" />
       <rect x="36" y="3" width="14" height="4" rx="1" fill="#f59e0b" />
       <circle cx="24" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
       <circle cx="64" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
+    </svg>
+  );
+}
+
+function IconeDiferencial(props: { indice: number }) {
+  const comum = { viewBox: '0 0 24 24', className: 'h-5 w-5', 'aria-hidden': true } as const;
+  if (props.indice === 1) {
+    return (
+      <svg {...comum}>
+        <path fill="none" stroke="currentColor" strokeWidth="1.7" d="M4 15c2-1 4-4 8-4s6 3 8 4" />
+        <circle cx="8" cy="16.5" r="1.4" fill="currentColor" />
+        <circle cx="16" cy="16.5" r="1.4" fill="currentColor" />
+        <path fill="currentColor" d="M12 4 7 6.2v3.2c0 2.4 1.8 4.2 5 5.6 3.2-1.4 5-3.2 5-5.6V6.2L12 4z" />
+      </svg>
+    );
+  }
+  if (props.indice === 2) {
+    return (
+      <svg {...comum}>
+        <circle cx="12" cy="12" r="2" fill="currentColor" />
+        <path fill="none" stroke="currentColor" strokeWidth="1.7" d="M12 5a7 7 0 0 1 7 7M12 2.5a9.5 9.5 0 0 1 9.5 9.5M7.2 16.8 5 21" />
+      </svg>
+    );
+  }
+  if (props.indice === 3) {
+    return (
+      <svg {...comum}>
+        <path fill="currentColor" d="M3 15h6l1.2-2.2H14L16 15h5v2H3v-2z" />
+        <path fill="currentColor" d="M5 13 8 8h5l2 3H8.2L7 13H5z" />
+        <circle cx="7.5" cy="17.5" r="1.3" fill="#07080d" />
+        <circle cx="17" cy="17.5" r="1.3" fill="#07080d" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...comum}>
+      <path fill="currentColor" d="M12 2 5 5.2v6.1c0 4.2 2.8 7.2 7 9.2 4.2-2 7-5 7-9.2V5.2L12 2z" />
+      <path fill="none" stroke="#07080d" strokeWidth="1.7" d="m8.5 12 2.2 2.2 4.3-4.4" />
     </svg>
   );
 }
@@ -106,8 +144,8 @@ export const PropostaPremium: React.FC<{
   altMapa: string;
 }> = ({ cliente, caminho, tabela, rota, regiao, data, validade, proposta, tela, cena, printMapa, mapaLimpo, hero, pecas, operacoesRealizadas, parceiros, linkPublico, altMapa }) => {
   const oficial = cenaOficial(cliente);
-  const origem = rotuloCidadeUf(proposta.origem);
-  const destino = rotuloCidadeUf(proposta.destino);
+  const origem = tituloCidade(proposta.origem);
+  const destino = tituloCidade(proposta.destino);
   const mapa = mapaLimpo || (!printMapa ? (cena?.mapa || '') : '');
   const carreta = cena?.carreta || oficial.recorte;
   const logo = cena?.logo || oficial.logo;
@@ -119,6 +157,7 @@ export const PropostaPremium: React.FC<{
   const fonte = { fontFamily: 'Oswald, sans-serif' } as const;
   const operacoesTexto = operacoesRealizadas || '—';
   const parceirosTexto = parceiros || '—';
+  const tempoViagem = textoDuracaoViagem(proposta.duracaoMin);
 
   return (
     <div data-testid="proposta-premium" className="bg-[#07080d] text-white">
@@ -134,36 +173,29 @@ export const PropostaPremium: React.FC<{
         </div>
       </header>
 
-      <section data-proposta-bloco className="relative min-h-[520px] overflow-hidden px-5 pb-8 pt-7 sm:px-8">
+      <section data-proposta-bloco className="relative min-h-[440px] overflow-hidden px-5 pb-6 pt-6 sm:px-8">
         {fundo ? (
-          <Foto src={fundo} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover" onVazio={() => setCapaFalhou(true)} />
+          <Foto src={fundo} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover object-right" onVazio={() => setCapaFalhou(true)} />
         ) : (
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_45%,rgba(208,18,26,0.38),transparent_42%),linear-gradient(90deg,#07080d,#141820)]" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_78%_42%,rgba(208,18,26,0.42),transparent_46%),linear-gradient(90deg,#07080d,#141820)]" />
         )}
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#07080d] via-[#07080d]/92 to-[#07080d]/20" />
-        <div className="relative grid items-end gap-6 lg:grid-cols-[1.12fr_0.88fr]">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#07080d] via-[#07080d]/78 to-transparent" />
+        <div className="relative grid items-end gap-4 lg:grid-cols-[0.82fr_1.18fr]">
           <div>
             <p className="text-[12px] font-semibold uppercase tracking-[0.28em] text-[#d0121a]" style={fonte}>Proposta comercial</p>
-            <h2 className="mt-3 max-w-3xl text-3xl font-semibold uppercase leading-[1.05] sm:text-5xl" style={fonte}>{caminho}</h2>
-            <p className="mt-4 text-sm text-white/70">{regiao} · {data}</p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              <p className="rounded-2xl border border-white/10 bg-black/55 px-3 py-3 text-xs backdrop-blur-sm"><span className="block text-[10px] uppercase tracking-wide text-white/50">Data prevista</span><span className="mt-1 block font-semibold">{data}</span><span className="text-white/60">{regiao}</span></p>
-              <p className="rounded-2xl border border-white/10 bg-black/55 px-3 py-3 text-xs backdrop-blur-sm" data-testid="nome-tabela-vigencia"><span className="block text-[10px] uppercase tracking-wide text-white/50">Tabela utilizada</span><span className="mt-1 block font-semibold">{tabela}</span></p>
-              <p className="rounded-2xl border border-white/10 bg-black/55 px-3 py-3 text-xs backdrop-blur-sm" data-testid="nome-rota-vigencia"><span className="block text-[10px] uppercase tracking-wide text-white/50">Rota</span><span className="mt-1 block font-semibold">{rota}</span></p>
+            <h2 className="mt-2 max-w-xl text-4xl font-semibold uppercase leading-[0.95] sm:text-6xl" style={fonte}>{origem}<span className="mx-2 text-[#d0121a]">→</span>{destino}</h2>
+            <p className="mt-2 line-clamp-1 max-w-xl text-[11px] text-white/45">{caminho}</p>
+            <p className="mt-2 text-sm text-white/70">{regiao} · {data}</p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              <p className="rounded-xl border border-white/10 bg-black/45 px-3 py-2 text-[11px] backdrop-blur-sm"><span className="block text-[10px] uppercase tracking-wide text-white/50">Data prevista</span><span className="mt-0.5 block font-semibold">{data}</span></p>
+              <p className="rounded-xl border border-white/10 bg-black/45 px-3 py-2 text-[11px] backdrop-blur-sm" data-testid="nome-tabela-vigencia"><span className="block text-[10px] uppercase tracking-wide text-white/50">Tabela utilizada</span><span className="mt-0.5 line-clamp-2 block font-semibold">{tabela}</span></p>
+              <p className="rounded-xl border border-white/10 bg-black/45 px-3 py-2 text-[11px] backdrop-blur-sm" data-testid="nome-rota-vigencia"><span className="block text-[10px] uppercase tracking-wide text-white/50">Rota</span><span className="mt-0.5 line-clamp-2 block font-semibold">{rota}</span></p>
             </div>
           </div>
-          <figure className="relative min-h-[220px]">
-            {!fundo ? (
-              <>
-                <div className="absolute bottom-6 right-4 opacity-90"><Viatura /></div>
-                <img src={oficial.veiculo} alt="" className="relative ml-auto h-56 w-auto max-w-full object-contain drop-shadow-[0_24px_30px_rgba(0,0,0,0.65)] sm:h-72" />
-                {logo ? <img src={logo} alt="" className="absolute bottom-10 right-[22%] h-8 w-auto rounded bg-white px-1.5 py-0.5 object-contain" /> : null}
-              </>
-            ) : (
-              <div className="flex h-full min-h-[220px] items-end justify-end">
-                {logo ? <img src={logo} alt="" className="mb-8 h-10 w-auto rounded bg-white px-2 py-1 object-contain shadow-lg" /> : null}
-              </div>
-            )}
+          <figure className="relative min-h-[240px] sm:min-h-[300px]">
+            <div className="absolute bottom-4 right-2 z-10 drop-shadow-[0_18px_18px_rgba(0,0,0,0.65)]"><Viatura className="h-12 w-28 sm:h-16 sm:w-36" /></div>
+            <img src={oficial.veiculo} alt="" className="relative z-0 ml-auto h-64 w-auto max-w-full object-contain drop-shadow-[0_28px_28px_rgba(0,0,0,0.7)] sm:h-80" />
+            {logo ? <img src={logo} alt="" className="absolute bottom-16 right-[18%] z-20 h-9 w-auto rounded bg-white px-1.5 py-0.5 object-contain shadow-lg" /> : null}
           </figure>
         </div>
       </section>
@@ -196,18 +228,18 @@ export const PropostaPremium: React.FC<{
               {proposta.kmRota != null && proposta.kmRota > 0 ? (
                 <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"><span className="block text-[10px] uppercase text-white/50">Distância aproximada</span><span className="text-base font-semibold">{numero(proposta.kmRota)} km</span></p>
               ) : null}
-              {proposta.duracaoMin != null && proposta.duracaoMin > 0 ? (
-                <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"><span className="block text-[10px] uppercase text-white/50">Tempo estimado</span><span className="text-base font-semibold">{Math.round(proposta.duracaoMin)} min</span></p>
+              {tempoViagem ? (
+                <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2"><span className="block text-[10px] uppercase text-white/50">Tempo estimado</span><span className="text-base font-semibold">{tempoViagem}</span></p>
               ) : null}
               <p className="rounded-full border border-[#d0121a]/70 px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-white">Rota calculada</p>
             </div>
           </div>
           {mapa ? (
-            <figure className="px-4 pb-2 [perspective:1100px]">
-              <div className="origin-center overflow-hidden rounded-2xl [transform:rotateX(14deg)]">
+            <figure className="px-4 pb-4 [perspective:1400px]">
+              <div className="origin-bottom overflow-hidden rounded-2xl shadow-[0_36px_70px_rgba(0,0,0,0.55),0_0_36px_rgba(208,18,26,0.28)] [transform:rotateX(18deg)]">
                 <CenaRotaVisual mapa={mapa} carreta={carreta} logo={logo} faixa={false} />
               </div>
-              <figcaption className="mt-2 text-[10px] text-white/45">Mapa: Google. O traçado é o da rota calculada.</figcaption>
+              <figcaption className="mt-3 text-[10px] text-white/45">Mapa: Google. O traçado vermelho é o da rota calculada.</figcaption>
             </figure>
           ) : printMapa ? (
             <figure className="px-4 pb-2">
@@ -256,7 +288,7 @@ export const PropostaPremium: React.FC<{
                 src={pecas?.[CHAVE_SERVICO[indice]]}
                 reserva={RESERVA_SERVICO[item.titulo]}
                 alt=""
-                className="h-36 w-full object-cover"
+                className="h-44 w-full object-cover"
               />
               <div className="px-4 py-4">
                 <Circulo><Escudo /></Circulo>
@@ -271,9 +303,9 @@ export const PropostaPremium: React.FC<{
       <section data-proposta-bloco className="px-5 pb-10 sm:px-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#d0121a]" style={fonte}>Diferenciais</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {DIFERENCIAIS_TMSEG.map((item) => (
+          {DIFERENCIAIS_TMSEG.map((item, indice) => (
             <article key={item.titulo} className="rounded-3xl border border-white/10 bg-white/[0.03] px-4 py-4">
-              <Circulo><Escudo /></Circulo>
+              <Circulo><IconeDiferencial indice={indice} /></Circulo>
               <h4 className="mt-3 text-base font-semibold">{item.titulo}</h4>
               <p className="mt-2 text-xs leading-5 text-white/65">{item.texto}</p>
             </article>
@@ -316,8 +348,8 @@ export const PropostaPremium: React.FC<{
             {proposta.kmRota != null && proposta.kmRota > 0 ? (
               <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Distância</span><span className="mt-1 block text-xl font-semibold">{numero(proposta.kmRota)} km</span></p>
             ) : null}
-            {proposta.duracaoMin != null && proposta.duracaoMin > 0 ? (
-              <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Tempo estimado</span><span className="mt-1 block text-xl font-semibold">{Math.round(proposta.duracaoMin)} min</span></p>
+            {tempoViagem ? (
+              <p><span className="block text-[10px] uppercase tracking-[0.14em] text-white/45">Tempo estimado</span><span className="mt-1 block text-xl font-semibold">{tempoViagem}</span></p>
             ) : null}
           </div>
           {tela.mostraFranquiaIncluida ? (

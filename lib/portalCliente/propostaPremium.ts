@@ -36,6 +36,9 @@ export type CenaOficial = {
 
 const SEM_TEXTO = 'Não desenhe texto, letra, número, logotipo, placa, mapa legível, preço, pessoa identificável nem marca comercial.';
 
+/** Arquivo novo quando o pedido do serviço muda. A capa e a central já publicadas continuam. */
+const VERSAO_SERVICO = '2';
+
 /** Arquivo já publicado. Marca desconhecida fica na carreta neutra, sem logotipo inventado. */
 export function cenaOficial(cliente: string): CenaOficial {
   const slug = slugVisual(cliente);
@@ -58,10 +61,10 @@ export function pedidoDaPeca(peca: PecaPremium): string {
   const cena: Record<PecaPremium, string> = {
     capa: 'Foto cinematográfica horizontal de uma rodovia à noite, depois da chuva. Um caminhão carreta branco, com baú liso e vazio, e um SUV escuro sem marca seguindo atrás, com uma luz âmbar no teto. Clima preto e vermelho, luzes da cidade ao fundo, acabamento premium.',
     central: 'Foto cinematográfica de uma central operacional moderna e escura, com vários monitores mostrando apenas brilhos abstratos. Luz vermelha suave, ambiente tecnológico, uma silhueta de costas sem rosto reconhecível.',
-    fiscal: 'Foto cinematográfica noturna, de dentro de um veículo seguindo uma rodovia molhada. Painel escuro, faróis e reflexo vermelho no asfalto, sem leitura no painel.',
-    escolta: 'Foto cinematográfica de dois SUVs escuros sem marca acompanhando uma carreta branca de baú liso, à noite, em rodovia molhada, com luz âmbar. Sem arma e sem pessoa.',
-    acompanhamento: 'Foto cinematográfica aproximada de monitores escuros com brilho abstrato de rotas, em uma sala com luz vermelha. Nada legível na tela.',
-    guincho: 'Foto cinematográfica de um guincho prancha moderno, sem marca, parado numa rodovia molhada à noite, com luz âmbar e reflexo vermelho. A traseira fica lisa, sem placa e sem caracteres.',
+    fiscal: 'Cena cinematográfica noturna, em ângulo baixo, de um SUV escuro sem marca seguindo de perto um caminhão baú branco numa rodovia molhada. Faróis na névoa e reflexo vermelho no asfalto deixam clara a inspeção do trajeto. Sem pessoa visível.',
+    escolta: 'Cena cinematográfica, de cima e de perto, de dois SUVs escuros sem marca e com luz âmbar no teto escoltando um caminhão baú branco numa rodovia à noite. A formação de acompanhamento fica evidente, com chuva recente e horizonte vermelho. Sem arma, sem pessoa e sem placa.',
+    acompanhamento: 'Cena cinematográfica ampla de uma sala de monitoramento escura, com vários monitores mostrando só trilhas luminosas. Uma silhueta de costas, sem rosto, acompanha a operação. Luz vermelha, nada legível na tela.',
+    guincho: 'Cena cinematográfica de um guincho prancha moderno, sem marca, rebocando um veículo numa rodovia molhada à noite. A remoção fica clara, com luz âmbar e reflexo vermelho. A traseira fica lisa, sem placa e sem caracteres.',
   };
   return `${cena[peca]} ${SEM_TEXTO}`;
 }
@@ -72,7 +75,18 @@ export function chaveDaCena(cliente: string): string {
 
 export function arquivoDaPeca(cliente: string, peca: PecaPremium): string {
   if (peca === 'capa') return `/propostas-premium/capas/${chaveDaCena(cliente)}.webp`;
-  return `/propostas-premium/compartilhado/${peca}.webp`;
+  if (peca === 'central') return `/propostas-premium/compartilhado/${peca}.webp`;
+  return `/propostas-premium/compartilhado/${peca}-${VERSAO_SERVICO}.webp`;
+}
+
+/** 481 minutos aparecem como 8h01min. O número guardado na cotação não muda. */
+export function textoDuracaoViagem(minutos: number | null | undefined): string | null {
+  if (minutos == null || !Number.isFinite(minutos) || minutos <= 0) return null;
+  const total = Math.round(minutos);
+  const horas = Math.floor(total / 60);
+  const resto = total % 60;
+  if (horas <= 0) return `${resto}min`;
+  return `${horas}h${String(resto).padStart(2, '0')}min`;
 }
 
 export function pecasPublicadas(cliente: string): ImagensPremium {

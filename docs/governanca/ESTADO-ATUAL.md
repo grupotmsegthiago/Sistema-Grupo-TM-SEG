@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. A cena ilustrativa da proposta usa o Gemini já configurado. A OpenAI só entra se `PROPOSTA_IA_PROVEDOR=openai`. A prévia local não inventa o tempo da rota; o minuto vem do Google na cotação. O link público lê as imagens já gravadas. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-26. A cotação passa a gravar a polyline da rota. O link público desenha esse traço em vermelho no mapa do Google. O tempo da proposta aparece em horas e minutos, e os indicadores continuam a consulta do banco. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A proposta compartilhada ganha o layout premium no clique de Gerar proposta. A cena ilustrativa sai do Gemini já usado, sem preço e sem endereço. O mapa continua o do Google e os valores continuam os da cotação. Se a imagem falhar, a carreta oficial aparece. Ainda não foi publicado. O motor da OS não mudou.
 

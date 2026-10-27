@@ -242,7 +242,13 @@ export function registerCevaPortalRoutes(app: Express): void {
       return;
     }
     const proposta = resultado.corpo.proposta as { origem?: string; destino?: string; paradas?: string[] };
-    const mapa = await mapaPorEndereco(String(proposta.origem || ''), String(proposta.destino || ''), Array.isArray(proposta.paradas) ? proposta.paradas : [], String(req.headers.origin || req.headers.referer || ''));
+    const mapa = await mapaPublicoDaRota(
+      String(proposta.origem || ''),
+      String(proposta.destino || ''),
+      Array.isArray(proposta.paradas) ? proposta.paradas : [],
+      'percurso' in resultado.corpo ? resultado.corpo.percurso : null,
+      String(req.headers.origin || req.headers.referer || ''),
+    );
     const { indicadoresPublicos } = await import('./propostaPremiumVisual.js');
     const numeros = await indicadoresPublicos();
     res.status(200).json({ ...resultado.corpo, mapa, operacoes: numeros.operacoes, parceiros: numeros.parceiros });
@@ -256,6 +262,57 @@ async function imagemDoMapa(url: string, origem: string): Promise<string | null>
   const buffer = Buffer.from(await resposta.arrayBuffer());
   if (!resposta.ok || !tipo.startsWith('image/') || buffer.length < 8000) return null;
   return `data:${tipo};base64,${buffer.toString('base64')}`;
+}
+
+async function percursoNoGoogle(origem: string, destino: string, paradas: string[]): Promise<{ polyline: string; pontos: Array<{ lat: number; lng: number }> } | null> {
+  const { chaveDoMapaNoServidor } = await import('../lib/portalCliente/rotaCotacao.js');
+  const { percursoUtil } = await import('../lib/portalCliente/historicoCotacoes.js');
+  const chave = chaveDoMapaNoServidor(process.env);
+  if (!chave || origem.length < 3 || destino.length < 3) return null;
+  const params = new URLSearchParams({ origin: origem, destination: destino, mode: 'driving', key: chave });
+  const vias = paradas.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 6);
+  if (vias.length) params.set('waypoints', vias.join('|'));
+  const resposta = await fetch(`https://maps.googleapis.com/maps/api/directions/json?${params.toString()}`);
+  const corpo = await resposta.json().catch(() => null);
+  const linha = corpo?.routes?.[0]?.overview_polyline?.points;
+  return percursoUtil({ polyline: linha });
+}
+
+/** Redesenha o traço vermelho com a polyline gravada. Sem ela, pede o percurso real ao Google. */
+async function mapaPublicoDaRota(origem: string, destino: string, paradas: string[], percursoBruto: unknown, referer: string): Promise<string | null> {
+  const { urlMapaEstatico } = await import('../lib/portalCliente/frotaVisual.js');
+  const { chaveDoMapaNoServidor } = await import('../lib/portalCliente/rotaCotacao.js');
+  const { percursoUtil } = await import('../lib/portalCliente/historicoCotacoes.js');
+  const chave = chaveDoMapaNoServidor(process.env);
+  let percurso = percursoUtil(percursoBruto);
+  if (!percurso) {
+    try {
+      percurso = await percursoNoGoogle(origem, destino, paradas);
+    } catch (error) {
+      console.error('[proposta-publica] percurso', error instanceof Error ? error.message : error);
+    }
+  }
+  if (percurso && (percurso.polyline || percurso.pontos.length >= 2)) {
+    const inicio = percurso.pontos[0] || null;
+    const fim = percurso.pontos.length ? percurso.pontos[percurso.pontos.length - 1] : null;
+    const url = urlMapaEstatico({
+      polyline: percurso.polyline,
+      pontos: percurso.pontos,
+      chave,
+      inicio,
+      fim,
+      traco: 'vermelho',
+    });
+    if (url) {
+      try {
+        const mapa = await imagemDoMapa(url, referer);
+        if (mapa) return mapa;
+      } catch (error) {
+        console.error('[proposta-publica] mapa', error instanceof Error ? error.message : error);
+      }
+    }
+  }
+  return mapaPorEndereco(origem, destino, paradas, referer);
 }
 
 async function mapaPorEndereco(origem: string, destino: string, paradas: string[], referer: string): Promise<string | null> {

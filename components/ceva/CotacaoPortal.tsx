@@ -507,6 +507,7 @@ type ContextoGravacao = {
   km: number;
   duracaoMin: number | null;
   aceite: boolean;
+  percurso: { polyline: string; pontos: PontoMapa[] } | null;
 };
 
 type RascunhoCotacao = ContextoGravacao & {
@@ -752,6 +753,9 @@ export const CotacaoPortal: React.FC<{
       km: kmRota,
       duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
       aceite: aceiteCliente,
+      percurso: trajeto && (trajeto.polyline || trajeto.pontos.length >= 2)
+        ? { polyline: trajeto.polyline, pontos: trajeto.pontos.slice(0, 80) }
+        : null,
     };
   };
 
@@ -899,6 +903,7 @@ export const CotacaoPortal: React.FC<{
       paradas: contexto.paradas,
       km: contexto.km,
       duracaoMin: contexto.duracaoMin,
+      percurso: contexto.percurso,
       valor: nova.acionamento,
       horas: nova.horasContadas ?? nova.horasFranquia,
       regiao: nova.regiao,

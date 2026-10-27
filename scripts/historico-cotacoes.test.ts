@@ -442,7 +442,7 @@ describe('histórico de cotações do portal', () => {
     assert.doesNotMatch(html, /\(2027-\)/);
     assert.doesNotMatch(html, /\(2026-\)/);
     assert.match(html, /1\.986 km/);
-    assert.match(html, /1609 min/);
+    assert.match(html, /26h49min/);
     assert.ok(html.split('data-proposta-bloco').length - 1 >= 6);
     const cena = cenaDaProposta('CEVA LOGISTICS', 'data:image/png;base64,iVBORw0KGgo=');
     assert.equal(cena?.carreta, '/caminhoes/3d/ceva-recorte.webp');

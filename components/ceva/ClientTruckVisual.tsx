@@ -74,8 +74,15 @@ export const CenaRotaVisual: React.FC<{
       onError={() => onMapaErro?.()}
     />
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(8,16,32,0.5)_100%)]" />
-    <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-[58%]" data-testid="carreta-centro-mapa">
-      <ClientTruckVisual cliente="" src={carreta} logo={logo} className="h-40 w-auto max-w-none object-contain drop-shadow-[0_18px_18px_rgba(0,0,0,0.45)] sm:h-48" />
+    <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-[42%] -translate-y-[58%]" data-testid="carreta-centro-mapa">
+      <ClientTruckVisual cliente="" src={carreta} logo={logo} className="h-40 w-auto max-w-none object-contain drop-shadow-[0_22px_16px_rgba(0,0,0,0.55)] sm:h-48" />
+      <svg viewBox="0 0 86 36" className="absolute -bottom-2 -left-10 h-8 w-16 drop-shadow-[0_10px_8px_rgba(0,0,0,0.55)] sm:h-10 sm:w-20" aria-hidden="true">
+        <rect x="8" y="14" width="70" height="14" rx="4" fill="#111827" />
+        <path d="M20 14 28 6h28l8 8" fill="#1f2937" />
+        <rect x="36" y="3" width="14" height="4" rx="1" fill="#f59e0b" />
+        <circle cx="24" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
+        <circle cx="64" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
+      </svg>
     </div>
     <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-end gap-3">
       {faixa && (

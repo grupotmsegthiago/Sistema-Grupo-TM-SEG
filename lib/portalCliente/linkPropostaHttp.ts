@@ -78,13 +78,14 @@ export async function lerPropostaPublica(
   id: string,
   token: string,
   agora: Date,
-): Promise<{ status: number; corpo: { ok: true; cliente: string; expiraEm: string; validade: string; proposta: unknown } | { error: string } }> {
+): Promise<{ status: number; corpo: { ok: true; cliente: string; expiraEm: string; validade: string; proposta: unknown; percurso: { polyline: string; pontos: Array<{ lat: number; lng: number }> } | null } | { error: string } }> {
   const linha = await banco.ler(id);
   if (!linha) return { status: 404, corpo: { error: 'Link inválido ou vencido.' } };
   const vista = vistaPublicaDaProposta(linha, token, agora);
   if (!vista.ok) return { status: vista.status, corpo: { error: vista.error } };
+  const percurso = lerSnapshot(linha.contract_details)?.percurso || null;
   return {
     status: 200,
-    corpo: { ok: true, cliente: vista.cliente, expiraEm: vista.expiraEm, validade: vista.validade, proposta: vista.proposta },
+    corpo: { ok: true, cliente: vista.cliente, expiraEm: vista.expiraEm, validade: vista.validade, proposta: vista.proposta, percurso },
   };
 }

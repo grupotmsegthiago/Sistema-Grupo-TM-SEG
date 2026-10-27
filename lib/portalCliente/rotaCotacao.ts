@@ -184,6 +184,41 @@ export function rotaAdministrativaPronta(entrada: {
   return { ok: true };
 }
 
+/** Lê a polyline codificada do Google e devolve coordenadas. Não chama a rede. */
+export function decodificarPolyline(encoded: string, maximo = 80): Coordenada[] {
+  const texto = String(encoded || '');
+  const pontos: Coordenada[] = [];
+  let indice = 0;
+  let lat = 0;
+  let lng = 0;
+  while (indice < texto.length) {
+    let resultado = 0;
+    let deslocamento = 0;
+    let byte = 0;
+    do {
+      if (indice >= texto.length) return resumirPontos(pontos, maximo);
+      byte = texto.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 0x1f) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 0x20);
+    lat += (resultado & 1) ? ~(resultado >> 1) : (resultado >> 1);
+    resultado = 0;
+    deslocamento = 0;
+    do {
+      if (indice >= texto.length) return resumirPontos(pontos, maximo);
+      byte = texto.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 0x1f) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 0x20);
+    lng += (resultado & 1) ? ~(resultado >> 1) : (resultado >> 1);
+    pontos.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    if (pontos.length > 4000) break;
+  }
+  return resumirPontos(pontos, maximo);
+}
+
 /** Reduz o overview_path para a URL do mapa estático caber no limite do Google. */
 export function resumirPontos(pontos: Array<Coordenada | null | undefined>, maximo = 80): Coordenada[] {
   const validos = pontos.map((ponto) => (ponto ? lerCoordenada(ponto) : null)).filter((ponto): ponto is Coordenada => ponto != null);
@@ -234,6 +269,24 @@ export const ESTILO_MAPA_COTACAO: Array<{ featureType?: string; elementType?: st
 
 /** Gota do pin A/B. A ponta fica na coordenada. */
 export const TRACO_PIN = 'M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z';
+
+const INICIO_DE_RUA = /^(av\.?|avenida|rua|r\.|rodovia|rod\.|estrada|est\.|alameda|al\.|travessa|tv\.|praça|praca|via)\b/i;
+
+/** Nome curto da cidade para o título. O endereço completo continua nos campos de origem e destino. */
+export function tituloCidade(endereco: string | null | undefined): string {
+  const texto = String(endereco || '').trim();
+  const partes = texto.split(',').map((item) => item.trim()).filter(Boolean);
+  const uf = extrairUf(texto, '');
+  for (const parte of [...partes].reverse()) {
+    const semCep = parte.replace(/\b\d{5}-?\d{3}\b/g, '').replace(/\b(brasil|brazil)\b/ig, '').trim();
+    if (!semCep || INICIO_DE_RUA.test(semCep) || /^\d/.test(semCep)) continue;
+    const nome = semCep.split('-')[0].replace(uf ? new RegExp(`\\b${uf}\\b`, 'i') : /$^/, '').trim();
+    if (nome.length < 2) continue;
+    if (uf && !nome.toUpperCase().includes(uf)) return `${nome}, ${uf}`;
+    return nome;
+  }
+  return rotuloCidadeUf(texto);
+}
 
 /** Cidade e UF para o painel do mapa. O texto longo do Google não entra no card. */
 export function rotuloCidadeUf(endereco: string | null | undefined): string {
