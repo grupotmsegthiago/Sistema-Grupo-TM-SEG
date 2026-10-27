@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-10-26. Gerar proposta monta o cartaz premium da referência: capa, indicadores reais, mapa do Google, institucional, serviços, diferenciais, clientes e condições. As imagens ilustrativas saem da OpenAI quando `OPENAI_API_KEY` existe; sem essa chave, do Gemini já usado. A referência aprovada não vai para o modelo. OS concluídas e parceiros ativos vêm do banco. O link de 10 dias continua depois de Salvar cotação. Ainda não foi publicado. O motor da OS não mudou.
+Atualizado em 2026-10-26. A cena ilustrativa da proposta usa o Gemini já configurado. A OpenAI só entra se `PROPOSTA_IA_PROVEDOR=openai`. A prévia local não inventa o tempo da rota; o minuto vem do Google na cotação. O link público lê as imagens já gravadas. Ainda não foi publicado. O motor da OS não mudou.
 
 Atualizado em 2026-10-26. A proposta compartilhada ganha o layout premium no clique de Gerar proposta. A cena ilustrativa sai do Gemini já usado, sem preço e sem endereço. O mapa continua o do Google e os valores continuam os da cotação. Se a imagem falhar, a carreta oficial aparece. Ainda não foi publicado. O motor da OS não mudou.
 

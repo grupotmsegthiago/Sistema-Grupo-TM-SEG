@@ -21,8 +21,13 @@ function chaveOpenAI(): string {
   return String(process.env.OPENAI_API_KEY || '').trim();
 }
 
+/** Gemini é o padrão. A OpenAI só entra com PROPOSTA_IA_PROVEDOR=openai e a chave já existente. */
+function openAISelecionada(): boolean {
+  return String(process.env.PROPOSTA_IA_PROVEDOR || '').trim().toLowerCase() === 'openai' && Boolean(chaveOpenAI());
+}
+
 export function servicoDeImagemDisponivel(): 'openai' | 'gemini' | 'nenhum' {
-  if (chaveOpenAI()) return 'openai';
+  if (openAISelecionada()) return 'openai';
   if (isGeminiConfigured()) return 'gemini';
   return 'nenhum';
 }
@@ -90,10 +95,10 @@ async function gerarGemini(pedido: string): Promise<ImagemGerada | null> {
   };
 }
 
-/** OpenAI quando a chave existe. Sem ela, usa o Gemini já configurado no projeto. */
+/** O Gemini gera a cena. A OpenAI só é usada quando PROPOSTA_IA_PROVEDOR=openai. */
 export async function gerarImagemIlustrativa(pedido: string, formato: 'paisagem' | 'cartao'): Promise<ImagemGerada | null> {
   try {
-    if (chaveOpenAI()) {
+    if (openAISelecionada()) {
       const openai = await gerarOpenAI(pedido, formato);
       if (openai) return openai;
     }

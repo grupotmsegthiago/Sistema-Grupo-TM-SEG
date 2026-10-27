@@ -17,7 +17,7 @@ const proposta: PropostaPortal = {
   operacao: 'SUDESTE SP/RJ',
   vigencia: '2027',
   kmRota: 46.6,
-  duracaoMin: 48,
+  duracaoMin: null,
   kmFaturado: 100,
   horasContadas: 3,
 };
@@ -45,8 +45,6 @@ export const PropostaPremiumDemo: React.FC = () => {
             sobreporLogo: true,
           }}
           pecas={pecasPublicadas('CEVA LOGISTICS')}
-          operacoesRealizadas="5.910+"
-          parceiros="51+"
           linkPublico
           altMapa="Mapa da rota calculada no Google"
         />

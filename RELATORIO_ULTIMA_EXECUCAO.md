@@ -2,7 +2,7 @@
 
 # Próxima Execução Proposta
 
-Executado em 26/10/2026. A proposta passou a seguir a referência premium inteira. Gerar proposta pede as imagens ilustrativas no backend, guarda o arquivo e reaproveita na próxima. Sem `OPENAI_API_KEY`, usa o Gemini já configurado. Preço, franquia e pedágio continuam os da cotação. O link público continua o de 10 dias, depois de Salvar cotação, e não gera imagem de novo. Ainda não foi publicado. O motor da OS não mudou.
+Executado em 26/10/2026. A validação final manteve o Gemini como gerador da cena. A OpenAI só entra com `PROPOSTA_IA_PROVEDOR=openai`. A prévia local deixou de mostrar 48 min; o tempo da cotação continua o do Google. O link público lê as imagens já gravadas e não chama a IA de novo. Ainda não foi publicado. O motor da OS não mudou.
 
 Executado em 26/10/2026. Gerar proposta monta a apresentação premium com a carreta oficial, o mapa do Google e os valores já calculados. A IA só pede uma cena sem texto, com tempo limite e cache por transportadora. O link público continua o de 10 dias, depois de Salvar cotação. Ainda não foi publicado. O motor da OS não mudou.
 
