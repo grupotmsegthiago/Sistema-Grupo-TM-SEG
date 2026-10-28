@@ -34,6 +34,105 @@ export function documentoCorrespondeBusca(documento: unknown, termo: string): bo
 }
 
 /**
+ * Raiz do CNPJ: 8 primeiros dígitos, comuns à matriz e às filiais.
+ * CPF (11) não tem raiz. Documento incompleto não gera raiz.
+ */
+export function raizCnpj(documento: unknown): string | null {
+  const digits = digitosDocumentoCliente(documento);
+  if (digits.length !== 14) return null;
+  return digits.slice(0, 8);
+}
+
+/**
+ * Outro cliente da mesma raiz cujo responsável comercial é diferente do cadastro atual.
+ * A mesma carteira pode incluir a filial. Cadastro antigo sem responsável não trava
+ * (não há titular). O próprio id fica de fora na edição.
+ * Vários conflitos: prefere Ativo e, no empate, o menor id.
+ */
+export function acharConflitoRaizCnpj(
+  rows: ClienteCarteiraRow[],
+  documento: unknown,
+  comercialIdNovo: string | null | undefined,
+  excludeId?: number | string | null,
+): ClienteCarteiraRow | null {
+  const raiz = raizCnpj(documento);
+  if (!raiz) return null;
+  const novo = String(comercialIdNovo || '').trim().toLowerCase();
+  const exclude = excludeId == null || excludeId === '' ? null : String(excludeId);
+  const conflitos: ClienteCarteiraRow[] = [];
+  for (const row of rows || []) {
+    if (exclude && String(row.id) === exclude) continue;
+    if (raizCnpj(row.cnpj) !== raiz) continue;
+    const dono = String(row.responsavel_comercial_id || '').trim().toLowerCase();
+    if (!dono || dono === novo) continue;
+    conflitos.push(row);
+  }
+  if (conflitos.length === 0) return null;
+  conflitos.sort((a, b) => {
+    const ativoA = clienteStatusAtivo(a.status) ? 0 : 1;
+    const ativoB = clienteStatusAtivo(b.status) ? 0 : 1;
+    if (ativoA !== ativoB) return ativoA - ativoB;
+    return Number(a.id) - Number(b.id);
+  });
+  return conflitos[0];
+}
+
+/**
+ * Cadastro novo, ou edição que troca o documento, precisa da trava de raiz.
+ * Salvar o mesmo CNPJ (endereço, contato) não reabre a trava: o cliente já existe.
+ */
+export function cadastroExigeTravaRaiz(
+  rows: ClienteCarteiraRow[],
+  documento: unknown,
+  excludeId?: number | string | null,
+): boolean {
+  const exclude = excludeId == null || excludeId === '' ? null : String(excludeId);
+  if (!exclude) return true;
+  const proprio = (rows || []).find((row) => String(row.id) === exclude);
+  if (!proprio) return true;
+  return digitosDocumentoCliente(proprio.cnpj) !== digitosDocumentoCliente(documento);
+}
+
+/** Aviso já usado na proteção de carteira: a raiz pertence a outro comercial. */
+export function mensagemTitularidadeRaizCnpj(
+  cliente: Pick<ClienteCarteiraRow, 'id' | 'name'>,
+  nomeComercial?: string | null,
+): string {
+  const nome = String(nomeComercial || '').trim();
+  const quem = nome ? `do comercial ${nome}` : 'de outro comercial';
+  const empresa = String(cliente.name || '').trim() || 'sem nome';
+  return `Cliente já vinculado à carteira ${quem} (id ${cliente.id}: ${empresa}). Solicite transferência à diretoria.`;
+}
+
+/**
+ * Lê a base inteira em páginas. Página repetida ou teto estourado devolve erro:
+ * consulta incompleta não pode liberar o cadastro.
+ */
+export async function carregarLinhasDocumentoCliente(
+  lerPagina: (from: number, to: number) => Promise<{ rows: ClienteCarteiraRow[]; error?: string }>,
+): Promise<{ rows: ClienteCarteiraRow[]; error?: string }> {
+  const rows: ClienteCarteiraRow[] = [];
+  const page = 1000;
+  let from = 0;
+  let assinaturaAnterior = '';
+  while (from <= 100000) {
+    const res = await lerPagina(from, from + page - 1);
+    if (res.error) return { rows: [], error: res.error };
+    const batch = res.rows || [];
+    if (batch.length === 0) return { rows };
+    const assinatura = `${batch[0]?.id}:${batch[batch.length - 1]?.id}:${batch.length}`;
+    if (assinatura === assinaturaAnterior) {
+      return { rows: [], error: 'CONSULTA INCOMPLETA' };
+    }
+    assinaturaAnterior = assinatura;
+    rows.push(...batch);
+    if (batch.length < page) return { rows };
+    from += batch.length;
+  }
+  return { rows: [], error: 'CONSULTA INCOMPLETA' };
+}
+
+/**
  * Encontra outro registro (cliente/fornecedor) com o mesmo CNPJ/CPF (só dígitos).
  * Falha fechada: sem dígitos suficientes → sem match.
  */

@@ -1,5 +1,17 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 28/10/2026 na `dev`. A Tabela de Custos do fornecedor ganhou o botão Exportar Excel. O arquivo usa a paleta da grade: faixa escura, custo base vermelho, reajuste pendente cinza e reajuste ativo verde. A busca da tela filtra as linhas. Nenhum valor de custo é alterado. Ainda não foi publicado.
+
+Testes: `npx tsx --test scripts/tabela-custo-fornecedor-export.test.ts` — 1 passou.
+
+Executado em 28/10/2026 na `dev`. A tela financeira ganhou o painel recolhido "Evolução Financeira: Contas a Receber x Contas a Pagar", entre as etapas e os filtros. A agregação está em `lib/financial/fluxoCaixaComparativo.ts` e só lê os títulos já em memória. Cancelado, investimento e transferência interna ficam de fora. O saldo é receber menos pagar. Ainda não foi publicado.
+
+Testes: `npx tsx --test scripts/fluxo-caixa-comparativo.test.ts` — 7 passaram.
+
+Executado em 28/10/2026 na `dev`. A exibição de data no front-end usa `formatDateBR` e `formatDateTimeBR`: `DD/MM/AAAA` e `DD/MM/AAAA HH:mm`, fuso `America/Sao_Paulo`, hora 24h. Uma data civil `AAAA-MM-DD` não recua um dia. Campo de formulário, JSON, API e PostgreSQL continuam ISO. Telas ligadas: Controle de Faturas, quadro de comissões, faturamento da diretoria, cotações e propostas, relatório de OS, boletim, passagem de plantão e medição. O motor da OS não mudou. Ainda não foi publicado.
+
+Testes: `npx tsx --test scripts/ponto-date-brt.test.ts scripts/historico-cotacoes.test.ts` — 16 passaram.
+
 Executado em 27/10/2026 na `dev`. O 500 do portal vinha da numeração GTM lendo só 40 OS. Agora a gravação pede `proximo_numero_gtm` e, enquanto a função não existir, usa o maior número da base. O e-mail sai depois do insert e a falha de SMTP não vira 500. Constraint devolve código e campo. A migration `migrations/2026_10_27_os_gtm_seq.sql` não foi aplicada. TSP, PGR, autorizador, motorista e placa já cabem nas tabelas do portal. O motor da OS não mudou. Ainda não foi publicado.
 
 Executado em 27/10/2026 na `dev`. A OS do portal passa a escolher a tabela do cliente pelas 10 OS aprovadas da mesma rota. Sem fornecedor, a tabela de custo não entra. Quando o fornecedor é escolhido depois, a de custo sai desse par. O aviso vermelho do portal não foi alterado. O motor da OS não mudou. Ainda não foi publicado.
@@ -9,6 +21,72 @@ Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a suge
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
 
 # Próxima Execução Proposta
+
+## Suíte comercial do prompt (28/10/2026) — recorte A executado
+
+Baseline `efcb4000` na `dev`. Recorte A aprovado e executado em 28/10/2026. Sem migration, sem tabela nova e sem mudança de preço ou comissão. Ainda não foi publicado.
+
+O cadastro do cliente lê a base inteira em páginas de 1000. CNPJ igual continua no aviso que já existia. Se os 8 primeiros dígitos já pertencem a outro `responsavel_comercial_id`, o salvamento para e mostra: "Cliente já vinculado à carteira do comercial [nome]. Solicite transferência à diretoria." A mesma carteira pode gravar a filial. CPF não entra nessa trava. Editar o cliente sem trocar o documento não reabre a trava. Cliente antigo sem responsável comercial não trava, porque não há titular. Se a leitura da base falhar ou repetir a página, o cadastro não grava.
+
+Teste: `npx tsx --test scripts/client-duplicate-guard.test.ts` — 13 passaram. `npm run build` terminou sem erro. `GET http://localhost:5000/api/health` respondeu `{"status":"ok"}`. Não houve clique de cadastro real: o localhost usa o banco de produção e um cliente novo gravaria lá.
+
+Recorte B executado em 28/10/2026, no mesmo baseline. O comercial não salva sem site `http://` ou `https://` e sem logotipo. O arquivo aceito é PNG ou SVG, até 2 MB, no bucket `mission-evidence` em `portal-logos/`. Cliente novo guarda o arquivo e sobe depois que o id existe; se o envio falhar, o próximo salvar atualiza o mesmo cadastro. Diretoria, administrador e os demais perfis continuam gravando cliente antigo sem site e sem logo. Nenhuma coluna virou `NOT NULL`.
+
+Teste: `npx tsx --test scripts/cliente-marca.test.ts scripts/client-duplicate-guard.test.ts` — 17 passaram.
+
+Recorte C executado em 28/10/2026. O card fica no quadro de comissões, acima de "OS do período × faturamento". Entra OS com status concluída ou faturada, sem `invoice_number` e sem vínculo em `financial_invoice_missions` na TM SEG, e sem nota em `invoices` ou `escort_billings` na Torres. A conclusão precisa ser anterior a hoje menos 35 dias civis, em Brasília. O dia exato do corte fica de fora. Sem data de conclusão, a OS não entra na contagem. Sem valor gravado, o total aparece como não validado. Se a Torres não for lida, o card diz consulta incompleta. Sem migration. O motor da OS e o da comissão não mudaram.
+
+Teste: `npx tsx --test scripts/os-sem-fatura-35.test.ts` — 5 passaram. O filtro do comercial no quadro existente também passou.
+
+Recorte D executado em 28/10/2026. Vários trechos entram na cotação que já existe e são gravados no snapshot de `quotes`. Cada trecho passa por `calculateTripCost`. A soma vira o total da proposta. Na Tabela 2027, acionamento, km extra e hora extra não ficam abaixo do piso da faixa; um valor maior é aceito. DHL e IBL continuam na tabela contratual. A carreta usa o logotipo já gravado em `clients.portal_logo_url`. O e-mail ao emitir a proposta segue o fluxo que já existia: link `/proposta/v/` por 10 dias, cópia para o cliente, para quem cotou e para thiago@grupotmseg.com.br. Sem migration. A fórmula de `tabela2027.ts` não mudou. Ainda não foi publicado.
+
+Teste: `npx tsx --test scripts/trechos-proposta.test.ts scripts/historico-cotacoes.test.ts scripts/portal-cotacao.test.ts scripts/proposta-premium.test.ts scripts/link-proposta.test.ts` — 43 passaram.
+
+Preço por veículo, estorno e base líquida por retenção continuam congelados.
+
+### Objetivo da Tarefa
+
+Recorte A: impedir que uma filial (mesma raiz de CNPJ) entre na carteira de outro comercial, no cadastro que já existe. Sem segunda tabela e sem fórmula nova.
+
+### O que o prompt pedia e o que já é a fonte
+
+- Cliente: tabela `clients`, carteira em `responsavel_comercial_id` e `lib/comercialEscopo.ts`. Duplicidade de CNPJ/CPF inteiro em `lib/clientDuplicateGuard.ts`. Identidade em `system_users` e `profiles`, não em `auth.uid()`.
+- Preço: `client_price_tables` e `lib/precificacao/tabela2027.ts` (`calculateTripCost`, franquia 100 km e 3 h, corte de 40 min). DHL e IBL ficam na tabela contratual.
+- Cotação e proposta: `quotes`, snapshot, link `/proposta/v/` por 10 dias, PDF, e-mail com cópia para thiago@grupotmseg.com.br e para quem cotou, carreta com logo do cliente.
+- Comissão: tabela `comissoes`, motor `lib/comissao/comissaoCalc.ts` (líquido = bruto × (1 − 16%), comissão = 3% do líquido, piso e bônus em `tabelaComissaoPadrao.ts`). Corte do dia 15 em `vencimentoPagamentoComissao`. Torres entra por leitura em `sincronizarComissoesTorres.ts`. Título da Torres só no clique, em `contaPagarTorres.ts`.
+- OS sem fatura: já aparece no quadro de comissões e no faturamento. O corte de 35 dias não está escrito como regra.
+
+### O que fica proibido neste fluxo
+
+Não criar `public.clientes`, `public.cotacoes`, `public.cotacao_rotas`, `public.tabela_precos_2027` nem `public.comissoes_unificadas`. Não apontar vendedor para `auth.users`. Não tornar `website` e `logo_url` obrigatórios na base atual. Não instalar BullMQ, Resend nem um segundo leitor da Torres. Não acrescentar função no `vercel.json`. Não alterar `calculateMissionFinancials`, Asaas, PlugNotas nem o contrato DHL/IBL. Não rodar migration. Não publicar.
+
+### Passo a Passo Sequencial
+
+1. Recorte A — executado. Raiz de 8 dígitos em `clientDuplicateGuard` e no salvar/consultar CNPJ de `ClientForm`. Sem pedido de transferência: o aviso pede a diretoria e o cadastro não grava.
+2. Recorte B — executado. `lib/clienteMarca.ts` e o upload em `ClientForm`. Sem coluna nova.
+3. Recorte C — executado. `lib/comissao/osSemFatura35.ts`, o quadro em `comissaoQuadroApi.ts` e o card em `ComissoesComerciaisPage.tsx`.
+4. Recorte D — executado. `lib/portalCliente/trechosProposta.ts`, o snapshot em `historicoCotacoes.ts`, a tela em `CotacaoPortal.tsx` e a carreta em `PropostaPremium.tsx`.
+5. Preço por veículo e comissão (estorno, glosa, retenção) permanecem congelados até a fórmula escrita.
+
+### Ficheiros Afetados
+
+Recorte A: `lib/clientDuplicateGuard.ts`, `components/ClientForm.tsx`, `scripts/client-duplicate-guard.test.ts`. Recorte B: `lib/clienteMarca.ts`, `scripts/cliente-marca.test.ts`, `components/ClientForm.tsx`. Recorte D: `lib/portalCliente/trechosProposta.ts`, `scripts/trechos-proposta.test.ts`, `lib/portalCliente/historicoCotacoes.ts`, `lib/portalCliente/cotacao.ts`, `lib/portalCliente/apresentacao.ts`, `components/ceva/CotacaoPortal.tsx`, `components/ceva/PropostaPremium.tsx`.
+
+### Garantias de Não Impacto
+
+`lib/financialUtils.ts`, contratos DHL/IBL, limite de 50 funções na Vercel e horário `America/Sao_Paulo` em 24 h permanecem. Banco, Asaas, NF e título da Torres não são escritos por este desenho.
+
+### Nove pontos
+
+1. Negócio: comercial externo sem segunda carteira, segundo piso de 2027 ou segunda comissão.
+2. Já existe: cadastro, cotação multi não existe (a rota é uma), proposta, e-mail, comissão 16%/3% e dia 15, leitura Torres.
+3. Fonte única: `clients`, `client_price_tables`, `quotes`, `comissoes`, `missions`, `financial_invoices`.
+4. Writers e readers: os módulos citados acima. O prompt criaria writers novos.
+5. Testes: `scripts/client-duplicate-guard.test.ts` — 13 passaram. Build ok. Health local ok.
+6. OS, financeiro, Asaas, NF, Torres e WhatsApp: sem efeito neste recorte.
+7. Reutilizar o guard e o formulário de cliente.
+8. Arquivo novo não se justifica.
+9. Parado: recortes B, C e D, preço por veículo, estorno e base líquida por retenção.
 
 Publicado nesta entrega, em 27/10/2026, no projeto sistema-grupo-tm-seg, a partir de `cursor/proposta-premium-ia-f513`. A proposta pública abre o cartaz escuro. Baixar Proposta em PDF grava essa tela numa folha só. A CEVA usa o caminhão branco sem fundo, também no mapa. A página não desenha imagem nova. O motor da OS não mudou.
 

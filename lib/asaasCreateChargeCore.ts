@@ -12,6 +12,7 @@ import { createSupabaseAdminClient } from './supabaseAdmin.js';
 import {
   findRecentDuplicateOpenCharge,
   persistAsaasChargeInvoice,
+  valorPersistidoDoSplit,
 } from './persistAsaasChargeInvoice.js';
 import { parseMissionIdsFromBody } from './billing/vincularOSFatura.js';
 import {
@@ -240,10 +241,17 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
           const trackingBase = String(invoiceNumber || '').trim() || `TMSEG-${Date.now()}`;
           const externalRef = `${trackingBase}-S${i + 1}-${cleanCnpj.slice(-4)}`;
           const descText = description || `Ref. aos Serviços de Intermediação de Escolta Armada`;
+          const valorFracionado = valorPersistidoDoSplit(charge.value);
+          if (valorFracionado == null) {
+            return {
+              status: 400,
+              body: { error: `Subconta ${i + 1} sem valor próprio. O total da fatura pai não é copiado.` },
+            };
+          }
 
           const payment = await createPayment({
             customerId: customer.id,
-            value: parseFloat(charge.value),
+            value: valorFracionado,
             dueDate,
             description: noBoleto
               ? `${descText} | Pagamento via transferência bancária (sem boleto)`
@@ -258,7 +266,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
           const persistSplit = await persistAsaasChargeInvoice({
             paymentId: payment.id,
             clientName: charge.name || clientName || 'Cliente',
-            amount: parseFloat(charge.value),
+            amount: valorFracionado,
             dueDate,
             trackingNumber: externalRef,
             serviceDescription: nfServiceText,

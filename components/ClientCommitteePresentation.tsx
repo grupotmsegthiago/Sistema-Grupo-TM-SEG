@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { Mission, MissionStatus } from '../types';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -356,7 +357,7 @@ const ClientCommitteePresentation: React.FC<Props> = ({ missions, clientName }) 
                                 </div>
                                 <div className="text-right">
                                     <p className="text-white/30 text-[8px] font-bold uppercase">Documento Confidencial</p>
-                                    <p className="text-white/20 text-[8px]">Gerado em {new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+                                    <p className="text-white/20 text-[8px]">Gerado em {formatDateBR(new Date())}</p>
                                 </div>
                             </div>
                         </div>

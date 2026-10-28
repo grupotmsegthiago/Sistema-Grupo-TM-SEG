@@ -550,8 +550,10 @@ function mentionsFixedKmBand(text, band) {
 }
 function resolveDisplacementFromAuthorizedKm(opts) {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
-  const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
-  const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
+  const clienteInformado = opts.displacementValue != null;
+  const fornecedorInformado = opts.displacementValueProvider != null;
+  const storedClient = clienteInformado ? Math.max(0, Number(opts.displacementValue) || 0) : 0;
+  const storedProvider = fornecedorInformado ? Math.max(0, Number(opts.displacementValueProvider) || 0) : 0;
   const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
   const clientRate = tarifaCliente.tarifa;
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
@@ -562,8 +564,8 @@ function resolveDisplacementFromAuthorizedKm(opts) {
     clientRate,
     providerRate,
     origemTarifaCliente: tarifaCliente.origem,
-    client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
-    provider: opts.isSameOs ? 0 : storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider
+    client: clienteInformado ? Math.round(storedClient * 100) / 100 : derivedClient,
+    provider: opts.isSameOs ? 0 : fornecedorInformado ? Math.round(storedProvider * 100) / 100 : derivedProvider
   };
 }
 function clientTableMatchesMission(tableClient, missionClientName) {
@@ -1219,7 +1221,10 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
   const isProviderMacor = missionProviderName.includes("MACOR");
   let providerMultiplier = 1;
   const selectStrictTable = (candidateTables, dist, region, city, typeKeyword, destCity2, routeCode, agentAware, originUFCode, originAddress) => {
-    if (!candidateTables || candidateTables.length === 0) return { table: null, log: "Sem tabelas cadastradas" };
+    candidateTables = (candidateTables || []).filter(
+      (t) => !String(t?.operation_type || "").toUpperCase().includes("__AUTO_MASTER__")
+    );
+    if (!candidateTables || candidateTables.length === 0) return { table: null, log: "Tabela n\xE3o encontrada" };
     const normalizedRegion = normalize2(region);
     const normalizedCity = normalize2(city);
     const normalizedDestCity = normalize2(destCity2);
@@ -1423,11 +1428,14 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
       clientTablesFiltered = macorTables;
     }
   }
+  clientTablesFiltered = clientTablesFiltered.filter(
+    (t) => !String(t.operation_type || "").toUpperCase().includes("__AUTO_MASTER__")
+  );
   let isManualOverride = false;
   if (manualTableOverrides?.clientTableId) {
     const wantedId = String(manualTableOverrides.clientTableId);
     const manualTable = clientTables.find((t) => String(t.id) === wantedId);
-    if (manualTable) {
+    if (manualTable && !String(manualTable.operation_type || "").toUpperCase().includes("__AUTO_MASTER__")) {
       appliedClientTable = manualTable;
       clientLog = "Sele\xE7\xE3o Manual / Mem\xF3ria";
       isManualOverride = true;
@@ -1553,6 +1561,12 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
       clientLog = `CESLOG Rota Fixa \u2192 ${cubSantosTable.operation_type}`;
     }
   }
+  if (!appliedClientTable) {
+    console.warn(`Nenhuma tabela encontrada para o cliente ${missionClientRaw}. A tabela mestre gen\xE9rica n\xE3o \xE9 aplicada.`);
+    if (!clientLog || clientLog === "Manual" || clientLog === "Sem tabelas cadastradas") {
+      clientLog = "Tabela n\xE3o encontrada";
+    }
+  }
   let appliedProviderTable = null;
   let providerLog = "Manual";
   const providerTablesNoMaster = providerTables.filter((t) => !isAutoMasterRow(t));
@@ -1569,9 +1583,18 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
   const missionRegionUpper = String(detectedRegion || "").toUpperCase().trim();
   const filterIsUF = autoRegionFilter.length === 2 && !!UF_TO_REGION[autoRegionFilter];
   const autoRegionMatches = !autoRegionFilter || (filterIsUF ? !!originUFUpper && autoRegionFilter === originUFUpper : !!missionRegionUpper && autoRegionFilter === missionRegionUpper);
-  const effectiveProviderTableId = manualTableOverrides?.providerTableId && !String(manualTableOverrides.providerTableId).startsWith("auto-") ? manualTableOverrides.providerTableId : void 0;
+  let effectiveProviderTableId = manualTableOverrides?.providerTableId && !String(manualTableOverrides.providerTableId).startsWith("auto-") && !String(manualTableOverrides.providerTableId).startsWith("__auto_master__") ? manualTableOverrides.providerTableId : void 0;
+  if (effectiveProviderTableId) {
+    const linhaSalva = providerTables.find((t) => String(t.id) === String(effectiveProviderTableId));
+    if (linhaSalva && isAutoMasterRow(linhaSalva)) {
+      effectiveProviderTableId = void 0;
+    }
+  }
   const hasManualProviderOverride = !!effectiveProviderTableId;
-  const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches && !hasManualProviderOverride;
+  const autoEngineActive = false;
+  void autoMasterConfig;
+  void autoRegionMatches;
+  void hasManualProviderOverride;
   let filteredProviderTables = autoEngineActive ? [] : providerTablesNoMaster.filter((t) => matchesProviderAlias(normalize2(t.provider)));
   if (filteredProviderTables.length === 0 && missionProviderName.length > 2) {
     filteredProviderTables = providerTablesNoMaster.filter((t) => {
@@ -1755,6 +1778,12 @@ var calculateMissionFinancials = (mission, clientTables, providerTables, clientD
       cancellation_fee: 0
     };
     providerLog = `Motor Auto \u2192 Faixa ${autoBreakdown.bandKm}KM (${autoBreakdown.bandHours}h)`;
+  }
+  if (!appliedProviderTable) {
+    console.warn(`Nenhuma tabela de fornecedor encontrada para ${mission.provider || "a OS"}. A tabela mestre gen\xE9rica n\xE3o \xE9 aplicada.`);
+    if (!providerLog || providerLog === "Manual") {
+      providerLog = "Tabela n\xE3o encontrada";
+    }
   }
   const cBase = isRefused ? 0 : manualTableOverrides?.customClientBase !== void 0 ? manualTableOverrides.customClientBase : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier);
   const cFranchiseKm = appliedClientTable?.franchise_km || 100;

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BadgeDollarSign, Filter, Loader2, Receipt,
+  AlertTriangle, BadgeDollarSign, Filter, Loader2, Receipt,
   Wallet, X, Landmark, FileSpreadsheet, RefreshCw, ChevronDown, ChevronUp, ChevronRight,
   TrendingUp, Percent, Briefcase, CircleDollarSign, Gift, ClipboardList,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { formatDateTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
+import { formatDateBR, formatDateTimeBR, formatNowDateTimeBR } from '../lib/dateUtils';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { fetchAllPages } from '../lib/supabasePaging';
@@ -30,6 +30,10 @@ import {
   type LinhaQuadroCliente,
 } from '../lib/comissao/quadroFaturamentoComissao';
 import { carregarCoberturaOsPeriodo, coberturaVazia, type CoberturaOsPeriodo } from '../lib/comissao/coberturaOsPeriodo';
+import {
+  alertaOsSemFaturaVazio,
+  type AlertaOsSemFatura35,
+} from '../lib/comissao/osSemFatura35';
 import {
   acharComissaoDaFatura,
   montarApuracaoPorComercial,
@@ -130,10 +134,7 @@ function fmtBRL(n: number): string {
 
 function fmtDate(d?: string | null): string {
   if (!d) return '—';
-  const s = String(d).slice(0, 10);
-  const [y, m, day] = s.split('-');
-  if (!y || !m || !day) return s;
-  return `${day}/${m}/${y}`;
+  return formatDateBR(d);
 }
 
 function labelMesAno(ym: string): string {
@@ -769,6 +770,78 @@ function CardFuncionario({
   );
 }
 
+function AlertaOs35Card({ alerta }: { alerta: AlertaOsSemFatura35 }) {
+  const incompleto = alerta.estado === 'CONSULTA INCOMPLETA' || alerta.estado === 'ERRO';
+  const critico = alerta.estado === 'ENCONTRADO' && alerta.quantidade > 0;
+  const vazio = !incompleto && alerta.quantidade === 0;
+  const classe = critico
+    ? 'border-red-300 bg-red-50'
+    : incompleto
+      ? 'border-amber-300 bg-amber-50'
+      : 'border-emerald-200 bg-emerald-50';
+  const texto = critico ? 'text-red-900' : incompleto ? 'text-amber-950' : 'text-emerald-900';
+  const amostra = alerta.itens.slice(0, 40);
+  return (
+    <div className={`rounded-xl border p-4 ${classe}`} data-testid="alerta-os-35">
+      <p className={`flex items-center gap-2 text-sm font-black uppercase ${texto}`}>
+        {critico || incompleto ? <AlertTriangle size={16} /> : null}
+        OS concluída há mais de {alerta.prazoDias} dias sem fatura
+      </p>
+      {incompleto ? (
+        <p className="mt-1 text-[11px] font-bold text-amber-900">
+          CONSULTA INCOMPLETA — este número não é o universo. {alerta.torres === 'NÃO VALIDADO' ? 'A Torres não entrou nesta leitura.' : alerta.torres === 'ERRO' ? 'A leitura da Torres falhou.' : ''} {alerta.error || ''}
+        </p>
+      ) : vazio ? (
+        <p className="mt-1 text-[11px] font-bold text-emerald-800">
+          Nenhuma OS concluída antes de {fmtDate(alerta.limite)} sem fatura vinculada. TM SEG e Torres.
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] font-bold text-red-800">
+          {alerta.quantidade} OS. Valor gravado:{' '}
+          {alerta.valorEstado === 'ENCONTRADO' && alerta.valor != null ? fmtBRL(alerta.valor) : 'NÃO VALIDADO'}.
+          Corte em {fmtDate(alerta.limite)}, horário de Brasília.
+        </p>
+      )}
+      {alerta.semData.length > 0 ? (
+        <p className="mt-1 text-[11px] text-slate-700">
+          {alerta.semData.length} OS concluída(s) sem data de conclusão ficam de fora deste prazo.
+        </p>
+      ) : null}
+      {amostra.length > 0 ? (
+        <div className="mt-2 overflow-x-auto max-h-48">
+          <table className="min-w-full text-xs">
+            <thead>
+              <tr className="text-[10px] font-black uppercase text-slate-500">
+                <th className="py-1 pr-3 text-left">Origem</th>
+                <th className="py-1 pr-3 text-left">OS</th>
+                <th className="py-1 pr-3 text-left">Cliente</th>
+                <th className="py-1 pr-3 text-left">Conclusão</th>
+                <th className="py-1 text-right">Valor gravado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {amostra.map((os) => (
+                <tr key={`${os.origem}-${os.id}`} className="border-t border-black/5">
+                  <td className="py-1 pr-3 font-bold">{os.origem}</td>
+                  <td className="py-1 pr-3 font-mono">{os.numero}</td>
+                  <td className="py-1 pr-3 uppercase">{os.cliente}</td>
+                  <td className="py-1 pr-3">{fmtDate(os.dataConclusao)}</td>
+                  <td className="py-1 text-right font-mono">{os.valor == null ? 'NÃO VALIDADO' : fmtBRL(os.valor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {alerta.itens.length > amostra.length ? (
+            <p className="mt-1 text-[10px] font-bold text-slate-600">
+              Mostrando {amostra.length} de {alerta.itens.length}.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 const ComissoesComerciaisPage: React.FC = () => {
   const { showNotification } = useNotification();
   const usuarioAtual = useMemo(() => {
@@ -810,6 +883,7 @@ const ComissoesComerciaisPage: React.FC = () => {
   const [quadroTorres, setQuadroTorres] = useState<LinhaQuadroCliente[]>([]);
   const [mesesDisponiveis, setMesesDisponiveis] = useState<string[]>([]);
   const [cobertura, setCobertura] = useState<CoberturaOsPeriodo>(coberturaVazia());
+  const [alertaOs35, setAlertaOs35] = useState<AlertaOsSemFatura35>(() => alertaOsSemFaturaVazio('CONSULTA INCOMPLETA', 'Ainda não consultado.'));
   const [funcionarioAberto, setFuncionarioAberto] = useState<string | null>(null);
   const [iniciosComissao, setIniciosComissao] = useState<Record<string, string>>({});
   const [rotasTorres, setRotasTorres] = useState<RotaMissaoComissao[]>([]);
@@ -837,6 +911,7 @@ const ComissoesComerciaisPage: React.FC = () => {
       setQuadroTm([]);
       setQuadroTorres([]);
       setCobertura(coberturaVazia('NÃO EXISTE', undefined, false));
+      setAlertaOs35(alertaOsSemFaturaVazio('NÃO EXISTE'));
       setLoading(false);
       return;
     }
@@ -909,6 +984,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTorres(mesclarLinhasQuadro(quadroJson.linhasTorres || [], quadroDeComissoesTorres(visiveis, listaComerciais)));
           setMesesDisponiveis(quadroJson.meses || []);
           setCobertura(completo.cobertura);
+          setAlertaOs35(quadroJson.alertaOs35 || alertaOsSemFaturaVazio('CONSULTA INCOMPLETA', 'Alerta de 35 dias não veio na consulta.'));
           if (quadroJson.error && !(quadroJson.linhasTm || []).length && !(quadroJson.linhasTorres || []).length) {
             showNotification('Quadro', quadroJson.error, 'warning');
           }
@@ -920,6 +996,7 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTorres(quadroDeComissoesTorres(visiveis, listaComerciais));
           setMesesDisponiveis(quadro.meses);
           setCobertura(completo.cobertura);
+          setAlertaOs35(alertaOsSemFaturaVazio('CONSULTA INCOMPLETA', 'Quadro local sem a leitura da Torres.'));
           if (quadro.error || quadroJson.error) {
             showNotification('Quadro', quadroJson.error || quadro.error || 'Falha ao carregar faturamento', 'warning');
           }
@@ -933,11 +1010,13 @@ const ComissoesComerciaisPage: React.FC = () => {
           setQuadroTorres(quadroDeComissoesTorres(visiveis, listaComerciais));
           setMesesDisponiveis(quadro.meses);
           setCobertura(completo.cobertura);
+          setAlertaOs35(alertaOsSemFaturaVazio('CONSULTA INCOMPLETA', 'Quadro local sem a leitura da Torres.'));
         } catch {
           const visiveis = publicarLinhas([]);
           setQuadroTm([]);
           setQuadroTorres(quadroDeComissoesTorres(visiveis, listaComerciais));
           setCobertura(coberturaVazia('ERRO', e?.message || 'Falha ao carregar cobertura de OS', true));
+          setAlertaOs35(alertaOsSemFaturaVazio('ERRO', e?.message || 'Falha ao carregar o alerta de 35 dias'));
         }
         showNotification('Quadro', e?.message || 'Falha ao carregar faturamento', 'warning');
       }
@@ -1459,6 +1538,8 @@ const ComissoesComerciaisPage: React.FC = () => {
           ) : null}
         </div>
       ) : null}
+
+      <AlertaOs35Card alerta={alertaOs35} />
 
       <div className="border border-slate-200 bg-white rounded-xl p-4" data-testid="cobertura-os-periodo">
         <p className="font-black text-sm uppercase text-slate-800">OS do período × faturamento</p>

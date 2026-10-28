@@ -8,6 +8,7 @@ import {
   textoCardRegiao,
 } from '../lib/portalCliente/cotacao';
 import QuoteCalculatorCard from '../components/precificacao/QuoteCalculatorCard';
+import { calculateTripCost } from '../lib/precificacao/tabela2027';
 
 function digitar(input: HTMLInputElement, valor: string) {
   const descritor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
@@ -101,5 +102,39 @@ describe('região da cotação acompanha a origem', () => {
     assert.doesNotMatch(html, /hora extra/);
     assert.match(html, /\d+ h/);
     assert.match(html, /R\$/);
+  });
+
+  it('sem linha do cliente, o piso 2027 da região preenche km, horas e total', () => {
+    const conta = calculateTripCost(430, 6.9);
+    const html = renderToStaticMarkup(React.createElement(QuoteCalculatorCard, {
+      cliente: 'CLIENTE NOVO',
+      versao: '2027',
+      origem: 'Guarulhos, SP',
+      destino: 'Rio de Janeiro, RJ',
+      km: '430',
+      onOrigem: () => undefined,
+      onDestino: () => undefined,
+      onKm: () => undefined,
+      ocultarCampos: true,
+      linhas: [],
+    }));
+    assert.match(html, /SUDESTE SP\/RJ/);
+    assert.match(html, /430 km/);
+    assert.match(html, new RegExp(`cotacao-horas[^>]*>${conta.horasFaturadas} h`));
+    assert.match(html, /cotacao-total[^>]*>R\$/);
+    const vazio = renderToStaticMarkup(React.createElement(QuoteCalculatorCard, {
+      cliente: 'CLIENTE NOVO',
+      versao: '2027',
+      origem: 'Guarulhos, SP',
+      destino: 'Rio de Janeiro, RJ',
+      km: '',
+      onOrigem: () => undefined,
+      onDestino: () => undefined,
+      onKm: () => undefined,
+      ocultarCampos: true,
+      linhas: [],
+    }));
+    assert.match(vazio, /cotacao-horas[^>]*>—/);
+    assert.match(vazio, /cotacao-total[^>]*>—/);
   });
 });

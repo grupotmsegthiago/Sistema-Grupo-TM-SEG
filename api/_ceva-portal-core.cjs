@@ -49,22 +49,22 @@ function carimboRecalculoAutomatico(valor) {
   return String(valor ?? "").trim() === CARIMBO_RECALCULO_AUTOMATICO;
 }
 function carimboAprovacaoHumana(valor) {
-  const texto4 = String(valor ?? "").trim();
-  if (!texto4 || carimboRecalculoAutomatico(texto4)) return null;
-  return texto4;
+  const texto5 = String(valor ?? "").trim();
+  if (!texto5 || carimboRecalculoAutomatico(texto5)) return null;
+  return texto5;
 }
 function textoMotivo(valor) {
   return String(valor ?? "").trim().toLowerCase();
 }
-function temMotivoRegistrado(texto4) {
-  return FRASES_MOTIVO_REGISTRADO.some((frase) => texto4.includes(frase));
+function temMotivoRegistrado(texto5) {
+  return FRASES_MOTIVO_REGISTRADO.some((frase) => texto5.includes(frase));
 }
 function classificarAlteracaoPosterior(opts) {
   const receita = textoMotivo(opts.motivoReceita);
   const custo = textoMotivo(opts.motivoCusto);
   if (temMotivoRegistrado(receita) || temMotivoRegistrado(custo)) return "com_motivo";
   const semTexto = !receita && !custo;
-  const soRecalculoSistema = [receita, custo].every((texto4) => !texto4 || texto4.includes("recalculado pelo sistema"));
+  const soRecalculoSistema = [receita, custo].every((texto5) => !texto5 || texto5.includes("recalculado pelo sistema"));
   if (semTexto || soRecalculoSistema) return "sem_motivo";
   return "indeterminada";
 }
@@ -76,10 +76,10 @@ function textoAlteracaoPosterior(classe) {
 function objetoSnapshot(snapshot) {
   if (snapshot == null) return null;
   if (typeof snapshot === "string") {
-    const texto4 = snapshot.trim();
-    if (!texto4 || texto4 === "null" || texto4 === "{}" || texto4 === '""') return null;
+    const texto5 = snapshot.trim();
+    if (!texto5 || texto5 === "null" || texto5 === "{}" || texto5 === '""') return null;
     try {
-      return objetoSnapshot(JSON.parse(texto4));
+      return objetoSnapshot(JSON.parse(texto5));
     } catch {
       return null;
     }
@@ -154,6 +154,553 @@ var init_missionSnapshot = __esm({
   }
 });
 
+// lib/supabaseDefaults.ts
+var TMSEG_SUPABASE_PROJECT_REF, DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY;
+var init_supabaseDefaults = __esm({
+  "lib/supabaseDefaults.ts"() {
+    "use strict";
+    TMSEG_SUPABASE_PROJECT_REF = "ajhmmjuewdsukecaimik";
+    DEFAULT_SUPABASE_URL = `https://${TMSEG_SUPABASE_PROJECT_REF}.supabase.co`;
+    DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk";
+  }
+});
+
+// lib/supabasePublicEnv.ts
+function cleanEnv(value) {
+  if (value == null) return "";
+  return String(value).trim().replace(/^["']|["']$/g, "");
+}
+function isValidHttpUrl(url) {
+  return /^https?:\/\/.+/i.test(url);
+}
+function extractSupabaseProjectRef(url) {
+  const match = cleanEnv(url).match(/^https?:\/\/([^.]+)\.supabase\.co/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+function normalizeSupabaseProjectUrl(url) {
+  const cleaned = cleanEnv(url);
+  if (!cleaned) return "";
+  return cleaned.replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/, "");
+}
+function decodeJwtProjectRef(key) {
+  try {
+    const part = cleanEnv(key).split(".")[1];
+    if (!part) return null;
+    const json = Buffer.from(part, "base64url").toString("utf8");
+    const payload = JSON.parse(json);
+    return payload.ref?.toLowerCase() ?? null;
+  } catch {
+    return null;
+  }
+}
+function isTmSegSupabaseUrl(url) {
+  return extractSupabaseProjectRef(url) === TMSEG_SUPABASE_PROJECT_REF;
+}
+function isTmSegSupabaseAnonKey(key, expectedUrl) {
+  const cleaned = cleanEnv(key);
+  if (!cleaned) return false;
+  const keyRef = decodeJwtProjectRef(cleaned);
+  if (keyRef && keyRef !== TMSEG_SUPABASE_PROJECT_REF) return false;
+  if (expectedUrl) {
+    const urlRef = extractSupabaseProjectRef(expectedUrl);
+    if (urlRef && keyRef && urlRef !== keyRef) return false;
+  }
+  return true;
+}
+var init_supabasePublicEnv = __esm({
+  "lib/supabasePublicEnv.ts"() {
+    "use strict";
+    init_supabaseDefaults();
+  }
+});
+
+// lib/supabaseAdmin.ts
+function warnForeignProjectOnce() {
+  if (warnedForeignProject) return;
+  warnedForeignProject = true;
+  console.warn(
+    "[Supabase] Variaveis de outro projeto ignoradas \u2014 usando projeto TM SEG (ajhmmjuewdsukecaimik). Remova na Vercel envs de integracao Supabase incorretas ou alinhe SUPABASE_URL/VITE_SUPABASE_URL."
+  );
+}
+function pickServerUrl() {
+  const candidates = [
+    process.env.SUPABASE_URL,
+    process.env.VITE_SUPABASE_URL,
+    process.env.TMSEG_SUPABASE_URL
+  ];
+  for (const candidate of candidates) {
+    const value = normalizeSupabaseProjectUrl(candidate);
+    if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
+    if (isValidHttpUrl(value)) warnForeignProjectOnce();
+  }
+  return DEFAULT_SUPABASE_URL;
+}
+function pickServerAnonKey(url) {
+  const candidates = [
+    process.env.SUPABASE_ANON_KEY,
+    process.env.VITE_SUPABASE_ANON_KEY,
+    process.env.TMSEG_SUPABASE_ANON_KEY
+  ];
+  for (const candidate of candidates) {
+    const value = cleanEnv(candidate);
+    if (isTmSegSupabaseAnonKey(value, url)) return value;
+    if (value) warnForeignProjectOnce();
+  }
+  return DEFAULT_SUPABASE_ANON_KEY;
+}
+function decodeJwtRole(key) {
+  try {
+    const part = key.split(".")[1];
+    if (!part) return null;
+    const json = Buffer.from(part, "base64url").toString("utf8");
+    const payload = JSON.parse(json);
+    return payload.role ?? null;
+  } catch {
+    return null;
+  }
+}
+function isTmSegServiceRoleKey(key, expectedRef = TMSEG_SUPABASE_PROJECT_REF) {
+  const cleaned = cleanEnv(key);
+  if (!cleaned) return { ok: false, reason: "empty" };
+  if (cleaned.startsWith("sb_")) return { ok: false, reason: "not_jwt" };
+  const ref = decodeJwtProjectRef(cleaned);
+  const role = decodeJwtRole(cleaned);
+  if (!ref || !role) return { ok: false, reason: "not_jwt" };
+  if (ref !== expectedRef) return { ok: false, reason: "foreign_project" };
+  if (role !== "service_role") return { ok: false, reason: "anon_role" };
+  return { ok: true };
+}
+function getSupabaseUrl() {
+  return pickServerUrl();
+}
+function getSupabaseAnonKey() {
+  return pickServerAnonKey(getSupabaseUrl());
+}
+function getSupabaseServiceRoleKey() {
+  const candidates = [
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_KEY,
+    process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY
+  ];
+  const expectedRef = extractSupabaseProjectRef(getSupabaseUrl()) || TMSEG_SUPABASE_PROJECT_REF;
+  for (const candidate of candidates) {
+    const key = cleanEnv(candidate);
+    if (!key) continue;
+    const check = isTmSegServiceRoleKey(key, expectedRef);
+    if (!check.ok) {
+      if (check.reason === "foreign_project") warnForeignProjectOnce();
+      if (check.reason === "anon_role" && !warnedAnonKeyAsService) {
+        warnedAnonKeyAsService = true;
+        console.error(
+          '[Supabase] SUPABASE_SERVICE_KEY cont\xE9m a chave ANON, n\xE3o service_role. Substitua pelo valor "service_role" LEGACY (eyJ...) no .env (Settings \u2192 API no Supabase).'
+        );
+      }
+      if (check.reason === "not_jwt" && !warnedAnonKeyAsService) {
+        warnedAnonKeyAsService = true;
+        console.error(
+          '[Supabase] SUPABASE_SERVICE_ROLE_KEY n\xE3o \xE9 JWT service_role LEGACY. Use a chave "service_role (LEGACY)" (eyJ...), n\xE3o sb_secret_/sb_publishable_.'
+        );
+      }
+      continue;
+    }
+    return key;
+  }
+  if (!warnedMissingServiceRole) {
+    warnedMissingServiceRole = true;
+    console.warn(
+      '[Supabase] SUPABASE_SERVICE_ROLE_KEY n\xE3o definida para o projeto TM SEG. Copie a chave "service_role" em Supabase \u2192 Settings \u2192 API e adicione na Vercel.'
+    );
+  }
+  return "";
+}
+function getSupabaseServerKey() {
+  const service = getSupabaseServiceRoleKey();
+  if (service) return service;
+  const anon = getSupabaseAnonKey();
+  if (anon && !warnedAnonFallback) {
+    warnedAnonFallback = true;
+    console.warn("[Supabase] Servidor operando com chave ANON \u2014 algumas rotas podem falhar por RLS.");
+  }
+  return anon;
+}
+function createSupabaseAdminClient() {
+  const url = getSupabaseUrl();
+  const key = getSupabaseServerKey();
+  if (!url || !key) return null;
+  return (0, import_supabase_js.createClient)(url, key);
+}
+var import_supabase_js, warnedMissingServiceRole, warnedAnonKeyAsService, warnedAnonFallback, warnedForeignProject;
+var init_supabaseAdmin = __esm({
+  "lib/supabaseAdmin.ts"() {
+    "use strict";
+    import_supabase_js = require("@supabase/supabase-js");
+    init_supabaseDefaults();
+    init_supabasePublicEnv();
+    warnedMissingServiceRole = false;
+    warnedAnonKeyAsService = false;
+    warnedAnonFallback = false;
+    warnedForeignProject = false;
+  }
+});
+
+// lib/cevaPortal/portalServidor.ts
+function portalGenerico(cliente) {
+  const slug = String(cliente.portal_slug || "").trim().toLowerCase();
+  const id = Number(cliente.id);
+  const nome = String(cliente.name || "").trim();
+  if (!slug || !nome || !Number.isFinite(id)) return null;
+  const fantasia = String(cliente.trading_name || "").trim();
+  return {
+    rotulo: fantasia || nome,
+    clienteNome: nome,
+    clientId: id,
+    tokenPrefix: `portal-${slug}`,
+    headerSessao: "x-portal-cliente",
+    logPrefix: `portal-${slug}`,
+    caminho: `/${slug}`,
+    exigeLogin: true,
+    tabelas: { ...TABELAS_PORTAL_GENERICO }
+  };
+}
+function portalPorNomeCliente(nome) {
+  const texto5 = String(nome || "").trim().toUpperCase();
+  if (!texto5) return null;
+  const exato = PORTAIS_CLIENTE.find((portal) => portal.clienteNome.toUpperCase() === texto5);
+  if (exato) return exato;
+  if (texto5.includes("CEVA")) return PORTAL_CEVA;
+  if (texto5.includes("INTERMODAL")) return PORTAL_IBL;
+  return null;
+}
+function tabelaAusenteNoBanco(erro) {
+  if (!erro) return false;
+  const codigo = String(erro.code || "");
+  const mensagem = String(erro.message || "");
+  return codigo === "42P01" || codigo === "PGRST205" || /Could not find the table/i.test(mensagem);
+}
+var PORTAL_CEVA, PORTAL_IBL, TABELAS_PORTAL_GENERICO, PORTAIS_CLIENTE;
+var init_portalServidor = __esm({
+  "lib/cevaPortal/portalServidor.ts"() {
+    "use strict";
+    PORTAL_CEVA = {
+      rotulo: "CEVA",
+      clienteNome: "CEVA LOGISTICS LTDA",
+      tokenPrefix: "ceva-portal",
+      headerSessao: "x-ceva-portal",
+      logPrefix: "ceva-portal",
+      caminho: "/ceva",
+      exigeLogin: true,
+      tabelas: {
+        usuarios: "ceva_portal_usuarios",
+        osCampos: "ceva_portal_os_campos",
+        catalogo: "ceva_portal_catalogo",
+        pgrHistorico: "ceva_portal_pgr_historico",
+        solicitacoes: "ceva_escolta_solicitacoes"
+      }
+    };
+    PORTAL_IBL = {
+      rotulo: "IBL",
+      clienteNome: "INTERMODAL BRASIL LOGISTICA S.A.",
+      clienteBusca: "INTERMODAL",
+      tokenPrefix: "ibl-portal",
+      headerSessao: "x-ibl-portal",
+      logPrefix: "ibl-portal",
+      caminho: "/ibl",
+      exigeLogin: true,
+      tabelas: {
+        usuarios: "ibl_portal_usuarios",
+        osCampos: "ibl_portal_os_campos",
+        catalogo: "ibl_portal_catalogo",
+        pgrHistorico: "ibl_portal_pgr_historico",
+        solicitacoes: "ibl_escolta_solicitacoes"
+      }
+    };
+    TABELAS_PORTAL_GENERICO = {
+      usuarios: "portal_cliente_usuarios",
+      osCampos: "portal_cliente_os_campos",
+      catalogo: "portal_cliente_catalogo",
+      pgrHistorico: "portal_cliente_pgr_historico",
+      solicitacoes: "portal_cliente_solicitacoes"
+    };
+    PORTAIS_CLIENTE = [PORTAL_CEVA, PORTAL_IBL];
+  }
+});
+
+// lib/cevaPortal/regrasAcesso.ts
+function podeRemoverPessoa(perfil) {
+  return perfil === "analista";
+}
+function senhaPortalVencida(senhaAlteradaEm, agora = /* @__PURE__ */ new Date(), dias = DIAS_TROCA_SENHA_PORTAL) {
+  if (!senhaAlteradaEm) return false;
+  const quando = new Date(senhaAlteradaEm).getTime();
+  if (!Number.isFinite(quando)) return true;
+  return agora.getTime() - quando >= dias * 24 * 60 * 60 * 1e3;
+}
+function deveTrocarSenhaPortal(input) {
+  if (input.trocarSenha === true) return true;
+  return senhaPortalVencida(input.senhaAlteradaEm, input.agora ?? /* @__PURE__ */ new Date());
+}
+function permissoesDoPortal(caminho, perfil) {
+  const rota = caminho.startsWith("/") ? caminho : `/${caminho}`;
+  return [PERMISSAO_SO_PORTAL, `portal:${rota}`, `portal-perfil:${perfil}`];
+}
+function usuarioSoPortal(perms) {
+  return Array.isArray(perms) && perms.includes(PERMISSAO_SO_PORTAL);
+}
+function caminhoPortalDasPermissoes(perms) {
+  if (!Array.isArray(perms)) return null;
+  const marca = perms.find((item) => typeof item === "string" && item.startsWith("portal:/"));
+  return typeof marca === "string" ? marca.slice("portal:".length) : null;
+}
+function mensagemAcessoPortal(input) {
+  const senha = input.manteveSenha ? "A senha continua a mesma que voc\xEA j\xE1 usa neste portal." : `\u{1F511} *Senha:* ${input.senha || ""}`;
+  const aviso = input.manteveSenha ? "A senha precisa ser trocada a cada 30 dias dentro do portal." : "\u26A0\uFE0F No primeiro acesso, voc\xEA dever\xE1 trocar sua senha. Depois, a troca \xE9 obrigat\xF3ria a cada 30 dias.";
+  return [
+    `\u{1F510} *GRUPO TMSEG \u2014 Acesso ao portal ${input.rotulo}*`,
+    "",
+    `Ol\xE1 *${input.nome}*,`,
+    "",
+    "Seu acesso mostra somente as informa\xE7\xF5es deste cliente.",
+    "",
+    `\u{1F4E7} *Login:* ${input.email}`,
+    senha,
+    `\u{1F310} *Link:* ${input.link}`,
+    "",
+    aviso,
+    "",
+    "_Grupo TMSEG \u2014 Gest\xE3o Operacional_"
+  ].join("\n");
+}
+function decidirPrimeiroAcesso(_input) {
+  return {
+    ok: false,
+    error: "O acesso \xE9 criado no Cadastro de Usu\xE1rios do cliente, com a op\xE7\xE3o Acesso ao portal. A senha chega nessa libera\xE7\xE3o e troca no primeiro acesso."
+  };
+}
+var DIAS_TROCA_SENHA_PORTAL, PERMISSAO_SO_PORTAL;
+var init_regrasAcesso = __esm({
+  "lib/cevaPortal/regrasAcesso.ts"() {
+    "use strict";
+    DIAS_TROCA_SENHA_PORTAL = 30;
+    PERMISSAO_SO_PORTAL = "portal-only";
+  }
+});
+
+// lib/cevaPortal/acesso.ts
+function podeCadastrarPessoa(perfil) {
+  return perfil === "administrador";
+}
+function emailDeAcesso(value) {
+  const email = String(value ?? "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) return null;
+  return email;
+}
+function nomeDeAcesso(value) {
+  const nome = String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().replace(/\s+/g, " ");
+  if (nome.length < 2 || nome.length > 120) return null;
+  return nome;
+}
+function perfilDeAcesso(value) {
+  const perfil = String(value ?? "").trim().toLowerCase();
+  return perfil === "administrador" || perfil === "analista" ? perfil : null;
+}
+function validarSenha(senha) {
+  if (senha.length < 8) return "A senha precisa ter pelo menos 8 caracteres.";
+  if (senha.length > 72) return "A senha passou do limite.";
+  return null;
+}
+function hashSenha(senha) {
+  const salt = (0, import_crypto.randomBytes)(16).toString("hex");
+  const hash = (0, import_crypto.scryptSync)(senha, salt, 32).toString("hex");
+  return `scrypt$${salt}$${hash}`;
+}
+function senhaConfere(senha, armazenada) {
+  const partes = String(armazenada || "").split("$");
+  if (partes.length !== 3 || partes[0] !== "scrypt" || !partes[1] || !partes[2]) return false;
+  const calculado = (0, import_crypto.scryptSync)(senha, partes[1], 32);
+  const salvo = Buffer.from(partes[2], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_crypto.timingSafeEqual)(calculado, salvo);
+}
+function gerarSenhaTemporaria() {
+  const bytes = (0, import_crypto.randomBytes)(12);
+  return [...bytes].map((byte) => ALFABETO_SENHA[byte % ALFABETO_SENHA.length]).join("");
+}
+var import_crypto, ALFABETO_SENHA;
+var init_acesso = __esm({
+  "lib/cevaPortal/acesso.ts"() {
+    "use strict";
+    import_crypto = require("crypto");
+    init_regrasAcesso();
+    ALFABETO_SENHA = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  }
+});
+
+// lib/gestorFiscal/ponteAuth/hashSenha.ts
+function identificarFormatoHash(gravada) {
+  const salva = gravada == null ? "" : String(gravada);
+  if (!salva) return null;
+  if (salva.startsWith("$2a$") || salva.startsWith("$2b$") || salva.startsWith("$2y$") || salva.startsWith("$argon2")) {
+    return "outro";
+  }
+  const partes = salva.split("$");
+  if (partes[0] !== "scrypt") return salva.includes("$") ? "outro" : null;
+  if (partes.length === 3 && hex(partes[1]) && hex(partes[2])) return "scrypt_portal";
+  if (partes.length === 8 && partes[1] === "v1" && parametrosConhecidos(partes) && hex(partes[6]) && hex(partes[7])) {
+    return "scrypt_v1";
+  }
+  return "outro";
+}
+function gerarHashVersionado(senha) {
+  const sal = (0, import_node_crypto.randomBytes)(16).toString("hex");
+  const hash = (0, import_node_crypto.scryptSync)(senha, sal, PARAMETROS_SCRYPT_V1.keylen, {
+    N: PARAMETROS_SCRYPT_V1.N,
+    r: PARAMETROS_SCRYPT_V1.r,
+    p: PARAMETROS_SCRYPT_V1.p
+  }).toString("hex");
+  return `scrypt$v1$${PARAMETROS_SCRYPT_V1.N}$${PARAMETROS_SCRYPT_V1.r}$${PARAMETROS_SCRYPT_V1.p}$${PARAMETROS_SCRYPT_V1.keylen}$${sal}$${hash}`;
+}
+function verificarSenhaArmazenada(senha, armazenada) {
+  const limpa = String(senha ?? "").trim();
+  if (!limpa) return false;
+  const formato = identificarFormatoHash(armazenada);
+  if (formato === "scrypt_portal") return portalConfere(limpa, String(armazenada));
+  if (formato === "scrypt_v1") return v1Confere(limpa, String(armazenada));
+  return false;
+}
+function portalConfere(senha, armazenada) {
+  const partes = armazenada.split("$");
+  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[1], 32);
+  const salvo = Buffer.from(partes[2], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
+}
+function v1Confere(senha, armazenada) {
+  const partes = armazenada.split("$");
+  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[6], PARAMETROS_SCRYPT_V1.keylen, {
+    N: PARAMETROS_SCRYPT_V1.N,
+    r: PARAMETROS_SCRYPT_V1.r,
+    p: PARAMETROS_SCRYPT_V1.p
+  });
+  const salvo = Buffer.from(partes[7], "hex");
+  if (calculado.length !== salvo.length) return false;
+  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
+}
+function parametrosConhecidos(partes) {
+  return Number(partes[2]) === PARAMETROS_SCRYPT_V1.N && Number(partes[3]) === PARAMETROS_SCRYPT_V1.r && Number(partes[4]) === PARAMETROS_SCRYPT_V1.p && Number(partes[5]) === PARAMETROS_SCRYPT_V1.keylen;
+}
+function hex(valor) {
+  return valor.length > 0 && valor.length % 2 === 0 && /^[0-9a-f]+$/i.test(valor);
+}
+var import_node_crypto, PARAMETROS_SCRYPT_V1;
+var init_hashSenha = __esm({
+  "lib/gestorFiscal/ponteAuth/hashSenha.ts"() {
+    "use strict";
+    import_node_crypto = require("node:crypto");
+    PARAMETROS_SCRYPT_V1 = { versao: 1, N: 16384, r: 8, p: 1, keylen: 32 };
+  }
+});
+
+// lib/sessao/gravarSenha.ts
+function colunaAusente(mensagem, coluna) {
+  return new RegExp(coluna, "i").test(mensagem) && /does not exist|n[aã]o existe|schema cache|could not find/i.test(mensagem);
+}
+async function gravarSenhaNoServidor(cliente, usuarioId, senha, extras = {}) {
+  const hash = gerarHashVersionado(senha);
+  const base = {
+    password_hash: hash,
+    password: null,
+    ...extras
+  };
+  let resultado = await cliente.from("system_users").update(base).eq("id", usuarioId);
+  if (resultado.error && colunaAusente(resultado.error.message || "", "session_epoch")) {
+    const semEpoch = { ...base };
+    delete semEpoch.session_epoch;
+    resultado = await cliente.from("system_users").update(semEpoch).eq("id", usuarioId);
+  }
+  if (!resultado.error) return "hash";
+  const mensagem = resultado.error.message || "";
+  if (!colunaAusente(mensagem, "password_hash")) {
+    throw new Error("Falha ao gravar a senha.");
+  }
+  const legado = { password: senha };
+  for (const [chave, valor] of Object.entries(extras)) {
+    if (chave === "session_epoch" || chave === "force_password_change") continue;
+    legado[chave] = valor;
+  }
+  const texto5 = await cliente.from("system_users").update(legado).eq("id", usuarioId);
+  if (texto5.error) throw new Error("Falha ao gravar a senha.");
+  return "texto";
+}
+var init_gravarSenha = __esm({
+  "lib/sessao/gravarSenha.ts"() {
+    "use strict";
+    init_hashSenha();
+  }
+});
+
+// lib/cevaPortal/cadastroSistema.ts
+function colunaSenhaAlteradaAusente(error) {
+  if (!error) return false;
+  const message = String(error.message || "").toLowerCase();
+  return error.code === "42703" || error.code === "PGRST204" || message.includes("senha_alterada_em");
+}
+async function vincularCadastroCliente(sb, input) {
+  const { data: existente, error: leitura } = await sb.from("system_users").select("id, client_id, user_type, provider_id").ilike("email", input.email).maybeSingle();
+  if (leitura) return { ok: false, error: "N\xE3o foi poss\xEDvel consultar o cadastro de usu\xE1rios." };
+  const permissoes = permissoesDoPortal(input.caminho, input.perfil);
+  const status = input.ativo ? "Ativo" : "Inativo";
+  if (existente) {
+    const tipo = String(existente.user_type || "");
+    if (tipo && tipo !== "client") {
+      return { ok: false, error: "Este e-mail j\xE1 pertence a um usu\xE1rio interno. Use outro e-mail no portal." };
+    }
+    if (existente.provider_id) {
+      return { ok: false, error: "Este e-mail j\xE1 pertence a um fornecedor. Use outro e-mail no portal." };
+    }
+    if (existente.client_id && String(existente.client_id) !== String(input.clientId)) {
+      return { ok: false, error: "Este e-mail j\xE1 est\xE1 vinculado a outro cliente." };
+    }
+    const { error: error2 } = await sb.from("system_users").update({
+      name: input.nome,
+      client_id: input.clientId,
+      user_type: "client",
+      status,
+      permissions: permissoes,
+      force_password_change: false
+    }).eq("id", existente.id);
+    if (error2) return { ok: false, error: "N\xE3o foi poss\xEDvel atualizar o cadastro de usu\xE1rios." };
+    return { ok: true, id: String(existente.id) };
+  }
+  const payload = {
+    name: input.nome,
+    email: input.email,
+    client_id: input.clientId,
+    user_type: "client",
+    status,
+    force_password_change: false,
+    permissions: permissoes
+  };
+  const { data, error } = await sb.from("system_users").insert(payload).select("id").single();
+  if (error || !data?.id) return { ok: false, error: "N\xE3o foi poss\xEDvel criar o usu\xE1rio no cadastro do cliente." };
+  if (input.senhaTemporaria) {
+    await gravarSenhaNoServidor(sb, String(data.id), input.senhaTemporaria, { force_password_change: false });
+  }
+  return { ok: true, id: String(data.id) };
+}
+async function alinharStatusCadastroPortal(sb, email, ativo) {
+  const { data } = await sb.from("system_users").select("id, permissions, user_type").ilike("email", email).maybeSingle();
+  if (!data || String(data.user_type || "") !== "client" || !usuarioSoPortal(data.permissions)) return;
+  await sb.from("system_users").update({ status: ativo ? "Ativo" : "Inativo" }).eq("id", data.id);
+}
+var init_cadastroSistema = __esm({
+  "lib/cevaPortal/cadastroSistema.ts"() {
+    "use strict";
+    init_acesso();
+    init_regrasAcesso();
+    init_gravarSenha();
+  }
+});
+
 // lib/cevaPortal/rules.ts
 function dataHoraBrasil(value) {
   const text = String(value ?? "").trim();
@@ -190,6 +737,14 @@ var init_rules = __esm({
 });
 
 // lib/email/smtp.ts
+var smtp_exports = {};
+__export(smtp_exports, {
+  BCC_RECIPIENTS: () => BCC_RECIPIENTS,
+  EMAIL_USER: () => EMAIL_USER,
+  SMTP_FROM: () => SMTP_FROM,
+  getTransporter: () => getTransporter,
+  sendMail: () => sendMail
+});
 function getTransporter() {
   if (transporter) return transporter;
   const pass = process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || "";
@@ -206,13 +761,14 @@ function getTransporter() {
 async function sendMail(opts) {
   return getTransporter().sendMail(opts);
 }
-var import_nodemailer, EMAIL_USER, SMTP_FROM, transporter;
+var import_nodemailer, EMAIL_USER, SMTP_FROM, BCC_RECIPIENTS, transporter;
 var init_smtp = __esm({
   "lib/email/smtp.ts"() {
     "use strict";
     import_nodemailer = __toESM(require("nodemailer"), 1);
     EMAIL_USER = process.env.EMAIL_USER || "adm@grupotmseg.com.br";
     SMTP_FROM = '"Grupo TM SEG" <adm@grupotmseg.com.br>';
+    BCC_RECIPIENTS = ["thiago@grupotmseg.com.br", "operacional@grupotmseg.com.br"];
     transporter = null;
   }
 });
@@ -234,14 +790,14 @@ function abrirSessao(segredo, token, agora = Date.now()) {
   const resto = limpo.slice(PREFIXO.length);
   const ponto = resto.lastIndexOf(".");
   if (ponto <= 0) return null;
-  const corpo = resto.slice(0, ponto);
+  const corpo2 = resto.slice(0, ponto);
   const assinatura = resto.slice(ponto + 1);
-  const esperada = assinar(segredo, corpo);
+  const esperada = assinar(segredo, corpo2);
   const recebida = Buffer.from(assinatura);
   const calculada = Buffer.from(esperada);
   if (recebida.length !== calculada.length || !(0, import_node_crypto3.timingSafeEqual)(recebida, calculada)) return null;
   try {
-    const json = JSON.parse(Buffer.from(corpo, "base64url").toString("utf8"));
+    const json = JSON.parse(Buffer.from(corpo2, "base64url").toString("utf8"));
     if (!json.sub || typeof json.exp !== "number" || !json.csrf) return null;
     if (agora >= json.exp) return null;
     return {
@@ -269,8 +825,8 @@ var init_token = __esm({
 
 // lib/portalCliente/slug.ts
 function corHex(valor) {
-  const texto4 = String(valor || "").trim();
-  return /^#[0-9a-fA-F]{6}$/.test(texto4) ? texto4.toLowerCase() : null;
+  const texto5 = String(valor || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(texto5) ? texto5.toLowerCase() : null;
 }
 var init_slug = __esm({
   "lib/portalCliente/slug.ts"() {
@@ -280,12 +836,12 @@ var init_slug = __esm({
 
 // lib/portalCliente/marcaSite.ts
 function urlDeSitePublico(bruto) {
-  let texto4 = String(bruto || "").trim();
-  if (!texto4) return null;
-  if (!/^https?:\/\//i.test(texto4)) texto4 = `https://${texto4}`;
+  let texto5 = String(bruto || "").trim();
+  if (!texto5) return null;
+  if (!/^https?:\/\//i.test(texto5)) texto5 = `https://${texto5}`;
   let url;
   try {
-    url = new URL(texto4);
+    url = new URL(texto5);
   } catch {
     return null;
   }
@@ -297,10 +853,10 @@ function urlDeSitePublico(bruto) {
   return url;
 }
 function absoluto(base, caminho) {
-  const texto4 = String(caminho || "").trim();
-  if (!texto4 || texto4.startsWith("data:")) return null;
+  const texto5 = String(caminho || "").trim();
+  if (!texto5 || texto5.startsWith("data:")) return null;
   try {
-    const url = new URL(texto4, base);
+    const url = new URL(texto5, base);
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
     return url.toString();
   } catch {
@@ -313,15 +869,81 @@ function meta(html, atributo, nome) {
   const content = tag.match(/content=["']([^"']+)["']/i)?.[1] || "";
   return content.trim() || null;
 }
+function rgb(hex2) {
+  const n = Number.parseInt(hex2.slice(1), 16);
+  return { r: n >> 16 & 255, g: n >> 8 & 255, b: n & 255 };
+}
+function luminancia(hex2) {
+  const { r, g, b } = rgb(hex2);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+function saturacao(hex2) {
+  const { r, g, b } = rgb(hex2);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max === 0) return 0;
+  return (max - min) / max;
+}
+function clarear(hex2, quanto) {
+  const { r, g, b } = rgb(hex2);
+  const subir = (canal) => Math.max(0, Math.min(255, Math.round(canal + (255 - canal) * quanto)));
+  return `#${[subir(r), subir(g), subir(b)].map((canal) => canal.toString(16).padStart(2, "0")).join("")}`;
+}
+function corUtil(hex2) {
+  const cor = corHex(hex2);
+  if (!cor) return null;
+  if (luminancia(cor) > 0.94) return null;
+  if (saturacao(cor) < 0.08 && luminancia(cor) > 0.2) return null;
+  return cor;
+}
+function escolherPaleta(cores) {
+  const unicas = [];
+  for (const item of cores) {
+    const cor = corUtil(item);
+    if (cor && !unicas.includes(cor)) unicas.push(cor);
+  }
+  if (unicas.length === 0) return null;
+  const marca = [...unicas].sort((a, b) => luminancia(a) - luminancia(b))[0];
+  const viva = [...unicas].filter((cor) => cor !== marca).sort((a, b) => saturacao(b) - saturacao(a))[0];
+  return { cor: marca, corAcao: viva || (luminancia(marca) < 0.45 ? clarear(marca, 0.35) : marca) };
+}
+function svgSemFundo(svg) {
+  return svg.replace(/<rect\b[^>]*\/?>/gi, (tag) => {
+    const fill = tag.match(/\bfill=["']([^"']+)["']/i)?.[1] || "";
+    const branco = /^#f{3}(?:f{3})?$|^white$|^#ffffff$/i.test(fill.trim()) || /rgba?\(\s*255\s*,\s*255\s*,\s*255/i.test(fill);
+    const tela = /width=["']100%["']/i.test(tag) && /height=["']100%["']/i.test(tag);
+    return branco && tela ? "" : tag;
+  }).replace(/(<svg\b[^>]*?)\sstyle=["'][^"']*background(?:-color)?:[^"']*["']/i, "$1");
+}
+function svgSeguro(bruto) {
+  const texto5 = String(bruto || "").trim();
+  if (!/<svg[\s>]/i.test(texto5) || texto5.length > 2e5) return null;
+  const limpo = svgSemFundo(texto5).replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<foreignObject[\s\S]*?<\/foreignObject>/gi, "").replace(/\son\w+=["'][^"']*["']/gi, "");
+  return /<svg[\s>]/i.test(limpo) ? limpo : null;
+}
+function ehSvg(endereco) {
+  return Boolean(endereco && /\.svg(?:$|\?)/i.test(endereco));
+}
+function candidatosLogo(html, base) {
+  const achados = [];
+  for (const tag of html.match(/<(?:link|img)\b[^>]*>/gi) || []) {
+    const rel = /rel=["'][^"']*(?:icon|logo|mask-icon)[^"']*["']/i.test(tag);
+    const pareceLogo = /logo/i.test(tag);
+    if (!rel && !pareceLogo) continue;
+    const href = tag.match(/\b(?:href|src)=["']([^"']+)["']/i)?.[1];
+    const url = absoluto(base, href);
+    if (url && ehSvg(url)) achados.push(url);
+  }
+  return [...new Set(achados)];
+}
 function lerMarcaDoHtml(html, base) {
-  const icone = html.match(/<link[^>]*rel=["'][^"']*icon[^"']*["'][^>]*>/i)?.[0] || "";
-  const hrefIcone = icone.match(/href=["']([^"']+)["']/i)?.[1] || "";
-  const og = meta(html, "property", "og:image") || meta(html, "name", "og:image");
-  const cor = corHex(meta(html, "name", "theme-color")) || corHex(meta(html, "name", "msapplication-TileColor"));
+  const tema = corHex(meta(html, "name", "theme-color")) || corHex(meta(html, "name", "msapplication-TileColor"));
+  const paleta = escolherPaleta([tema, ...html.match(/#[0-9a-fA-F]{6}\b/g) || []]);
+  const logos = candidatosLogo(html, base);
   return {
-    logo: absoluto(base, og) || absoluto(base, hrefIcone),
-    cor,
-    corAcao: cor
+    logo: logos[0] || null,
+    cor: paleta?.cor || null,
+    corAcao: paleta?.corAcao || null
   };
 }
 async function buscarMarcaDoSite(bruto) {
@@ -345,7 +967,16 @@ async function buscarMarcaDoSite(bruto) {
     }
     if (!resposta || !resposta.ok) return { error: "O site n\xE3o respondeu a leitura do logotipo." };
     const html = (await resposta.text()).slice(0, 4e5);
-    return lerMarcaDoHtml(html, atual);
+    const marca = lerMarcaDoHtml(html, atual);
+    if (!marca.logo) return marca;
+    const arquivo = await fetch(marca.logo, {
+      signal: controle.signal,
+      headers: { "User-Agent": "TMSEG-portal-marca", Accept: "image/svg+xml,text/plain" }
+    });
+    if (!arquivo.ok) return { ...marca, logo: null };
+    const svg = svgSeguro(await arquivo.text());
+    if (!svg) return { ...marca, logo: null };
+    return { ...marca, logo: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
   } catch {
     return { error: "N\xE3o foi poss\xEDvel ler o site. Envie o logotipo e escolha as cores." };
   } finally {
@@ -392,6 +1023,144 @@ var init_marcaSiteHttp = __esm({
     "use strict";
     init_token();
     init_marcaSite();
+  }
+});
+
+// lib/portalCliente/acessoInicial.ts
+function emailPortalDoSite(site) {
+  const url = urlDeSitePublico(site);
+  if (!url) return null;
+  const host = url.hostname.replace(/^www\./i, "").toLowerCase();
+  return emailDeAcesso(`portal@${host}`);
+}
+function senhaInicialDoCnpj(documento) {
+  const digitos = String(documento || "").replace(/\D/g, "");
+  if (digitos.length !== 14) return null;
+  return digitos;
+}
+var init_acessoInicial = __esm({
+  "lib/portalCliente/acessoInicial.ts"() {
+    "use strict";
+    init_acesso();
+    init_marcaSite();
+  }
+});
+
+// lib/portalCliente/provisionarAdmin.ts
+async function criarAdministradorInicial(sb, cliente) {
+  if (cliente.portal_ativo !== true) return { ok: false, error: "O portal deste cliente n\xE3o est\xE1 ligado." };
+  const email = emailPortalDoSite(cliente.portal_site);
+  if (!email) return { ok: false, error: "Informe o site do cliente para criar o e-mail portal@dom\xEDnio." };
+  const senha = senhaInicialDoCnpj(cliente.cnpj);
+  if (!senha) return { ok: false, error: "O primeiro acesso usa o CNPJ como senha. O documento precisa ter 14 n\xFAmeros." };
+  const slug = String(cliente.portal_slug || "").trim();
+  if (!slug) return { ok: false, error: "Informe o endere\xE7o da p\xE1gina do portal." };
+  const clientId = cliente.id;
+  if (clientId == null || clientId === "") return { ok: false, error: "Cliente sem identificador." };
+  const leitura = await sb.from("portal_cliente_usuarios").select("id, email, perfil").eq("client_id", clientId).eq("perfil", "administrador").limit(1);
+  if (leitura.error) {
+    const codigo = String(leitura.error.code || "");
+    if (codigo === "42P01" || codigo === "PGRST205" || codigo === "PGRST204") {
+      return { ok: false, error: "A tabela de acessos do portal ainda n\xE3o est\xE1 no banco." };
+    }
+    return { ok: false, error: "N\xE3o foi poss\xEDvel consultar o administrador do portal." };
+  }
+  const existente = Array.isArray(leitura.data) ? leitura.data[0] : null;
+  if (existente?.email) return { ok: true, criado: false, email: String(existente.email) };
+  const nome = String(cliente.trading_name || cliente.name || "Administrador").trim().slice(0, 120);
+  const novo = {
+    client_id: clientId,
+    nome,
+    email,
+    perfil: "administrador",
+    status: "ativo",
+    trocar_senha: true,
+    trocar_email: true,
+    senha_hash: hashSenha(senha),
+    senha_alterada_em: null
+  };
+  const gravado = await sb.from("portal_cliente_usuarios").insert(novo).select("id").single();
+  if (gravado.error || !gravado.data?.id) {
+    if (gravado.error?.code === "23505") return { ok: false, error: "Este e-mail provis\xF3rio j\xE1 est\xE1 em outro acesso." };
+    return { ok: false, error: "N\xE3o foi poss\xEDvel criar o administrador do portal." };
+  }
+  const vinculo = await vincularCadastroCliente(sb, {
+    nome,
+    email,
+    senhaTemporaria: senha,
+    clientId,
+    caminho: `/${slug}`,
+    perfil: "administrador",
+    ativo: true
+  });
+  if (!vinculo.ok) {
+    await sb.from("portal_cliente_usuarios").delete().eq("id", gravado.data.id);
+    return vinculo;
+  }
+  return { ok: true, criado: true, email };
+}
+var init_provisionarAdmin = __esm({
+  "lib/portalCliente/provisionarAdmin.ts"() {
+    "use strict";
+    init_acesso();
+    init_cadastroSistema();
+    init_acessoInicial();
+  }
+});
+
+// lib/portalCliente/provisionarHttp.ts
+var provisionarHttp_exports = {};
+__export(provisionarHttp_exports, {
+  responderProvisionar: () => responderProvisionar
+});
+function corpo(req) {
+  if (typeof req.body === "string") {
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      return {};
+    }
+  }
+  return req.body || {};
+}
+async function responderProvisionar(req, res) {
+  if (!usuarioIdDoToken(String(req.headers?.authorization || ""))) {
+    res.status(401).json({ error: "N\xE3o autorizado" });
+    return;
+  }
+  const clientId = String(corpo(req).clientId || "").trim();
+  if (!clientId) {
+    res.status(400).json({ error: "Informe o cliente." });
+    return;
+  }
+  const sb = createSupabaseAdminClient();
+  if (!sb) {
+    res.status(503).json({ error: "Portal indispon\xEDvel." });
+    return;
+  }
+  const { data, error } = await sb.from("clients").select("id, name, trading_name, cnpj, status, portal_ativo, portal_site, portal_slug").eq("id", clientId).maybeSingle();
+  if (error || !data) {
+    res.status(404).json({ error: "Cliente n\xE3o encontrado." });
+    return;
+  }
+  if (portalPorNomeCliente(data.name)) {
+    res.status(200).json({ ok: true, criado: false, fixo: true });
+    return;
+  }
+  if (String(data.status || "") !== "Ativo") {
+    res.status(422).json({ error: "O portal inicial s\xF3 nasce com o cliente ativo." });
+    return;
+  }
+  const resultado = await criarAdministradorInicial(sb, data);
+  res.status(resultado.ok ? 200 : 422).json(resultado);
+}
+var init_provisionarHttp = __esm({
+  "lib/portalCliente/provisionarHttp.ts"() {
+    "use strict";
+    init_portalServidor();
+    init_token();
+    init_supabaseAdmin();
+    init_provisionarAdmin();
   }
 });
 
@@ -551,15 +1320,15 @@ function selectAutoBandKm(realKm, _config) {
   return band;
 }
 function computeGoldenRuleHours(scheduledTime, startTime, endTime) {
-  const toDate = (v) => {
+  const toDate2 = (v) => {
     if (!v) return null;
     if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
     const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
   };
-  const sched = toDate(scheduledTime);
-  const start = toDate(startTime);
-  const end = toDate(endTime);
+  const sched = toDate2(scheduledTime);
+  const start = toDate2(startTime);
+  const end = toDate2(endTime);
   if (!end) return { effectiveStart: sched || start, end: null, durationMinutes: 0, durationHours: 0 };
   let effectiveStart = null;
   if (sched && start) {
@@ -973,8 +1742,10 @@ function mentionsFixedKmBand(text, band) {
 }
 function resolveDisplacementFromAuthorizedKm(opts) {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
-  const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
-  const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
+  const clienteInformado = opts.displacementValue != null;
+  const fornecedorInformado = opts.displacementValueProvider != null;
+  const storedClient = clienteInformado ? Math.max(0, Number(opts.displacementValue) || 0) : 0;
+  const storedProvider = fornecedorInformado ? Math.max(0, Number(opts.displacementValueProvider) || 0) : 0;
   const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
   const clientRate = tarifaCliente.tarifa;
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
@@ -985,8 +1756,8 @@ function resolveDisplacementFromAuthorizedKm(opts) {
     clientRate,
     providerRate,
     origemTarifaCliente: tarifaCliente.origem,
-    client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
-    provider: opts.isSameOs ? 0 : storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider
+    client: clienteInformado ? Math.round(storedClient * 100) / 100 : derivedClient,
+    provider: opts.isSameOs ? 0 : fornecedorInformado ? Math.round(storedProvider * 100) / 100 : derivedProvider
   };
 }
 function clientTableMatchesMission(tableClient, missionClientName) {
@@ -1548,7 +2319,10 @@ var init_financialUtils = __esm({
       const isProviderMacor = missionProviderName.includes("MACOR");
       let providerMultiplier = 1;
       const selectStrictTable = (candidateTables, dist, region, city, typeKeyword, destCity2, routeCode, agentAware, originUFCode, originAddress) => {
-        if (!candidateTables || candidateTables.length === 0) return { table: null, log: "Sem tabelas cadastradas" };
+        candidateTables = (candidateTables || []).filter(
+          (t) => !String(t?.operation_type || "").toUpperCase().includes("__AUTO_MASTER__")
+        );
+        if (!candidateTables || candidateTables.length === 0) return { table: null, log: "Tabela n\xE3o encontrada" };
         const normalizedRegion = normalize2(region);
         const normalizedCity = normalize2(city);
         const normalizedDestCity = normalize2(destCity2);
@@ -1752,11 +2526,14 @@ var init_financialUtils = __esm({
           clientTablesFiltered = macorTables;
         }
       }
+      clientTablesFiltered = clientTablesFiltered.filter(
+        (t) => !String(t.operation_type || "").toUpperCase().includes("__AUTO_MASTER__")
+      );
       let isManualOverride = false;
       if (manualTableOverrides?.clientTableId) {
         const wantedId = String(manualTableOverrides.clientTableId);
         const manualTable = clientTables.find((t) => String(t.id) === wantedId);
-        if (manualTable) {
+        if (manualTable && !String(manualTable.operation_type || "").toUpperCase().includes("__AUTO_MASTER__")) {
           appliedClientTable = manualTable;
           clientLog = "Sele\xE7\xE3o Manual / Mem\xF3ria";
           isManualOverride = true;
@@ -1882,6 +2659,12 @@ var init_financialUtils = __esm({
           clientLog = `CESLOG Rota Fixa \u2192 ${cubSantosTable.operation_type}`;
         }
       }
+      if (!appliedClientTable) {
+        console.warn(`Nenhuma tabela encontrada para o cliente ${missionClientRaw}. A tabela mestre gen\xE9rica n\xE3o \xE9 aplicada.`);
+        if (!clientLog || clientLog === "Manual" || clientLog === "Sem tabelas cadastradas") {
+          clientLog = "Tabela n\xE3o encontrada";
+        }
+      }
       let appliedProviderTable = null;
       let providerLog = "Manual";
       const providerTablesNoMaster = providerTables.filter((t) => !isAutoMasterRow(t));
@@ -1898,9 +2681,18 @@ var init_financialUtils = __esm({
       const missionRegionUpper = String(detectedRegion || "").toUpperCase().trim();
       const filterIsUF = autoRegionFilter.length === 2 && !!UF_TO_REGION[autoRegionFilter];
       const autoRegionMatches = !autoRegionFilter || (filterIsUF ? !!originUFUpper && autoRegionFilter === originUFUpper : !!missionRegionUpper && autoRegionFilter === missionRegionUpper);
-      const effectiveProviderTableId = manualTableOverrides?.providerTableId && !String(manualTableOverrides.providerTableId).startsWith("auto-") ? manualTableOverrides.providerTableId : void 0;
+      let effectiveProviderTableId = manualTableOverrides?.providerTableId && !String(manualTableOverrides.providerTableId).startsWith("auto-") && !String(manualTableOverrides.providerTableId).startsWith("__auto_master__") ? manualTableOverrides.providerTableId : void 0;
+      if (effectiveProviderTableId) {
+        const linhaSalva = providerTables.find((t) => String(t.id) === String(effectiveProviderTableId));
+        if (linhaSalva && isAutoMasterRow(linhaSalva)) {
+          effectiveProviderTableId = void 0;
+        }
+      }
       const hasManualProviderOverride = !!effectiveProviderTableId;
-      const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches && !hasManualProviderOverride;
+      const autoEngineActive = false;
+      void autoMasterConfig;
+      void autoRegionMatches;
+      void hasManualProviderOverride;
       let filteredProviderTables = autoEngineActive ? [] : providerTablesNoMaster.filter((t) => matchesProviderAlias(normalize2(t.provider)));
       if (filteredProviderTables.length === 0 && missionProviderName.length > 2) {
         filteredProviderTables = providerTablesNoMaster.filter((t) => {
@@ -2084,6 +2876,12 @@ var init_financialUtils = __esm({
           cancellation_fee: 0
         };
         providerLog = `Motor Auto \u2192 Faixa ${autoBreakdown.bandKm}KM (${autoBreakdown.bandHours}h)`;
+      }
+      if (!appliedProviderTable) {
+        console.warn(`Nenhuma tabela de fornecedor encontrada para ${mission.provider || "a OS"}. A tabela mestre gen\xE9rica n\xE3o \xE9 aplicada.`);
+        if (!providerLog || providerLog === "Manual") {
+          providerLog = "Tabela n\xE3o encontrada";
+        }
       }
       const cBase = isRefused ? 0 : manualTableOverrides?.customClientBase !== void 0 ? manualTableOverrides.customClientBase : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier);
       const cFranchiseKm = appliedClientTable?.franchise_km || 100;
@@ -2751,6 +3549,91 @@ var init_aoVivo = __esm({
 });
 
 // lib/supabasePaging.ts
+async function fetchAllPages(buildQuery, pageSize = 1e3, maxRows = 5e4, options = {}) {
+  const all = [];
+  const seenKeys = /* @__PURE__ */ new Set();
+  let from = 0;
+  let exhausted = false;
+  let pagesLoaded = 0;
+  let expectedRows = null;
+  while (all.length < maxRows) {
+    const take = Math.min(pageSize, maxRows - all.length);
+    const { data, error, count } = await buildQuery(from, take);
+    pagesLoaded += 1;
+    if (error) throw error;
+    if (typeof count === "number") {
+      if (expectedRows !== null && count !== expectedRows) {
+        throw new SupabasePagingIntegrityError(
+          `A contagem mudou durante a pagina\xE7\xE3o (${expectedRows} \u2192 ${count}).`,
+          "COUNT_CHANGED"
+        );
+      }
+      expectedRows = count;
+    }
+    if (data === null) {
+      throw new SupabasePagingIntegrityError(
+        `P\xE1gina ${pagesLoaded} retornou dados nulos sem erro expl\xEDcito.`,
+        "NULL_PAGE"
+      );
+    }
+    if (data.length === 0) {
+      exhausted = true;
+      break;
+    }
+    for (const row of data) {
+      const key = options.getRowKey?.(row);
+      if (key !== void 0) {
+        if (seenKeys.has(key)) {
+          throw new SupabasePagingIntegrityError(
+            `Registro duplicado entre p\xE1ginas: ${String(key)}.`,
+            "DUPLICATE_ROW"
+          );
+        }
+        seenKeys.add(key);
+      }
+      all.push(row);
+    }
+    if (expectedRows !== null && all.length > expectedRows) {
+      throw new SupabasePagingIntegrityError(
+        `Foram carregados ${all.length} registros para uma contagem esperada de ${expectedRows}.`,
+        "ROW_COUNT_MISMATCH"
+      );
+    }
+    if (expectedRows !== null && all.length === expectedRows) {
+      exhausted = true;
+      break;
+    }
+    if (data.length < take) {
+      exhausted = true;
+      break;
+    }
+    from += data.length;
+  }
+  let truncated = false;
+  if (!exhausted && all.length >= maxRows) {
+    if (expectedRows !== null) {
+      truncated = expectedRows > maxRows;
+    } else {
+      const { data, error } = await buildQuery(maxRows, 1);
+      pagesLoaded += 1;
+      if (error) throw error;
+      if (data === null) {
+        throw new SupabasePagingIntegrityError(
+          `P\xE1gina sentinela retornou dados nulos sem erro expl\xEDcito.`,
+          "NULL_PAGE"
+        );
+      }
+      truncated = data.length > 0;
+    }
+  }
+  if (!truncated && expectedRows !== null && all.length !== expectedRows) {
+    throw new SupabasePagingIntegrityError(
+      `A pagina\xE7\xE3o terminou com ${all.length} de ${expectedRows} registros esperados.`,
+      "ROW_COUNT_MISMATCH"
+    );
+  }
+  return { rows: all, truncated, pagesLoaded, complete: !truncated, expectedRows };
+}
 async function fetchAllKeysetPages(buildQuery, pageSize = 1e3, maxRows = 5e4, options) {
   if (!Number.isInteger(pageSize) || pageSize <= 0) {
     throw new Error("pageSize deve ser um inteiro positivo.");
@@ -2934,6 +3817,79 @@ var init_fetchBillingMissionUniverse = __esm({
   }
 });
 
+// lib/portalCliente/medicao.ts
+var medicao_exports = {};
+__export(medicao_exports, {
+  EMAIL_FINANCEIRO_MEDICAO: () => EMAIL_FINANCEIRO_MEDICAO,
+  ITENS_MEDICAO: () => ITENS_MEDICAO,
+  itensConferir: () => itensConferir,
+  medicaoDaLinha: () => medicaoDaLinha,
+  textoEmailConferir: () => textoEmailConferir,
+  validarConferir: () => validarConferir
+});
+function itensConferir(valor) {
+  if (!Array.isArray(valor)) return [];
+  const permitidos = new Set(ITENS_MEDICAO);
+  const escolhidos = valor.map((item) => String(item || "").trim()).filter((item) => permitidos.has(item));
+  return [...new Set(escolhidos)];
+}
+function validarConferir(input) {
+  const itens = itensConferir(input.itens);
+  const justificativa = String(input.justificativa || "").trim();
+  if (itens.length === 0) return { ok: false, erro: "Selecione o que n\xE3o foi aprovado." };
+  if (justificativa.length < 8) return { ok: false, erro: "Escreva a justificativa com pelo menos 8 caracteres." };
+  return { ok: true, itens, justificativa };
+}
+function medicaoDaLinha(row) {
+  const status = String(row?.status || "");
+  if (status !== "aprovado" && status !== "conferir" && status !== "modificado") return null;
+  return {
+    status,
+    itens: itensConferir(row?.itens),
+    justificativa: String(row?.justificativa || "").trim() || null,
+    modificadoEm: row?.modificado_em ? String(row.modificado_em) : null
+  };
+}
+function textoEmailConferir(input) {
+  const linhas = [
+    `O cliente pediu para conferir a medi\xE7\xE3o da OS GTM-${input.os}.`,
+    `Cliente: ${input.cliente}`,
+    `Quem pediu: ${input.autor}`,
+    "",
+    "N\xE3o aprovou:",
+    ...input.itens.map((item) => `- ${item}`),
+    "",
+    "Justificativa:",
+    input.justificativa,
+    "",
+    "Medi\xE7\xE3o apresentada:",
+    ...input.detalhes
+  ];
+  return linhas.join("\n");
+}
+var ITENS_MEDICAO, EMAIL_FINANCEIRO_MEDICAO;
+var init_medicao = __esm({
+  "lib/portalCliente/medicao.ts"() {
+    "use strict";
+    ITENS_MEDICAO = [
+      "Franquia hora",
+      "Franquia km",
+      "Km rodado",
+      "Km excedente",
+      "Horas trabalhadas",
+      "Horas excedentes",
+      "R$ horas excedentes",
+      "R$ km excedente",
+      "R$ acionamento",
+      "Ped\xE1gio",
+      "R$ total",
+      "Local",
+      "Servi\xE7o"
+    ];
+    EMAIL_FINANCEIRO_MEDICAO = "financeiro@grupotmseg.com.br";
+  }
+});
+
 // lib/portalCliente/frota.ts
 var frota_exports = {};
 __export(frota_exports, {
@@ -3033,11 +3989,11 @@ function corpoTrazPreco(body) {
 function quantidadeDoPedido(body) {
   const source = body && typeof body === "object" ? body : {};
   if (source.quantidade == null || source.quantidade === "") return { ok: true, value: 1 };
-  const numero = Number(source.quantidade);
-  if (!Number.isInteger(numero) || numero < 1 || numero > QUANTIDADE_MAXIMA_OS) {
+  const numero4 = Number(source.quantidade);
+  if (!Number.isInteger(numero4) || numero4 < 1 || numero4 > QUANTIDADE_MAXIMA_OS) {
     return { ok: false, error: `A quantidade fica entre 1 e ${QUANTIDADE_MAXIMA_OS} OS.` };
   }
-  return { ok: true, value: numero };
+  return { ok: true, value: numero4 };
 }
 function validarPedidoPortal(body, solicitanteSessao, agora = Date.now()) {
   if (corpoTrazPreco(body)) {
@@ -3076,6 +4032,12 @@ function validarPedidoPortal(body, solicitanteSessao, agora = Date.now()) {
   if (!placa || placa.length < 7) return { ok: false, error: "Informe a placa do ve\xEDculo." };
   const telefone = texto3(source.telefone, 30).replace(/[^\d+()\-\s]/g, "");
   if (telefone.replace(/\D/g, "").length < 8) return { ok: false, error: "Informe o telefone." };
+  const nomeVigencia = (valor, prefixo) => {
+    const limpo = texto3(valor, 180);
+    if (!limpo) return null;
+    if (!new RegExp(`^${prefixo}: .+ \\(202[67]-\\)$`).test(limpo)) return null;
+    return limpo;
+  };
   return {
     ok: true,
     value: {
@@ -3098,7 +4060,9 @@ function validarPedidoPortal(body, solicitanteSessao, agora = Date.now()) {
       contrato: opcional(source.contrato, 160),
       tsp: opcional(source.tsp, 160),
       franquiaHora: null,
-      franquiaKm: null
+      franquiaKm: null,
+      nomeLinhaVigencia: nomeVigencia(source.nomeLinhaVigencia, "Tabela"),
+      nomeRotaVigencia: nomeVigencia(source.nomeRotaVigencia, "Rota")
     }
   };
 }
@@ -3199,13 +4163,25 @@ var init_routeDistance = __esm({
 function normalizar(valor) {
   return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 }
+function pedacoDeCidade(pedaco) {
+  const limpo = pedaco.replace(/\s*-\s*[A-Z]{2}$/, "").trim();
+  if (limpo.length <= 3 || limpo.length > 40 || /^\d/.test(limpo) || PREFIXO_LOGRADOURO.test(limpo) || NOME_DE_ESTADO.has(limpo)) return "";
+  return limpo;
+}
 function cidadeNoEndereco(endereco) {
-  const texto4 = normalizar(endereco);
+  const texto5 = normalizar(endereco);
   const conhecidas = [...TABLE_SPECIFIC_CITY_KEYWORDS].sort((a, b) => b.length - a.length);
-  const achou = conhecidas.find((cidade) => texto4.includes(cidade));
+  const achou = conhecidas.find((cidade) => texto5.includes(cidade));
   if (achou) return achou;
   const extraida = normalizar(extractCityFromAddress(endereco || ""));
-  if (extraida.length > 3 && extraida.length <= 40 && !/^\d/.test(extraida) && !PREFIXO_LOGRADOURO.test(extraida)) return extraida;
+  if (pedacoDeCidade(extraida)) return extraida;
+  const partes = texto5.split(",").map((parte) => parte.trim()).filter(Boolean);
+  for (const parte of partes) {
+    const cidade = pedacoDeCidade(parte);
+    if (!cidade) continue;
+    if (cidade === "SERRA" && texto5.includes("TABOAO")) continue;
+    return cidade;
+  }
   return "";
 }
 function rotaDaOs(origem, destino) {
@@ -3219,6 +4195,24 @@ function rotaDaOs(origem, destino) {
   }
   if (!cidadeDestino) return null;
   return { origem: cidadeOrigem, destino: cidadeDestino };
+}
+function enderecoNaCidade(endereco, cidade, uf) {
+  const texto5 = normalizar(endereco);
+  const alvo = normalizar(cidade);
+  if (!alvo) return false;
+  const palavra = new RegExp(`(?:^|[^A-Z])${alvo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:[^A-Z]|$)`);
+  if (!palavra.test(texto5)) return false;
+  if (alvo === "SERRA" && texto5.includes("TABOAO")) return false;
+  const ufEndereco = extractUF(endereco);
+  if (uf && ufEndereco && ufEndereco !== uf) return false;
+  return true;
+}
+function osEstaNaRota(osOrigem, osDestino, origem, destino) {
+  const rota = rotaDaOs(origem, destino);
+  if (!rota) return false;
+  const rotaOs = rotaDaOs(osOrigem, osDestino);
+  if (rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino) return true;
+  return enderecoNaCidade(osOrigem, rota.origem, extractUF(origem)) && enderecoNaCidade(osDestino, rota.destino, extractUF(destino));
 }
 function quilometragemRegistrada(inicio, fim, total) {
   const start = Number(inicio);
@@ -3237,59 +4231,83 @@ function mesmoFornecedor(candidato, atual) {
   if (!a || !b) return false;
   return a === b || a.includes(b) || b.includes(a);
 }
-function escolherTabelaProxima(entrada) {
-  const rota = rotaDaOs(entrada.origem, entrada.destino);
-  if (!rota) return null;
-  const kmAtual = Number(entrada.kmAtual) > 0 ? Number(entrada.kmAtual) : 0;
-  const doCliente = entrada.historico.filter((os) => !!os.clientTableId && mesmoCliente(os.cliente, entrada.cliente));
-  if (!doCliente.length) return null;
-  const nota = (os) => {
-    const rotaOs = rotaDaOs(os.origem, os.destino);
-    let pontos = 0;
-    const mesma = !!rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino;
-    if (mesma) pontos += 1e3;
-    else if (rotaOs && (rotaOs.origem === rota.origem || rotaOs.destino === rota.destino)) pontos += 250;
-    if (kmAtual > 0 && os.km != null && os.km > 0) pontos += Math.max(0, 500 - Math.abs(os.km - kmAtual));
-    return { pontos, mesma, recente: Date.parse(os.aprovadaEm || "") || 0 };
-  };
-  const ordenadas = [...doCliente].sort((a, b) => {
-    const na = nota(a);
-    const nb = nota(b);
-    if (nb.pontos !== na.pontos) return nb.pontos - na.pontos;
-    return nb.recente - na.recente;
-  });
-  const escolhida = ordenadas[0];
-  if (!escolhida?.clientTableId) return null;
-  let providerTableId;
-  const fornecedor = String(entrada.fornecedorAtual || "").trim();
-  if (fornecedor) {
-    const doFornecedor = doCliente.filter((os) => !!os.providerTableId && mesmoFornecedor(os.fornecedor || "", fornecedor));
-    const naRota = doFornecedor.filter((os) => {
-      const rotaOs = rotaDaOs(os.origem, os.destino);
-      return !!rotaOs && rotaOs.origem === rota.origem && rotaOs.destino === rota.destino;
+function getTopTabelaId(ordens) {
+  const contagem = /* @__PURE__ */ new Map();
+  for (const os of ordens) {
+    const id = os.tabela_id ? String(os.tabela_id) : "";
+    if (!id) continue;
+    const criado = os.created_at || "";
+    const atual = contagem.get(id) || { total: 0, maisRecente: criado };
+    contagem.set(id, {
+      total: atual.total + 1,
+      maisRecente: criado > atual.maisRecente ? criado : atual.maisRecente
     });
-    const pool = naRota.length ? naRota : doFornecedor;
-    if (pool.length) {
-      const porKm = [...pool].sort((a, b) => {
-        if (kmAtual > 0 && a.km && b.km) return Math.abs(a.km - kmAtual) - Math.abs(b.km - kmAtual);
-        return (Date.parse(b.aprovadaEm || "") || 0) - (Date.parse(a.aprovadaEm || "") || 0);
-      });
-      providerTableId = String(porKm[0].providerTableId);
+  }
+  const ordenado = [...contagem.entries()].sort((a, b) => {
+    if (b[1].total !== a[1].total) return b[1].total - a[1].total;
+    return new Date(b[1].maisRecente).getTime() - new Date(a[1].maisRecente).getTime();
+  });
+  return ordenado[0]?.[0] || null;
+}
+function resolverSugestaoTop1(entrada) {
+  const vazio = { tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null };
+  const rota = rotaDaOs(entrada.origem, entrada.destino);
+  if (!rota) return vazio;
+  const amostra = entrada.historico.filter((os) => !!os.clientTableId && mesmoCliente(os.cliente, entrada.cliente) && osEstaNaRota(os.origem, os.destino, entrada.origem, entrada.destino));
+  if (!amostra.length) return vazio;
+  const linhas = (lista, campo) => lista.map((os) => ({ tabela_id: os[campo], created_at: os.aprovadaEm || "" }));
+  const fornecedor = String(entrada.fornecedor || "").trim();
+  if (fornecedor) {
+    const doPar = amostra.filter((os) => mesmoFornecedor(os.fornecedor || "", fornecedor));
+    if (doPar.length) {
+      return {
+        tabelaClienteSugeridaId: getTopTabelaId(linhas(doPar, "clientTableId")),
+        tabelaFornecedorSugeridaId: getTopTabelaId(linhas(doPar, "providerTableId"))
+      };
     }
   }
   return {
-    clientTableId: String(escolhida.clientTableId),
-    providerTableId,
-    osExemplo: String(escolhida.id),
-    mesmaRota: nota(escolhida).mesma
+    tabelaClienteSugeridaId: getTopTabelaId(linhas(amostra, "clientTableId")),
+    tabelaFornecedorSugeridaId: null
   };
 }
-var PREFIXO_LOGRADOURO;
+var PREFIXO_LOGRADOURO, NOME_DE_ESTADO;
 var init_rotaAprovadaTabela = __esm({
   "lib/rotaAprovadaTabela.ts"() {
     "use strict";
     init_financialUtils();
     PREFIXO_LOGRADOURO = /^(RUA|AV|AVENIDA|ROD|RODOVIA|PASSAGEM|TRAVESSA|TV|ALAMEDA|ESTRADA|EST|PRACA|PCA)\b/;
+    NOME_DE_ESTADO = /* @__PURE__ */ new Set([
+      "ACRE",
+      "ALAGOAS",
+      "AMAPA",
+      "AMAZONAS",
+      "BAHIA",
+      "CEARA",
+      "DISTRITO FEDERAL",
+      "ESPIRITO SANTO",
+      "GOIAS",
+      "MARANHAO",
+      "MATO GROSSO",
+      "MATO GROSSO DO SUL",
+      "MINAS GERAIS",
+      "PARA",
+      "PARAIBA",
+      "PARANA",
+      "PERNAMBUCO",
+      "PIAUI",
+      "RIO DE JANEIRO",
+      "RIO GRANDE DO NORTE",
+      "RIO GRANDE DO SUL",
+      "RONDONIA",
+      "RORAIMA",
+      "SANTA CATARINA",
+      "SAO PAULO",
+      "SERGIPE",
+      "TOCANTINS",
+      "BRASIL",
+      "BRAZIL"
+    ]);
   }
 });
 
@@ -3313,16 +4331,12 @@ function lerIds(snapshot) {
     providerTableId: obj.providerTableId ? String(obj.providerTableId) : null
   };
 }
-async function historicoRecenteDoCliente(sb, cliente) {
-  const token = tokenDoCliente(cliente);
-  if (token.length < 4) return [];
-  const { data, error } = await sb.from("missions").select("id,origin,destination,client,original_client_name,provider,snapshot_data,created_at,total_distance,start_km,end_km").or(`client.ilike.%${token}%,original_client_name.ilike.%${token}%`).order("created_at", { ascending: false }).limit(40);
-  if (error || !Array.isArray(data)) return [];
-  const linhas = data.map((row) => {
+function mapearHistorico(data) {
+  return data.map((row) => {
     const ids = lerIds(row.snapshot_data);
     return {
       id: String(row.id),
-      cliente: String(row.original_client_name || row.client || ""),
+      cliente: String(row.client || ""),
       origem: String(row.origin || ""),
       destino: String(row.destination || ""),
       fornecedor: row.provider,
@@ -3332,9 +4346,6 @@ async function historicoRecenteDoCliente(sb, cliente) {
       km: quilometragemRegistrada(row.start_km, row.end_km, row.total_distance)
     };
   });
-  const dez = linhas.slice(0, 10);
-  if (dez.some((os) => os.clientTableId)) return dez;
-  return linhas.filter((os) => os.clientTableId).slice(0, 10);
 }
 async function receitaDaTabelaNaCriacao(sb, cliente, origem, destino, clientTableId) {
   const token = tokenDoCliente(cliente);
@@ -3362,33 +4373,126 @@ async function receitaDaTabelaNaCriacao(sb, cliente, origem, destino, clientTabl
   const receita = Math.round((Number(fin?.client?.serviceTotal) || 0) * 100) / 100;
   return { receita, km };
 }
+function destinoBloqueiaSugestao(destino) {
+  const texto5 = String(destino || "").trim();
+  if (!texto5) return true;
+  return /RAIO\b|A DEFINIR|ACOMPANHAMENTO/i.test(texto5);
+}
+async function fetchTopTabelasSugestao(sb, clienteId, fornecedorId, rotaOrigem, rotaDestino, signal) {
+  if (destinoBloqueiaSugestao(rotaDestino)) return SUGESTAO_VAZIA;
+  const rota = rotaDaOs(rotaOrigem, rotaDestino);
+  const token = tokenDoCliente(clienteId);
+  if (!rota || token.length < 4 || !String(rotaOrigem || "").trim()) return SUGESTAO_VAZIA;
+  let consulta = sb.from("missions").select(`${COLUNAS_HISTORICO},billing_approved`).eq("billing_approved", true).ilike("client", `%${token}%`).ilike("origin", `%${rota.origem}%`).ilike("destination", `%${rota.destino}%`).not("snapshot_data", "is", null).order("created_at", { ascending: false }).limit(80);
+  if (signal && typeof consulta.abortSignal === "function") consulta = consulta.abortSignal(signal);
+  const { data, error } = await consulta;
+  if (signal?.aborted) return SUGESTAO_VAZIA;
+  if (error || !Array.isArray(data)) return SUGESTAO_VAZIA;
+  const historico = mapearHistorico(data.filter((row) => row?.billing_approved === true)).filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino)).slice(0, 10);
+  return resolverSugestaoTop1({
+    cliente: clienteId,
+    fornecedor: fornecedorId,
+    origem: rotaOrigem,
+    destino: rotaDestino,
+    historico
+  });
+}
+var COLUNAS_HISTORICO, SUGESTAO_VAZIA;
 var init_tabelaNaCriacao = __esm({
   "lib/billing/tabelaNaCriacao.ts"() {
     "use strict";
     init_financialUtils();
     init_routeDistance();
     init_rotaAprovadaTabela();
+    COLUNAS_HISTORICO = "id,origin,destination,client,provider,snapshot_data,created_at,total_distance,start_km,end_km";
+    SUGESTAO_VAZIA = { tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null };
+  }
+});
+
+// lib/portalCliente/numeroOs.ts
+function extrairNumeroGtm(id) {
+  const match = /^GTM-(\d+)$/i.exec(String(id || "").trim());
+  if (!match) return 0;
+  const numero4 = Number(match[1]);
+  return Number.isSafeInteger(numero4) && numero4 > 0 ? numero4 : 0;
+}
+function maiorNumeroGtm(ids) {
+  let maximo = 0;
+  for (const id of ids) {
+    const numero4 = extrairNumeroGtm(id);
+    if (numero4 > maximo) maximo = numero4;
+  }
+  return maximo;
+}
+function formatarIdGtm(numero4) {
+  return `GTM-${String(numero4).padStart(4, "0")}`;
+}
+function funcaoDeNumeroAusente(error) {
+  if (!error) return false;
+  const codigo = String(error.code || "");
+  const texto5 = String(error.message || "").toLowerCase();
+  return codigo === "PGRST202" || codigo === "42883" || texto5.includes("proximo_numero_gtm") || texto5.includes("could not find the function") || texto5.includes("schema cache");
+}
+async function maiorNumeroNaBase(sb) {
+  const pagina = await fetchAllPages(
+    async (inicio, tamanho) => sb.from("missions").select("id", { count: "exact" }).like("id", "GTM-%").order("id", { ascending: true }).range(inicio, inicio + tamanho - 1),
+    1e3,
+    5e4,
+    { getRowKey: (linha) => linha.id }
+  );
+  if (!pagina.complete) {
+    throw new Error("A leitura dos n\xFAmeros GTM ficou incompleta. A OS n\xE3o foi numerada.");
+  }
+  return maiorNumeroGtm(pagina.rows.map((linha) => String(linha.id || "")));
+}
+async function proximoNumeroGtm(sb) {
+  if (typeof sb.rpc === "function") {
+    const { data, error } = await sb.rpc("proximo_numero_gtm");
+    if (!error) {
+      const numero4 = Number(data);
+      if (Number.isSafeInteger(numero4) && numero4 > 0) return numero4;
+      throw new Error("A sequ\xEAncia GTM devolveu um n\xFAmero inv\xE1lido.");
+    }
+    if (!funcaoDeNumeroAusente(error)) {
+      throw new Error(error.message || "N\xE3o foi poss\xEDvel numerar a OS.");
+    }
+  }
+  return await maiorNumeroNaBase(sb) + 1;
+}
+var init_numeroOs = __esm({
+  "lib/portalCliente/numeroOs.ts"() {
+    "use strict";
+    init_supabasePaging();
   }
 });
 
 // lib/portalCliente/registrarOs.ts
 var registrarOs_exports = {};
 __export(registrarOs_exports, {
+  anexarNomesDaCotacao: () => anexarNomesDaCotacao,
   enviarEmailSolicitacao: () => enviarEmailSolicitacao,
   registrarSolicitacaoPortal: () => registrarSolicitacaoPortal
 });
+function anexarNomesDaCotacao(snapshot, pedido) {
+  if (!snapshot) return null;
+  const linha = String(pedido.nomeLinhaVigencia || "").trim();
+  const rota = String(pedido.nomeRotaVigencia || "").trim();
+  if (!linha && !rota) return snapshot;
+  return {
+    ...snapshot,
+    ...linha ? { nomeTabelaCotacao: linha } : {},
+    ...rota ? { nomeRotaCotacao: rota } : {}
+  };
+}
 function escapar2(valor) {
   return valor.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-async function proximoNumero(sb) {
-  const { data, error } = await sb.from("missions").select("id").order("created_at", { ascending: false }).limit(40);
-  if (error) throw error;
-  let max = 0;
-  for (const row of data || []) {
-    const numero = Number(String(row.id || "").split("-")[1]);
-    if (Number.isFinite(numero) && numero > max) max = numero;
-  }
-  return max + 1;
+function erroDaGravacao(error) {
+  const falha = new Error(error.message || "N\xE3o foi poss\xEDvel abrir a OS.");
+  if (error.code) falha.code = error.code;
+  if (error.details) falha.details = error.details;
+  if (error.hint) falha.hint = error.hint;
+  return falha;
 }
 function payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero, extras) {
   const receita = extras && extras.receita > 0 ? extras.receita : null;
@@ -3410,7 +4514,7 @@ function payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZ
     toll_value: null,
     toll_value_provider: null,
     billing_approved: false,
-    snapshot_data: extras?.snapshot || null,
+    snapshot_data: anexarNomesDaCotacao(extras?.snapshot || null, pedido),
     snapshot_approved_by: null,
     snapshot_approved_at: null,
     current_location: LOCAL_PORTAL,
@@ -3425,19 +4529,13 @@ function payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZ
 }
 async function tabelaEValorIniciais(sb, cliente, pedido) {
   try {
-    const historico = await historicoRecenteDoCliente(sb, cliente);
-    const escolha = escolherTabelaProxima({
-      cliente,
-      origem: pedido.origem,
-      destino: pedido.destino,
-      historico
-    });
-    if (!escolha?.clientTableId) return null;
-    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.clientTableId);
+    const escolha = await fetchTopTabelasSugestao(sb, cliente, null, pedido.origem, pedido.destino);
+    if (!escolha.tabelaClienteSugeridaId) return null;
+    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.tabelaClienteSugeridaId);
     return {
       receita: valor?.receita || 0,
       km: valor?.km || 0,
-      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.clientTableId })
+      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.tabelaClienteSugeridaId })
     };
   } catch (erro) {
     console.warn("[portal] tabela da cria\xE7\xE3o", erro);
@@ -3445,9 +4543,9 @@ async function tabelaEValorIniciais(sb, cliente, pedido) {
   }
 }
 function semColunaOpcional(payload, mensagem) {
-  const texto4 = mensagem.toLowerCase();
+  const texto5 = mensagem.toLowerCase();
   const opcionais = ["special_operation_type", "valor_zero_motivo", "billing_approved", "toll_value_provider", "snapshot_approved_by", "snapshot_approved_at", "snapshot_data"];
-  const achou = opcionais.find((coluna) => texto4.includes(coluna));
+  const achou = opcionais.find((coluna) => texto5.includes(coluna));
   if (!achou || !Object.prototype.hasOwnProperty.call(payload, achou)) return null;
   const copia = { ...payload };
   delete copia[achou];
@@ -3457,9 +4555,9 @@ async function inserirOs(sb, cliente, pedido, solicitante, vehicleId) {
   const agora = (/* @__PURE__ */ new Date()).toISOString();
   const extras = await tabelaEValorIniciais(sb, cliente, pedido);
   let comValorZero = false;
-  for (let tentativa = 0; tentativa < 8; tentativa += 1) {
-    const numero = await proximoNumero(sb);
-    const id = `GTM-${String(numero).padStart(4, "0")}`;
+  let numero4 = await proximoNumeroGtm(sb);
+  for (let colisao = 0; colisao < 2; colisao += 1) {
+    const id = formatarIdGtm(numero4);
     let payload = payloadOs(id, cliente, pedido, solicitante, vehicleId, agora, comValorZero, extras);
     let resultado = await sb.from("missions").insert([payload]);
     for (let ajuste = 0; ajuste < 6 && resultado.error; ajuste += 1) {
@@ -3476,8 +4574,11 @@ async function inserirOs(sb, cliente, pedido, solicitante, vehicleId) {
       resultado = await sb.from("missions").insert([payload]);
     }
     if (!resultado.error) return id;
-    if (resultado.error.code === "23505") continue;
-    throw new Error(resultado.error.message || "N\xE3o foi poss\xEDvel abrir a OS.");
+    if (resultado.error.code === "23505" && colisao === 0) {
+      numero4 = await proximoNumeroGtm(sb);
+      continue;
+    }
+    throw erroDaGravacao(resultado.error);
   }
   throw new Error("N\xE3o foi poss\xEDvel numerar a OS.");
 }
@@ -3544,6 +4645,8 @@ async function enviarEmailSolicitacao(input) {
     ["Origem", pedido.origem],
     ["Destino", pedido.destino],
     ["Opera\xE7\xE3o", pedido.operacao],
+    ["Tabela", pedido.nomeLinhaVigencia || ""],
+    ["Rota", pedido.nomeRotaVigencia || ""],
     ["Controle interno da OS", pedido.identificacao],
     ["Motorista", pedido.motorista],
     ["Ve\xEDculo", pedido.placa],
@@ -3611,9 +4714,2233 @@ var init_registrarOs = __esm({
     init_smtp();
     init_tabelaNaCriacao();
     init_missionSnapshot();
-    init_rotaAprovadaTabela();
     init_pedido();
+    init_numeroOs();
     LOCAL_PORTAL = "Solicita\xE7\xE3o do portal \u2014 aguardando fornecedor";
+  }
+});
+
+// lib/portalCliente/erroRegistro.ts
+var erroRegistro_exports = {};
+__export(erroRegistro_exports, {
+  corpoErroSolicitacao: () => corpoErroSolicitacao,
+  falhaDeRegistro: () => falhaDeRegistro,
+  payloadSanitizado: () => payloadSanitizado,
+  registrarFalhaSolicitacao: () => registrarFalhaSolicitacao
+});
+function falhaDeRegistro(error) {
+  if (error && typeof error === "object") {
+    const bruto = error;
+    return {
+      message: String(bruto.message || error),
+      code: bruto.code ? String(bruto.code) : void 0,
+      details: bruto.details ? String(bruto.details) : void 0,
+      hint: bruto.hint ? String(bruto.hint) : void 0
+    };
+  }
+  return { message: error instanceof Error ? error.message : String(error) };
+}
+function payloadSanitizado(body) {
+  if (!body || typeof body !== "object") return {};
+  const origem = body;
+  const copia = {};
+  for (const chave of ["pedido", "agentes", "dataInicio", "dataFim", "origem", "destino", "operacao", "identificacao", "motorista", "placa", "quemAutorizou", "atendimentoPgr", "contrato", "tsp", "quantidade"]) {
+    if (origem[chave] != null) copia[chave] = origem[chave];
+  }
+  return copia;
+}
+function registrarFalhaSolicitacao(prefixo, error, body) {
+  const falha = falhaDeRegistro(error);
+  console.error(
+    `[${prefixo}] solicita\xE7\xE3o`,
+    falha.message,
+    falha.code || "",
+    falha.details || "",
+    falha.hint || "",
+    JSON.stringify(payloadSanitizado(body))
+  );
+  return falha;
+}
+function corpoErroSolicitacao(error) {
+  const falha = falhaDeRegistro(error);
+  const corpo2 = {
+    error: "N\xE3o foi poss\xEDvel registrar a solicita\xE7\xE3o."
+  };
+  const mostra = process.env.NODE_ENV !== "production" || falha.code != null && CODIGOS_DE_CONSTRAINT.has(falha.code);
+  if (!mostra) return corpo2;
+  corpo2.detalhe = falha.message;
+  if (falha.code) corpo2.codigo = falha.code;
+  if (falha.details) corpo2.campo = falha.details;
+  return corpo2;
+}
+var CODIGOS_DE_CONSTRAINT;
+var init_erroRegistro = __esm({
+  "lib/portalCliente/erroRegistro.ts"() {
+    "use strict";
+    CODIGOS_DE_CONSTRAINT = /* @__PURE__ */ new Set(["23505", "23502", "23503", "23514", "22P02", "42703"]);
+  }
+});
+
+// lib/precificacao/tabela2027.ts
+function roundMoney(n) {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+function normalizarNomeCliente(nome) {
+  return String(nome || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+}
+function clienteContratualDhlOuIbl(clientName) {
+  const nome = normalizarNomeCliente(clientName);
+  if (!nome) return null;
+  if (nome.includes("DHL")) return "DHL";
+  if (/\bIBL\b/.test(nome) || nome.includes("INTERMODAL BRASIL")) return "IBL";
+  return null;
+}
+function extrairUf(city, state) {
+  const direto = String(state || "").trim().toUpperCase().replace(/[^A-Z]/g, "");
+  if (direto.length === 2 && UFS.includes(direto)) return direto;
+  const texto5 = `${city || ""} ${state || ""}`.toUpperCase();
+  const marcas = texto5.match(/(?:^|[\s,/\-])(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)(?=$|[\s,/\-.])/g);
+  if (!marcas?.length) return null;
+  return marcas[marcas.length - 1].replace(/[^A-Z]/g, "");
+}
+function getRegionFromLocation(city, state, clientName) {
+  const contratual = clienteContratualDhlOuIbl(clientName);
+  const uf = extrairUf(city, state);
+  if (contratual) {
+    return {
+      clienteContratual: true,
+      aplicaPrecificacaoRegional: false,
+      region: null,
+      uf,
+      motivo: contratual === "DHL" ? "cliente_dhl" : "cliente_ibl"
+    };
+  }
+  const region = uf ? UF_PARA_REGIAO[uf] || null : null;
+  return {
+    clienteContratual: false,
+    aplicaPrecificacaoRegional: !!region,
+    region,
+    uf,
+    motivo: region ? "uf" : "uf_ausente"
+  };
+}
+function nomeRegiao(region) {
+  return FAIXAS_REGIONAIS.find((faixa) => faixa.region === region)?.nome || "";
+}
+function nomeLinhaPadrao(versao, faixa) {
+  return `TABELA ${versao} - ${faixa.nome}`;
+}
+function arredondarHorasPeloCorte(horasInteiras, minutos) {
+  let horas = Math.floor(Number(horasInteiras) || 0);
+  let resto = Math.round(Number(minutos) || 0);
+  if (resto >= 60) {
+    horas += Math.floor(resto / 60);
+    resto = resto % 60;
+  }
+  if (resto < 0) resto = 0;
+  if (resto > CORTE_MINUTOS) return horas + 1;
+  return horas;
+}
+function horasDaQuilometragem(totalKm) {
+  const km = Math.max(0, Number(totalKm) || 0);
+  const brutas = km / KM_POR_HORA;
+  let horasInteiras = Math.floor(brutas);
+  let minutos = Math.round((brutas - horasInteiras) * 60);
+  if (minutos >= 60) {
+    horasInteiras += Math.floor(minutos / 60);
+    minutos = minutos % 60;
+  }
+  return {
+    horasInteiras,
+    minutos,
+    horasFaturadas: arredondarHorasPeloCorte(horasInteiras, minutos)
+  };
+}
+function calculateTripCost(totalKm, regionRate) {
+  const km = Math.max(0, Number(totalKm) || 0);
+  const taxa = Math.max(0, Number(regionRate) || 0);
+  const acionamentoMinimo = roundMoney(FRANQUIA_KM * taxa);
+  if (km <= FRANQUIA_KM) {
+    return {
+      totalKm: km,
+      kmFaturado: FRANQUIA_KM,
+      horasFaturadas: FRANQUIA_HORAS,
+      horasInteiras: FRANQUIA_HORAS,
+      minutos: 0,
+      valor: acionamentoMinimo,
+      acionamentoMinimo,
+      usouMinimo: true
+    };
+  }
+  const horas = horasDaQuilometragem(km);
+  return {
+    totalKm: km,
+    kmFaturado: km,
+    horasFaturadas: Math.max(FRANQUIA_HORAS, horas.horasFaturadas),
+    horasInteiras: horas.horasInteiras,
+    minutos: horas.minutos,
+    valor: roundMoney(km * taxa),
+    acionamentoMinimo,
+    usouMinimo: false
+  };
+}
+function colunaRegionalAusente(error) {
+  if (!error) return false;
+  const mensagem = String(error.message || "");
+  return error.code === "42703" || error.code === "PGRST204" || error.code === "PGRST205" || error.code === "42P01" || /schema cache|does not exist|Could not find/i.test(mensagem);
+}
+function cotacaoConvertida(cotacao) {
+  if (!cotacao) return false;
+  if (String(cotacao.converted_to_order_id || "").trim()) return true;
+  return String(cotacao.status || "").trim().toLowerCase() === "convertida";
+}
+function cotacaoVencida(cotacao, agora = /* @__PURE__ */ new Date()) {
+  if (!cotacao || cotacaoConvertida(cotacao)) return false;
+  const criada = cotacao.created_at ? new Date(cotacao.created_at) : null;
+  if (!criada || Number.isNaN(criada.getTime())) return false;
+  return agora.getTime() - criada.getTime() > PRAZO_COTACAO_MS;
+}
+function numerosDaCotacaoRegional(input) {
+  if (input.acordada) return { aplicar: false, motivo: "acordada" };
+  const local = getRegionFromLocation(input.origem, "", input.cliente);
+  if (local.clienteContratual) return { aplicar: false, motivo: "contratual" };
+  const lida = tarifaKmParaOrigem({
+    cliente: input.cliente,
+    origem: input.origem,
+    versao: input.versao,
+    linhas: input.linhas
+  });
+  const usouLinha = lida.tarifaKm != null && Number.isFinite(lida.tarifaKm) && lida.tarifaKm > 0;
+  const fallback = Number(input.tarifaKmFallback);
+  const taxa = usouLinha ? lida.tarifaKm : Number.isFinite(fallback) && fallback > 0 ? fallback : null;
+  const km = Number(input.km);
+  if (taxa == null) return { aplicar: false, motivo: "sem_tarifa" };
+  if (!Number.isFinite(km) || km < 0) return { aplicar: false, motivo: "sem_km" };
+  const horaLida = usouLinha && lida.horaExtra != null && Number.isFinite(lida.horaExtra) ? lida.horaExtra : null;
+  const horaFallback = Number(input.horaExtraFallback);
+  const vigenciaUsada = usouLinha ? lida.vigenciaUsada || input.versao : input.vigenciaFallback === "2026" || input.vigenciaFallback === "2027" ? input.vigenciaFallback : input.versao;
+  return {
+    aplicar: true,
+    conta: calculateTripCost(km, taxa),
+    tarifaKm: taxa,
+    horaExtra: horaLida ?? (Number.isFinite(horaFallback) ? horaFallback : null),
+    region: lida.region,
+    nome: lida.nome || nomeRegiao(lida.region),
+    vigenciaUsada
+  };
+}
+function tarifaKmParaOrigem(input) {
+  const vazio = { contratual: false, region: null, nome: "", tarifaKm: null, horaExtra: null, vigenciaUsada: null };
+  const local = getRegionFromLocation(input.origem, "", input.cliente);
+  if (local.clienteContratual) {
+    return { ...vazio, contratual: true };
+  }
+  if (!local.region) return vazio;
+  const faixa = FAIXAS_REGIONAIS.find((item) => item.region === local.region);
+  if (!faixa) return { ...vazio, region: local.region };
+  const ordem = input.versao === "2026" ? ["2026"] : ["2027", "2026"];
+  for (const versao of ordem) {
+    const nome = nomeLinhaPadrao(versao, faixa);
+    const linha = input.linhas.find((item) => String(item.operation_type || "").trim().toUpperCase() === nome.toUpperCase());
+    const km = Number(linha?.price_per_extra_km);
+    if (!linha || !Number.isFinite(km) || km <= 0) continue;
+    const hora = Number(linha.price_per_extra_hour);
+    return {
+      contratual: false,
+      region: local.region,
+      nome,
+      tarifaKm: km,
+      horaExtra: Number.isFinite(hora) ? hora : null,
+      vigenciaUsada: versao
+    };
+  }
+  return { ...vazio, region: local.region, nome: nomeLinhaPadrao(input.versao, faixa) };
+}
+var FRANQUIA_KM, FRANQUIA_HORAS, KM_POR_HORA, CORTE_MINUTOS, FAIXAS_REGIONAIS, UF_PARA_REGIAO, UFS, PRAZO_COTACAO_DIAS, PRAZO_COTACAO_MS;
+var init_tabela2027 = __esm({
+  "lib/precificacao/tabela2027.ts"() {
+    "use strict";
+    FRANQUIA_KM = 100;
+    FRANQUIA_HORAS = 3;
+    KM_POR_HORA = 40;
+    CORTE_MINUTOS = 40;
+    FAIXAS_REGIONAIS = [
+      { region: "sudeste_sp_rj", nome: "SUDESTE SP/RJ", ufs: ["SP", "RJ"], km2026: 6.5, km2027: 6.9, hora2026: 159 },
+      { region: "sudeste_mg_es", nome: "SUDESTE MG/ES", ufs: ["MG", "ES"], km2026: 7, km2027: 7.3, hora2026: 169 },
+      { region: "sul", nome: "SUL", ufs: ["PR", "SC", "RS"], km2026: 7.5, km2027: 7.5, hora2026: 179 },
+      { region: "centro_oeste", nome: "CENTRO-OESTE", ufs: ["MT", "MS", "GO", "DF"], km2026: 8.5, km2027: 8.5, hora2026: 189 },
+      { region: "nordeste", nome: "NORDESTE", ufs: ["BA", "SE", "AL", "PE", "PB", "RN", "CE", "PI", "MA"], km2026: 7.3, km2027: 8.3, hora2026: 169 },
+      { region: "norte", nome: "NORTE", ufs: ["AM", "RR", "AP", "PA", "TO", "RO", "AC"], km2026: 9, km2027: 10, hora2026: 210 }
+    ];
+    UF_PARA_REGIAO = {};
+    for (const faixa of FAIXAS_REGIONAIS) {
+      for (const uf of faixa.ufs) UF_PARA_REGIAO[uf] = faixa.region;
+    }
+    UFS = Object.keys(UF_PARA_REGIAO);
+    PRAZO_COTACAO_DIAS = 10;
+    PRAZO_COTACAO_MS = PRAZO_COTACAO_DIAS * 24 * 60 * 60 * 1e3;
+  }
+});
+
+// lib/portalCliente/cotacao.ts
+function regiaoDaOperacao(operacao) {
+  const nome = operacao.trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/^TABELA 20(?:26|27)\s*-\s*/, "");
+  if (nome.startsWith("CENTRO-OESTE") || nome.startsWith("CENTRO OESTE")) return "CENTRO-OESTE";
+  if (nome.startsWith("NORDESTE")) return "NORDESTE";
+  if (nome.startsWith("SUDESTE")) return "SUDESTE";
+  if (nome.startsWith("NORTE")) return "NORTE";
+  if (nome.startsWith("SUL")) return "SUL";
+  return "OUTRAS";
+}
+function citarFiltroCliente(valor) {
+  return /[(),.:]/.test(valor) ? `"${valor.replace(/"/g, '\\"')}"` : valor;
+}
+function consultaDoCliente(nome) {
+  const limpo = String(nome || "").trim();
+  if (!limpo) return "client.eq.";
+  const palavras = limpo.split(/\s+/).filter((parte) => !PARADA_NOME.includes(parte.toUpperCase()));
+  const curto = palavras.length >= 2 ? `${palavras[0]} ${palavras[1].slice(0, Math.min(6, palavras[1].length))}` : palavras[0] || limpo;
+  return `client.eq.${citarFiltroCliente(limpo)},client.ilike.${citarFiltroCliente(`%${curto}%`)}`;
+}
+function numero(valor) {
+  const n = typeof valor === "number" ? valor : Number(String(valor ?? "").replace(",", "."));
+  return Number.isFinite(n) ? n : 0;
+}
+function centavos2(valor) {
+  return Math.round((valor + Number.EPSILON) * 100) / 100;
+}
+function tabelaDeLinha(row) {
+  const operacao = String(row.operation_type || "").trim();
+  if (!operacao) return null;
+  return {
+    id: String(row.id || operacao),
+    operacao,
+    regiao: regiaoDaOperacao(operacao),
+    acionamento: numero(row.activation_fee),
+    franquiaHoras: numero(row.franchise_hours),
+    franquiaKm: numero(row.franchise_km),
+    kmExtra: numero(row.price_per_extra_km),
+    horaExtra: numero(row.price_per_extra_hour)
+  };
+}
+function horasDaRota(kmRota) {
+  const percorrido = Math.max(0, kmRota);
+  const kmCheio = percorrido > 0 ? Math.ceil(percorrido - 1e-9) : 0;
+  const km = Math.max(KM_MINIMO_COTACAO, kmCheio);
+  const brutas = km / KM_POR_HORA_COTACAO;
+  const horas = Math.max(HORAS_MINIMAS_COTACAO, Math.ceil(brutas - 1e-9));
+  return { kmRota: percorrido, km, horas };
+}
+function cidadeDaRota(endereco) {
+  const parte = endereco.split(",")[0]?.split("-")[0] || endereco;
+  return parte.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Z0-9 ]/gi, " ").replace(/\s+/g, " ").trim().toUpperCase();
+}
+function mesmaRota(operacao, origem, destino) {
+  const nome = operacao.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+  const saida = cidadeDaRota(origem);
+  const chegada = cidadeDaRota(destino);
+  if (saida.length < 3 || chegada.length < 3) return false;
+  return nome.includes(`${saida} X ${chegada}`);
+}
+function rotaAcordada(lista, regiao, origem, destino) {
+  const achados = lista.filter((item) => item.regiao === regiao && mesmaRota(item.operacao, origem, destino) && !/AUTO_MASTER/i.test(item.operacao));
+  if (!achados.length) return null;
+  return [...achados].sort((a, b) => a.operacao.length - b.operacao.length)[0];
+}
+function contaVisivelDaCotacao(input) {
+  const regional = numerosDaCotacaoRegional(input);
+  if (!regional.aplicar) return { aplicar: false };
+  return {
+    aplicar: true,
+    kmRodado: Math.max(0, Number(input.km) || 0),
+    kmFaturado: regional.conta.kmFaturado,
+    horasFaturadas: regional.conta.horasFaturadas,
+    franquiaKm: FRANQUIA_KM,
+    franquiaHoras: FRANQUIA_HORAS,
+    tarifaKm: regional.tarifaKm,
+    horaExtra: regional.horaExtra ?? 0,
+    total: regional.conta.valor,
+    usouMinimo: regional.conta.usouMinimo,
+    regiao: nomeRegiao(regional.region) || regional.nome,
+    vigencia: regional.vigenciaUsada
+  };
+}
+function aplicarContaNaProposta(proposta, conta) {
+  if (!conta.aplicar || proposta.acordada) return proposta;
+  return {
+    ...proposta,
+    acionamento: conta.total,
+    kmFranquia: conta.franquiaKm,
+    horasFranquia: conta.franquiaHoras,
+    kmExtra: conta.tarifaKm,
+    horaExtra: conta.horaExtra,
+    kmFaturado: conta.kmFaturado,
+    horasContadas: conta.horasFaturadas,
+    regiao: conta.regiao || proposta.regiao,
+    vigencia: conta.vigencia,
+    kmRota: conta.kmRodado
+  };
+}
+function numerosDaTela(proposta) {
+  const kmFaturado = proposta.kmFaturado != null && proposta.kmFaturado > 0 ? proposta.kmFaturado : proposta.kmFranquia;
+  const horas = proposta.horasContadas != null && proposta.horasContadas > 0 ? proposta.horasContadas : proposta.horasFranquia;
+  const pernoite = proposta.pernoite != null && Number.isFinite(proposta.pernoite) && proposta.pernoite > 0 ? proposta.pernoite : null;
+  const incluidaDiferente = proposta.kmFaturado != null && proposta.kmFaturado > 0 && proposta.kmFranquia !== proposta.kmFaturado || proposta.horasContadas != null && proposta.horasContadas > 0 && proposta.horasFranquia !== proposta.horasContadas;
+  return {
+    total: proposta.acionamento,
+    kmFaturado,
+    horas,
+    franquiaKm: proposta.kmFranquia,
+    franquiaHoras: proposta.horasFranquia,
+    kmExtra: proposta.kmExtra,
+    horaExtra: proposta.horaExtra,
+    pernoite,
+    mostraFranquiaIncluida: incluidaDiferente
+  };
+}
+function propostaDaConta(entrada) {
+  const paradas = entrada.paradas.map((item) => item.trim()).filter(Boolean);
+  if (entrada.conta.aplicar) {
+    return {
+      ...aplicarContaNaProposta({
+        acordada: false,
+        regiao: entrada.regiao,
+        origem: entrada.origem,
+        destino: entrada.destino,
+        paradas,
+        acionamento: 0,
+        kmFranquia: 0,
+        horasFranquia: 0,
+        kmExtra: 0,
+        horaExtra: 0,
+        operacao: `${entrada.regiao} - ${cidadeDaRota(entrada.origem)} X ${cidadeDaRota(entrada.destino)}`
+      }, entrada.conta),
+      duracaoMin: entrada.duracaoMin ?? null
+    };
+  }
+  const acordada = paradas.length ? null : rotaAcordada(entrada.tabelas, entrada.regiao, entrada.origem, entrada.destino);
+  if (acordada) {
+    return {
+      acordada: true,
+      regiao: entrada.regiao,
+      origem: entrada.origem,
+      destino: entrada.destino,
+      paradas,
+      acionamento: acordada.acionamento,
+      kmFranquia: acordada.franquiaKm,
+      horasFranquia: acordada.franquiaHoras,
+      kmExtra: acordada.kmExtra,
+      horaExtra: acordada.horaExtra,
+      operacao: acordada.operacao,
+      kmRota: entrada.kmRota,
+      duracaoMin: entrada.duracaoMin ?? null
+    };
+  }
+  const base = montarProposta({
+    tabelas: entrada.tabelas,
+    regiao: entrada.regiao,
+    origem: entrada.origem,
+    destino: entrada.destino,
+    paradas,
+    kmRota: entrada.kmRota,
+    tabelaRegiao: entrada.tabelaRegiao
+  });
+  return { ...base, kmRota: entrada.kmRota, duracaoMin: entrada.duracaoMin ?? base.duracaoMin ?? null };
+}
+function lugarDaProposta(endereco) {
+  const parte = String(endereco || "").split(",")[0]?.trim() || "";
+  return parte || "\u2014";
+}
+function rotulosSemAno(origem, destino) {
+  const trecho = `${lugarDaProposta(origem)} x ${lugarDaProposta(destino)}`;
+  return { tabela: `Tabela: ${trecho}`, rota: `Rota: ${trecho}` };
+}
+function montarProposta(entrada) {
+  const paradas = entrada.paradas.map((item) => item.trim()).filter(Boolean);
+  const acordada = paradas.length ? null : rotaAcordada(entrada.tabelas, entrada.regiao, entrada.origem, entrada.destino);
+  if (acordada) {
+    return {
+      acordada: true,
+      regiao: entrada.regiao,
+      origem: entrada.origem,
+      destino: entrada.destino,
+      paradas,
+      acionamento: acordada.acionamento,
+      kmFranquia: acordada.franquiaKm,
+      horasFranquia: acordada.franquiaHoras,
+      kmExtra: acordada.kmExtra,
+      horaExtra: acordada.horaExtra,
+      operacao: acordada.operacao
+    };
+  }
+  const conta = calcularCotacaoPortal(entrada.tabelaRegiao, entrada.kmRota);
+  return {
+    acordada: false,
+    regiao: entrada.regiao,
+    origem: entrada.origem,
+    destino: entrada.destino,
+    paradas,
+    acionamento: conta.total,
+    kmFranquia: conta.km,
+    horasFranquia: conta.horas,
+    kmExtra: entrada.tabelaRegiao.kmExtra,
+    horaExtra: entrada.tabelaRegiao.horaExtra,
+    operacao: `${entrada.regiao} - ${cidadeDaRota(entrada.origem)} X ${cidadeDaRota(entrada.destino)}`
+  };
+}
+function calcularCotacaoPortal(tabela, kmRota) {
+  const base = horasDaRota(kmRota);
+  const kmExtra = Math.max(0, centavos2(base.km - tabela.franquiaKm));
+  const horasExtra = Math.max(0, base.horas - tabela.franquiaHoras);
+  const valorKm = centavos2(kmExtra * tabela.kmExtra);
+  const valorHoras = centavos2(horasExtra * tabela.horaExtra);
+  const acionamento = centavos2(tabela.acionamento);
+  return {
+    kmRota: base.kmRota,
+    km: base.km,
+    horas: base.horas,
+    kmExtra,
+    horasExtra,
+    valorKm,
+    valorHoras,
+    acionamento,
+    total: centavos2(acionamento + valorKm + valorHoras)
+  };
+}
+function moda(valores) {
+  const contagem = /* @__PURE__ */ new Map();
+  for (const valor of valores) contagem.set(valor, (contagem.get(valor) || 0) + 1);
+  return [...contagem.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+}
+function valoresDaRegiao(lista) {
+  const semMotor = lista.filter((item) => !/AUTO_MASTER/i.test(item.operacao) && item.kmExtra > 0);
+  const piso = semMotor.filter((item) => item.franquiaKm === KM_MINIMO_COTACAO && item.franquiaHoras === HORAS_MINIMAS_COTACAO);
+  const pool = piso.length ? piso : semMotor;
+  if (!pool.length) return null;
+  const porKm = /* @__PURE__ */ new Map();
+  for (const item of pool) {
+    const chave = centavos2(item.kmExtra);
+    porKm.set(chave, [...porKm.get(chave) || [], item]);
+  }
+  const grupo = [...porKm.values()].sort((a, b) => b.length - a.length || a[0].kmExtra - b[0].kmExtra)[0];
+  const regiao = grupo[0].regiao;
+  return {
+    id: regiao,
+    operacao: regiao,
+    regiao,
+    acionamento: moda(grupo.map((item) => item.acionamento)),
+    franquiaHoras: HORAS_MINIMAS_COTACAO,
+    franquiaKm: KM_MINIMO_COTACAO,
+    kmExtra: centavos2(grupo[0].kmExtra),
+    horaExtra: moda(grupo.map((item) => item.horaExtra))
+  };
+}
+var KM_MINIMO_COTACAO, HORAS_MINIMAS_COTACAO, KM_POR_HORA_COTACAO, PARADA_NOME;
+var init_cotacao = __esm({
+  "lib/portalCliente/cotacao.ts"() {
+    "use strict";
+    init_tabela2027();
+    KM_MINIMO_COTACAO = 100;
+    HORAS_MINIMAS_COTACAO = 3;
+    KM_POR_HORA_COTACAO = 40;
+    PARADA_NOME = ["LTDA", "LTDA.", "S.A.", "S.A", "SA", "S/A", "S/A.", "DO", "DE", "DA", "E", "DAS", "DOS"];
+  }
+});
+
+// lib/portalCliente/trechosProposta.ts
+function moeda(valor) {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function pisoRegional2027(origem, cliente) {
+  if (clienteContratualDhlOuIbl(cliente)) return null;
+  const local = getRegionFromLocation(origem, "", cliente);
+  if (!local.region) return null;
+  const faixa = FAIXAS_REGIONAIS.find((item) => item.region === local.region);
+  if (!faixa) return null;
+  return {
+    regiao: nomeRegiao(faixa.region),
+    acionamento: roundMoney(FRANQUIA_KM * faixa.km2027),
+    kmExtra: faixa.km2027,
+    horaExtra: faixa.hora2026
+  };
+}
+function mensagemAbaixoDoPiso(valores, piso) {
+  const falhas = [];
+  const km = Number(valores.kmExtra);
+  const hora = Number(valores.horaExtra);
+  const acionamento = Number(valores.acionamento);
+  if (Number.isFinite(km) && km > 0 && km + 1e-3 < piso.kmExtra) {
+    falhas.push(`km extra abaixo de ${moeda(piso.kmExtra)}`);
+  }
+  if (Number.isFinite(hora) && hora > 0 && hora + 1e-3 < piso.horaExtra) {
+    falhas.push(`hora extra abaixo de ${moeda(piso.horaExtra)}`);
+  }
+  if (Number.isFinite(acionamento) && acionamento > 0 && acionamento + 0.01 < piso.acionamento) {
+    falhas.push(`acionamento abaixo de ${moeda(piso.acionamento)}`);
+  }
+  if (!falhas.length) return null;
+  return `Abaixo do piso 2027 de ${piso.regiao}: ${falhas.join("; ")}. S\xF3 \xE9 poss\xEDvel aumentar.`;
+}
+function recusarPisoDaProposta(entrada) {
+  if (entrada.acordada || entrada.vigencia !== "2027") return null;
+  const piso = pisoRegional2027(entrada.origem, entrada.cliente);
+  if (!piso) return null;
+  return mensagemAbaixoDoPiso(entrada, piso);
+}
+function excedenteDoTrecho(km, taxa) {
+  const conta = calculateTripCost(km, taxa);
+  return {
+    kmFaturado: conta.kmFaturado,
+    horas: conta.horasFaturadas,
+    kmExcedente: conta.usouMinimo ? 0 : roundMoney(Math.max(0, conta.kmFaturado - FRANQUIA_KM)),
+    horasExcedentes: Math.max(0, conta.horasFaturadas - FRANQUIA_HORAS),
+    valor: conta.valor,
+    usouMinimo: conta.usouMinimo
+  };
+}
+function somarTrechos(trechos) {
+  return trechos.reduce((soma, trecho) => ({
+    total: roundMoney(soma.total + trecho.valor),
+    km: roundMoney(soma.km + trecho.km),
+    kmFaturado: roundMoney(soma.kmFaturado + trecho.kmFaturado),
+    horas: soma.horas + trecho.horas,
+    kmExcedente: roundMoney(soma.kmExcedente + trecho.kmExcedente),
+    horasExcedentes: soma.horasExcedentes + trecho.horasExcedentes
+  }), { total: 0, km: 0, kmFaturado: 0, horas: 0, kmExcedente: 0, horasExcedentes: 0 });
+}
+function textoTrecho(valor, limite) {
+  return String(valor || "").trim().slice(0, limite);
+}
+function conferirTrechosGravados(bruto, cliente, vigencia) {
+  if (!Array.isArray(bruto) || bruto.length === 0) return { ok: false, error: "Informe ao menos um trecho." };
+  if (bruto.length > LIMITE_TRECHOS_PROPOSTA) return { ok: false, error: `A proposta aceita at\xE9 ${LIMITE_TRECHOS_PROPOSTA} trechos.` };
+  const trechos = [];
+  for (const item of bruto) {
+    if (!item || typeof item !== "object") return { ok: false, error: "Trecho inv\xE1lido." };
+    const registro = item;
+    const origem = textoTrecho(registro.origem, 300);
+    const destino = textoTrecho(registro.destino, 300);
+    const km = Number(registro.km);
+    const kmExtra = Number(registro.kmExtra);
+    const horaExtra = Number(registro.horaExtra);
+    const valor = Number(registro.valor);
+    if (!origem || !destino || !Number.isFinite(km) || km <= 0) return { ok: false, error: "Trecho sem origem, destino ou km." };
+    if (!Number.isFinite(kmExtra) || kmExtra <= 0 || !Number.isFinite(horaExtra) || horaExtra <= 0 || !Number.isFinite(valor) || valor <= 0) {
+      return { ok: false, error: "Trecho sem acionamento, km extra ou hora extra." };
+    }
+    if (vigencia === "2027") {
+      const piso = pisoRegional2027(origem, cliente);
+      const aviso = piso ? mensagemAbaixoDoPiso({ acionamento: valor, kmExtra, horaExtra }, piso) : null;
+      if (aviso) return { ok: false, error: aviso };
+    }
+    const conta = excedenteDoTrecho(km, kmExtra);
+    if (valor + 0.02 < conta.valor) return { ok: false, error: "O total do trecho ficou abaixo da tabela vigente." };
+    trechos.push({
+      origem,
+      destino,
+      km: roundMoney(km),
+      kmFaturado: conta.kmFaturado,
+      horas: conta.horas,
+      kmExcedente: conta.kmExcedente,
+      horasExcedentes: conta.horasExcedentes,
+      kmExtra: roundMoney(kmExtra),
+      horaExtra: roundMoney(horaExtra),
+      valor: roundMoney(valor),
+      regiao: textoTrecho(registro.regiao, 80),
+      usouMinimo: conta.usouMinimo
+    });
+  }
+  const soma = somarTrechos(trechos);
+  return { ok: true, trechos, total: soma.total, km: soma.km, horas: soma.horas };
+}
+function lerTrechosPersistidos(bruto) {
+  const lido = conferirTrechosGravados(bruto, "", "2026");
+  if (!lido.ok) return null;
+  return lido.trechos;
+}
+var LIMITE_TRECHOS_PROPOSTA;
+var init_trechosProposta = __esm({
+  "lib/portalCliente/trechosProposta.ts"() {
+    "use strict";
+    init_tabela2027();
+    LIMITE_TRECHOS_PROPOSTA = 8;
+  }
+});
+
+// lib/portalCliente/apresentacao.ts
+function marcoDeOperacoes(total) {
+  if (!Number.isFinite(total) || total < 1e3) return null;
+  const mil = Math.floor(total / 1e3);
+  if (mil < 1) return null;
+  return total === mil * 1e3 ? `${mil} mil` : `${mil} mil+`;
+}
+function numerosDaProposta(operacoes) {
+  if (!operacoes) return NUMEROS_TMSEG;
+  return NUMEROS_TMSEG.map((item) => item.rotulo === "Opera\xE7\xF5es realizadas" ? { valor: operacoes, rotulo: item.rotulo } : item);
+}
+function escaparHtml(valor) {
+  return valor.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function linhasDaTabelaEmail(proposta) {
+  const tela = numerosDaTela(proposta);
+  const minutos = proposta.duracaoMin != null && proposta.duracaoMin > 0 ? Math.round(proposta.duracaoMin) : 0;
+  const horasViagem = Math.floor(minutos / 60);
+  const resto = minutos % 60;
+  const tempo = minutos <= 0 ? "" : horasViagem <= 0 ? `${resto} min` : `${horasViagem}h ${String(resto).padStart(2, "0")}min`;
+  const linhas = [
+    { rotulo: "Origem", valor: proposta.origem || "\u2014" },
+    { rotulo: "Destino", valor: proposta.destino || "\u2014" },
+    { rotulo: "Dist\xE2ncia estimada", valor: proposta.kmRota != null && proposta.kmRota > 0 ? `${quantidade(proposta.kmRota)} km` : "\u2014" }
+  ];
+  if (tempo) linhas.push({ rotulo: "Tempo de viagem", valor: tempo });
+  linhas.push(
+    { rotulo: "Regi\xE3o", valor: proposta.regiao || "\u2014" },
+    { rotulo: "Franquia de km inclu\xEDda", valor: `${quantidade(tela.franquiaKm)} km` },
+    { rotulo: "Franquia de horas inclu\xEDda", valor: `${quantidade(tela.franquiaHoras)} h` },
+    { rotulo: "Valor do km extra", valor: moeda2(tela.kmExtra) },
+    { rotulo: "Valor da hora extra", valor: moeda2(tela.horaExtra) }
+  );
+  if (proposta.kmFaturado != null && proposta.kmFaturado > 0) {
+    linhas.push({ rotulo: "Km faturado", valor: `${quantidade(proposta.kmFaturado)} km` });
+  }
+  if (proposta.horasContadas != null && proposta.horasContadas > 0) {
+    linhas.push({ rotulo: "Horas consideradas", valor: `${quantidade(proposta.horasContadas)} h` });
+  }
+  if (tela.pernoite != null) linhas.push({ rotulo: "Pernoite", valor: moeda2(tela.pernoite) });
+  linhas.push(
+    { rotulo: "Valor total da cota\xE7\xE3o", valor: moeda2(tela.total) },
+    { rotulo: "Validade da proposta", valor: "10 dias" },
+    { rotulo: "Condi\xE7\xF5es de pagamento", valor: CONDICAO_PAGAMENTO },
+    { rotulo: "Ped\xE1gio", valor: AVISO_PEDAGIO }
+  );
+  return linhas;
+}
+function regiaoLegivel(regiao) {
+  const nome = regiao.trim().toLowerCase();
+  if (nome === "sudeste") return "Sudeste";
+  if (nome === "nordeste") return "Nordeste";
+  if (nome === "norte") return "Norte";
+  if (nome === "sul") return "Sul";
+  if (nome === "centro-oeste") return "Centro-Oeste";
+  return regiao.trim();
+}
+function caminhoDaProposta(proposta) {
+  return [proposta.origem, ...proposta.paradas, proposta.destino].filter(Boolean).join(" \u2192 ");
+}
+function moeda2(valor) {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function quantidade(valor) {
+  return valor.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+}
+function condicoesDaProposta(proposta) {
+  return [
+    proposta.acordada ? "Esta rota j\xE1 est\xE1 acordada na tabela do cliente." : `Regi\xE3o ${regiaoLegivel(proposta.regiao)}.`,
+    `Acionamento: ${moeda2(proposta.acionamento)}.`,
+    `A franquia contempla ${quantidade(proposta.kmFranquia)} km e ${quantidade(proposta.horasFranquia)} horas.`,
+    `Acima da franquia, o quil\xF4metro extra custa ${moeda2(proposta.kmExtra)} e a hora extra custa ${moeda2(proposta.horaExtra)}.`,
+    proposta.kmRota != null && proposta.kmRota > 0 ? `Km da rota: ${quantidade(proposta.kmRota)} km.` : "",
+    proposta.duracaoMin != null && proposta.duracaoMin > 0 ? `Tempo: ${Math.round(proposta.duracaoMin)} min.` : "",
+    rotulosSemAno(proposta.origem, proposta.destino).tabela,
+    rotulosSemAno(proposta.origem, proposta.destino).rota,
+    AVISO_PEDAGIO
+  ].filter(Boolean);
+}
+function cartaDaProposta(proposta, operacoes, link) {
+  const servicos = SERVICOS_TMSEG.map((item) => `${item.titulo}. ${item.texto}`).join("\n");
+  return [
+    MARCA_TMSEG.nome,
+    "Proposta comercial de escolta",
+    MARCA_TMSEG.chamada,
+    "",
+    MARCA_TMSEG.quem,
+    MARCA_TMSEG.missao,
+    "",
+    "Rota",
+    caminhoDaProposta(proposta),
+    "",
+    ...proposta.trechos && proposta.trechos.length > 1 ? [
+      "Trechos",
+      ...proposta.trechos.map((trecho, indice) => `${indice + 1}. ${trecho.origem} \u2192 ${trecho.destino}: ${moeda2(trecho.valor)}. Excedente ${quantidade(trecho.kmExcedente)} km e ${quantidade(trecho.horasExcedentes)} h.`),
+      `Total dos trechos: ${moeda2(proposta.trechos.reduce((soma, trecho) => soma + trecho.valor, 0))}.`,
+      ""
+    ] : [],
+    ...condicoesDaProposta(proposta),
+    "",
+    "Servi\xE7os",
+    servicos,
+    "",
+    "N\xFAmeros do site",
+    numerosDaProposta(operacoes).map((item) => `${item.valor} ${item.rotulo}`).join("\n"),
+    "",
+    "Diferenciais",
+    DIFERENCIAIS_TMSEG.map((item) => `${item.titulo}. ${item.texto}`).join("\n"),
+    "",
+    "Empresas que operam com a TM SEG",
+    CLIENTES_TMSEG.map((item) => item.nome).join(", "),
+    "",
+    link ? `Acessar Proposta Comercial: ${link}` : "A proposta completa segue em anexo, com o mapa da rota.",
+    "",
+    "Acionamento da rota",
+    ...linhasDaTabelaEmail(proposta).map((item) => `${item.rotulo}: ${item.valor}`),
+    "",
+    MARCA_TMSEG.telefone,
+    MARCA_TMSEG.endereco,
+    MARCA_TMSEG.sitio
+  ].join("\n");
+}
+function htmlDaProposta(proposta, operacoes, link) {
+  const linhas = linhasDaTabelaEmail(proposta).map((item) => `<tr><td style="padding:8px 10px;border-bottom:1px solid #e7e1d6;color:#5c564e;">${escaparHtml(item.rotulo)}</td><td style="padding:8px 10px;border-bottom:1px solid #e7e1d6;font-weight:700;color:#161513;">${escaparHtml(item.valor)}</td></tr>`).join("");
+  const texto5 = escaparHtml(cartaDaProposta(proposta, operacoes, link)).replace(/\n/g, "<br>");
+  const botao = link ? `<p style="margin:20px 0;"><a href="${escaparHtml(link)}" style="display:inline-block;background:#d0121a;color:#ffffff;padding:12px 18px;border-radius:999px;font-weight:700;text-decoration:none;">Acessar Proposta Comercial</a></p>` : "";
+  return [
+    '<!DOCTYPE html><html lang="pt-BR"><body style="margin:0;background:#f7f5f2;color:#161513;">',
+    '<div style="max-width:640px;margin:0 auto;padding:24px;font-family:Arial,sans-serif;">',
+    `<p style="margin:0 0 8px;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:#d0121a;">${escaparHtml(MARCA_TMSEG.nome)}</p>`,
+    '<h1 style="margin:0 0 16px;font-size:22px;">Proposta comercial de escolta</h1>',
+    botao,
+    '<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:12px;">',
+    linhas,
+    "</table>",
+    `<div style="margin-top:20px;font-size:14px;line-height:1.5;">${texto5}</div>`,
+    "</div></body></html>"
+  ].join("");
+}
+var MARCA_TMSEG, NUMEROS_TMSEG, SERVICOS_TMSEG, DIFERENCIAIS_TMSEG, CLIENTES_TMSEG, AVISO_PEDAGIO, CONDICAO_PAGAMENTO;
+var init_apresentacao = __esm({
+  "lib/portalCliente/apresentacao.ts"() {
+    "use strict";
+    init_cotacao();
+    init_trechosProposta();
+    MARCA_TMSEG = {
+      nome: "Grupo TM SEG",
+      chamada: "A carga protegida em cada quil\xF4metro.",
+      sitio: "www.grupotmseg.com.br",
+      telefone: "+55 11 91689-3018",
+      endereco: "Av. Parada Pinto, 737, Vila Nova Cachoeirinha, S\xE3o Paulo, SP",
+      quem: "O Grupo TM SEG intermedia escolta armada, consultoria de GR, regula\xE7\xE3o e acompanhamento log\xEDstico em todo o territ\xF3rio nacional. A execu\xE7\xE3o em campo fica com empresas homologadas, com alvar\xE1 ativo na Pol\xEDcia Federal.",
+      missao: "A miss\xE3o \xE9 ligar o cliente a profissionais e empresas do setor, com efici\xEAncia, confiabilidade e o padr\xE3o de seguran\xE7a da opera\xE7\xE3o."
+    };
+    NUMEROS_TMSEG = [
+      { valor: "500+", rotulo: "Opera\xE7\xF5es realizadas" },
+      { valor: "24/7", rotulo: "Atendimento" },
+      { valor: "100%", rotulo: "Compromisso" },
+      { valor: "50+", rotulo: "Parceiros ativos" }
+    ];
+    SERVICOS_TMSEG = [
+      { titulo: "Fiscal de rota", foto: "/proposta-tmseg/service-fiscal-rota.png", texto: "Monitoramento e inspe\xE7\xE3o cont\xEDnua das rotas de transporte, com conformidade, seguran\xE7a e controle da opera\xE7\xE3o log\xEDstica." },
+      { titulo: "Intermedia\xE7\xE3o de escolta armada", foto: "/proposta-tmseg/service-escolta.png", texto: "Intermedia\xE7\xE3o de escolta armada com empresas homologadas e com alvar\xE1 ativo na Pol\xEDcia Federal, para o transporte de cargas." },
+      { titulo: "Acompanhamento log\xEDstico", foto: "/proposta-tmseg/service-acompanhamento.png", texto: "Monitoramento da opera\xE7\xE3o, com rastreamento e gest\xE3o do transporte por equipe especializada." },
+      { titulo: "Guincho", foto: "/proposta-tmseg/service-guincho.png", texto: "Guincho para situa\xE7\xF5es emergenciais, com remo\xE7\xE3o e transporte de ve\xEDculos e cargas." }
+    ];
+    DIFERENCIAIS_TMSEG = [
+      { titulo: "Compromisso com a seguran\xE7a", texto: "A prioridade \xE9 a prote\xE7\xE3o dos ativos e a tranquilidade da opera\xE7\xE3o, com solu\xE7\xE3o adequada a cada carga." },
+      { titulo: "Fiscal de rota personalizado", texto: "Inspe\xE7\xE3o e fiscaliza\xE7\xE3o do trajeto, com acompanhamento de cada etapa do transporte." },
+      { titulo: "Caracteriza\xE7\xE3o e rastreamento", texto: "Caracteriza\xE7\xE3o e rastreamento para monitoramento da carga em cada etapa." },
+      { titulo: "Escolta especializada", texto: "Intermedia\xE7\xE3o com empresas de escolta armada homologadas e com alvar\xE1 ativo na Pol\xEDcia Federal." }
+    ];
+    CLIENTES_TMSEG = [
+      { nome: "Claro", logo: "/proposta-tmseg/clientes/claro.png" },
+      { nome: "HP", logo: "/proposta-tmseg/clientes/hp.png" },
+      { nome: "Amazon Transportes", logo: "/proposta-tmseg/clientes/amazon-transportes.png" },
+      { nome: "DHL", logo: "/proposta-tmseg/clientes/dhl.png" },
+      { nome: "CEVA", logo: "/proposta-tmseg/clientes/ceva.png" },
+      { nome: "Kodex", logo: "/proposta-tmseg/clientes/kodex.png" },
+      { nome: "Trans Pacheco", logo: "/proposta-tmseg/clientes/transpacheco.png" },
+      { nome: "Techtrans", logo: "/proposta-tmseg/clientes/techtrans.png" },
+      { nome: "Luft", logo: "/proposta-tmseg/clientes/luft.png" },
+      { nome: "IBL", logo: "/proposta-tmseg/clientes/ibl.png" },
+      { nome: "Ceslog", logo: "/proposta-tmseg/clientes/ceslog.png" },
+      { nome: "Comolatti", logo: "/proposta-tmseg/clientes/comolatti.png" },
+      { nome: "Mercado Livre", logo: "/proposta-tmseg/clientes/mercadolivre.png" }
+    ];
+    AVISO_PEDAGIO = "O custo do ped\xE1gio ser\xE1 cobrado \xE0 parte, conforme o percurso realizado.";
+    CONDICAO_PAGAMENTO = "15 dias ap\xF3s o t\xE9rmino da quinzena, com nota fiscal e boleto.";
+  }
+});
+
+// lib/dateUtils.ts
+function dataCivilBR(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+function partesBR(d, tipo) {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: TZ,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(d);
+  return parts.find((p) => p.type === tipo)?.value || "";
+}
+function toDate(value) {
+  if (value == null || value === "") return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+var TMSEG_TIMEZONE, TZ, formatDateBR, formatDateTimeBR;
+var init_dateUtils = __esm({
+  "lib/dateUtils.ts"() {
+    "use strict";
+    TMSEG_TIMEZONE = "America/Sao_Paulo";
+    TZ = TMSEG_TIMEZONE;
+    formatDateBR = (date) => {
+      if (typeof date === "string") {
+        const civil = dataCivilBR(date);
+        if (civil) return civil;
+      }
+      const d = toDate(date);
+      if (!d) return "\u2014";
+      return `${partesBR(d, "day")}/${partesBR(d, "month")}/${partesBR(d, "year")}`;
+    };
+    formatDateTimeBR = (date) => {
+      if (typeof date === "string") {
+        const civil = dataCivilBR(date);
+        if (civil) return civil;
+      }
+      const d = toDate(date);
+      if (!d) return "\u2014";
+      const hora = partesBR(d, "hour").padStart(2, "0");
+      const minuto = partesBR(d, "minute").padStart(2, "0");
+      return `${partesBR(d, "day")}/${partesBR(d, "month")}/${partesBR(d, "year")} ${hora}:${minuto}`;
+    };
+  }
+});
+
+// lib/portalCliente/gestaoCotacao.ts
+var gestaoCotacao_exports = {};
+__export(gestaoCotacao_exports, {
+  COPIA_FIXA_COTACAO: () => COPIA_FIXA_COTACAO,
+  STATUS_EXCLUIDA: () => STATUS_EXCLUIDA,
+  STATUS_INATIVA: () => STATUS_INATIVA,
+  autorDaCotacao: () => autorDaCotacao,
+  cartaEmailCotacao: () => cartaEmailCotacao,
+  clienteDaMesmaCasa: () => clienteDaMesmaCasa,
+  cotacaoConvertidaEmOs: () => cotacaoConvertidaEmOs,
+  cotacaoExcluida: () => cotacaoExcluida,
+  decisaoExcluir: () => decisaoExcluir,
+  decisaoInativar: () => decisaoInativar,
+  ehDiretoria: () => ehDiretoria,
+  emailDestinoValido: () => emailDestinoValido,
+  emailsDaCopia: () => emailsDaCopia,
+  montarDestinatariosEnvio: () => montarDestinatariosEnvio,
+  mostrarDesativarCotacao: () => mostrarDesativarCotacao,
+  mostrarExcluirCotacao: () => mostrarExcluirCotacao,
+  pdfAnexoAceito: () => pdfAnexoAceito,
+  perfilPodeGerirCotacao: () => perfilPodeGerirCotacao,
+  podeDesativarCotacao: () => podeDesativarCotacao,
+  podeEnviarCotacao: () => podeEnviarCotacao,
+  podeExcluirCotacao: () => podeExcluirCotacao,
+  podeGerirCotacao: () => podeGerirCotacao,
+  registroAuditoriaCotacao: () => registroAuditoriaCotacao,
+  textoHoraExtra: () => textoHoraExtra,
+  textoTarifaKm: () => textoTarifaKm,
+  usuarioInternoCotacao: () => usuarioInternoCotacao
+});
+function normalizar2(valor) {
+  return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+function reais(valor) {
+  return valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function textoTarifaKm(valor) {
+  if (valor == null || !Number.isFinite(valor) || valor <= 0) return "\u2014";
+  return `${reais(valor)}/km`;
+}
+function textoHoraExtra(valor) {
+  if (valor == null || !Number.isFinite(valor) || valor <= 0) return "\u2014";
+  return `${reais(valor)}/h`;
+}
+function perfilPodeGerirCotacao(perfil) {
+  const nome = normalizar2(perfil);
+  return nome === "diretoria" || nome === "administrador" || nome === "admin";
+}
+function clienteDaMesmaCasa(portal, cotacao) {
+  const a = normalizar2(portal);
+  const b = normalizar2(cotacao);
+  if (!a || !b) return false;
+  if (a.includes("ceva") && b.includes("ceva")) return true;
+  if ((a.includes("ibl") || a.includes("intermodal")) && (b.includes("ibl") || b.includes("intermodal"))) return true;
+  return a === b || a.includes(b) || b.includes(a);
+}
+function autorDaCotacao(ator, cotacao) {
+  if (ator.portalCliente && !clienteDaMesmaCasa(ator.portalCliente, cotacao.client_name)) return false;
+  const nome = normalizar2(ator.nome);
+  const autor = normalizar2(cotacao.created_by);
+  if (nome && autor && nome === autor) return true;
+  const email = normalizar2(ator.email);
+  const emailAutor = normalizar2(cotacao.solicitanteEmail);
+  return Boolean(email && emailAutor && email === emailAutor);
+}
+function usuarioInternoCotacao(ator) {
+  return !String(ator.portalCliente || "").trim();
+}
+function ehDiretoria(perfil) {
+  return normalizar2(perfil) === "diretoria";
+}
+function podeDesativarCotacao(ator) {
+  return usuarioInternoCotacao(ator);
+}
+function podeExcluirCotacao(ator) {
+  return ehDiretoria(ator.perfil);
+}
+function mostrarDesativarCotacao(ator, cotacao) {
+  if (!podeDesativarCotacao(ator)) return false;
+  if (cotacaoConvertidaEmOs(cotacao) || cotacaoExcluida(cotacao)) return false;
+  if (cotacao.is_active === false || normalizar2(cotacao.status) === "inativa") return false;
+  return true;
+}
+function mostrarExcluirCotacao(ator, cotacao) {
+  if (!podeExcluirCotacao(ator)) return false;
+  if (cotacaoConvertidaEmOs(cotacao) || cotacaoExcluida(cotacao)) return false;
+  return true;
+}
+function podeGerirCotacao(ator, cotacao) {
+  if (perfilPodeGerirCotacao(ator.perfil)) {
+    if (ator.portalCliente) return clienteDaMesmaCasa(ator.portalCliente, cotacao.client_name);
+    return true;
+  }
+  return autorDaCotacao(ator, cotacao);
+}
+function cotacaoConvertidaEmOs(cotacao) {
+  return Boolean(String(cotacao.converted_to_order_id || "").trim());
+}
+function cotacaoExcluida(cotacao) {
+  return normalizar2(cotacao.status) === normalizar2(STATUS_EXCLUIDA);
+}
+function decisaoInativar(ator, cotacao) {
+  if (!cotacao?.id) return { ok: false, status: 404, error: "Cota\xE7\xE3o n\xE3o encontrada." };
+  if (!podeDesativarCotacao(ator)) return { ok: false, status: 403, error: "Voc\xEA n\xE3o pode desativar esta cota\xE7\xE3o." };
+  if (cotacaoConvertidaEmOs(cotacao)) return { ok: false, status: 409, error: "Essa cota\xE7\xE3o j\xE1 virou OS e n\xE3o pode ser inativada." };
+  return { ok: true, dados: { is_active: false, status: STATUS_INATIVA } };
+}
+function decisaoExcluir(ator, cotacao) {
+  if (!cotacao?.id) return { ok: false, status: 404, error: "Cota\xE7\xE3o n\xE3o encontrada." };
+  if (!podeExcluirCotacao(ator)) return { ok: false, status: 403, error: "S\xF3 a diretoria pode excluir esta cota\xE7\xE3o." };
+  if (cotacaoConvertidaEmOs(cotacao)) return { ok: false, status: 409, error: "Essa cota\xE7\xE3o j\xE1 virou OS e n\xE3o pode ser exclu\xEDda." };
+  return { ok: true, dados: { is_active: false, status: STATUS_EXCLUIDA } };
+}
+function emailsDaCopia(bruto) {
+  const partes = String(bruto || "").split(/[;,]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (partes.length > 8) return { ok: false, error: "Informe no m\xE1ximo 8 e-mails em c\xF3pia." };
+  if (partes.some((item) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item))) return { ok: false, error: "H\xE1 um e-mail de c\xF3pia inv\xE1lido." };
+  return { ok: true, lista: partes };
+}
+function montarDestinatariosEnvio(entrada) {
+  const selecionados = String(entrada.selecionados || "").split(/[;,]/).map((item) => item.trim().toLowerCase()).filter(Boolean);
+  if (selecionados.length === 0) return { ok: false, error: "Informe um e-mail v\xE1lido." };
+  if (selecionados.length > 8) return { ok: false, error: "Informe no m\xE1ximo 8 e-mails." };
+  if (selecionados.some((item) => !emailDestinoValido(item))) return { ok: false, error: "H\xE1 um e-mail selecionado inv\xE1lido." };
+  const autor = String(entrada.autor || "").trim().toLowerCase();
+  const para = selecionados[0];
+  const vistos = /* @__PURE__ */ new Set([para]);
+  const copias = [];
+  for (const email of [...selecionados.slice(1), COPIA_FIXA_COTACAO, autor]) {
+    if (!emailDestinoValido(email) || vistos.has(email)) continue;
+    vistos.add(email);
+    copias.push(email);
+  }
+  return { ok: true, para, copias };
+}
+function emailDestinoValido(bruto) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(bruto || "").trim().toLowerCase());
+}
+function cartaEmailCotacao(entrada) {
+  const km = Number(entrada.km);
+  const valor = Number(entrada.valor);
+  const resumo = [
+    "Proposta comercial \u2014 Grupo TM SEG",
+    "",
+    `Origem: ${String(entrada.origem || "").trim() || "\u2014"}`,
+    `Destino: ${String(entrada.destino || "").trim() || "\u2014"}`,
+    `Dist\xE2ncia: ${Number.isFinite(km) && km > 0 ? `${km.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km` : "\u2014"}`,
+    `Valor total: ${Number.isFinite(valor) ? reais(valor) : "\u2014"}`,
+    "",
+    "O ped\xE1gio \xE9 cobrado \xE0 parte.",
+    "A cota\xE7\xE3o segue em anexo."
+  ].join("\n");
+  const mensagem = String(entrada.mensagem || "").trim().slice(0, 2e3);
+  return mensagem ? `${mensagem}
+
+${resumo}` : resumo;
+}
+function podeEnviarCotacao(ator, cotacao) {
+  if (cotacaoExcluida(cotacao)) return false;
+  if (ator.portalCliente) return clienteDaMesmaCasa(ator.portalCliente, cotacao.client_name);
+  return true;
+}
+function pdfAnexoAceito(bruto) {
+  const texto5 = String(bruto || "").trim();
+  const base64 = (texto5.includes(",") && /^data:/i.test(texto5) ? texto5.slice(texto5.indexOf(",") + 1) : texto5).replace(/\s/g, "");
+  if (base64.length < 80 || !/^[A-Za-z0-9+/=]+$/.test(base64)) return { ok: false, error: "O PDF da cota\xE7\xE3o n\xE3o veio no anexo." };
+  if (!base64.startsWith("JVBERi")) return { ok: false, error: "O anexo n\xE3o \xE9 um PDF." };
+  const bytes = Math.floor(base64.length * 3 / 4);
+  if (bytes > 7e6) return { ok: false, error: "O PDF passou do tamanho aceito para o e-mail." };
+  return { ok: true, base64 };
+}
+function registroAuditoriaCotacao(entrada) {
+  return {
+    user_name: entrada.ator.nome || entrada.ator.email || "Portal",
+    action_type: entrada.acao,
+    entity: "quotes",
+    entity_id: String(entrada.cotacao.id || ""),
+    details: JSON.stringify({
+      acao: entrada.acao,
+      cotacao_id: entrada.cotacao.id || "",
+      cliente: entrada.cotacao.client_name || "",
+      autor: entrada.ator.nome,
+      email: entrada.ator.email
+    })
+  };
+}
+var STATUS_INATIVA, STATUS_EXCLUIDA, COPIA_FIXA_COTACAO;
+var init_gestaoCotacao = __esm({
+  "lib/portalCliente/gestaoCotacao.ts"() {
+    "use strict";
+    STATUS_INATIVA = "Inativa";
+    STATUS_EXCLUIDA = "Excluida";
+    COPIA_FIXA_COTACAO = "thiago@grupotmseg.com.br";
+  }
+});
+
+// lib/portalCliente/rotaCotacao.ts
+function lerCoordenada(lugar) {
+  if (lugar == null) return null;
+  const candidato = lugar;
+  const latBruto = candidato.lat;
+  const lngBruto = candidato.lng;
+  const lat = typeof latBruto === "function" ? Number(latBruto.call(lugar)) : Number(latBruto);
+  const lng = typeof lngBruto === "function" ? Number(lngBruto.call(lugar)) : Number(lngBruto);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+function decodificarPolyline(encoded, maximo = 80) {
+  const texto5 = String(encoded || "");
+  const pontos = [];
+  let indice = 0;
+  let lat = 0;
+  let lng = 0;
+  while (indice < texto5.length) {
+    let resultado = 0;
+    let deslocamento = 0;
+    let byte = 0;
+    do {
+      if (indice >= texto5.length) return resumirPontos(pontos, maximo);
+      byte = texto5.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 31) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 32);
+    lat += resultado & 1 ? ~(resultado >> 1) : resultado >> 1;
+    resultado = 0;
+    deslocamento = 0;
+    do {
+      if (indice >= texto5.length) return resumirPontos(pontos, maximo);
+      byte = texto5.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 31) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 32);
+    lng += resultado & 1 ? ~(resultado >> 1) : resultado >> 1;
+    pontos.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    if (pontos.length > 4e3) break;
+  }
+  return resumirPontos(pontos, maximo);
+}
+function resumirPontos(pontos, maximo = 80) {
+  const validos = pontos.map((ponto) => ponto ? lerCoordenada(ponto) : null).filter((ponto) => ponto != null);
+  const teto = Math.max(2, maximo);
+  if (validos.length <= teto) return validos;
+  const passo = (validos.length - 1) / (teto - 1);
+  const saida = [];
+  const vistos = /* @__PURE__ */ new Set();
+  for (let i = 0; i < teto; i++) {
+    const indice = Math.round(i * passo);
+    if (vistos.has(indice)) continue;
+    vistos.add(indice);
+    saida.push(validos[indice]);
+  }
+  return saida;
+}
+var init_rotaCotacao = __esm({
+  "lib/portalCliente/rotaCotacao.ts"() {
+    "use strict";
+    init_tabela2027();
+  }
+});
+
+// lib/portalCliente/historicoCotacoes.ts
+var historicoCotacoes_exports = {};
+__export(historicoCotacoes_exports, {
+  JANELA_HISTORICO_VIGENCIA: () => JANELA_HISTORICO_VIGENCIA,
+  KIND_PORTAL_COTACAO: () => KIND_PORTAL_COTACAO,
+  TAMANHO_PAGINA_HISTORICO: () => TAMANHO_PAGINA_HISTORICO,
+  TEXTO_ACEITE_OS: () => TEXTO_ACEITE_OS,
+  TEXTO_HISTORICO_VAZIO: () => TEXTO_HISTORICO_VAZIO,
+  dataArquivoCotacao: () => dataArquivoCotacao,
+  dataLongaCotacao: () => dataLongaCotacao,
+  diasRestantesCotacao: () => diasRestantesCotacao,
+  exigeAceiteDoCliente: () => exigeAceiteDoCliente,
+  formatarDataHoraCotacao: () => formatarDataHoraCotacao,
+  formatarValorCotacao: () => formatarValorCotacao,
+  kmTempoFaturadoSalvo: () => kmTempoFaturadoSalvo,
+  lerSnapshot: () => lerSnapshot,
+  linhaConfereComTela: () => linhaConfereComTela,
+  mensagemCompletaCotacao: () => mensagemCompletaCotacao,
+  montarSnapshot: () => montarSnapshot,
+  nomeAnexoPdf: () => nomeAnexoPdf,
+  nomePdfCotacao: () => nomePdfCotacao,
+  normalizarLinhaHistorico: () => normalizarLinhaHistorico,
+  numeroInformado: () => numeroInformado,
+  numeroNoSnapshot: () => numeroNoSnapshot,
+  numerosNaPagina: () => numerosNaPagina,
+  patchDaTelaNoSnapshot: () => patchDaTelaNoSnapshot,
+  pedidoParaRegistro: () => pedidoParaRegistro,
+  percursoUtil: () => percursoUtil,
+  propostaDoHistorico: () => propostaDoHistorico,
+  proximoNumeroCotacao: () => proximoNumeroCotacao,
+  reservarNumeroCotacao: () => reservarNumeroCotacao,
+  resumirEndereco: () => resumirEndereco,
+  rotuloValidade: () => rotuloValidade,
+  textoDistanciaTempo: () => textoDistanciaTempo,
+  textoKmFaturadoSalvo: () => textoKmFaturadoSalvo,
+  textoRegiaoFranquia: () => textoRegiaoFranquia,
+  valoresExibidosDaLinha: () => valoresExibidosDaLinha,
+  vigenciaDaCotacao: () => vigenciaDaCotacao,
+  vigenciaInformada: () => vigenciaInformada
+});
+function exigeAceiteDoCliente(interno, equipeInterna) {
+  return !interno && !equipeInterna;
+}
+function numero2(valor) {
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : 0;
+}
+function texto4(valor, limite = 240) {
+  return String(valor || "").trim().slice(0, limite);
+}
+function resumirEndereco(endereco, limite = 42) {
+  const trecho = String(endereco || "").split(",")[0]?.trim() || "";
+  if (!trecho) return "\u2014";
+  if (trecho.length <= limite) return trecho;
+  return `${trecho.slice(0, Math.max(1, limite - 1)).trimEnd()}\u2026`;
+}
+function formatarDataHoraCotacao(iso) {
+  return formatDateTimeBR(iso);
+}
+function dataLongaCotacao(iso) {
+  if (!iso) return "";
+  const texto5 = formatDateBR(iso);
+  return texto5 === "\u2014" ? "" : texto5;
+}
+function limparParteArquivo(valor) {
+  const limpo = String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/_+/g, "_");
+  return (limpo || "Cliente").slice(0, 60);
+}
+function dataArquivoCotacao(valor) {
+  if (typeof valor === "string" && /^\d{2}-\d{2}-\d{4}$/.test(valor)) return valor;
+  const candidata = valor instanceof Date ? valor : valor ? new Date(valor) : /* @__PURE__ */ new Date();
+  const data = Number.isNaN(candidata.getTime()) ? /* @__PURE__ */ new Date() : candidata;
+  const partes = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).formatToParts(data);
+  const pegar = (tipo) => partes.find((item) => item.type === tipo)?.value || "";
+  return `${pegar("day")}-${pegar("month")}-${pegar("year")}`;
+}
+function nomePdfCotacao(entrada) {
+  const numero4 = numeroInformado(entrada.numero);
+  const cliente = limparParteArquivo(entrada.cliente);
+  const data = dataArquivoCotacao(entrada.data);
+  const nome = `Cotacao_${numero4 ? String(numero4) : "sem_numero"}_${cliente}_${data}.pdf`;
+  return nome.length <= 180 ? nome : `${nome.slice(0, 176).replace(/_+$/g, "")}.pdf`;
+}
+function nomeAnexoPdf(pedido, reserva) {
+  const nome = String(pedido || "").trim();
+  if (/^Cotacao_[A-Za-z0-9_]+_\d{2}-\d{2}-\d{4}\.pdf$/.test(nome) && nome.length <= 180) return nome;
+  return nomePdfCotacao({
+    cliente: String(reserva.cliente || "Cliente"),
+    numero: numeroInformado(reserva.numero),
+    data: reserva.data
+  });
+}
+function linhaConfereComTela(linha, tela) {
+  const kmTela = Number(tela.km);
+  const kmLinha = Number(linha.total_km);
+  if (!Number.isFinite(kmTela) || kmTela <= 0 || !Number.isFinite(kmLinha)) return false;
+  if (Math.abs(kmLinha - kmTela) >= 1) return false;
+  const origemTela = String(tela.origem || "").trim();
+  const origemLinha = String(linha.origin || "").trim();
+  if (!origemTela || !origemLinha) return false;
+  if (origemLinha === origemTela) return true;
+  if (resumirEndereco(origemLinha) === resumirEndereco(origemTela) && resumirEndereco(linha.destination) === resumirEndereco(tela.destino)) return true;
+  const saidaLinha = cidadeDaRota(origemLinha);
+  const saidaTela = cidadeDaRota(origemTela);
+  const chegadaLinha = cidadeDaRota(String(linha.destination || ""));
+  const chegadaTela = cidadeDaRota(String(tela.destino || ""));
+  return saidaLinha.length >= 3 && saidaLinha === saidaTela && chegadaLinha.length >= 3 && chegadaLinha === chegadaTela;
+}
+function franquiaIncluidaSeparada(valor, padrao, usouMinimo, percorrido) {
+  return valor === padrao && !usouMinimo && percorrido > padrao;
+}
+function kmTempoFaturadoSalvo(linha) {
+  const salvo = lerSnapshot(linha.contract_details);
+  const kmRota = numero2(linha.total_km);
+  const horasLinha = numero2(linha.total_hours);
+  const kmSalvo = salvo?.kmFaturado != null && salvo.kmFaturado > 0 ? salvo.kmFaturado : salvo && salvo.kmFranquia > 0 && !franquiaIncluidaSeparada(salvo.kmFranquia, FRANQUIA_KM, salvo.usouMinimo, kmRota) ? salvo.kmFranquia : kmRota;
+  const horasSalvas = salvo?.horasContadas != null && salvo.horasContadas > 0 ? salvo.horasContadas : salvo && salvo.horasFranquia > 0 && !franquiaIncluidaSeparada(salvo.horasFranquia, FRANQUIA_HORAS, salvo.usouMinimo, horasLinha) ? salvo.horasFranquia : horasLinha;
+  return { km: kmSalvo, horas: horasSalvas > 0 ? horasSalvas : null };
+}
+function textoKmFaturadoSalvo(km, horas) {
+  const kmTexto = `${numero2(km).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+  if (horas == null || !Number.isFinite(horas) || horas <= 0) return kmTexto;
+  const horasTexto = Number.isInteger(horas) ? `${horas} h` : `${horas.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h`;
+  return `${kmTexto} | ${horasTexto}`;
+}
+function valoresExibidosDaLinha(linha) {
+  const salvo = lerSnapshot(linha.contract_details);
+  const tempo = kmTempoFaturadoSalvo(linha);
+  return {
+    regiao: salvo?.regiao || "\u2014",
+    tarifaKm: salvo?.kmExtra ?? 0,
+    horaExtra: salvo?.horaExtra ?? 0,
+    total: Number(linha.total_value) || salvo?.acionamento || 0,
+    km: tempo.km,
+    horas: tempo.horas
+  };
+}
+function patchDaTelaNoSnapshot(bruto, tela) {
+  if (!bruto) return null;
+  let dados;
+  try {
+    dados = JSON.parse(bruto);
+  } catch {
+    return null;
+  }
+  if (!dados || dados.kind !== KIND_PORTAL_COTACAO || dados.acordada) return null;
+  const igual = String(dados.regiao || "") === tela.regiao && Math.abs(Number(dados.kmExtra) - tela.tarifaKm) < 1e-3 && Math.abs(Number(dados.horaExtra) - tela.horaExtra) < 1e-3 && Math.abs(Number(dados.acionamento) - tela.total) < 0.01;
+  if (igual) return null;
+  return {
+    contract_details: JSON.stringify({
+      ...dados,
+      regiao: tela.regiao,
+      kmExtra: tela.tarifaKm,
+      horaExtra: tela.horaExtra,
+      acionamento: tela.total,
+      duracaoMin: tela.duracaoMin,
+      vigencia: tela.vigencia,
+      usouMinimo: tela.usouMinimo
+    }),
+    total_value: tela.total,
+    total_hours: tela.horas
+  };
+}
+function numeroInformado(valor) {
+  const n = Number(valor);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  return n;
+}
+function numeroNoSnapshot(bruto) {
+  if (!bruto) return null;
+  try {
+    const dados = JSON.parse(bruto);
+    return numeroInformado(dados?.numero);
+  } catch {
+    return null;
+  }
+}
+function numerosNaPagina(linhas) {
+  const lista = [];
+  for (const linha of linhas) {
+    const gravado = numeroNoSnapshot(linha.contract_details == null ? null : String(linha.contract_details));
+    if (gravado) lista.push(gravado);
+    const id = String(linha.id || "");
+    if (/^\d+$/.test(id)) lista.push(Number(id));
+  }
+  return lista;
+}
+function proximoNumeroCotacao(usados) {
+  let maior = 0;
+  for (const item of usados) {
+    const n = Number(item);
+    if (Number.isInteger(n) && n > maior) maior = n;
+  }
+  return maior + 1;
+}
+async function reservarNumeroCotacao(ler) {
+  const usados = [];
+  const tamanho = 200;
+  for (let pagina = 0; pagina < 50; pagina += 1) {
+    const inicio = pagina * tamanho;
+    const lote = await ler(inicio, inicio + tamanho - 1);
+    if (!lote) return null;
+    usados.push(...numerosNaPagina(lote.linhas));
+    if (lote.linhas.length < tamanho) return proximoNumeroCotacao(usados);
+  }
+  return null;
+}
+function diasRestantesCotacao(cotacao, agora = /* @__PURE__ */ new Date()) {
+  const criada = cotacao.created_at ? new Date(cotacao.created_at) : null;
+  if (!criada || Number.isNaN(criada.getTime())) return 0;
+  const restante = criada.getTime() + PRAZO_COTACAO_MS - agora.getTime();
+  if (restante <= 0) return cotacaoVencida(cotacao, agora) ? 0 : 1;
+  return Math.max(1, Math.ceil(restante / (24 * 60 * 60 * 1e3)));
+}
+function rotuloValidade(cotacao, agora = /* @__PURE__ */ new Date()) {
+  if (cotacaoConvertida(cotacao)) return { tom: "convertida", rotulo: "Convertida em OS" };
+  const status = String(cotacao.status || "").trim().toLowerCase();
+  if (status === "inativa") return { tom: "inativa", rotulo: "Inativa" };
+  if (cotacaoVencida(cotacao, agora) || status === "expirada" || cotacao.is_active === false) {
+    return { tom: "expirada", rotulo: "Expirada" };
+  }
+  const dias = diasRestantesCotacao(cotacao, agora);
+  return { tom: "ativa", rotulo: dias === 1 ? "Ativa \xB7 1 dia" : `Ativa \xB7 ${dias} dias` };
+}
+function textoDistanciaTempo(km, duracaoMin) {
+  const kmTexto = `${numero2(km).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+  if (duracaoMin == null || !Number.isFinite(duracaoMin) || duracaoMin <= 0) return kmTexto;
+  const minutos = Math.round(duracaoMin);
+  const horas = Math.floor(minutos / 60);
+  const resto = minutos % 60;
+  const tempo = horas <= 0 ? `${resto} min` : `${horas}h ${String(resto).padStart(2, "0")}min`;
+  return `${kmTexto} | ${tempo}`;
+}
+function textoRegiaoFranquia(regiao, usouMinimo) {
+  const nome = String(regiao || "").trim() || "\u2014";
+  return usouMinimo ? `${nome} \xB7 franquia m\xEDnima` : nome;
+}
+function vigenciaInformada(valor) {
+  const marca = String(valor || "").trim();
+  if (marca === "2026" || marca === "2027") return marca;
+  return null;
+}
+function vigenciaDaCotacao(cotacao) {
+  const bruto = cotacao?.contract_details;
+  if (!bruto) return "2026";
+  try {
+    const dados = JSON.parse(bruto);
+    return vigenciaInformada(dados?.vigencia) || vigenciaInformada(dados?.pricing_version) || "2026";
+  } catch {
+    return "2026";
+  }
+}
+function formatarValorCotacao(valor) {
+  return numero2(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function mensagemCompletaCotacao(linha, agora = /* @__PURE__ */ new Date()) {
+  const salvo = lerSnapshot(linha.contract_details);
+  const numeroLinha = salvo?.numero || (/^\d+$/.test(String(linha.id || "")) ? Number(linha.id) : null);
+  const validade = rotuloValidade(linha, agora);
+  const km = Number(linha.total_km);
+  const faturado = kmTempoFaturadoSalvo(linha);
+  const franquiaMinima = salvo ? Boolean(salvo.usouMinimo) : km > 0 && km <= 100;
+  const partes = [
+    `Cota\xE7\xE3o${numeroLinha ? ` ${numeroLinha}` : ""} \u2014 ${String(linha.client_name || "").trim() || "Cliente"}`,
+    `Tabela ${salvo?.vigencia || vigenciaDaCotacao(linha)}`,
+    `Data: ${formatarDataHoraCotacao(linha.created_at)}`,
+    `Solicitante: ${String(linha.created_by || "").trim() || "\u2014"}`,
+    salvo?.solicitanteEmail ? `E-mail: ${salvo.solicitanteEmail}` : "",
+    `Origem: ${String(linha.origin || "").trim() || "\u2014"}`,
+    `Destino: ${String(linha.destination || "").trim() || "\u2014"}`,
+    ...salvo?.trechos && salvo.trechos.length > 1 ? salvo.trechos.map((trecho, indice) => `Trecho ${indice + 1}: ${trecho.origem} \u2192 ${trecho.destino} \xB7 ${formatarValorCotacao(trecho.valor)} \xB7 excedente ${trecho.kmExcedente.toLocaleString("pt-BR")} km / ${trecho.horasExcedentes.toLocaleString("pt-BR")} h`) : [],
+    salvo?.paradas?.length ? `Paradas: ${salvo.paradas.join(" | ")}` : "",
+    `Dist\xE2ncia / tempo: ${textoKmFaturadoSalvo(faturado.km, faturado.horas)}`,
+    `Horas faturadas: ${faturado.horas != null ? faturado.horas.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) : "\u2014"}`,
+    `Regi\xE3o: ${textoRegiaoFranquia(salvo?.regiao || "\u2014", franquiaMinima)}`,
+    salvo && (salvo.kmFranquia > 0 || salvo.horasFranquia > 0) ? `Franquia: ${salvo.kmFranquia.toLocaleString("pt-BR")} km / ${salvo.horasFranquia.toLocaleString("pt-BR")} h` : "",
+    `Valor KM: ${textoTarifaKm(salvo?.kmExtra)}`,
+    `Hora extra: ${textoHoraExtra(salvo?.horaExtra)}`,
+    salvo && salvo.acionamento > 0 ? `Acionamento: ${formatarValorCotacao(salvo.acionamento)}` : "",
+    `Valor total: ${formatarValorCotacao(linha.total_value)}`,
+    `Status: ${validade.rotulo}`,
+    "Ped\xE1gio cobrado \xE0 parte."
+  ];
+  return partes.filter(Boolean).join("\n");
+}
+function percursoUtil(bruto) {
+  if (!bruto || typeof bruto !== "object") return null;
+  const registro = bruto;
+  const linha = String(registro.polyline || "").trim();
+  const polyline = /^[\x21-\x7E]{8,12000}$/.test(linha) ? linha : "";
+  const lista = Array.isArray(registro.pontos) ? registro.pontos : [];
+  const pontos = [];
+  for (const item of lista) {
+    if (pontos.length >= 80) break;
+    if (!item || typeof item !== "object") continue;
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    pontos.push({ lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5 });
+  }
+  const completos = pontos.length >= 2 ? pontos : polyline ? decodificarPolyline(polyline) : [];
+  if (!polyline && completos.length < 2) return null;
+  return { polyline, pontos: completos.slice(0, 80) };
+}
+function montarSnapshot(entrada) {
+  const pronto = {
+    kind: KIND_PORTAL_COTACAO,
+    duracaoMin: entrada.duracaoMin != null && Number.isFinite(entrada.duracaoMin) && entrada.duracaoMin > 0 ? Math.round(entrada.duracaoMin) : null,
+    usouMinimo: Boolean(entrada.usouMinimo),
+    regiao: texto4(entrada.regiao, 80),
+    kmFranquia: numero2(entrada.kmFranquia),
+    horasFranquia: numero2(entrada.horasFranquia),
+    kmExtra: numero2(entrada.kmExtra),
+    horaExtra: numero2(entrada.horaExtra),
+    acionamento: numero2(entrada.acionamento),
+    paradas: (entrada.paradas || []).map((item) => texto4(item, 180)).filter(Boolean).slice(0, 12),
+    solicitanteEmail: texto4(entrada.solicitanteEmail, 160),
+    acordada: Boolean(entrada.acordada),
+    operacao: texto4(entrada.operacao, 180),
+    vigencia: entrada.vigencia === "2027" ? "2027" : "2026",
+    numero: numeroInformado(entrada.numero),
+    ...numero2(entrada.kmFaturado) > 0 ? { kmFaturado: numero2(entrada.kmFaturado) } : {},
+    ...numero2(entrada.horasContadas) > 0 ? { horasContadas: numero2(entrada.horasContadas) } : {}
+  };
+  const percurso = percursoUtil(entrada.percurso);
+  if (percurso) pronto.percurso = percurso;
+  return pronto;
+}
+function lerSnapshot(bruto) {
+  if (!bruto) return null;
+  try {
+    const dados = JSON.parse(bruto);
+    if (!dados || dados.kind !== KIND_PORTAL_COTACAO) return null;
+    const link = dados.linkPublico;
+    const linkPublico = link && typeof link.token === "string" && typeof link.expiraEm === "string" ? { token: link.token, expiraEm: link.expiraEm } : null;
+    const aceiteBruto = dados.aceiteCliente;
+    const aceiteCliente = aceiteBruto && aceiteBruto.texto === TEXTO_ACEITE_OS && typeof aceiteBruto.em === "string" ? { texto: TEXTO_ACEITE_OS, em: aceiteBruto.em } : null;
+    const trechos = lerTrechosPersistidos(dados.trechos);
+    return {
+      ...montarSnapshot({
+        duracaoMin: dados.duracaoMin,
+        usouMinimo: dados.usouMinimo,
+        regiao: dados.regiao,
+        kmFranquia: dados.kmFranquia,
+        horasFranquia: dados.horasFranquia,
+        kmExtra: dados.kmExtra,
+        horaExtra: dados.horaExtra,
+        acionamento: dados.acionamento,
+        paradas: Array.isArray(dados.paradas) ? dados.paradas : [],
+        solicitanteEmail: dados.solicitanteEmail,
+        acordada: dados.acordada,
+        operacao: dados.operacao,
+        vigencia: vigenciaInformada(dados.vigencia),
+        numero: numeroInformado(dados.numero),
+        kmFaturado: dados.kmFaturado,
+        horasContadas: dados.horasContadas,
+        percurso: dados.percurso
+      }),
+      ...trechos && trechos.length > 1 ? { trechos } : {},
+      ...linkPublico ? { linkPublico } : {},
+      ...aceiteCliente ? { aceiteCliente } : {}
+    };
+  } catch {
+    return null;
+  }
+}
+function propostaDoHistorico(linha) {
+  const salvo = lerSnapshot(linha.contract_details);
+  const tempo = kmTempoFaturadoSalvo(linha);
+  if (salvo) {
+    return {
+      acordada: salvo.acordada,
+      regiao: salvo.regiao,
+      origem: linha.origin,
+      destino: linha.destination,
+      paradas: salvo.paradas,
+      acionamento: salvo.acionamento || numero2(linha.total_value),
+      kmFranquia: salvo.kmFranquia,
+      horasFranquia: salvo.horasFranquia,
+      kmFaturado: tempo.km > 0 ? tempo.km : null,
+      horasContadas: tempo.horas,
+      kmExtra: salvo.kmExtra,
+      horaExtra: salvo.horaExtra,
+      operacao: salvo.operacao || `${linha.origin} X ${linha.destination}`,
+      vigencia: salvo.vigencia,
+      kmRota: numero2(linha.total_km),
+      duracaoMin: salvo.duracaoMin,
+      numero: salvo.numero,
+      ...salvo.trechos && salvo.trechos.length > 1 ? { trechos: salvo.trechos } : {}
+    };
+  }
+  return {
+    acordada: false,
+    regiao: "",
+    origem: linha.origin,
+    destino: linha.destination,
+    paradas: [],
+    acionamento: numero2(linha.total_value),
+    kmFranquia: numero2(linha.total_km),
+    horasFranquia: numero2(linha.total_hours),
+    kmExtra: 0,
+    horaExtra: 0,
+    operacao: `${linha.origin} X ${linha.destination}`,
+    vigencia: "2026",
+    kmRota: numero2(linha.total_km),
+    duracaoMin: null
+  };
+}
+function pedidoParaRegistro(pedido, cliente, solicitante) {
+  const origem = texto4(pedido.origem, 300);
+  const destino = texto4(pedido.destino, 300);
+  const km = numero2(pedido.km);
+  const valor = numero2(pedido.valor ?? pedido.acionamento);
+  const idCliente = Number(cliente.id);
+  const nomeCliente = texto4(cliente.name, 180);
+  if (!Number.isFinite(idCliente) || idCliente <= 0 || !nomeCliente) return { ok: false, error: "Cliente da cota\xE7\xE3o n\xE3o encontrado." };
+  if (!origem || !destino || km <= 0) return { ok: false, error: "Faltam origem, destino ou a dist\xE2ncia da rota." };
+  const nome = texto4(solicitante.name, 160) || texto4(solicitante.email, 160) || "Portal";
+  const snapshot = montarSnapshot({
+    duracaoMin: pedido.duracaoMin == null || pedido.duracaoMin === "" ? null : numero2(pedido.duracaoMin),
+    usouMinimo: Boolean(pedido.usouMinimo),
+    regiao: texto4(pedido.regiao, 80),
+    kmFranquia: numero2(pedido.kmFranquia),
+    horasFranquia: numero2(pedido.horas),
+    kmExtra: numero2(pedido.kmExtra),
+    horaExtra: numero2(pedido.horaExtra),
+    acionamento: numero2(pedido.acionamento ?? pedido.valor),
+    paradas: Array.isArray(pedido.paradas) ? pedido.paradas.map((item) => String(item || "")) : [],
+    solicitanteEmail: texto4(solicitante.email, 160),
+    acordada: Boolean(pedido.acordada),
+    operacao: texto4(pedido.operacao, 180),
+    vigencia: vigenciaInformada(pedido.vigencia) || "2026",
+    numero: numeroInformado(pedido.numero),
+    kmFaturado: pedido.kmFaturado,
+    horasContadas: pedido.horasContadas,
+    percurso: pedido.percurso
+  });
+  const aceite = pedido.aceiteCliente;
+  if (aceite && aceite.texto === TEXTO_ACEITE_OS && typeof aceite.em === "string" && aceite.em.trim()) {
+    snapshot.aceiteCliente = { texto: TEXTO_ACEITE_OS, em: aceite.em.trim().slice(0, 40) };
+  }
+  const linha = {
+    client_id: idCliente,
+    client_name: nomeCliente,
+    origin: origem,
+    destination: destino,
+    total_km: km,
+    total_hours: numero2(pedido.horas),
+    total_value: valor,
+    status: "Enviada",
+    is_active: true,
+    quote_source: "ROTA",
+    created_by: nome
+  };
+  if (Array.isArray(pedido.trechos) && pedido.trechos.length > 1) {
+    const conferencia = conferirTrechosGravados(pedido.trechos, nomeCliente, snapshot.vigencia);
+    if (!conferencia.ok) return conferencia;
+    snapshot.trechos = conferencia.trechos;
+    snapshot.acionamento = conferencia.total;
+    snapshot.kmExtra = conferencia.trechos[0].kmExtra;
+    snapshot.horaExtra = conferencia.trechos[0].horaExtra;
+    snapshot.usouMinimo = conferencia.trechos.every((trecho) => trecho.usouMinimo);
+    linha.origin = conferencia.trechos[0].origem;
+    linha.destination = conferencia.trechos[conferencia.trechos.length - 1].destino;
+    linha.total_km = conferencia.km;
+    linha.total_hours = conferencia.horas;
+    linha.total_value = conferencia.total;
+  } else {
+    const avisoPiso = recusarPisoDaProposta({
+      cliente: nomeCliente,
+      origem,
+      vigencia: snapshot.vigencia,
+      acordada: snapshot.acordada,
+      acionamento: snapshot.acionamento,
+      kmExtra: snapshot.kmExtra,
+      horaExtra: snapshot.horaExtra
+    });
+    if (avisoPiso) return { ok: false, error: avisoPiso };
+  }
+  linha.contract_details = JSON.stringify(snapshot);
+  return { ok: true, snapshot, linha };
+}
+function normalizarLinhaHistorico(row) {
+  return {
+    id: String(row.id || ""),
+    client_id: row.client_id == null ? null : Number(row.client_id),
+    client_name: String(row.client_name || ""),
+    origin: String(row.origin || ""),
+    destination: String(row.destination || ""),
+    total_km: numero2(row.total_km),
+    total_hours: numero2(row.total_hours),
+    total_value: numero2(row.total_value),
+    created_at: row.created_at == null ? null : String(row.created_at),
+    created_by: String(row.created_by || ""),
+    status: row.status || "Enviada",
+    is_active: row.is_active == null ? null : Boolean(row.is_active),
+    converted_to_order_id: row.converted_to_order_id == null ? null : String(row.converted_to_order_id),
+    contract_details: row.contract_details == null ? null : String(row.contract_details)
+  };
+}
+var TEXTO_HISTORICO_VAZIO, TAMANHO_PAGINA_HISTORICO, JANELA_HISTORICO_VIGENCIA, KIND_PORTAL_COTACAO, TEXTO_ACEITE_OS;
+var init_historicoCotacoes = __esm({
+  "lib/portalCliente/historicoCotacoes.ts"() {
+    "use strict";
+    init_dateUtils();
+    init_tabela2027();
+    init_cotacao();
+    init_gestaoCotacao();
+    init_rotaCotacao();
+    init_trechosProposta();
+    TEXTO_HISTORICO_VAZIO = "Nenhuma cota\xE7\xE3o recente deste cliente.";
+    TAMANHO_PAGINA_HISTORICO = 10;
+    JANELA_HISTORICO_VIGENCIA = 100;
+    KIND_PORTAL_COTACAO = "PORTAL_COTACAO";
+    TEXTO_ACEITE_OS = "Concordo com as informa\xE7\xF5es acima para utiliza\xE7\xE3o em ordem de servi\xE7o.";
+  }
+});
+
+// lib/portalCliente/linkProposta.ts
+var linkProposta_exports = {};
+__export(linkProposta_exports, {
+  DIAS_LINK_PROPOSTA: () => DIAS_LINK_PROPOSTA,
+  MS_LINK_PROPOSTA: () => MS_LINK_PROPOSTA,
+  anexarLinkNoSnapshot: () => anexarLinkNoSnapshot,
+  caminhoLinkProposta: () => caminhoLinkProposta,
+  criarLinkPublico: () => criarLinkPublico,
+  dataLinkProposta: () => dataLinkProposta,
+  lerCaminhoLinkProposta: () => lerCaminhoLinkProposta,
+  linkAindaVale: () => linkAindaVale,
+  tokenDeBytes: () => tokenDeBytes,
+  tokensIguais: () => tokensIguais,
+  urlDoLinkPublico: () => urlDoLinkPublico,
+  vistaPublicaDaProposta: () => vistaPublicaDaProposta
+});
+function tokenDeBytes(bytes) {
+  return Array.from(bytes, (item) => item.toString(16).padStart(2, "0")).join("");
+}
+function criarLinkPublico(agora, aleatorio) {
+  if (aleatorio.length < 16) throw new Error("Token curto.");
+  return {
+    token: tokenDeBytes(aleatorio),
+    expiraEm: new Date(agora.getTime() + MS_LINK_PROPOSTA).toISOString()
+  };
+}
+function linkAindaVale(link, agora) {
+  if (!link || !/^[a-f0-9]{32,64}$/.test(link.token)) return false;
+  const expira = new Date(link.expiraEm);
+  return !Number.isNaN(expira.getTime()) && expira.getTime() > agora.getTime();
+}
+function tokensIguais(a, b) {
+  if (!a || a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+function caminhoLinkProposta(id, token) {
+  return `/proposta/v/${encodeURIComponent(id)}/${token}`;
+}
+function urlDoLinkPublico(bruto, origem) {
+  const texto5 = String(bruto || "").trim();
+  let url;
+  try {
+    url = new URL(texto5);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  if (!/\/proposta\/v\/[^/]+\/[a-f0-9]{32,64}\/?$/i.test(url.pathname)) return null;
+  if (origem) {
+    try {
+      if (url.host !== new URL(origem).host) return null;
+    } catch {
+      return null;
+    }
+  }
+  return url.toString();
+}
+function lerCaminhoLinkProposta(pathname) {
+  const achado = String(pathname || "").match(/\/proposta\/v\/([^/]+)\/([a-f0-9]{32,64})\/?$/i);
+  if (!achado) return null;
+  try {
+    return { id: decodeURIComponent(achado[1]), token: achado[2].toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+function dataLinkProposta(iso) {
+  const data = new Date(iso);
+  if (Number.isNaN(data.getTime())) return "";
+  return data.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
+}
+function anexarLinkNoSnapshot(bruto, link) {
+  if (!bruto) return null;
+  try {
+    const dados = JSON.parse(bruto);
+    if (!dados || dados.kind !== KIND_PORTAL_COTACAO) return null;
+    return JSON.stringify({ ...dados, linkPublico: { token: link.token, expiraEm: link.expiraEm } });
+  } catch {
+    return null;
+  }
+}
+function vistaPublicaDaProposta(linha, token, agora) {
+  let link = null;
+  try {
+    const dados = JSON.parse(String(linha.contract_details || ""));
+    if (dados?.linkPublico?.token && dados.linkPublico.expiraEm) link = dados.linkPublico;
+  } catch {
+    link = null;
+  }
+  if (!link || !tokensIguais(link.token, token.toLowerCase())) {
+    return { ok: false, status: 404, error: "Link inv\xE1lido ou vencido." };
+  }
+  if (!linkAindaVale(link, agora)) return { ok: false, status: 410, error: "Este link venceu. Pe\xE7a um novo." };
+  return {
+    ok: true,
+    cliente: String(linha.client_name || "").trim(),
+    expiraEm: link.expiraEm,
+    validade: dataLinkProposta(link.expiraEm),
+    proposta: propostaDoHistorico(linha)
+  };
+}
+var DIAS_LINK_PROPOSTA, MS_LINK_PROPOSTA;
+var init_linkProposta = __esm({
+  "lib/portalCliente/linkProposta.ts"() {
+    "use strict";
+    init_historicoCotacoes();
+    DIAS_LINK_PROPOSTA = 10;
+    MS_LINK_PROPOSTA = DIAS_LINK_PROPOSTA * 24 * 60 * 60 * 1e3;
+  }
+});
+
+// lib/portalCliente/cotacaoHttp.ts
+var cotacaoHttp_exports = {};
+__export(cotacaoHttp_exports, {
+  listarHistoricoCotacoes: () => listarHistoricoCotacoes,
+  listarTabelasCotacao: () => listarTabelasCotacao,
+  montarPropostaDoPedido: () => montarPropostaDoPedido,
+  propostaParaEmail: () => propostaParaEmail,
+  registrarCotacaoPortal: () => registrarCotacaoPortal,
+  rotuloDeOperacoes: () => rotuloDeOperacoes,
+  salvarPropostaPortal: () => salvarPropostaPortal,
+  textoDaProposta: () => textoDaProposta
+});
+async function rotuloDeOperacoes(sb) {
+  const { count, error } = await sb.from("missions").select("id", { count: "exact", head: true });
+  if (error || typeof count !== "number") return null;
+  return marcoDeOperacoes(count);
+}
+async function listarTabelasCotacao(sb, cliente) {
+  const nomes = [...new Set(
+    [cliente?.name, cliente?.trading_name].map((nome) => String(nome || "").trim()).filter(Boolean)
+  )];
+  if (!nomes.length) return { status: 503, corpo: { error: "Cliente do portal n\xE3o encontrado." } };
+  const { data, error } = await sb.from("client_price_tables").select("id, operation_type, activation_fee, franchise_hours, franchise_km, price_per_extra_km, price_per_extra_hour").or(nomes.map((nome) => consultaDoCliente(nome)).join(","));
+  if (error) return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel ler a tabela do cliente." } };
+  const tabelas = (data || []).map((row) => tabelaDeLinha(row)).filter((row) => row != null).sort((a, b) => a.operacao.localeCompare(b.operacao, "pt-BR"));
+  const operacoes = await rotuloDeOperacoes(sb);
+  return { status: 200, corpo: { tabelas, operacoes } };
+}
+function numero3(valor) {
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : 0;
+}
+async function tabelasDoCliente(sb, cliente) {
+  const lista = await listarTabelasCotacao(sb, cliente);
+  if ("error" in lista.corpo) return { error: lista.corpo.error, status: lista.status };
+  return lista.corpo.tabelas;
+}
+function montarPropostaDoPedido(tabelas, pedido, clienteNome = "") {
+  const regiao = String(pedido.regiao || "").trim();
+  const origem = String(pedido.origem || "").trim();
+  const destino = String(pedido.destino || "").trim();
+  const paradas = Array.isArray(pedido.paradas) ? pedido.paradas.map((item) => String(item || "")) : [];
+  const km = numero3(pedido.km);
+  const pedidoPronto = pedido;
+  const tarifaInformada = numero3(pedidoPronto.kmExtra);
+  const totalInformado = numero3(pedidoPronto.acionamento ?? pedidoPronto.valor);
+  if (tarifaInformada > 0 && totalInformado > 0 && regiao && origem && destino && km > 0) {
+    return {
+      acordada: false,
+      regiao,
+      origem,
+      destino,
+      paradas,
+      acionamento: totalInformado,
+      kmFranquia: numero3(pedidoPronto.kmFranquia) || 100,
+      horasFranquia: numero3(pedidoPronto.horas) || 3,
+      kmExtra: tarifaInformada,
+      horaExtra: numero3(pedidoPronto.horaExtra),
+      operacao: String(pedidoPronto.operacao || `${regiao} - ${origem}`).slice(0, 180),
+      kmRota: km,
+      duracaoMin: numero3(pedidoPronto.duracaoMin) || null,
+      vigencia: pedidoPronto.vigencia === "2026" || pedidoPronto.vigencia === "2027" ? pedidoPronto.vigencia : null
+    };
+  }
+  const tabelaRegiao = valoresDaRegiao(tabelas.filter((item) => item.regiao === regiao));
+  if (!regiao || !origem || !destino || !tabelaRegiao || km <= 0) return { error: "Faltam regi\xE3o, origem, destino ou a rota." };
+  const conta = contaVisivelDaCotacao({
+    cliente: clienteNome,
+    origem,
+    km,
+    versao: "2027",
+    linhas: tabelas.map((item) => ({
+      operation_type: item.operacao,
+      price_per_extra_km: item.kmExtra,
+      price_per_extra_hour: item.horaExtra
+    })),
+    tarifaKmFallback: tabelaRegiao.kmExtra,
+    horaExtraFallback: tabelaRegiao.horaExtra
+  });
+  return propostaDaConta({ tabelas, regiao, origem, destino, paradas, kmRota: km, conta, tabelaRegiao });
+}
+function textoDaProposta(proposta, operacoes) {
+  return cartaDaProposta(proposta, operacoes);
+}
+async function salvarPropostaPortal(sb, cliente, pedido) {
+  const tabelas = await tabelasDoCliente(sb, cliente);
+  if (!Array.isArray(tabelas)) return { status: tabelas.status, corpo: { error: tabelas.error } };
+  const proposta = montarPropostaDoPedido(tabelas, pedido, String(cliente?.name || cliente?.trading_name || ""));
+  if ("error" in proposta) return { status: 400, corpo: proposta };
+  if (proposta.acordada) return { status: 409, corpo: { error: "Essa rota j\xE1 est\xE1 acordada na tabela do cliente." } };
+  const regiao = valoresDaRegiao(tabelas.filter((item) => item.regiao === proposta.regiao));
+  const nomeCliente = String(cliente?.name || "").trim();
+  const { error } = await sb.from("client_price_tables").insert({
+    client: nomeCliente,
+    operation_type: proposta.operacao,
+    activation_fee: proposta.acionamento,
+    franchise_km: proposta.kmFranquia,
+    franchise_hours: proposta.horasFranquia,
+    price_per_extra_km: regiao?.kmExtra || 0,
+    price_per_extra_hour: regiao?.horaExtra || 0
+  });
+  if (error) return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel gravar a proposta na tabela do cliente." } };
+  return { status: 200, corpo: { ok: true, operacao: proposta.operacao } };
+}
+async function listarHistoricoCotacoes(sb, cliente, pagina = 0, vigencia) {
+  const idCliente = Number(cliente?.id);
+  if (!Number.isFinite(idCliente) || idCliente <= 0) return { status: 503, corpo: { error: "Cliente do portal n\xE3o encontrado." } };
+  const inicio = Math.max(0, Math.floor(Number(pagina) || 0)) * TAMANHO_PAGINA_HISTORICO;
+  const faixa = vigencia === "2026" || vigencia === "2027" ? { de: 0, ate: JANELA_HISTORICO_VIGENCIA - 1 } : { de: inicio, ate: inicio + TAMANHO_PAGINA_HISTORICO - 1 };
+  const { data, error } = await sb.from("quotes").select(COLUNAS_HISTORICO2).eq("client_id", idCliente).order("created_at", { ascending: false }).range(faixa.de, faixa.ate);
+  if (error) {
+    if (colunaRegionalAusente(error)) {
+      return { status: 200, corpo: { cotacoes: [], temMais: false, aviso: "O hist\xF3rico de cota\xE7\xF5es ainda n\xE3o est\xE1 dispon\xEDvel neste banco." } };
+    }
+    return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel ler o hist\xF3rico de cota\xE7\xF5es." } };
+  }
+  const lidas = (data || []).map((row) => normalizarLinhaHistorico(row)).filter((linha) => !cotacaoExcluida(linha));
+  const linhas = vigencia === "2026" || vigencia === "2027" ? lidas.filter((linha) => vigenciaDaCotacao(linha) === vigencia) : lidas;
+  const paginaLinhas = vigencia === "2026" || vigencia === "2027" ? linhas.slice(inicio, inicio + TAMANHO_PAGINA_HISTORICO) : linhas;
+  const temMais = vigencia === "2026" || vigencia === "2027" ? linhas.length > inicio + TAMANHO_PAGINA_HISTORICO : linhas.length === TAMANHO_PAGINA_HISTORICO;
+  return { status: 200, corpo: { cotacoes: paginaLinhas, temMais } };
+}
+async function registrarCotacaoPortal(sb, cliente, solicitante, pedido) {
+  const numero4 = await reservarNumeroCotacao(async (inicio, fim) => {
+    const { data: data2, error: error2 } = await sb.from("quotes").select("id, contract_details").order("created_at", { ascending: true }).range(inicio, fim);
+    if (error2) return null;
+    return { linhas: Array.isArray(data2) ? data2 : [] };
+  });
+  const registro = pedidoParaRegistro({ ...pedido, numero: numero4 }, cliente || {}, solicitante);
+  if (!registro.ok) return { status: 400, corpo: { error: registro.error } };
+  const { data, error } = await sb.from("quotes").insert(registro.linha).select("id, created_at").single();
+  if (error) {
+    if (colunaRegionalAusente(error)) return { status: 503, corpo: { error: "O hist\xF3rico de cota\xE7\xF5es ainda n\xE3o est\xE1 dispon\xEDvel neste banco." } };
+    return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel gravar a cota\xE7\xE3o no hist\xF3rico." } };
+  }
+  return { status: 201, corpo: { ok: true, id: String(data?.id || ""), created_at: data?.created_at ? String(data.created_at) : null, numero: numero4 } };
+}
+async function propostaParaEmail(sb, cliente, pedido) {
+  const destinos = montarDestinatariosEnvio({
+    selecionados: String(pedido.para || ""),
+    autor: String(pedido.autor || "")
+  });
+  if (!destinos.ok) return { status: 400, corpo: { error: destinos.error } };
+  const tabelas = await tabelasDoCliente(sb, cliente);
+  if (!Array.isArray(tabelas)) return { status: tabelas.status, corpo: { error: tabelas.error } };
+  const proposta = montarPropostaDoPedido(tabelas, pedido, String(cliente?.name || cliente?.trading_name || ""));
+  if ("error" in proposta) return { status: 400, corpo: proposta };
+  const operacoes = await rotuloDeOperacoes(sb);
+  const { urlDoLinkPublico: urlDoLinkPublico2 } = await Promise.resolve().then(() => (init_linkProposta(), linkProposta_exports));
+  const link = urlDoLinkPublico2(pedido.link);
+  return {
+    status: 200,
+    corpo: {
+      ok: true,
+      para: destinos.para,
+      copias: destinos.copias,
+      assunto: `Proposta Grupo TM SEG \u2014 ${proposta.operacao}`,
+      texto: textoDaProposta(proposta, operacoes),
+      html: htmlDaProposta(proposta, operacoes, link)
+    }
+  };
+}
+var COLUNAS_HISTORICO2;
+var init_cotacaoHttp = __esm({
+  "lib/portalCliente/cotacaoHttp.ts"() {
+    "use strict";
+    init_tabela2027();
+    init_apresentacao();
+    init_cotacao();
+    init_historicoCotacoes();
+    init_gestaoCotacao();
+    COLUNAS_HISTORICO2 = "id, client_id, client_name, origin, destination, total_km, total_hours, total_value, created_at, created_by, status, is_active, converted_to_order_id, contract_details";
+  }
+});
+
+// lib/portalCliente/fotosMedicao.ts
+function urlDeEvidencia(valor) {
+  const texto5 = String(valor || "").trim();
+  if (!/^https:\/\//i.test(texto5)) return null;
+  try {
+    const url = new URL(texto5);
+    if (!url.pathname.includes("/mission-evidence/")) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+function lerDetalhe(valor) {
+  if (!valor) return {};
+  if (typeof valor === "object") return valor;
+  try {
+    const lido = JSON.parse(String(valor));
+    return lido && typeof lido === "object" ? lido : {};
+  } catch {
+    return {};
+  }
+}
+function fotoOrigemDosLogs(linhas) {
+  const ordenadas = [...linhas].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  for (const linha of ordenadas) {
+    const detalhe2 = lerDetalhe(linha.details);
+    if (detalhe2.source !== "evidence_start_alert") continue;
+    const url = urlDeEvidencia(detalhe2.publicUrl);
+    if (url) return url;
+  }
+  return null;
+}
+function montarFotosEvento(entrada) {
+  return [
+    { rotulo: "Origem", url: urlDeEvidencia(entrada.origem) },
+    { rotulo: "Fim", url: urlDeEvidencia(entrada.fim) },
+    { rotulo: "Km inicial", url: urlDeEvidencia(entrada.kmInicial) },
+    { rotulo: "Km final", url: urlDeEvidencia(entrada.kmFinal) }
+  ];
+}
+var init_fotosMedicao = __esm({
+  "lib/portalCliente/fotosMedicao.ts"() {
+    "use strict";
+  }
+});
+
+// lib/portalCliente/fotosMedicaoHttp.ts
+var fotosMedicaoHttp_exports = {};
+__export(fotosMedicaoHttp_exports, {
+  lerFotosEvento: () => lerFotosEvento
+});
+async function lerFotosEvento(input) {
+  const os = String(input.os || "").replace(/\D/g, "");
+  if (!/^\d+$/.test(os)) return { status: 400, corpo: { error: "OS inv\xE1lida." } };
+  const nomes = [input.cliente?.name, input.cliente?.trading_name].map((nome) => String(nome || "").trim().toUpperCase()).filter(Boolean);
+  if (!nomes.length) return { status: 503, corpo: { error: "Cliente do portal n\xE3o encontrado." } };
+  const missionId = `GTM-${os}`;
+  const { data: mission, error } = await input.sb.from("missions").select("id, client, end_trip_evidence_url, end_km_evidence_url").eq("id", missionId).maybeSingle();
+  if (error) return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel conferir a OS." } };
+  const dono = String(mission?.client || "").trim().toUpperCase();
+  if (!mission || !nomes.includes(dono)) return { status: 404, corpo: { error: "OS n\xE3o encontrada neste portal." } };
+  let origem = null;
+  const logs = await input.sb.from("system_logs").select("details, created_at").eq("entity", "MissionEvidence").eq("entity_id", missionId).eq("action_type", "evidence_upload").order("created_at", { ascending: false }).limit(20);
+  if (!logs.error) origem = fotoOrigemDosLogs(logs.data || []);
+  return {
+    status: 200,
+    corpo: {
+      fotos: montarFotosEvento({
+        origem,
+        fim: mission.end_trip_evidence_url,
+        kmFinal: mission.end_km_evidence_url
+      })
+    }
+  };
+}
+var init_fotosMedicaoHttp = __esm({
+  "lib/portalCliente/fotosMedicaoHttp.ts"() {
+    "use strict";
+    init_fotosMedicao();
+  }
+});
+
+// lib/portalCliente/medicaoAnexo.ts
+function anexoMedicao(input) {
+  const base64 = String(input.base64 || "").trim();
+  if (!base64) return { ok: true, vazio: true };
+  const tipo = String(input.tipo || "").trim().toLowerCase();
+  const extensao = TIPOS_ANEXO[tipo];
+  if (!extensao) return { ok: false, erro: "Anexe PDF ou imagem (PNG, JPG ou WEBP)." };
+  const limpo = base64.replace(/^data:[^;]+;base64,/, "");
+  let bytes;
+  try {
+    bytes = Buffer.from(limpo, "base64");
+  } catch {
+    return { ok: false, erro: "N\xE3o foi poss\xEDvel ler o anexo." };
+  }
+  if (bytes.length === 0) return { ok: false, erro: "O anexo est\xE1 vazio." };
+  if (bytes.length > ANEXO_MEDICAO_MAX_BYTES) return { ok: false, erro: "O anexo passa de 3 MB." };
+  const nomeBruto = String(input.nome || `anexo.${extensao}`).replace(/[^\w.\- ]+/g, "").trim() || `anexo.${extensao}`;
+  return { ok: true, nome: nomeBruto.slice(0, 120), tipo, bytes };
+}
+var ANEXO_MEDICAO_MAX_BYTES, TIPOS_ANEXO;
+var init_medicaoAnexo = __esm({
+  "lib/portalCliente/medicaoAnexo.ts"() {
+    "use strict";
+    ANEXO_MEDICAO_MAX_BYTES = 3e6;
+    TIPOS_ANEXO = {
+      "application/pdf": "pdf",
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp"
+    };
+  }
+});
+
+// lib/portalCliente/medicaoHttp.ts
+var medicaoHttp_exports = {};
+__export(medicaoHttp_exports, {
+  detalhesDaMedicao: () => detalhesDaMedicao,
+  gravarMedicaoPortal: () => gravarMedicaoPortal
+});
+function detalhe(rotulo, valor) {
+  if (valor == null || valor === "") return `${rotulo}: \u2014`;
+  return `${rotulo}: ${valor}`;
+}
+function detalhesDaMedicao(linha) {
+  const item = linha || {};
+  return [
+    detalhe("Servi\xE7o", item.servico),
+    detalhe("Data in\xEDcio", item.dataInicio),
+    detalhe("Data fim", item.dataFim),
+    detalhe("Local", item.local),
+    detalhe("Franquia hora", item.franquiaHora),
+    detalhe("Franquia km", item.franquiaKm),
+    detalhe("Km in\xEDcio", item.kmInicio),
+    detalhe("Km fim", item.kmFim),
+    detalhe("Km rodado", item.kmRodado),
+    detalhe("Km excedente", item.kmExcedente),
+    detalhe("Horas trabalhadas", item.hrsTrabalhada),
+    detalhe("Horas excedentes", item.hrsExcedente),
+    detalhe("R$ horas excedentes", item.valorHrsExcedente),
+    detalhe("R$ km excedente", item.valorKmExcedente),
+    detalhe("R$ acionamento", item.valorAcionamento),
+    detalhe("Ped\xE1gio", item.pedagio),
+    detalhe("Tarifa km", item.tarifaKm),
+    detalhe("Tarifa hora", item.tarifaHora),
+    detalhe("R$ total", item.valorTotal)
+  ];
+}
+async function gravarMedicaoPortal(input) {
+  const os = String(input.os || "").replace(/\D/g, "");
+  if (!/^\d+$/.test(os)) return { status: 400, corpo: { error: "OS inv\xE1lida." } };
+  const nomeCliente = String(input.cliente?.trading_name || input.cliente?.name || "").trim();
+  if (!nomeCliente) return { status: 503, corpo: { error: "Cliente do portal n\xE3o encontrado." } };
+  const missionId = `GTM-${os}`;
+  const { data: mission, error: missionError } = await input.sb.from("missions").select("id, client, billing_approved").eq("id", missionId).maybeSingle();
+  if (missionError) return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel conferir a OS." } };
+  const dono = String(mission?.client || "").trim().toUpperCase();
+  const nomes = [input.cliente?.name, input.cliente?.trading_name].map((nome) => String(nome || "").trim().toUpperCase()).filter(Boolean);
+  if (!mission || !nomes.includes(dono)) {
+    return { status: 404, corpo: { error: "OS n\xE3o encontrada neste portal." } };
+  }
+  const agora = (/* @__PURE__ */ new Date()).toISOString();
+  const acao = String(input.acao || input.body.acao || "").trim();
+  if (acao === "reverter") {
+    if (input.equipeInterna !== true) {
+      return { status: 403, corpo: { error: "S\xF3 o administrador interno pode voltar uma aprova\xE7\xE3o para verificar." } };
+    }
+    const { data: atual, error: leitura } = await input.sb.from("portal_medicao_cliente").select("status").eq("mission_id", missionId).maybeSingle();
+    if (leitura) return { status: 503, corpo: { error: "N\xE3o foi poss\xEDvel ler a aprova\xE7\xE3o." } };
+    if (atual?.status !== "aprovado") {
+      return { status: 409, corpo: { error: "Esta OS n\xE3o est\xE1 aprovada." } };
+    }
+    const { error: error2 } = await input.sb.from("portal_medicao_cliente").delete().eq("mission_id", missionId);
+    if (error2) return { status: 503, corpo: { error: "N\xE3o foi poss\xEDvel voltar a OS para verificar." } };
+    return { status: 200, corpo: { ok: true, os, medicao: null } };
+  }
+  if (mission.billing_approved !== true) {
+    return { status: 409, corpo: { error: "Esta OS est\xE1 aguardando valida\xE7\xE3o. A an\xE1lise fica dispon\xEDvel quando o valor for liberado." } };
+  }
+  if (acao === "aprovar") {
+    if (input.body.deAcordo !== true) {
+      return { status: 400, corpo: { error: "Analise a medi\xE7\xE3o e marque De acordo para aprovar." } };
+    }
+    const { error: error2 } = await input.sb.from("portal_medicao_cliente").upsert({
+      mission_id: missionId,
+      client_id: input.cliente?.id ?? null,
+      status: "aprovado",
+      aprovado_em: agora,
+      aprovado_por: input.autor
+    }, { onConflict: "mission_id" });
+    if (error2) return { status: 503, corpo: { error: "N\xE3o foi poss\xEDvel gravar a aprova\xE7\xE3o. A tabela da medi\xE7\xE3o ainda n\xE3o est\xE1 no banco." } };
+    const medicao = { status: "aprovado", itens: [], justificativa: null, modificadoEm: null };
+    return { status: 200, corpo: { ok: true, os, medicao } };
+  }
+  if (acao !== "conferir") return { status: 400, corpo: { error: "A\xE7\xE3o inv\xE1lida." } };
+  const pedido = validarConferir({ itens: input.body.itens, justificativa: input.body.justificativa });
+  if (!pedido.ok) return { status: 400, corpo: { error: pedido.erro } };
+  const anexo = anexoMedicao({ nome: input.body.anexoNome, tipo: input.body.anexoTipo, base64: input.body.anexoBase64 });
+  if (!anexo.ok) return { status: 400, corpo: { error: anexo.erro } };
+  let anexoCaminho = null;
+  let anexoNome = null;
+  let arquivo = null;
+  if (!("vazio" in anexo)) {
+    anexoNome = anexo.nome;
+    anexoCaminho = `portal-medicao/${missionId}/${Date.now()}-${anexo.nome.replace(/\s+/g, "_")}`;
+    const envio = await input.sb.storage.from("mission-evidence").upload(anexoCaminho, anexo.bytes, { contentType: anexo.tipo, upsert: false });
+    if (envio?.error) return { status: 500, corpo: { error: "N\xE3o foi poss\xEDvel guardar o anexo." } };
+    arquivo = { filename: anexo.nome, content: anexo.bytes, contentType: anexo.tipo };
+  }
+  const { error } = await input.sb.from("portal_medicao_cliente").upsert({
+    mission_id: missionId,
+    client_id: input.cliente?.id ?? null,
+    status: "conferir",
+    itens: pedido.itens,
+    justificativa: pedido.justificativa,
+    anexo_caminho: anexoCaminho,
+    anexo_nome: anexoNome,
+    pedido_em: agora,
+    pedido_por: input.autor,
+    aprovado_em: null,
+    aprovado_por: null,
+    modificado_em: null
+  }, { onConflict: "mission_id" });
+  if (error) return { status: 503, corpo: { error: "N\xE3o foi poss\xEDvel gravar a confer\xEAncia. A tabela da medi\xE7\xE3o ainda n\xE3o est\xE1 no banco." } };
+  let emailEnviado = false;
+  try {
+    const texto5 = textoEmailConferir({
+      os,
+      cliente: nomeCliente,
+      autor: input.autor,
+      itens: pedido.itens,
+      justificativa: pedido.justificativa,
+      detalhes: detalhesDaMedicao(input.body.detalhes)
+    });
+    if (input.enviarEmail) await input.enviarEmail(texto5, arquivo);
+    emailEnviado = Boolean(input.enviarEmail);
+  } catch {
+    emailEnviado = false;
+  }
+  return {
+    status: 200,
+    corpo: {
+      ok: true,
+      os,
+      emailEnviado,
+      destinatario: EMAIL_FINANCEIRO_MEDICAO,
+      medicao: medicaoDaLinha({ status: "conferir", itens: pedido.itens, justificativa: pedido.justificativa, modificado_em: null })
+    }
+  };
+}
+var init_medicaoHttp = __esm({
+  "lib/portalCliente/medicaoHttp.ts"() {
+    "use strict";
+    init_medicaoAnexo();
+    init_medicao();
   }
 });
 
@@ -3627,482 +6954,15 @@ __export(httpHandler_exports, {
 module.exports = __toCommonJS(httpHandler_exports);
 var import_node_async_hooks = require("node:async_hooks");
 init_missionSnapshot();
-
-// lib/supabaseAdmin.ts
-var import_supabase_js = require("@supabase/supabase-js");
-
-// lib/supabaseDefaults.ts
-var TMSEG_SUPABASE_PROJECT_REF = "ajhmmjuewdsukecaimik";
-var DEFAULT_SUPABASE_URL = `https://${TMSEG_SUPABASE_PROJECT_REF}.supabase.co`;
-var DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk";
-
-// lib/supabasePublicEnv.ts
-function cleanEnv(value) {
-  if (value == null) return "";
-  return String(value).trim().replace(/^["']|["']$/g, "");
-}
-function isValidHttpUrl(url) {
-  return /^https?:\/\/.+/i.test(url);
-}
-function extractSupabaseProjectRef(url) {
-  const match = cleanEnv(url).match(/^https?:\/\/([^.]+)\.supabase\.co/i);
-  return match?.[1]?.toLowerCase() ?? null;
-}
-function normalizeSupabaseProjectUrl(url) {
-  const cleaned = cleanEnv(url);
-  if (!cleaned) return "";
-  return cleaned.replace(/\/rest\/v1\/?$/i, "").replace(/\/+$/, "");
-}
-function decodeJwtProjectRef(key) {
-  try {
-    const part = cleanEnv(key).split(".")[1];
-    if (!part) return null;
-    const json = Buffer.from(part, "base64url").toString("utf8");
-    const payload = JSON.parse(json);
-    return payload.ref?.toLowerCase() ?? null;
-  } catch {
-    return null;
-  }
-}
-function isTmSegSupabaseUrl(url) {
-  return extractSupabaseProjectRef(url) === TMSEG_SUPABASE_PROJECT_REF;
-}
-function isTmSegSupabaseAnonKey(key, expectedUrl) {
-  const cleaned = cleanEnv(key);
-  if (!cleaned) return false;
-  const keyRef = decodeJwtProjectRef(cleaned);
-  if (keyRef && keyRef !== TMSEG_SUPABASE_PROJECT_REF) return false;
-  if (expectedUrl) {
-    const urlRef = extractSupabaseProjectRef(expectedUrl);
-    if (urlRef && keyRef && urlRef !== keyRef) return false;
-  }
-  return true;
-}
-
-// lib/supabaseAdmin.ts
-var warnedMissingServiceRole = false;
-var warnedAnonKeyAsService = false;
-var warnedAnonFallback = false;
-var warnedForeignProject = false;
-function warnForeignProjectOnce() {
-  if (warnedForeignProject) return;
-  warnedForeignProject = true;
-  console.warn(
-    "[Supabase] Variaveis de outro projeto ignoradas \u2014 usando projeto TM SEG (ajhmmjuewdsukecaimik). Remova na Vercel envs de integracao Supabase incorretas ou alinhe SUPABASE_URL/VITE_SUPABASE_URL."
-  );
-}
-function pickServerUrl() {
-  const candidates = [
-    process.env.SUPABASE_URL,
-    process.env.VITE_SUPABASE_URL,
-    process.env.TMSEG_SUPABASE_URL
-  ];
-  for (const candidate of candidates) {
-    const value = normalizeSupabaseProjectUrl(candidate);
-    if (isValidHttpUrl(value) && isTmSegSupabaseUrl(value)) return value;
-    if (isValidHttpUrl(value)) warnForeignProjectOnce();
-  }
-  return DEFAULT_SUPABASE_URL;
-}
-function pickServerAnonKey(url) {
-  const candidates = [
-    process.env.SUPABASE_ANON_KEY,
-    process.env.VITE_SUPABASE_ANON_KEY,
-    process.env.TMSEG_SUPABASE_ANON_KEY
-  ];
-  for (const candidate of candidates) {
-    const value = cleanEnv(candidate);
-    if (isTmSegSupabaseAnonKey(value, url)) return value;
-    if (value) warnForeignProjectOnce();
-  }
-  return DEFAULT_SUPABASE_ANON_KEY;
-}
-function decodeJwtRole(key) {
-  try {
-    const part = key.split(".")[1];
-    if (!part) return null;
-    const json = Buffer.from(part, "base64url").toString("utf8");
-    const payload = JSON.parse(json);
-    return payload.role ?? null;
-  } catch {
-    return null;
-  }
-}
-function isTmSegServiceRoleKey(key, expectedRef = TMSEG_SUPABASE_PROJECT_REF) {
-  const cleaned = cleanEnv(key);
-  if (!cleaned) return { ok: false, reason: "empty" };
-  if (cleaned.startsWith("sb_")) return { ok: false, reason: "not_jwt" };
-  const ref = decodeJwtProjectRef(cleaned);
-  const role = decodeJwtRole(cleaned);
-  if (!ref || !role) return { ok: false, reason: "not_jwt" };
-  if (ref !== expectedRef) return { ok: false, reason: "foreign_project" };
-  if (role !== "service_role") return { ok: false, reason: "anon_role" };
-  return { ok: true };
-}
-function getSupabaseUrl() {
-  return pickServerUrl();
-}
-function getSupabaseAnonKey() {
-  return pickServerAnonKey(getSupabaseUrl());
-}
-function getSupabaseServiceRoleKey() {
-  const candidates = [
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    process.env.SUPABASE_SERVICE_KEY,
-    process.env.TMSEG_SUPABASE_SERVICE_ROLE_KEY
-  ];
-  const expectedRef = extractSupabaseProjectRef(getSupabaseUrl()) || TMSEG_SUPABASE_PROJECT_REF;
-  for (const candidate of candidates) {
-    const key = cleanEnv(candidate);
-    if (!key) continue;
-    const check = isTmSegServiceRoleKey(key, expectedRef);
-    if (!check.ok) {
-      if (check.reason === "foreign_project") warnForeignProjectOnce();
-      if (check.reason === "anon_role" && !warnedAnonKeyAsService) {
-        warnedAnonKeyAsService = true;
-        console.error(
-          '[Supabase] SUPABASE_SERVICE_KEY cont\xE9m a chave ANON, n\xE3o service_role. Substitua pelo valor "service_role" LEGACY (eyJ...) no .env (Settings \u2192 API no Supabase).'
-        );
-      }
-      if (check.reason === "not_jwt" && !warnedAnonKeyAsService) {
-        warnedAnonKeyAsService = true;
-        console.error(
-          '[Supabase] SUPABASE_SERVICE_ROLE_KEY n\xE3o \xE9 JWT service_role LEGACY. Use a chave "service_role (LEGACY)" (eyJ...), n\xE3o sb_secret_/sb_publishable_.'
-        );
-      }
-      continue;
-    }
-    return key;
-  }
-  if (!warnedMissingServiceRole) {
-    warnedMissingServiceRole = true;
-    console.warn(
-      '[Supabase] SUPABASE_SERVICE_ROLE_KEY n\xE3o definida para o projeto TM SEG. Copie a chave "service_role" em Supabase \u2192 Settings \u2192 API e adicione na Vercel.'
-    );
-  }
-  return "";
-}
-function getSupabaseServerKey() {
-  const service = getSupabaseServiceRoleKey();
-  if (service) return service;
-  const anon = getSupabaseAnonKey();
-  if (anon && !warnedAnonFallback) {
-    warnedAnonFallback = true;
-    console.warn("[Supabase] Servidor operando com chave ANON \u2014 algumas rotas podem falhar por RLS.");
-  }
-  return anon;
-}
-function createSupabaseAdminClient() {
-  const url = getSupabaseUrl();
-  const key = getSupabaseServerKey();
-  if (!url || !key) return null;
-  return (0, import_supabase_js.createClient)(url, key);
-}
-
-// lib/cevaPortal/portalServidor.ts
-var PORTAL_CEVA = {
-  rotulo: "CEVA",
-  clienteNome: "CEVA LOGISTICS LTDA",
-  tokenPrefix: "ceva-portal",
-  headerSessao: "x-ceva-portal",
-  logPrefix: "ceva-portal",
-  caminho: "/ceva",
-  exigeLogin: true,
-  tabelas: {
-    usuarios: "ceva_portal_usuarios",
-    osCampos: "ceva_portal_os_campos",
-    catalogo: "ceva_portal_catalogo",
-    pgrHistorico: "ceva_portal_pgr_historico",
-    solicitacoes: "ceva_escolta_solicitacoes"
-  }
-};
-var PORTAL_IBL = {
-  rotulo: "IBL",
-  clienteNome: "INTERMODAL BRASIL LOGISTICA S.A.",
-  clienteBusca: "INTERMODAL",
-  tokenPrefix: "ibl-portal",
-  headerSessao: "x-ibl-portal",
-  logPrefix: "ibl-portal",
-  caminho: "/ibl",
-  exigeLogin: true,
-  tabelas: {
-    usuarios: "ibl_portal_usuarios",
-    osCampos: "ibl_portal_os_campos",
-    catalogo: "ibl_portal_catalogo",
-    pgrHistorico: "ibl_portal_pgr_historico",
-    solicitacoes: "ibl_escolta_solicitacoes"
-  }
-};
-var TABELAS_PORTAL_GENERICO = {
-  usuarios: "portal_cliente_usuarios",
-  osCampos: "portal_cliente_os_campos",
-  catalogo: "portal_cliente_catalogo",
-  pgrHistorico: "portal_cliente_pgr_historico",
-  solicitacoes: "portal_cliente_solicitacoes"
-};
-function portalGenerico(cliente) {
-  const slug = String(cliente.portal_slug || "").trim().toLowerCase();
-  const id = Number(cliente.id);
-  const nome = String(cliente.name || "").trim();
-  if (!slug || !nome || !Number.isFinite(id)) return null;
-  const fantasia = String(cliente.trading_name || "").trim();
-  return {
-    rotulo: fantasia || nome,
-    clienteNome: nome,
-    clientId: id,
-    tokenPrefix: `portal-${slug}`,
-    headerSessao: "x-portal-cliente",
-    logPrefix: `portal-${slug}`,
-    caminho: `/${slug}`,
-    exigeLogin: true,
-    tabelas: { ...TABELAS_PORTAL_GENERICO }
-  };
-}
-
-// lib/cevaPortal/acesso.ts
-var import_crypto = require("crypto");
-
-// lib/cevaPortal/regrasAcesso.ts
-var DIAS_TROCA_SENHA_PORTAL = 30;
-var PERMISSAO_SO_PORTAL = "portal-only";
-function senhaPortalVencida(senhaAlteradaEm, agora = /* @__PURE__ */ new Date(), dias = DIAS_TROCA_SENHA_PORTAL) {
-  if (!senhaAlteradaEm) return false;
-  const quando = new Date(senhaAlteradaEm).getTime();
-  if (!Number.isFinite(quando)) return true;
-  return agora.getTime() - quando >= dias * 24 * 60 * 60 * 1e3;
-}
-function deveTrocarSenhaPortal(input) {
-  if (input.trocarSenha === true) return true;
-  return senhaPortalVencida(input.senhaAlteradaEm, input.agora ?? /* @__PURE__ */ new Date());
-}
-function permissoesDoPortal(caminho, perfil) {
-  const rota = caminho.startsWith("/") ? caminho : `/${caminho}`;
-  return [PERMISSAO_SO_PORTAL, `portal:${rota}`, `portal-perfil:${perfil}`];
-}
-function usuarioSoPortal(perms) {
-  return Array.isArray(perms) && perms.includes(PERMISSAO_SO_PORTAL);
-}
-function caminhoPortalDasPermissoes(perms) {
-  if (!Array.isArray(perms)) return null;
-  const marca = perms.find((item) => typeof item === "string" && item.startsWith("portal:/"));
-  return typeof marca === "string" ? marca.slice("portal:".length) : null;
-}
-function mensagemAcessoPortal(input) {
-  const senha = input.manteveSenha ? "A senha continua a mesma que voc\xEA j\xE1 usa neste portal." : `\u{1F511} *Senha:* ${input.senha || ""}`;
-  const aviso = input.manteveSenha ? "A senha precisa ser trocada a cada 30 dias dentro do portal." : "\u26A0\uFE0F No primeiro acesso, voc\xEA dever\xE1 trocar sua senha. Depois, a troca \xE9 obrigat\xF3ria a cada 30 dias.";
-  return [
-    `\u{1F510} *GRUPO TMSEG \u2014 Acesso ao portal ${input.rotulo}*`,
-    "",
-    `Ol\xE1 *${input.nome}*,`,
-    "",
-    "Seu acesso mostra somente as informa\xE7\xF5es deste cliente.",
-    "",
-    `\u{1F4E7} *Login:* ${input.email}`,
-    senha,
-    `\u{1F310} *Link:* ${input.link}`,
-    "",
-    aviso,
-    "",
-    "_Grupo TMSEG \u2014 Gest\xE3o Operacional_"
-  ].join("\n");
-}
-function decidirPrimeiroAcesso(_input) {
-  return {
-    ok: false,
-    error: "O acesso \xE9 criado no Cadastro de Usu\xE1rios do cliente, com a op\xE7\xE3o Acesso ao portal. A senha chega nessa libera\xE7\xE3o e troca no primeiro acesso."
-  };
-}
-
-// lib/cevaPortal/acesso.ts
-function podeCadastrarPessoa(perfil) {
-  return perfil === "administrador";
-}
-function emailDeAcesso(value) {
-  const email = String(value ?? "").trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) return null;
-  return email;
-}
-function nomeDeAcesso(value) {
-  const nome = String(value ?? "").replace(/[\u0000-\u001F\u007F]/g, "").trim().replace(/\s+/g, " ");
-  if (nome.length < 2 || nome.length > 120) return null;
-  return nome;
-}
-function perfilDeAcesso(value) {
-  const perfil = String(value ?? "").trim().toLowerCase();
-  return perfil === "administrador" || perfil === "analista" ? perfil : null;
-}
-function validarSenha(senha) {
-  if (senha.length < 8) return "A senha precisa ter pelo menos 8 caracteres.";
-  if (senha.length > 72) return "A senha passou do limite.";
-  return null;
-}
-function hashSenha(senha) {
-  const salt = (0, import_crypto.randomBytes)(16).toString("hex");
-  const hash = (0, import_crypto.scryptSync)(senha, salt, 32).toString("hex");
-  return `scrypt$${salt}$${hash}`;
-}
-function senhaConfere(senha, armazenada) {
-  const partes = String(armazenada || "").split("$");
-  if (partes.length !== 3 || partes[0] !== "scrypt" || !partes[1] || !partes[2]) return false;
-  const calculado = (0, import_crypto.scryptSync)(senha, partes[1], 32);
-  const salvo = Buffer.from(partes[2], "hex");
-  if (calculado.length !== salvo.length) return false;
-  return (0, import_crypto.timingSafeEqual)(calculado, salvo);
-}
-var ALFABETO_SENHA = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-function gerarSenhaTemporaria() {
-  const bytes = (0, import_crypto.randomBytes)(12);
-  return [...bytes].map((byte) => ALFABETO_SENHA[byte % ALFABETO_SENHA.length]).join("");
-}
-
-// lib/gestorFiscal/ponteAuth/hashSenha.ts
-var import_node_crypto = require("node:crypto");
-var PARAMETROS_SCRYPT_V1 = { versao: 1, N: 16384, r: 8, p: 1, keylen: 32 };
-function identificarFormatoHash(gravada) {
-  const salva = gravada == null ? "" : String(gravada);
-  if (!salva) return null;
-  if (salva.startsWith("$2a$") || salva.startsWith("$2b$") || salva.startsWith("$2y$") || salva.startsWith("$argon2")) {
-    return "outro";
-  }
-  const partes = salva.split("$");
-  if (partes[0] !== "scrypt") return salva.includes("$") ? "outro" : null;
-  if (partes.length === 3 && hex(partes[1]) && hex(partes[2])) return "scrypt_portal";
-  if (partes.length === 8 && partes[1] === "v1" && parametrosConhecidos(partes) && hex(partes[6]) && hex(partes[7])) {
-    return "scrypt_v1";
-  }
-  return "outro";
-}
-function gerarHashVersionado(senha) {
-  const sal = (0, import_node_crypto.randomBytes)(16).toString("hex");
-  const hash = (0, import_node_crypto.scryptSync)(senha, sal, PARAMETROS_SCRYPT_V1.keylen, {
-    N: PARAMETROS_SCRYPT_V1.N,
-    r: PARAMETROS_SCRYPT_V1.r,
-    p: PARAMETROS_SCRYPT_V1.p
-  }).toString("hex");
-  return `scrypt$v1$${PARAMETROS_SCRYPT_V1.N}$${PARAMETROS_SCRYPT_V1.r}$${PARAMETROS_SCRYPT_V1.p}$${PARAMETROS_SCRYPT_V1.keylen}$${sal}$${hash}`;
-}
-function verificarSenhaArmazenada(senha, armazenada) {
-  const limpa = String(senha ?? "").trim();
-  if (!limpa) return false;
-  const formato = identificarFormatoHash(armazenada);
-  if (formato === "scrypt_portal") return portalConfere(limpa, String(armazenada));
-  if (formato === "scrypt_v1") return v1Confere(limpa, String(armazenada));
-  return false;
-}
-function portalConfere(senha, armazenada) {
-  const partes = armazenada.split("$");
-  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[1], 32);
-  const salvo = Buffer.from(partes[2], "hex");
-  if (calculado.length !== salvo.length) return false;
-  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
-}
-function v1Confere(senha, armazenada) {
-  const partes = armazenada.split("$");
-  const calculado = (0, import_node_crypto.scryptSync)(senha, partes[6], PARAMETROS_SCRYPT_V1.keylen, {
-    N: PARAMETROS_SCRYPT_V1.N,
-    r: PARAMETROS_SCRYPT_V1.r,
-    p: PARAMETROS_SCRYPT_V1.p
-  });
-  const salvo = Buffer.from(partes[7], "hex");
-  if (calculado.length !== salvo.length) return false;
-  return (0, import_node_crypto.timingSafeEqual)(calculado, salvo);
-}
-function parametrosConhecidos(partes) {
-  return Number(partes[2]) === PARAMETROS_SCRYPT_V1.N && Number(partes[3]) === PARAMETROS_SCRYPT_V1.r && Number(partes[4]) === PARAMETROS_SCRYPT_V1.p && Number(partes[5]) === PARAMETROS_SCRYPT_V1.keylen;
-}
-function hex(valor) {
-  return valor.length > 0 && valor.length % 2 === 0 && /^[0-9a-f]+$/i.test(valor);
-}
-
-// lib/sessao/gravarSenha.ts
-function colunaAusente(mensagem, coluna) {
-  return new RegExp(coluna, "i").test(mensagem) && /does not exist|n[aã]o existe|schema cache|could not find/i.test(mensagem);
-}
-async function gravarSenhaNoServidor(cliente, usuarioId, senha, extras = {}) {
-  const hash = gerarHashVersionado(senha);
-  const base = {
-    password_hash: hash,
-    password: null,
-    ...extras
-  };
-  let resultado = await cliente.from("system_users").update(base).eq("id", usuarioId);
-  if (resultado.error && colunaAusente(resultado.error.message || "", "session_epoch")) {
-    const semEpoch = { ...base };
-    delete semEpoch.session_epoch;
-    resultado = await cliente.from("system_users").update(semEpoch).eq("id", usuarioId);
-  }
-  if (!resultado.error) return "hash";
-  const mensagem = resultado.error.message || "";
-  if (!colunaAusente(mensagem, "password_hash")) {
-    throw new Error("Falha ao gravar a senha.");
-  }
-  const legado = { password: senha };
-  for (const [chave, valor] of Object.entries(extras)) {
-    if (chave === "session_epoch" || chave === "force_password_change") continue;
-    legado[chave] = valor;
-  }
-  const texto4 = await cliente.from("system_users").update(legado).eq("id", usuarioId);
-  if (texto4.error) throw new Error("Falha ao gravar a senha.");
-  return "texto";
-}
-
-// lib/cevaPortal/cadastroSistema.ts
-function colunaSenhaAlteradaAusente(error) {
-  if (!error) return false;
-  const message = String(error.message || "").toLowerCase();
-  return error.code === "42703" || error.code === "PGRST204" || message.includes("senha_alterada_em");
-}
-async function vincularCadastroCliente(sb, input) {
-  const { data: existente, error: leitura } = await sb.from("system_users").select("id, client_id, user_type, provider_id").ilike("email", input.email).maybeSingle();
-  if (leitura) return { ok: false, error: "N\xE3o foi poss\xEDvel consultar o cadastro de usu\xE1rios." };
-  const permissoes = permissoesDoPortal(input.caminho, input.perfil);
-  const status = input.ativo ? "Ativo" : "Inativo";
-  if (existente) {
-    const tipo = String(existente.user_type || "");
-    if (tipo && tipo !== "client") {
-      return { ok: false, error: "Este e-mail j\xE1 pertence a um usu\xE1rio interno. Use outro e-mail no portal." };
-    }
-    if (existente.provider_id) {
-      return { ok: false, error: "Este e-mail j\xE1 pertence a um fornecedor. Use outro e-mail no portal." };
-    }
-    if (existente.client_id && String(existente.client_id) !== String(input.clientId)) {
-      return { ok: false, error: "Este e-mail j\xE1 est\xE1 vinculado a outro cliente." };
-    }
-    const { error: error2 } = await sb.from("system_users").update({
-      name: input.nome,
-      client_id: input.clientId,
-      user_type: "client",
-      status,
-      permissions: permissoes,
-      force_password_change: false
-    }).eq("id", existente.id);
-    if (error2) return { ok: false, error: "N\xE3o foi poss\xEDvel atualizar o cadastro de usu\xE1rios." };
-    return { ok: true, id: String(existente.id) };
-  }
-  const payload = {
-    name: input.nome,
-    email: input.email,
-    client_id: input.clientId,
-    user_type: "client",
-    status,
-    force_password_change: false,
-    permissions: permissoes
-  };
-  const { data, error } = await sb.from("system_users").insert(payload).select("id").single();
-  if (error || !data?.id) return { ok: false, error: "N\xE3o foi poss\xEDvel criar o usu\xE1rio no cadastro do cliente." };
-  if (input.senhaTemporaria) {
-    await gravarSenhaNoServidor(sb, String(data.id), input.senhaTemporaria, { force_password_change: false });
-  }
-  return { ok: true, id: String(data.id) };
-}
-async function alinharStatusCadastroPortal(sb, email, ativo) {
-  const { data } = await sb.from("system_users").select("id, permissions, user_type").ilike("email", email).maybeSingle();
-  if (!data || String(data.user_type || "") !== "client" || !usuarioSoPortal(data.permissions)) return;
-  await sb.from("system_users").update({ status: ativo ? "Ativo" : "Inativo" }).eq("id", data.id);
-}
+init_supabaseAdmin();
+init_portalServidor();
+init_acesso();
+init_regrasAcesso();
+init_cadastroSistema();
 
 // lib/gestorFiscal/ponteAuth/formatoSenha.ts
 var import_node_crypto2 = require("node:crypto");
+init_hashSenha();
 function classificarSenhaGravada(gravada) {
   const salva = gravada == null ? "" : String(gravada);
   if (!salva) return "vazia";
@@ -4131,6 +6991,7 @@ function conferirSenhaExistente(informada, gravada) {
 }
 
 // lib/cevaPortal/equipeInterna.ts
+init_regrasAcesso();
 function ehEquipeInterna(usuario) {
   if (!usuario || usuario.id == null || String(usuario.id) === "") return false;
   if (String(usuario.status || "") !== "Ativo") return false;
@@ -4253,18 +7114,20 @@ function usuarioPublico(row) {
     name: String(row.nome || "").trim(),
     email: String(row.email || "").trim().toLowerCase(),
     perfil: row.perfil,
-    trocarSenha: row.trocarSenha === true
+    trocarSenha: row.trocarSenha === true,
+    trocarEmail: row.trocarEmail === true
   };
 }
 function sessaoDe(row) {
   const perfil = perfilDeAcesso(row.perfil);
   if (!perfil) return null;
-  const trocarSenha = deveTrocarSenhaPortal({
+  const trocarEmail = row.trocar_email === true;
+  const trocarSenha = trocarEmail || deveTrocarSenhaPortal({
     trocarSenha: row.trocar_senha === true,
     senhaAlteradaEm: row.senha_alterada_em
   });
-  const user = usuarioPublico({ ...row, perfil, trocarSenha });
-  return { ...user, perfil, trocarSenha };
+  const user = usuarioPublico({ ...row, perfil, trocarSenha, trocarEmail });
+  return { ...user, perfil, trocarSenha, trocarEmail };
 }
 async function lerUsuarioPortal(sb, filtro, comSenha) {
   const base = comSenha ? "id, nome, email, senha_hash, perfil, status, trocar_senha" : "id, nome, email, perfil, status, trocar_senha";
@@ -4275,7 +7138,12 @@ async function lerUsuarioPortal(sb, filtro, comSenha) {
     if (cfg().clientId != null) query = query.eq("client_id", cfg().clientId);
     return query.maybeSingle();
   };
-  const completo = await consulta(`${base}, senha_alterada_em`);
+  const completo = await consulta(`${base}, senha_alterada_em, trocar_email`);
+  if (!completo.error) return completo;
+  if (/trocar_email/i.test(String(completo.error.message || ""))) {
+    const semEmail = await consulta(`${base}, senha_alterada_em`);
+    if (!colunaSenhaAlteradaAusente(semEmail.error)) return semEmail;
+  }
   if (!colunaSenhaAlteradaAusente(completo.error)) return completo;
   return consulta(base);
 }
@@ -4586,9 +7454,9 @@ function resolveOp(req) {
     anotarQuery(req, { id: tail });
     return "pessoas-item";
   }
-  if (head === "pgr" && tail) {
+  if ((head === "pgr" || head === "fotos") && tail) {
     anotarQuery(req, { os: tail });
-    return "pgr";
+    return head;
   }
   return head;
 }
@@ -4599,6 +7467,11 @@ async function handleClientePortalHttp(req, res) {
   if (op === "marca-site" && method === "POST") {
     const { responderMarcaSite: responderMarcaSite2 } = await Promise.resolve().then(() => (init_marcaSiteHttp(), marcaSiteHttp_exports));
     await responderMarcaSite2(req, res);
+    return;
+  }
+  if (op === "provisionar" && method === "POST") {
+    const { responderProvisionar: responderProvisionar2 } = await Promise.resolve().then(() => (init_provisionarHttp(), provisionarHttp_exports));
+    await responderProvisionar2(req, res);
     return;
   }
   const slug = String(req.headers?.["x-portal-slug"] || req.query?.slug || "").trim().toLowerCase();
@@ -4790,28 +7663,64 @@ async function executarPortalHttp(req, res) {
         res.status(503).json({ error: "Portal indispon\xEDvel." });
         return;
       }
-      const { data: user } = await sb.from(cfg().tabelas.usuarios).select("id, senha_hash").eq("id", session.id).maybeSingle();
+      let leituraUsuario = await sb.from(cfg().tabelas.usuarios).select("id, email, senha_hash, trocar_email").eq("id", session.id).maybeSingle();
+      if (leituraUsuario.error && /trocar_email/i.test(String(leituraUsuario.error.message || ""))) {
+        leituraUsuario = await sb.from(cfg().tabelas.usuarios).select("id, email, senha_hash").eq("id", session.id).maybeSingle();
+      }
+      const user = leituraUsuario.data;
       if (!user || !senhaConfere(senhaAtual, user.senha_hash)) {
         res.status(401).json({ error: "A senha atual n\xE3o confere." });
         return;
+      }
+      const precisaEmail = user.trocar_email === true;
+      const emailNovo = precisaEmail ? emailDeAcesso(body?.emailNovo) : null;
+      if (precisaEmail && (!emailNovo || emailNovo === String(user.email || "").trim().toLowerCase())) {
+        res.status(400).json({ error: "Informe o e-mail definitivo, diferente do e-mail provis\xF3rio." });
+        return;
+      }
+      if (emailNovo) {
+        const ocupadoPortal = await sb.from(cfg().tabelas.usuarios).select("id").eq("email", emailNovo).neq("id", session.id).limit(1);
+        const ocupadoSistema = await sb.from("system_users").select("id").ilike("email", emailNovo).limit(1);
+        if (ocupadoPortal.error || ocupadoSistema.error) {
+          res.status(500).json({ error: "N\xE3o foi poss\xEDvel conferir o e-mail." });
+          return;
+        }
+        if ((ocupadoPortal.data || []).length > 0 || (ocupadoSistema.data || []).length > 0) {
+          res.status(409).json({ error: "Este e-mail j\xE1 est\xE1 em uso." });
+          return;
+        }
       }
       const agora = (/* @__PURE__ */ new Date()).toISOString();
       const troca = {
         senha_hash: hashSenha(senhaNova),
         trocar_senha: false,
+        trocar_email: false,
         senha_alterada_em: agora,
         atualizado_em: agora
       };
+      if (emailNovo) troca.email = emailNovo;
       let { error } = await sb.from(cfg().tabelas.usuarios).update(troca).eq("id", session.id);
-      if (colunaSenhaAlteradaAusente(error)) {
-        const { senha_alterada_em: _ignorado, ...semData } = troca;
-        ({ error } = await sb.from(cfg().tabelas.usuarios).update(semData).eq("id", session.id));
+      if (error && /trocar_email|senha_alterada_em|schema cache|does not exist|Could not find/i.test(String(error.message || ""))) {
+        const semColuna = { ...troca };
+        delete semColuna.trocar_email;
+        delete semColuna.senha_alterada_em;
+        ({ error } = await sb.from(cfg().tabelas.usuarios).update(semColuna).eq("id", session.id));
       }
       if (error) {
         res.status(500).json({ error: "N\xE3o foi poss\xEDvel trocar a senha." });
         return;
       }
-      res.status(200).json({ user: { ...session, trocarSenha: false } });
+      if (emailNovo) {
+        const cliente = await carregarClienteDoPortal(sb);
+        let sistema = sb.from("system_users").update({ email: emailNovo, name: session.name }).ilike("email", String(user.email || ""));
+        if (cliente?.id != null) sistema = sistema.eq("client_id", cliente.id);
+        const gravouSistema = await sistema.eq("user_type", "client");
+        if (gravouSistema.error) {
+          res.status(500).json({ error: "A senha mudou, mas o e-mail n\xE3o entrou no Cadastro de Usu\xE1rio." });
+          return;
+        }
+      }
+      res.status(200).json({ user: { ...session, email: emailNovo || session.email, trocarSenha: false, trocarEmail: false } });
       return;
     }
     if (op === "pessoas" && method === "GET") {
@@ -4939,8 +7848,88 @@ async function executarPortalHttp(req, res) {
       }
       const id = Number(req.query?.id || req.params?.id);
       const status = body?.status === "inativo" ? "inativo" : body?.status === "ativo" ? "ativo" : "";
-      if (!Number.isInteger(id) || !status) {
+      const querEditar = !status && (body?.nome != null || body?.email != null || body?.perfil != null);
+      if (!Number.isInteger(id) || !status && !querEditar) {
         res.status(400).json({ error: "Informe a pessoa e a situa\xE7\xE3o." });
+        return;
+      }
+      if (querEditar) {
+        const nome = nomeDeAcesso(body?.nome);
+        const email = emailDeAcesso(body?.email);
+        const perfil = perfilDeAcesso(body?.perfil);
+        if (!nome) {
+          res.status(400).json({ error: "Informe o nome da pessoa." });
+          return;
+        }
+        if (!email) {
+          res.status(400).json({ error: "Informe um e-mail v\xE1lido." });
+          return;
+        }
+        if (!perfil) {
+          res.status(400).json({ error: "Escolha administrador ou analista." });
+          return;
+        }
+        const sb2 = createSupabaseAdminClient();
+        if (!sb2) {
+          res.status(503).json({ error: "Portal indispon\xEDvel." });
+          return;
+        }
+        let leituraPessoa2 = sb2.from(cfg().tabelas.usuarios).select("id, nome, email, perfil, status").eq("id", id);
+        if (cfg().clientId != null) leituraPessoa2 = leituraPessoa2.eq("client_id", cfg().clientId);
+        const { data: atual2, error: leitura2 } = await leituraPessoa2.maybeSingle();
+        if (leitura2) {
+          res.status(500).json({ error: "N\xE3o foi poss\xEDvel alterar a pessoa." });
+          return;
+        }
+        if (!atual2) {
+          res.status(404).json({ error: "Pessoa n\xE3o encontrada." });
+          return;
+        }
+        const saiDeAdmin = atual2.perfil === "administrador" && atual2.status !== "inativo" && perfil !== "administrador";
+        if (saiDeAdmin && !await outroAdministradorVivo(sb2, id)) {
+          res.status(409).json({ error: "O portal precisa manter pelo menos um administrador." });
+          return;
+        }
+        let outroEmail = sb2.from(cfg().tabelas.usuarios).select("id").ilike("email", email).neq("id", id);
+        if (cfg().clientId != null) outroEmail = outroEmail.eq("client_id", cfg().clientId);
+        const duplicado = await outroEmail.maybeSingle();
+        if (duplicado.error) {
+          res.status(500).json({ error: "N\xE3o foi poss\xEDvel alterar a pessoa." });
+          return;
+        }
+        if (duplicado.data) {
+          res.status(409).json({ error: "Este e-mail j\xE1 est\xE1 cadastrado." });
+          return;
+        }
+        const emailAntigo = String(atual2.email || "");
+        const ficha = await sb2.from("system_users").select("id, permissions, user_type").ilike("email", emailAntigo).maybeSingle();
+        const fichaPortal = ficha.data && String(ficha.data.user_type || "") === "client" && usuarioSoPortal(ficha.data.permissions) ? ficha.data : null;
+        if (fichaPortal && email !== emailAntigo) {
+          const ocupado = await sb2.from("system_users").select("id").ilike("email", email).neq("id", fichaPortal.id).maybeSingle();
+          if (ocupado.data) {
+            res.status(409).json({ error: "Este e-mail j\xE1 est\xE1 cadastrado." });
+            return;
+          }
+        }
+        let atualizaPessoa2 = sb2.from(cfg().tabelas.usuarios).update({ nome, email, perfil, atualizado_em: (/* @__PURE__ */ new Date()).toISOString() }).eq("id", id);
+        if (cfg().clientId != null) atualizaPessoa2 = atualizaPessoa2.eq("client_id", cfg().clientId);
+        const { data: data2, error: error2 } = await atualizaPessoa2.select("id, nome, email, perfil, status").single();
+        if (error2 || !data2) {
+          res.status(500).json({ error: "N\xE3o foi poss\xEDvel alterar a pessoa." });
+          return;
+        }
+        if (fichaPortal) {
+          const { error: erroFicha } = await sb2.from("system_users").update({
+            name: nome,
+            email,
+            permissions: permissoesDoPortal(cfg().caminho, perfil)
+          }).eq("id", fichaPortal.id);
+          if (erroFicha) {
+            res.status(500).json({ error: "A pessoa mudou no portal, mas o cadastro do sistema n\xE3o acompanhou." });
+            return;
+          }
+        }
+        res.status(200).json({ pessoa: data2 });
         return;
       }
       const sb = createSupabaseAdminClient();
@@ -4976,6 +7965,50 @@ async function executarPortalHttp(req, res) {
       res.status(200).json({ pessoa: data });
       return;
     }
+    if (op === "pessoas-item" && method === "DELETE") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      if (bloquearPessoasSemLogin(res, session)) return;
+      if (!podeCadastrarPessoa(session.perfil)) {
+        res.status(403).json({ error: "O analista n\xE3o cadastra pessoas." });
+        return;
+      }
+      const id = Number(req.query?.id || req.params?.id);
+      if (!Number.isInteger(id)) {
+        res.status(400).json({ error: "Informe a pessoa." });
+        return;
+      }
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Portal indispon\xEDvel." });
+        return;
+      }
+      let leituraPessoa = sb.from(cfg().tabelas.usuarios).select("id, email, perfil").eq("id", id);
+      if (cfg().clientId != null) leituraPessoa = leituraPessoa.eq("client_id", cfg().clientId);
+      const { data: atual, error: leitura } = await leituraPessoa.maybeSingle();
+      if (leitura) {
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel remover a pessoa." });
+        return;
+      }
+      if (!atual) {
+        res.status(404).json({ error: "Pessoa n\xE3o encontrada." });
+        return;
+      }
+      if (!podeRemoverPessoa(atual.perfil)) {
+        res.status(403).json({ error: "Administrador n\xE3o remove administrador." });
+        return;
+      }
+      let apaga = sb.from(cfg().tabelas.usuarios).delete().eq("id", id);
+      if (cfg().clientId != null) apaga = apaga.eq("client_id", cfg().clientId);
+      const { error } = await apaga;
+      if (error) {
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel remover a pessoa." });
+        return;
+      }
+      if (atual.email) await alinharStatusCadastroPortal(sb, String(atual.email), false);
+      res.status(200).json({ ok: true });
+      return;
+    }
     if (op === "ao-vivo" && method === "GET") {
       const session = await portalSession(req);
       if (!exigirUso(res, session)) return;
@@ -5003,7 +8036,7 @@ async function executarPortalHttp(req, res) {
         try {
           campos = await loadCamposCliente(sb, linhas.map((row) => String(row.id || "")));
         } catch (error2) {
-          if (cfg().exigeLogin || !acessoNegado(error2)) throw error2;
+          if (!tabelaAusenteNoBanco(error2) && (cfg().exigeLogin || !acessoNegado(error2))) throw error2;
         }
         const missoes = ordenarMissoesAoVivo2(linhas.flatMap((row) => {
           if (!segueNoAoVivo2(row)) return [];
@@ -5087,7 +8120,7 @@ async function executarPortalHttp(req, res) {
             loadCatalogo(sb)
           ]);
         } catch (error) {
-          if (cfg().exigeLogin || !acessoNegado(error)) throw error;
+          if (!tabelaAusenteNoBanco(error) && (cfg().exigeLogin || !acessoNegado(error))) throw error;
           console.error(`[${cfg().logPrefix}] campos do cliente sem leitura; o boletim segue s\xF3 com as OS`);
           campos = /* @__PURE__ */ new Map();
           catalogo = {
@@ -5108,10 +8141,31 @@ async function executarPortalHttp(req, res) {
           const linha = item;
           linha.telefone = String(mission?.driver_phone || "").trim() || null;
           linha.identificacao = String(mission?.reference_number || "").trim() || null;
+          linha.origem = String(mission?.origin || "").trim() || null;
+          linha.destino = String(mission?.destination || "").trim() || null;
           if (!item.placa && salvo?.placa) item.placa = String(salvo.placa);
           if (!item.local && mission?.origin && mission?.destination) {
             item.local = `${mission.origin} x ${mission.destination}`;
           }
+        }
+        try {
+          const { medicaoDaLinha: medicaoDaLinha2 } = await Promise.resolve().then(() => (init_medicao(), medicao_exports));
+          const medicoes = /* @__PURE__ */ new Map();
+          for (const part of chunks(missionIds, 200)) {
+            const { data, error } = await sb.from("portal_medicao_cliente").select("mission_id, status, itens, justificativa, modificado_em").in("mission_id", part);
+            if (error) {
+              const codigo = String(error.code || "");
+              if (codigo === "42P01" || codigo === "PGRST205" || codigo === "PGRST204") break;
+              throw error;
+            }
+            for (const row of data || []) medicoes.set(String(row.mission_id), row);
+          }
+          for (const item of items) {
+            const medicao = medicaoDaLinha2(medicoes.get(`GTM-${item.os}`));
+            if (medicao) item.medicao = medicao;
+          }
+        } catch (error) {
+          console.error(`[${cfg().logPrefix}] medicao`, error instanceof Error ? error.message : error);
         }
         res.status(200).json({
           periodo: "2026-01-01",
@@ -5162,19 +8216,19 @@ async function executarPortalHttp(req, res) {
       }
       try {
         if (campo === "atendimentoPgr") {
-          const texto4 = textoPgr2(valor);
-          const atual = await gravarColuna(sb, missionId, "atendimentoPgr", texto4 || null);
+          const texto5 = textoPgr2(valor);
+          const atual = await gravarColuna(sb, missionId, "atendimentoPgr", texto5 || null);
           const anterior = atual?.atendimento_pgr ?? null;
-          if ((anterior || "") !== texto4) {
+          if ((anterior || "") !== texto5) {
             const { error: histError } = await sb.from(cfg().tabelas.pgrHistorico).insert(comDono({
               mission_id: missionId,
-              valor: texto4,
+              valor: texto5,
               valor_anterior: anterior,
               alterado_por: session?.name || `Portal ${cfg().rotulo}`
             }));
             if (histError) throw histError;
           }
-          res.status(200).json({ valor: texto4 || null });
+          res.status(200).json({ valor: texto5 || null });
           return;
         }
         if (!ehCampoFiltro2(campo)) {
@@ -5378,7 +8432,27 @@ async function executarPortalHttp(req, res) {
               const status = String(row.status || "").trim() || "Conclu\xEDda";
               return [{ os, status }];
             });
-            res.status(200).json({ atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(), items });
+            let resposta = items;
+            try {
+              const { medicaoDaLinha: medicaoDaLinha2 } = await Promise.resolve().then(() => (init_medicao(), medicao_exports));
+              const medicoes = /* @__PURE__ */ new Map();
+              for (const part of chunks(items.map((item) => `GTM-${item.os}`), 200)) {
+                const leitura = await sb.from("portal_medicao_cliente").select("mission_id, status, itens, justificativa, modificado_em").in("mission_id", part);
+                if (leitura.error) {
+                  const codigo = String(leitura.error.code || "");
+                  if (codigo === "42P01" || codigo === "PGRST205" || codigo === "PGRST204") break;
+                  throw leitura.error;
+                }
+                for (const row of leitura.data || []) {
+                  const medicao = medicaoDaLinha2(row);
+                  if (medicao) medicoes.set(String(row.mission_id), medicao);
+                }
+              }
+              resposta = items.map((item) => ({ ...item, medicao: medicoes.get(`GTM-${item.os}`) || null }));
+            } catch (error2) {
+              console.error(`[${cfg().logPrefix}] medicao`, error2 instanceof Error ? error2.message : error2);
+            }
+            res.status(200).json({ atualizadoEm: (/* @__PURE__ */ new Date()).toISOString(), items: resposta });
             return;
           }
         }
@@ -5471,6 +8545,7 @@ async function executarPortalHttp(req, res) {
         const { emailsDaSolicitacao: emailsDaSolicitacao2 } = await Promise.resolve().then(() => (init_pedido(), pedido_exports));
         const criadas = [];
         let incompleto = false;
+        let ultimaFalha = null;
         for (let copia = 0; copia < copias.value; copia += 1) {
           try {
             const criado = await registrarSolicitacaoPortal2(sb, cfg(), draft.value, {
@@ -5480,20 +8555,28 @@ async function executarPortalHttp(req, res) {
             criadas.push(criado.os);
           } catch (error) {
             incompleto = true;
-            console.error(`[${cfg().logPrefix}] solicita\xE7\xE3o`, error instanceof Error ? error.message : error);
+            ultimaFalha = error;
+            const { registrarFalhaSolicitacao: registrarFalhaSolicitacao2 } = await Promise.resolve().then(() => (init_erroRegistro(), erroRegistro_exports));
+            registrarFalhaSolicitacao2(cfg().logPrefix, error, body);
             break;
           }
         }
         if (criadas.length === 0) {
-          res.status(500).json({ error: "N\xE3o foi poss\xEDvel registrar a solicita\xE7\xE3o." });
+          const { corpoErroSolicitacao: corpoErroSolicitacao2 } = await Promise.resolve().then(() => (init_erroRegistro(), erroRegistro_exports));
+          res.status(500).json(corpoErroSolicitacao2(ultimaFalha));
           return;
         }
-        const emailEnviado = await enviarEmailSolicitacao2({
-          destinatarios: emailsDaSolicitacao2(cliente.operational_email),
-          os: criadas.join(", "),
-          cliente: nomeCliente,
-          pedido: draft.value
-        });
+        let emailEnviado = false;
+        try {
+          emailEnviado = await enviarEmailSolicitacao2({
+            destinatarios: emailsDaSolicitacao2(cliente.operational_email),
+            os: criadas.join(", "),
+            cliente: nomeCliente,
+            pedido: draft.value
+          });
+        } catch (error) {
+          console.error(`[${cfg().logPrefix}] e-mail da solicita\xE7\xE3o`, error instanceof Error ? error.message : error);
+        }
         res.status(201).json({
           os: criadas[0],
           oss: criadas,
@@ -5503,9 +8586,169 @@ async function executarPortalHttp(req, res) {
           status: "Solicitada"
         });
       } catch (error) {
+        const { registrarFalhaSolicitacao: registrarFalhaSolicitacao2, corpoErroSolicitacao: corpoErroSolicitacao2 } = await Promise.resolve().then(() => (init_erroRegistro(), erroRegistro_exports));
+        registrarFalhaSolicitacao2(cfg().logPrefix, error, body);
+        res.status(500).json(corpoErroSolicitacao2(error));
+      }
+      return;
+    }
+    if (op === "cotacao" && method === "GET") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Cota\xE7\xE3o indispon\xEDvel." });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { listarTabelasCotacao: listarTabelasCotacao2, listarHistoricoCotacoes: listarHistoricoCotacoes2 } = await Promise.resolve().then(() => (init_cotacaoHttp(), cotacaoHttp_exports));
+        if (String(req.query?.lista || "") === "historico") {
+          const pagina = Number(req.query?.pagina);
+          const vigencia = String(req.query?.vigencia || "");
+          const historico = await listarHistoricoCotacoes2(
+            sb,
+            cliente,
+            Number.isFinite(pagina) ? pagina : 0,
+            vigencia === "2026" || vigencia === "2027" ? vigencia : null
+          );
+          res.status(historico.status).json(historico.corpo);
+          return;
+        }
+        const resultado = await listarTabelasCotacao2(sb, cliente);
+        res.status(resultado.status).json(resultado.corpo);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] cotacao`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel carregar a cota\xE7\xE3o." });
+      }
+      return;
+    }
+    if (op === "cotacao" && method === "POST") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Cota\xE7\xE3o indispon\xEDvel." });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { salvarPropostaPortal: salvarPropostaPortal2, propostaParaEmail: propostaParaEmail2, registrarCotacaoPortal: registrarCotacaoPortal2 } = await Promise.resolve().then(() => (init_cotacaoHttp(), cotacaoHttp_exports));
+        if (String(body?.acao || "") === "registrar") {
+          const gravado2 = await registrarCotacaoPortal2(sb, cliente, { name: session.name, email: session.email }, body || {});
+          res.status(gravado2.status).json(gravado2.corpo);
+          return;
+        }
+        if (String(body?.acao || "") === "email") {
+          const { urlDoLinkPublico: urlDoLinkPublico2 } = await Promise.resolve().then(() => (init_linkProposta(), linkProposta_exports));
+          const origemLink = String(req.headers?.origin || req.headers?.referer || "");
+          const link = urlDoLinkPublico2(body?.link, origemLink || null);
+          const preparado = await propostaParaEmail2(sb, cliente, { ...body || {}, autor: session.email, link });
+          if (preparado.status !== 200 || !("ok" in preparado.corpo)) {
+            res.status(preparado.status).json(preparado.corpo);
+            return;
+          }
+          try {
+            const { pdfAnexoAceito: pdfAnexoAceito2 } = await Promise.resolve().then(() => (init_gestaoCotacao(), gestaoCotacao_exports));
+            const { nomeAnexoPdf: nomeAnexoPdf2 } = await Promise.resolve().then(() => (init_historicoCotacoes(), historicoCotacoes_exports));
+            const anexo = pdfAnexoAceito2(String(body?.pdf || ""));
+            if (!anexo.ok && !link) {
+              res.status(400).json({ error: anexo.error });
+              return;
+            }
+            const { sendMail: sendMail2, SMTP_FROM: SMTP_FROM2 } = await Promise.resolve().then(() => (init_smtp(), smtp_exports));
+            await sendMail2({
+              from: SMTP_FROM2,
+              to: preparado.corpo.para,
+              cc: preparado.corpo.copias.length ? preparado.corpo.copias : void 0,
+              subject: preparado.corpo.assunto,
+              text: link ? `${preparado.corpo.texto}
+
+Acessar Proposta Comercial: ${link}` : preparado.corpo.texto,
+              html: preparado.corpo.html,
+              attachments: anexo.ok ? [{
+                filename: nomeAnexoPdf2(body?.nomePdf, {
+                  origem: String(body?.origem || ""),
+                  destino: String(body?.destino || ""),
+                  numero: body?.numero,
+                  cliente: cliente?.name || cliente?.trading_name || ""
+                }),
+                content: Buffer.from(anexo.base64, "base64"),
+                contentType: "application/pdf"
+              }] : void 0
+            });
+            res.status(200).json({ ok: true, enviado: true, para: preparado.corpo.para, copias: preparado.corpo.copias });
+          } catch (error) {
+            console.error(`[${cfg().logPrefix}] cotacao email`, error instanceof Error ? error.message : error);
+            res.status(200).json({ ok: true, enviado: false, aviso: "O e-mail n\xE3o saiu agora. A proposta continua dispon\xEDvel para o PDF." });
+          }
+          return;
+        }
+        const gravado = await salvarPropostaPortal2(sb, cliente, body || {});
+        res.status(gravado.status).json(gravado.corpo);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] cotacao`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel concluir a proposta." });
+      }
+      return;
+    }
+    if (op === "fotos" && method === "GET") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Fotos indispon\xEDveis." });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { lerFotosEvento: lerFotosEvento2 } = await Promise.resolve().then(() => (init_fotosMedicaoHttp(), fotosMedicaoHttp_exports));
+        const endereco = String(req.originalUrl || req.url || "");
+        const osNoCaminho = endereco.match(/\/fotos\/(\d+)/);
+        const resultado = await lerFotosEvento2({ sb, os: String(req.query?.os || osNoCaminho?.[1] || ""), cliente });
+        res.status(resultado.status).json(resultado.corpo);
+      } catch (error) {
+        console.error(`[${cfg().logPrefix}] fotos`, error instanceof Error ? error.message : error);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel carregar as fotos." });
+      }
+      return;
+    }
+    if (op === "medicao" && method === "POST") {
+      const session = await portalSession(req);
+      if (!exigirUso(res, session)) return;
+      const sb = createSupabaseAdminClient();
+      if (!sb) {
+        res.status(503).json({ error: "Medi\xE7\xE3o indispon\xEDvel." });
+        return;
+      }
+      try {
+        const cliente = await carregarClienteDoPortal(sb);
+        const { gravarMedicaoPortal: gravarMedicaoPortal2 } = await Promise.resolve().then(() => (init_medicaoHttp(), medicaoHttp_exports));
+        const { sendMail: sendMail2, SMTP_FROM: SMTP_FROM2 } = await Promise.resolve().then(() => (init_smtp(), smtp_exports));
+        const { EMAIL_FINANCEIRO_MEDICAO: EMAIL_FINANCEIRO_MEDICAO2 } = await Promise.resolve().then(() => (init_medicao(), medicao_exports));
+        const resultado = await gravarMedicaoPortal2({
+          sb,
+          os: String(body?.os || ""),
+          cliente,
+          autor: session.name || session.email,
+          acao: String(body?.acao || ""),
+          equipeInterna: session.equipeInterna === true,
+          body: body || {},
+          enviarEmail: async (texto5, anexo) => {
+            await sendMail2({
+              from: SMTP_FROM2,
+              to: EMAIL_FINANCEIRO_MEDICAO2,
+              subject: `Conferir medi\xE7\xE3o GTM-${String(body?.os || "").replace(/\D/g, "")} \u2014 ${cliente?.trading_name || cliente?.name || cfg().rotulo}`,
+              text: texto5,
+              attachments: anexo ? [anexo] : void 0
+            });
+          }
+        });
+        res.status(resultado.status).json(resultado.corpo);
+      } catch (error) {
         const message = error instanceof Error ? error.message : "falha";
-        console.error(`[${cfg().logPrefix}] solicita\xE7\xE3o`, message);
-        res.status(500).json({ error: "N\xE3o foi poss\xEDvel registrar a solicita\xE7\xE3o." });
+        console.error(`[${cfg().logPrefix}] medicao`, message);
+        res.status(500).json({ error: "N\xE3o foi poss\xEDvel gravar a medi\xE7\xE3o." });
       }
       return;
     }

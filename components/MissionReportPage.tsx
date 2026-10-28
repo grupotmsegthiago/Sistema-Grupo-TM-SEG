@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Mission, MissionStatus } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
+import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { useNotification } from '../lib/NotificationContext';
 import {
   Loader2, FileBarChart, Download, RefreshCw, Filter, List, Link2,
@@ -408,8 +409,12 @@ const MissionReportPage: React.FC = () => {
   const uniqueClients = useMemo(() => [...new Set(allMissions.map(m => m.client).filter(Boolean))].sort(), [allMissions]);
   const uniqueProviders = useMemo(() => [...new Set(allMissions.map(m => m.provider).filter(Boolean))].sort(), [allMissions]);
 
-  const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
-  const fmtTime = (d: string | undefined) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '-';
+  const fmtDate = (d: string | undefined) => {
+    if (!d) return '-';
+    const texto = formatDateBR(d);
+    return texto === '—' ? '-' : texto;
+  };
+  const fmtTime = (d: string | undefined) => d ? formatTimeBR(d, '-') : '-';
   const fmtMoney = (v: number) => v ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
 
   const statusBg = (s: string) => {

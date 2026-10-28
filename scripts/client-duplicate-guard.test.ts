@@ -3,14 +3,19 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   acharClienteMesmoDocumento,
+  acharConflitoRaizCnpj,
+  cadastroExigeTravaRaiz,
+  carregarLinhasDocumentoCliente,
   clienteNaCarteiraComercial,
   clienteStatusAtivo,
   comercialIdDoUsuarioLogado,
   deduparClientesPorDocumento,
   digitosDocumentoCliente,
   documentoCorrespondeBusca,
+  mensagemTitularidadeRaizCnpj,
   montarFiltroOrCarteiraComercial,
   perfilEhComercialRole,
+  raizCnpj,
 } from '../lib/clientDuplicateGuard.ts';
 
 test('normaliza CNPJ/CPF só com dígitos', () => {
@@ -26,6 +31,56 @@ test('detecta duplicata ignorando formatação e o próprio id', () => {
   assert.equal(acharClienteMesmoDocumento(rows, '03.020.839/0001-80', 118)?.id, 117);
   assert.equal(acharClienteMesmoDocumento(rows, '03.020.839/0001-80', 117)?.id, 118);
   assert.equal(acharClienteMesmoDocumento(rows, '00.000.000/0001-00', null), null);
+});
+
+test('raiz do CNPJ são os 8 primeiros dígitos; CPF não tem raiz', () => {
+  assert.equal(raizCnpj('03.020.839/0001-80'), '03020839');
+  assert.equal(raizCnpj('03020839000261'), '03020839');
+  assert.equal(raizCnpj('190.792.598-88'), null);
+  assert.equal(raizCnpj('03020839'), null);
+});
+
+test('filial de outro comercial bloqueia; a mesma carteira e o próprio id passam', () => {
+  const rows = [
+    { id: 10, name: 'MATRIZ', cnpj: '03.020.839/0001-80', status: 'Ativo', responsavel_comercial_id: 'comercial-a' },
+    { id: 11, name: 'FILIAL INATIVA', cnpj: '03020839000261', status: 'Inativo', responsavel_comercial_id: 'comercial-b' },
+    { id: 12, name: 'SEM DONO', cnpj: '03.020.839/0003-42', status: 'Ativo', responsavel_comercial_id: null },
+  ];
+  const conflito = acharConflitoRaizCnpj(rows, '03.020.839/0004-23', 'comercial-c', null);
+  assert.equal(conflito?.id, 10);
+  assert.match(mensagemTitularidadeRaizCnpj(conflito!, 'Miguel Mota'), /carteira do comercial Miguel Mota/);
+  assert.match(mensagemTitularidadeRaizCnpj(conflito!, 'Miguel Mota'), /Solicite transferência à diretoria/);
+  assert.equal(acharConflitoRaizCnpj(rows, '03.020.839/0004-23', 'comercial-a', null)?.id, 11);
+  const mesmaCarteira = [
+    { id: 10, name: 'MATRIZ', cnpj: '03.020.839/0001-80', status: 'Ativo', responsavel_comercial_id: 'comercial-a' },
+    { id: 12, name: 'SEM DONO', cnpj: '03.020.839/0003-42', status: 'Ativo', responsavel_comercial_id: null },
+  ];
+  assert.equal(acharConflitoRaizCnpj(mesmaCarteira, '03.020.839/0004-23', 'comercial-a', null), null);
+  assert.equal(cadastroExigeTravaRaiz(rows, '03.020.839/0001-80', 10), false);
+  assert.equal(cadastroExigeTravaRaiz(rows, '03.020.839/0004-23', 10), true);
+  assert.equal(cadastroExigeTravaRaiz(rows, '03.020.839/0004-23', null), true);
+  assert.equal(acharConflitoRaizCnpj(rows, '03.020.839/0001-80', 'comercial-c', 10)?.id, 11);
+  assert.equal(acharConflitoRaizCnpj(rows, '190.792.598-88', 'comercial-c', null), null);
+  assert.match(mensagemTitularidadeRaizCnpj({ id: 12, name: '' }, ''), /carteira de outro comercial/);
+});
+
+test('leitura do documento falha fechada se a página repetir', async () => {
+  const pagina = Array.from({ length: 1000 }, () => ({
+    id: 1,
+    name: 'A',
+    cnpj: '03020839000180',
+    status: 'Ativo' as const,
+    responsavel_comercial_id: 'a',
+  }));
+  const travado = await carregarLinhasDocumentoCliente(async () => ({ rows: pagina }));
+  assert.equal(travado.error, 'CONSULTA INCOMPLETA');
+  assert.equal(travado.rows.length, 0);
+  const uma = [{ id: 2, name: 'B', cnpj: '03020839000180', status: 'Ativo', responsavel_comercial_id: 'a' }];
+  const ok = await carregarLinhasDocumentoCliente(async (from) => (
+    from === 0 ? { rows: uma } : { rows: [] }
+  ));
+  assert.equal(ok.error, undefined);
+  assert.equal(ok.rows.length, 1);
 });
 
 test('comercial logado resolve id da carteira', () => {
@@ -101,6 +156,10 @@ test('ClientForm: após insert guarda id e não duplica no retry; comercial auto
   const form = readFileSync('components/ClientForm.tsx', 'utf8');
   assert.match(form, /persistedId|setPersistedId/);
   assert.match(form, /acharClienteMesmoDocumento|clientDuplicateGuard/);
+  assert.match(form, /acharConflitoRaizCnpj/);
+  assert.match(form, /cadastroExigeTravaRaiz/);
+  assert.match(form, /carregarLinhasDocumentoCliente/);
+  assert.match(form, /mensagemTitularidadeRaizCnpj/);
   assert.match(form, /comercialIdDoUsuarioLogado/);
   assert.match(form, /Salvo no sistema/);
   assert.match(form, /TM SEG/);

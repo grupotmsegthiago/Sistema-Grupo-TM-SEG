@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { contaVisivelDaCotacao, type ContaVisivelCotacao } from '../../lib/portalCliente/cotacao';
+import { pisoRegional2027 } from '../../lib/portalCliente/trechosProposta';
 import { textoHoraExtra, textoTarifaKm } from '../../lib/portalCliente/gestaoCotacao';
 import {
   extrairCep,
@@ -50,15 +51,17 @@ const QuoteCalculatorCard: React.FC<Props> = ({
 }) => {
   const [buscandoCep, setBuscandoCep] = useState(false);
   const local = getRegionFromLocation(origem, '', cliente);
-  const kmNumero = Number(String(km).replace(',', '.'));
+  const textoKm = String(km ?? '').trim().replace(',', '.');
+  const kmNumero = textoKm === '' ? Number.NaN : Number(textoKm);
+  const piso = versao === '2027' ? pisoRegional2027(origem, cliente) : null;
   const visivel = contaRecebida ?? contaVisivelDaCotacao({
     cliente,
     origem,
     km: kmNumero,
     versao,
     linhas,
-    tarifaKmFallback: tarifaKm,
-    horaExtraFallback: horaExtra,
+    tarifaKmFallback: tarifaKm ?? piso?.kmExtra ?? null,
+    horaExtraFallback: horaExtra ?? piso?.horaExtra ?? null,
   });
   const taxaVisivel = visivel.aplicar ? visivel.tarifaKm : tarifaKm;
   const horaVisivel = visivel.aplicar ? visivel.horaExtra : horaExtra;

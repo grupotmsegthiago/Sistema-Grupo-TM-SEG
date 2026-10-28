@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
+import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 
@@ -437,10 +438,10 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
         const sysKm = (startKm != null && endKm != null && endKm > startKm) ? endKm - startKm : (sm.traveled_km ?? sm.traveledKm ?? null);
         const st = sm.startTime ?? sm.start_time;
         const et = sm.endTime ?? sm.end_time;
-        const sysHoraInicio = st ? new Date(st).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' }) : '';
-        const sysHoraFim = et ? new Date(et).toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', timeZone: 'America/Sao_Paulo' }) : '';
-        const sysDataInicial = st ? new Date(st).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
-        const sysDataFinal = et ? new Date(et).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
+        const sysHoraInicio = st ? formatTimeBR(st, '') : '';
+        const sysHoraFim = et ? formatTimeBR(et, '') : '';
+        const sysDataInicial = st ? formatDateBR(st) : '';
+        const sysDataFinal = et ? formatDateBR(et) : '';
         const leituraPedagio = classificarParPedagio({
             tollValue: sm.toll_value,
             tollValueProvider: sm.toll_value_provider,
@@ -1206,7 +1207,7 @@ const ExecutiveDashboard: React.FC<Props> = ({ missions, isDirector, clientTable
     );
 
     const periodLabel = period === 'CUSTOM' && customStart && customEnd
-        ? `${new Date(customStart + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })} a ${new Date(customEnd + 'T00:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`
+        ? `${formatDateBR(customStart)} a ${formatDateBR(customEnd)}`
         : PERIOD_LABELS[period];
 
     const renderPieLabel = ({ name, value, percent, cx, x }: any) => {

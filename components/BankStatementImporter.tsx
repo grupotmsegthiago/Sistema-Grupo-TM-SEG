@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { X, FileText, UploadCloud, CheckCircle2, AlertOctagon, Loader2, Plus, ArrowRight, DollarSign, Tag, Calendar, Banknote, Info, AlertCircle, ShieldCheck, Trash2, Undo2, ChevronDown, Lock, Sparkles, AlertTriangle } from 'lucide-react';
 import { FinancialAccount, FinancialCategory, TransactionType } from '../types';
@@ -402,7 +403,7 @@ const BankStatementImporter: React.FC<Props> = ({ onClose, onSuccess }) => {
                                         <tr key={item.id} className={`transition-all ${item.status === 'MATCHED' ? 'bg-gray-50/50 opacity-60' : 'bg-white hover:bg-gray-50/30'}`}>
                                             <td className="p-4">
                                                 <div className="font-bold uppercase text-gray-800">{item.description}</div>
-                                                <div className="text-[10px] font-mono text-gray-400 mt-0.5">{new Date(item.date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</div>
+                                                <div className="text-[10px] font-mono text-gray-400 mt-0.5">{formatDateBR(item.date)}</div>
                                             </td>
                                             <td className={`p-4 font-black font-mono text-sm ${item.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                                                 {item.type === 'INCOME' ? '+' : '-'} R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}

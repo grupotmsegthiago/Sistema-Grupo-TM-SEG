@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { valorPersistidoDoSplit } from '../lib/persistAsaasChargeInvoice.ts';
 
 describe('Emissão Asaas — persistência server-side + Abort', () => {
   it('create-charge persiste e responde early (sem esperar PIX/NF)', () => {
@@ -17,6 +18,10 @@ describe('Emissão Asaas — persistência server-side + Abort', () => {
     assert.match(lib, /nf_status/);
     assert.match(lib, /PROCESSING/);
     assert.match(lib, /findRecentDuplicateOpenCharge/);
+    assert.match(lib, /patchTitulo\.amount = valorTitulo/);
+    assert.equal(valorPersistidoDoSplit(400.125), 400.13);
+    assert.equal(valorPersistidoDoSplit(0), null);
+    assert.equal(valorPersistidoDoSplit(''), null);
   });
 
   it('frontend usa persisted/earlyReturn e no Abort abre o Controle', () => {

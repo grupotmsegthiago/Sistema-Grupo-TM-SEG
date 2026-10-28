@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
+import { exportarTabelaCustoFornecedor } from '../exports/tabela-custo-fornecedor-export';
 import { ArrowLeft, Save, Briefcase, Truck, Loader2, Search, Calendar, FileText, AlertTriangle, CheckCircle2, MapPin, Upload, Eye, X, Trash2, DollarSign, Plus, Edit, FileSpreadsheet, TrendingUp, Percent, Lock, Phone as PhoneIcon, Mail, Hash, Fingerprint, Building2, ShieldCheck, User, RotateCcw, Check, CheckSquare, Square, Download, ScrollText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
@@ -1428,6 +1430,18 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         ? `${costTables.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${costTables.length}`
                         : `${costTables.length} itens`}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const termo = costSearch.toLowerCase();
+                    const linhas = costTables.filter((t: any) => !termo || (t.operation_type || '').toLowerCase().includes(termo));
+                    void exportarTabelaCustoFornecedor({ fornecedor: formData.name, linhas });
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-800 hover:bg-emerald-100"
+                  data-testid="button-exportar-tabela-custo"
+                >
+                  <FileSpreadsheet size={14} /> Exportar Excel
+                </button>
               </div>
 
               <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-sm bg-white">
@@ -1471,7 +1485,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                             <div className="flex flex-col items-center gap-0.5">
                                                 <span className="bg-green-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 shadow-sm"><Check size={8} strokeWidth={4} /> Ativo</span>
                                                 {table.last_adjustment_date && (
-                                                    <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {new Date(table.last_adjustment_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
+                                                    <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {formatDateBR(table.last_adjustment_date)}</span>
                                                 )}
                                             </div>
                                         ) : (

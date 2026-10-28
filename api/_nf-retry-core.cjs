@@ -614,6 +614,71 @@ var init_invoiceBillingEmailPolicy = __esm({
   }
 });
 
+// lib/billing/boletimDaFatura.ts
+function numero(valor) {
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : 0;
+}
+function dataCurta(iso) {
+  const texto = String(iso || "").slice(0, 10);
+  const [ano, mes, dia] = texto.split("-");
+  if (!ano || !mes || !dia) return "";
+  return `${dia}/${mes}/${ano}`;
+}
+function linhasDoBoletimDaFatura(os) {
+  return os.map((item) => {
+    const receita = numero(item.revenue_value);
+    const pedagio = numero(item.toll_value);
+    const deslocamento = numero(item.displacement_value);
+    return {
+      os: String(item.id || "").trim(),
+      origem: String(item.origin || "").trim(),
+      destino: String(item.destination || "").trim(),
+      data: dataCurta(item.start_time),
+      receita,
+      pedagio,
+      deslocamento,
+      total: Math.round((receita + pedagio + deslocamento) * 100) / 100
+    };
+  }).filter((linha) => linha.os);
+}
+function planilhaBoletimDaFatura(cliente, linhas) {
+  const cabecalho = ["OS", "Origem", "Destino", "Data", "Receita", "Ped\xE1gio", "Deslocamento", "Total"];
+  const corpo = linhas.map((linha) => [
+    linha.os,
+    linha.origem,
+    linha.destino,
+    linha.data,
+    linha.receita,
+    linha.pedagio,
+    linha.deslocamento,
+    linha.total
+  ]);
+  const totais = linhas.reduce((acc, linha) => ({
+    receita: acc.receita + linha.receita,
+    pedagio: acc.pedagio + linha.pedagio,
+    deslocamento: acc.deslocamento + linha.deslocamento,
+    total: acc.total + linha.total
+  }), { receita: 0, pedagio: 0, deslocamento: 0, total: 0 });
+  const planilha = XLSX.utils.aoa_to_sheet([
+    [`Boletim de medi\xE7\xE3o \u2014 ${cliente}`],
+    [],
+    cabecalho,
+    ...corpo,
+    ["", "", "", "Total", totais.receita, totais.pedagio, totais.deslocamento, Math.round(totais.total * 100) / 100]
+  ]);
+  const livro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(livro, planilha, "Boletim");
+  return XLSX.write(livro, { type: "buffer", bookType: "xlsx" });
+}
+var XLSX;
+var init_boletimDaFatura = __esm({
+  "lib/billing/boletimDaFatura.ts"() {
+    "use strict";
+    XLSX = __toESM(require("xlsx"), 1);
+  }
+});
+
 // lib/agents/agentNameMatch.ts
 var init_agentNameMatch = __esm({
   "lib/agents/agentNameMatch.ts"() {
@@ -747,7 +812,8 @@ async function sendBillingEmail(data) {
     ${nfBlock}
 
     <div class="highlight-box">
-      <p><strong>Observa\xE7\xE3o:</strong> Em caso de d\xFAvidas sobre esta cobran\xE7a, entre em contato pelo e-mail <a href="mailto:adm@grupotmseg.com.br">adm@grupotmseg.com.br</a>.</p>
+      <p>Segue a <strong>Nota Fiscal</strong>, o <strong>boleto</strong> e o <strong>boletim de medi\xE7\xE3o</strong> das OS desta fatura. A c\xF3pia deste e-mail vai para <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
+      <p><strong>D\xFAvidas:</strong> responda este e-mail ou fale com <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
     </div>
     <p>Atenciosamente,<br><strong>${data.issuerCompany}</strong></p>
   `);
@@ -761,8 +827,13 @@ async function sendBillingEmail(data) {
       to: recipients,
       cc: ["financeiro@grupotmseg.com.br", "thiago@grupotmseg.com.br"],
       replyTo: "financeiro@grupotmseg.com.br",
-      subject: `Cobran\xE7a ${data.invoiceNumber ? `NF ${data.invoiceNumber} \u2014 ` : ""}${formatCurrency(data.value)} \u2014 Venc. ${formatDueDate(data.dueDate)} \u2014 ${data.issuerCompany}`,
-      html
+      subject: `NF, boleto e boletim \u2014 ${data.invoiceNumber ? `NF ${data.invoiceNumber} \u2014 ` : ""}${formatCurrency(data.value)} \u2014 Venc. ${formatDueDate(data.dueDate)} \u2014 ${data.issuerCompany}`,
+      html,
+      attachments: (data.attachments || []).map((anexo) => ({
+        filename: anexo.filename,
+        content: anexo.content,
+        contentType: anexo.contentType
+      }))
     };
     const info = await transporter.sendMail(mailOptions);
     const messageId = info.messageId || "";
@@ -835,6 +906,35 @@ async function loadInvoice(opts) {
   const { data, error } = await sb.from("financial_invoices").select(columns).eq("asaas_payment_id", opts.paymentId).order("created_at", { ascending: false }).limit(1);
   if (error) throw new Error(error.message);
   return (data || [])[0] || null;
+}
+async function baixarSePdf(url) {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  try {
+    const resposta = await fetch(url, { signal: AbortSignal.timeout(15e3) });
+    if (!resposta.ok) return null;
+    const buf = Buffer.from(await resposta.arrayBuffer());
+    const parecePdf = buf.subarray(0, 5).toString() === "%PDF-";
+    if (!parecePdf || buf.length < 200 || buf.length > 12e6) return null;
+    return buf;
+  } catch {
+    return null;
+  }
+}
+async function boletimDaFatura(invoiceId, cliente) {
+  try {
+    const sb = admin();
+    const vinculos = await sb.from("financial_invoice_missions").select("mission_id").eq("invoice_id", invoiceId);
+    if (vinculos.error) return null;
+    const ids = (vinculos.data || []).map((linha) => String(linha.mission_id || "")).filter(Boolean);
+    if (ids.length === 0) return null;
+    const os = await sb.from("missions").select("id, origin, destination, start_time, revenue_value, toll_value, displacement_value").in("id", ids);
+    if (os.error) return null;
+    const linhas = linhasDoBoletimDaFatura(os.data || []);
+    if (linhas.length === 0) return null;
+    return planilhaBoletimDaFatura(cliente, linhas);
+  } catch {
+    return null;
+  }
 }
 async function loadMedicaoRecipients(clientName) {
   const trimmed = clientName.trim();
@@ -947,6 +1047,15 @@ async function sendInvoiceBillingEmail(opts) {
   const boletoUrl = payment?.bankSlipUrl || invoice.asaas_bankslip_url || invoice.boleto_image_url || void 0;
   const hasBoleto = !!boletoUrl && !ready.transfer;
   const hasNf = !!nfPdfUrl;
+  const nomeCliente = String(invoice.client || "Cliente").replace(/[^A-Za-z0-9]+/g, "_").slice(0, 24) || "Cliente";
+  const nomeNf = String(nfNumber || invoice.number || invoice.id).replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 24);
+  const anexos = [];
+  const pdfNf = await baixarSePdf(nfPdfUrl);
+  if (pdfNf) anexos.push({ filename: `NF_${nomeNf}.pdf`, content: pdfNf, contentType: "application/pdf" });
+  const pdfBoleto = ready.transfer ? null : await baixarSePdf(boletoUrl);
+  if (pdfBoleto) anexos.push({ filename: `Boleto_${nomeNf}.pdf`, content: pdfBoleto, contentType: "application/pdf" });
+  const planilha = await boletimDaFatura(invoice.id, invoice.client || "Cliente");
+  if (planilha) anexos.push({ filename: `Boletim_Medicao_${nomeCliente}.xlsx`, content: planilha, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   try {
     const result = await sendBillingEmail({
       clientName: invoice.client || "Cliente",
@@ -964,7 +1073,8 @@ async function sendInvoiceBillingEmail(opts) {
       boletoBarcode: bankSlipData?.barCode || void 0,
       boletoDigitableLine: bankSlipData?.identificationField || void 0,
       nfPdfUrl,
-      nfNumber
+      nfNumber,
+      attachments: anexos
     });
     if (!result.success) {
       await markEmailResult(invoice.id, {
@@ -1041,6 +1151,7 @@ var init_invoiceBillingEmail = __esm({
     "use strict";
     init_asaasChargeApi();
     init_invoiceBillingEmailPolicy();
+    init_boletimDaFatura();
     init_supabaseConfig();
     init_emailService();
     CLAIM_STALE_MS = 10 * 60 * 1e3;

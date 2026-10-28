@@ -1,4 +1,4 @@
-import { formatNowDateTimeBR, formatIsoDateBR } from '../lib/dateUtils';
+import { formatNowDateTimeBR, formatIsoDateBR, formatDateBR, formatTimeBR, formatCivilDateBR } from '../lib/dateUtils';
 // BUILD v048 - 2026-04-07 17:40 BRT
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { authFetch } from '../lib/authFetch';
@@ -712,7 +712,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 cost: Math.round(cost * 100) / 100,
                 lucro: Math.round(mLucro * 100) / 100,
                 pct: mPct,
-                date: m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-',
+                date: m.created_at ? formatDateBR(m.created_at) : '-',
                 provider: providerName,
                 client: displayClient,
                 km: m.total_distance || m.traveled_distance || 0,
@@ -974,9 +974,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     };
     const fmtNum = (val: number | null | undefined, dec = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-    const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
-    const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '-';
-    const fmtDateDisp = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+    const fmtDate = (iso?: string) => {
+        if (!iso) return '-';
+        const texto = formatDateBR(iso);
+        return texto === '—' ? '-' : texto;
+    };
+    const fmtTime = (iso?: string) => iso ? formatTimeBR(iso, '-') : '-';
+    const fmtDateDisp = (s: string) => (s ? formatCivilDateBR(s) : '');
     const fmtHHMM = (h: number) => {
         if (isNaN(h) || h <= 0) return '00:00';
         const hrs = Math.floor(h);
@@ -3255,6 +3259,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     category_name: CLIENT_RECEIVABLE_CATEGORY,
                                     notes: rxPayload.notes,
                                     payment_method: rxPayload.payment_method,
+                                    ...(chValue > 0 ? { amount: chValue } : {}),
                                 }).eq('id', rxExisting[0].id);
                                 rxError = up.error;
                             } else {
@@ -4211,7 +4216,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </div>
                                 <div className="flex items-end">
                                     <div className="w-full p-2.5 bg-gray-50 rounded-lg border text-[10px] text-gray-400 font-bold">
-                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : 'Defina o vencimento para gerar a cobrança'}
+                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${formatDateBR(invoiceForm.boleto_due_date)}` : 'Defina o vencimento para gerar a cobrança'}
                                     </div>
                                 </div>
                             </div>
@@ -4518,7 +4523,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             </p>
                                             <p className="text-[11px] font-semibold text-sky-800 mt-1">
                                                 Vencimento {invoiceForm.boleto_due_date
-                                                    ? new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+                                                    ? formatDateBR(invoiceForm.boleto_due_date)
                                                     : '—'}
                                                 {' · '}Valor R$ {Number(invoiceForm.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 {asaasResult.payment?.id ? ` · Asaas ${asaasResult.payment.id}` : ''}

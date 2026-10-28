@@ -1,5 +1,6 @@
 /** Histórico da cotação do portal. A OS continua em missions; esta gravação não recalcula valor aprovado. */
 
+import { formatDateBR, formatDateTimeBR } from '../dateUtils';
 import {
   FRANQUIA_HORAS,
   FRANQUIA_KM,
@@ -12,6 +13,12 @@ import {
 import { cidadeDaRota, type PropostaPortal } from './cotacao';
 import { textoHoraExtra, textoTarifaKm } from './gestaoCotacao';
 import { decodificarPolyline, type Coordenada } from './rotaCotacao';
+import {
+  conferirTrechosGravados,
+  lerTrechosPersistidos,
+  recusarPisoDaProposta,
+  type TrechoPersistido,
+} from './trechosProposta';
 
 export const TEXTO_HISTORICO_VAZIO = 'Nenhuma cotação recente deste cliente.';
 export const TAMANHO_PAGINA_HISTORICO = 10;
@@ -44,6 +51,8 @@ export type SnapshotCotacaoPortal = {
   aceiteCliente?: { texto: string; em: string } | null;
   /** Traçado calculado. O link público redesenha a rota a partir daqui, não de um desenho solto. */
   percurso?: { polyline: string; pontos: Coordenada[] } | null;
+  /** Trechos da mesma proposta. Ausente na cotação de um trecho só. */
+  trechos?: TrechoPersistido[];
 };
 
 export type LinhaHistoricoCotacao = CotacaoPrazo & {
@@ -86,6 +95,7 @@ export type PedidoRegistroCotacao = {
   kmFaturado?: unknown;
   horasContadas?: unknown;
   percurso?: unknown;
+  trechos?: unknown;
 };
 
 /** Texto fixo do cliente antes de gerar a proposta. Vale se a cotação for usada numa OS. */
@@ -113,32 +123,13 @@ export function resumirEndereco(endereco: string | null | undefined, limite = 42
 }
 
 export function formatarDataHoraCotacao(iso: string | null | undefined): string {
-  const data = iso ? new Date(iso) : null;
-  if (!data || Number.isNaN(data.getTime())) return '—';
-  const partes = new Intl.DateTimeFormat('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(data);
-  const pegar = (tipo: Intl.DateTimeFormatPartTypes) => partes.find((item) => item.type === tipo)?.value || '';
-  const hora = pegar('hour').padStart(2, '0');
-  const minuto = pegar('minute').padStart(2, '0');
-  return `${pegar('day')}/${pegar('month')}/${pegar('year')} ${hora}:${minuto}`;
+  return formatDateTimeBR(iso);
 }
 
 export function dataLongaCotacao(iso: string | null | undefined): string {
-  const data = iso ? new Date(iso) : null;
-  if (!data || Number.isNaN(data.getTime())) return '';
-  return data.toLocaleDateString('pt-BR', {
-    timeZone: 'America/Sao_Paulo',
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
+  if (!iso) return '';
+  const texto = formatDateBR(iso);
+  return texto === '—' ? '' : texto;
 }
 
 function limparParteArquivo(valor: string): string {
@@ -436,6 +427,9 @@ export function mensagemCompletaCotacao(linha: LinhaHistoricoCotacao, agora = ne
     salvo?.solicitanteEmail ? `E-mail: ${salvo.solicitanteEmail}` : '',
     `Origem: ${String(linha.origin || '').trim() || '—'}`,
     `Destino: ${String(linha.destination || '').trim() || '—'}`,
+    ...(salvo?.trechos && salvo.trechos.length > 1
+      ? salvo.trechos.map((trecho, indice) => `Trecho ${indice + 1}: ${trecho.origem} → ${trecho.destino} · ${formatarValorCotacao(trecho.valor)} · excedente ${trecho.kmExcedente.toLocaleString('pt-BR')} km / ${trecho.horasExcedentes.toLocaleString('pt-BR')} h`)
+      : []),
     salvo?.paradas?.length ? `Paradas: ${salvo.paradas.join(' | ')}` : '',
     `Distância / tempo: ${textoKmFaturadoSalvo(faturado.km, faturado.horas)}`,
     `Horas faturadas: ${faturado.horas != null ? faturado.horas.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) : '—'}`,
@@ -528,6 +522,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
     const aceiteCliente = aceiteBruto && aceiteBruto.texto === TEXTO_ACEITE_OS && typeof aceiteBruto.em === 'string'
       ? { texto: TEXTO_ACEITE_OS, em: aceiteBruto.em }
       : null;
+    const trechos = lerTrechosPersistidos(dados.trechos);
     return {
       ...montarSnapshot({
       duracaoMin: dados.duracaoMin,
@@ -548,6 +543,7 @@ export function lerSnapshot(bruto: string | null | undefined): SnapshotCotacaoPo
       horasContadas: dados.horasContadas,
       percurso: dados.percurso,
     }),
+      ...(trechos && trechos.length > 1 ? { trechos } : {}),
       ...(linkPublico ? { linkPublico } : {}),
       ...(aceiteCliente ? { aceiteCliente } : {}),
     };
@@ -578,6 +574,7 @@ export function propostaDoHistorico(linha: Pick<LinhaHistoricoCotacao, 'origin' 
       kmRota: numero(linha.total_km),
       duracaoMin: salvo.duracaoMin,
       numero: salvo.numero,
+      ...(salvo.trechos && salvo.trechos.length > 1 ? { trechos: salvo.trechos } : {}),
     };
   }
   return {
@@ -635,24 +632,46 @@ export function pedidoParaRegistro(
   if (aceite && aceite.texto === TEXTO_ACEITE_OS && typeof aceite.em === 'string' && aceite.em.trim()) {
     snapshot.aceiteCliente = { texto: TEXTO_ACEITE_OS, em: aceite.em.trim().slice(0, 40) };
   }
-  return {
-    ok: true,
-    snapshot,
-    linha: {
-      client_id: idCliente,
-      client_name: nomeCliente,
-      origin: origem,
-      destination: destino,
-      total_km: km,
-      total_hours: numero(pedido.horas),
-      total_value: valor,
-      status: 'Enviada',
-      is_active: true,
-      quote_source: 'ROTA',
-      created_by: nome,
-      contract_details: JSON.stringify(snapshot),
-    },
+  const linha: Record<string, unknown> = {
+    client_id: idCliente,
+    client_name: nomeCliente,
+    origin: origem,
+    destination: destino,
+    total_km: km,
+    total_hours: numero(pedido.horas),
+    total_value: valor,
+    status: 'Enviada',
+    is_active: true,
+    quote_source: 'ROTA',
+    created_by: nome,
   };
+  if (Array.isArray(pedido.trechos) && pedido.trechos.length > 1) {
+    const conferencia = conferirTrechosGravados(pedido.trechos, nomeCliente, snapshot.vigencia);
+    if (!conferencia.ok) return conferencia;
+    snapshot.trechos = conferencia.trechos;
+    snapshot.acionamento = conferencia.total;
+    snapshot.kmExtra = conferencia.trechos[0].kmExtra;
+    snapshot.horaExtra = conferencia.trechos[0].horaExtra;
+    snapshot.usouMinimo = conferencia.trechos.every((trecho) => trecho.usouMinimo);
+    linha.origin = conferencia.trechos[0].origem;
+    linha.destination = conferencia.trechos[conferencia.trechos.length - 1].destino;
+    linha.total_km = conferencia.km;
+    linha.total_hours = conferencia.horas;
+    linha.total_value = conferencia.total;
+  } else {
+    const avisoPiso = recusarPisoDaProposta({
+      cliente: nomeCliente,
+      origem,
+      vigencia: snapshot.vigencia,
+      acordada: snapshot.acordada,
+      acionamento: snapshot.acionamento,
+      kmExtra: snapshot.kmExtra,
+      horaExtra: snapshot.horaExtra,
+    });
+    if (avisoPiso) return { ok: false, error: avisoPiso };
+  }
+  linha.contract_details = JSON.stringify(snapshot);
+  return { ok: true, snapshot, linha };
 }
 
 export function normalizarLinhaHistorico(row: Record<string, unknown>): LinhaHistoricoCotacao {

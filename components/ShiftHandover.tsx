@@ -5,6 +5,7 @@ import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { authFetch } from '../lib/authFetch';
 import { MissionStatus } from '../types';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 
 // ==========================================================================
 // PASSAGEM DE PLANTÃO
@@ -31,15 +32,18 @@ const spDateStr = (iso?: string | null): string => {
 };
 const fmtDate = (iso?: string | null): string => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleDateString('pt-BR', { timeZone: TZ }); } catch { return ''; }
+  const texto = formatDateBR(iso);
+  return texto === '—' ? '' : texto;
 };
 const fmtTime = (iso?: string | null): string => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: TZ }); } catch { return ''; }
+  const texto = formatTimeBR(iso, '');
+  return texto === '—' ? '' : texto;
 };
 const fmtDateTimeFull = (iso?: string | null): string => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+  const texto = formatDateTimeBR(iso);
+  return texto === '—' ? '' : texto;
 };
 
 // Extrai SÓ a cidade de um endereço completo BR ("..., CIDADE - UF, CEP").
@@ -338,7 +342,7 @@ const ShiftHandover = () => {
           <p className="text-xs text-gray-500 mt-1">
             Espelho somente leitura do controle diário — missões em aberto de hoje e amanhã.
             {lastUpdated && (
-              <span className="ml-2 text-gray-400">Atualizado às {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}</span>
+              <span className="ml-2 text-gray-400">Atualizado às {formatTimeBR(lastUpdated)}</span>
             )}
           </p>
         </div>

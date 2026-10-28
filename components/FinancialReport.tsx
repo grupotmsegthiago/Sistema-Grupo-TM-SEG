@@ -495,7 +495,7 @@ const FinancialReport: React.FC = () => {
                                                     const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
                                                     return (
                                                         <tr key={ii} className="border-t border-gray-100 hover:bg-red-50/30">
-                                                            <td className="px-5 py-2 pl-10 text-xs font-mono text-gray-600">{dueDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                            <td className="px-5 py-2 pl-10 text-xs font-mono text-gray-600">{formatDateBR(dueDateStr)}</td>
                                                             <td className="px-4 py-2 text-xs font-bold text-gray-700 uppercase max-w-[300px] truncate">{item.description}</td>
                                                             <td className="px-4 py-2 text-[10px]"><span className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 text-gray-500">{item.category_name || '-'}</span></td>
                                                             <td className="px-4 py-2 text-xs font-black text-red-600 text-right">{diffDays}</td>
@@ -566,7 +566,7 @@ const FinancialReport: React.FC = () => {
                                             const isOverdue = item.status === 'PENDING' && item.due_date.split('T')[0] < todayStr;
                                             return (
                                                 <tr key={item.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50/50' : ''}`}>
-                                                    <td className="px-4 py-2 text-xs font-mono text-gray-600">{new Date(item.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                    <td className="px-4 py-2 text-xs font-mono text-gray-600">{formatDateBR(item.due_date)}</td>
                                                     <td className="px-4 py-2 text-xs font-bold text-gray-800 uppercase max-w-[250px] truncate">{item.description}</td>
                                                     <td className="px-4 py-2 text-[10px] text-gray-500 uppercase">{item.updated_by || item.created_by || 'SISTEMA'}</td>
                                                     <td className="px-4 py-2 text-[10px]"><span className="bg-gray-100 px-2 py-0.5 rounded border border-gray-200">{item.category_name || '-'}</span></td>

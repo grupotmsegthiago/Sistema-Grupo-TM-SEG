@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, FileDown, Link2, Loader2, Mail, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { formatDateBR } from '../../lib/dateUtils';
 import { authFetch } from '../../lib/authFetch';
 import { PRAZO_COTACAO_DIAS, cotacaoSelecionavel } from '../../lib/precificacao/tabela2027';
 import { COPIA_FIXA_COTACAO, cartaEmailCotacao, cotacaoExcluida, mostrarDesativarCotacao, mostrarExcluirCotacao, textoHoraExtra, textoTarifaKm, type AtorCotacao, type CotacaoGestao } from '../../lib/portalCliente/gestaoCotacao';
@@ -434,9 +435,7 @@ export const HistoricoCotacoes: React.FC<{
     const url = `${window.location.origin}${corpo.caminho}`;
     try {
       await navigator.clipboard.writeText(url);
-      const validade = typeof corpo.expiraEm === 'string'
-        ? new Date(corpo.expiraEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
-        : '';
+      const validade = typeof corpo.expiraEm === 'string' ? formatDateBR(corpo.expiraEm) : '';
       const mesmo = corpo.reutilizado === true;
       setToast(validade
         ? (mesmo ? `O mesmo link de antes. Vale até ${validade}. Não é gerado outro nestes 10 dias.` : `Link copiado. Vale até ${validade}. A pessoa só vê esta proposta.`)

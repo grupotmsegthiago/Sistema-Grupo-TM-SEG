@@ -35,7 +35,12 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [isDirector, setIsDirector] = useState(false);
-  const [isCommercial, setIsCommercial] = useState(false);
+  const [isCommercial, setIsCommercial] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('userData') || '{}');
+      return (user.role || '').toLowerCase() === 'comercial' && !user.permissions?.includes('*');
+    } catch { return false; }
+  });
   const [canViewValues, setCanViewValues] = useState(false);
   const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
   const [clientMap, setClientMap] = useState<Record<string, string>>({});
@@ -199,7 +204,7 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
           <CotacaoPortal clienteNome={clientName.trim()} clientId={clientId} />
         </div>
       )}
-      <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />
+      {!isCommercial && <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />}
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${embedded ? 'border-t' : ''}`}>
         <div className="p-5 border-b border-gray-100 bg-gray-50/50">
            <div className="flex flex-wrap items-center gap-3">

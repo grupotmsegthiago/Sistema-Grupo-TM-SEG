@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck, XCircle } from 'lucide-react';
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
@@ -20,18 +21,23 @@ import CommercialProposalModal from './CommercialProposalModal';
 import ClientPriceCalculator from './ClientPriceCalculator';
 import QuotePrintModal from './QuotePrintModal';
 import ClientContractTab from './ClientContractTab';
+import { contentTypeLogo, pendenciaMarcaComercial, validarArquivoLogo } from '../lib/clienteMarca';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
 import {
   acharClienteMesmoDocumento,
+  acharConflitoRaizCnpj,
+  cadastroExigeTravaRaiz,
+  carregarLinhasDocumentoCliente,
   comercialIdDoUsuarioLogado,
   digitosDocumentoCliente,
+  mensagemTitularidadeRaizCnpj,
   perfilEhComercialRole,
+  type ClienteCarteiraRow,
 } from '../lib/clientDuplicateGuard';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalPorNomeCliente, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
 import { limparSlug, slugDeNome, slugPublico } from '../lib/portalCliente/slug';
 import {
-  CHAVE_TABELA_REGIONAL_VIGENTE,
   clienteContratualDhlOuIbl,
   colunaRegionalAusente,
   ehLinhaPadraoRegional,
@@ -44,8 +50,37 @@ import {
   type VersaoTabelaRegional,
 } from '../lib/precificacao/tabela2027';
 import QuoteCalculatorCard from './precificacao/QuoteCalculatorCard';
-import { SeletorVigencia } from './precificacao/SeletorVigencia';
+import RotaGoogleCotacao from './precificacao/RotaGoogleCotacao';
 import ImagemSegura from './ImagemSegura';
+
+/** Página da base de clientes para a trava de documento. Erro não vira lista vazia. */
+async function lerPaginaClientesDocumento(
+  from: number,
+  to: number,
+): Promise<{ rows: ClienteCarteiraRow[]; error?: string }> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, cnpj, status, responsavel_comercial_id')
+    .order('id', { ascending: true })
+    .range(from, to);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data || []) as ClienteCarteiraRow[] };
+}
+
+/** Sobe PNG ou SVG no bucket que o cadastro já usa. Não cria bucket novo. */
+async function enviarLogoCliente(clienteId: string, arquivo: File): Promise<string> {
+  const erro = validarArquivoLogo(arquivo);
+  if (erro) throw new Error(erro);
+  const nome = arquivo.name.replace(/[^\w.]+/g, '-');
+  const caminho = `portal-logos/${clienteId}-${Date.now()}-${nome}`;
+  const { error } = await supabase.storage.from('mission-evidence').upload(caminho, arquivo, {
+    upsert: true,
+    contentType: contentTypeLogo(arquivo),
+  });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('mission-evidence').getPublicUrl(caminho);
+  return data.publicUrl;
+}
 
 interface ClientFormProps {
   onBack: () => void;
@@ -135,6 +170,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     portal_cor: '#111111',
     portal_cor_acao: '#F7941E',
   }); 
+  const [logoPendente, setLogoPendente] = useState<File | null>(null);
   const [osEmailInput, setOsEmailInput] = useState('');
   const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
   const [isSearchingCep, setIsSearchingCep] = useState(false);
@@ -219,7 +255,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isReverting, setIsReverting] = useState(false);
   const [selectedPriceIds, setSelectedPriceIds] = useState<string[]>([]);
   const [priceSearch, setPriceSearch] = useState<string>('');
-  const [tabelaVigencia, setTabelaVigencia] = useState<VersaoTabelaRegional>('2026');
+  const tabelaVigencia: VersaoTabelaRegional = '2027';
   const [aplicandoTabelaRegional, setAplicandoTabelaRegional] = useState(false);
   const [cotacaoOrigem, setCotacaoOrigem] = useState('');
   const [cotacaoDestino, setCotacaoDestino] = useState('');
@@ -377,21 +413,55 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const isNfFieldMissing = (field: ClientAddressFieldKey) =>
     showNfAddressGuide && missingNfAddressFields.includes(field);
 
+  const comercialIdDoCadastro = () => {
+    let comercialId = formData.responsavel_comercial_id || '';
+    if (!comercialId && perfilEhComercialRole(currentUser?.role)) {
+      comercialId = comercialIdDoUsuarioLogado(comerciais, currentUser?.id) || '';
+    }
+    return comercialId;
+  };
+
+  const nomeDoComercial = (comercialId: string | null | undefined) => {
+    const chave = String(comercialId || '').trim().toLowerCase();
+    if (!chave) return '';
+    return comerciais.find((c) => String(c.id).trim().toLowerCase() === chave)?.nome || '';
+  };
+
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
-    // Consulta no cadastro TM SEG (duplicata) mesmo com CPF (11) ou CNPJ parcial completo.
+    // Consulta no cadastro TM SEG (duplicata e raiz) mesmo com CPF (11) ou CNPJ completo.
     if (cleanCnpj.length === 11 || cleanCnpj.length === 14) {
       try {
-        const { data: docRows } = await supabase
-          .from('clients')
-          .select('id, name, cnpj, status');
-        const dup = acharClienteMesmoDocumento(docRows || [], cleanCnpj, persistedId || id);
-        if (dup) {
+        const carregado = await carregarLinhasDocumentoCliente(lerPaginaClientesDocumento);
+        if (carregado.error) {
           showNotification(
-            'CNPJ já cadastrado',
-            `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente.`,
+            'CNPJ',
+            'Não foi possível conferir a carteira agora. Ao salvar, o sistema confere de novo e não grava se a consulta falhar.',
             'warning',
           );
+        } else {
+          const dup = acharClienteMesmoDocumento(carregado.rows, cleanCnpj, persistedId || id);
+          if (dup) {
+            showNotification(
+              'CNPJ já cadastrado',
+              `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente.`,
+              'warning',
+            );
+          } else if (cadastroExigeTravaRaiz(carregado.rows, cleanCnpj, persistedId || id)) {
+            const conflito = acharConflitoRaizCnpj(
+              carregado.rows,
+              cleanCnpj,
+              comercialIdDoCadastro(),
+              persistedId || id,
+            );
+            if (conflito) {
+              showNotification(
+                'CNPJ já cadastrado',
+                mensagemTitularidadeRaizCnpj(conflito, nomeDoComercial(conflito.responsavel_comercial_id)),
+                'warning',
+              );
+            }
+          }
         }
       } catch (e) {
         console.error('Verificação CNPJ cliente', e);
@@ -458,10 +528,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
       }
   };
 
+  const perfilComercial = perfilEhComercialRole(currentUser?.role);
   const isFinanceAdmin = currentUser && (() => {
       const r = (currentUser.role || '').toLowerCase();
       const perms = currentUser.permissions || [];
-      return r === 'diretoria' || r === 'administrador' || r === 'comercial' || isFinanceProfileRole(r) ||
+      return r === 'diretoria' || r === 'administrador' || isFinanceProfileRole(r) ||
              perms.includes('*') || perms.includes('client-prices');
   })();
 
@@ -689,7 +760,6 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (duplicateError) return;
     const cepDigits = String(formData.zip_code || '').replace(/\D/g, '');
     const uf = String(formData.state || '').trim().toUpperCase();
     if (cepDigits.length !== 8) {
@@ -713,30 +783,45 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Portal', 'Informe o endereço da página do cliente.', 'warning');
       return;
     }
+    if (perfilEhComercialRole(currentUser?.role)) {
+      const faltaMarca = pendenciaMarcaComercial({
+        website: formData.portal_site,
+        logoUrl: formData.portal_logo_url,
+        temArquivo: Boolean(logoPendente),
+      });
+      if (faltaMarca) {
+        showNotification('Cadastro incompleto', faltaMarca, 'error');
+        return;
+      }
+    }
     setIsSaving(true);
     setDuplicateError('');
     try {
       const editingId = persistedId || (id ? String(id) : null);
-      let comercialIdPayload = formData.responsavel_comercial_id || '';
-      if (!comercialIdPayload && perfilEhComercialRole(currentUser?.role)) {
-        comercialIdPayload = comercialIdDoUsuarioLogado(comerciais, currentUser?.id) || '';
-      }
+      const comercialIdPayload = comercialIdDoCadastro();
 
-      // Bloqueia CNPJ/CPF duplicado no sistema TM SEG (cadastro Torres é outro sistema).
+      // Bloqueia CNPJ/CPF duplicado e filial de outra carteira no TM SEG (cadastro Torres é outro sistema).
       if (cnpjDigits.length === 11 || cnpjDigits.length === 14) {
-        const { data: docRows, error: docErr } = await supabase
-          .from('clients')
-          .select('id, name, cnpj, status')
-          .order('id', { ascending: false })
-          .limit(2000);
-        if (docErr) throw docErr;
-        const dup = acharClienteMesmoDocumento(docRows || [], cnpjDigits, editingId);
+        const carregado = await carregarLinhasDocumentoCliente(lerPaginaClientesDocumento);
+        if (carregado.error) {
+          throw new Error('Não foi possível conferir o CNPJ na base inteira. O cadastro não foi salvo.');
+        }
+        const dup = acharClienteMesmoDocumento(carregado.rows, cnpjDigits, editingId);
         if (dup) {
           const st = String(dup.status || '');
           const msg =
             st.toLowerCase() === 'inativo'
               ? `Já existe cliente inativo com este CNPJ/CPF (id ${dup.id}: ${dup.name || 'sem nome'}). Reative esse cadastro — não crie outro. Cadastro na Torres continua só no sistema Torres.`
               : `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente — não crie outro. Cadastro na Torres continua só no sistema Torres.`;
+          setDuplicateError(msg);
+          showNotification('CNPJ já cadastrado', msg, 'error');
+          return;
+        }
+        const conflito = cadastroExigeTravaRaiz(carregado.rows, cnpjDigits, editingId)
+          ? acharConflitoRaizCnpj(carregado.rows, cnpjDigits, comercialIdPayload, editingId)
+          : null;
+        if (conflito) {
+          const msg = mensagemTitularidadeRaizCnpj(conflito, nomeDoComercial(conflito.responsavel_comercial_id));
           setDuplicateError(msg);
           showNotification('CNPJ já cadastrado', msg, 'error');
           return;
@@ -835,6 +920,16 @@ const ClientForm: React.FC<ClientFormProps> = ({
           });
       }
 
+      if (logoPendente && savedClientId) {
+        const urlLogo = await enviarLogoCliente(savedClientId, logoPendente);
+        const { error: logoErr } = await supabase.from('clients').update({ portal_logo_url: urlLogo }).eq('id', savedClientId);
+        if (logoErr) {
+          throw new Error('O cliente foi salvo, mas o logotipo não entrou. Envie de novo: o mesmo cadastro será atualizado.');
+        }
+        setFormData((prev) => ({ ...prev, portal_logo_url: urlLogo }));
+        setLogoPendente(null);
+      }
+
       // Cliente Ativo: cadastra/atualiza nas 3 contas Asaas (endereço fiscal obrigatório).
       if (String(formData.status || '') === 'Ativo' && savedClientId) {
         const syncRes = await authFetch('/api/asaas/sync-customers', {
@@ -899,14 +994,6 @@ const ClientForm: React.FC<ClientFormProps> = ({
   };
 
   const podeAplicarTabelaRegional = perfilPodeAplicarTabelaRegional(currentUser?.role);
-
-  useEffect(() => {
-      if (!podeAplicarTabelaRegional) return;
-      supabase.from('system_settings').select('value').eq('key', CHAVE_TABELA_REGIONAL_VIGENTE).maybeSingle().then(({ data }) => {
-          const versao = data?.value?.versao;
-          if (versao === '2026' || versao === '2027') setTabelaVigencia(versao);
-      });
-  }, [podeAplicarTabelaRegional]);
 
   const handleAplicarTabelaRegional = async () => {
       if (!podeAplicarTabelaRegional) {
@@ -1325,6 +1412,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
           {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'cancellation', label: 'Cancelamento', icon: XCircle }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
               if (tab.id === 'registration') return true;
+              if (perfilComercial) return tab.id === 'quotes' && !!id;
               if (tab.id === 'contracts') return !!id && isFinanceAdmin;
               return isFinanceAdmin;
           }).map(tab => (
@@ -1487,7 +1575,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         )}
                         <div className="grid gap-3 md:grid-cols-2">
                           <div className="space-y-1.5">
-                            <label className={LABEL_CLASS}>Site do cliente</label>
+                            <label className={LABEL_CLASS}>Site do cliente{perfilEhComercialRole(currentUser?.role) ? ' *' : ''}</label>
                             <div className="flex gap-2">
                               <input className={INPUT_CLASS} placeholder="https://cliente.com.br" value={formData.portal_site} onChange={(event) => setFormData({ ...formData, portal_site: event.target.value })} data-testid="input-portal-site" />
                               <button
@@ -1512,29 +1600,39 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             </div>
                           </div>
                           <div className="space-y-1.5">
-                            <label className={LABEL_CLASS}>Logotipo</label>
-                            <input type="file" accept="image/svg+xml,.svg" onChange={async (event) => {
+                            <label className={LABEL_CLASS}>Logotipo{perfilEhComercialRole(currentUser?.role) ? ' *' : ''}</label>
+                            <input
+                              type="file"
+                              accept="image/png,image/svg+xml,.png,.svg"
+                              data-testid="input-portal-logo"
+                              onChange={async (event) => {
                               const arquivo = event.target.files?.[0];
+                              event.target.value = '';
                               if (!arquivo) return;
-                              const vetor = arquivo.type === 'image/svg+xml' || arquivo.name.toLowerCase().endsWith('.svg');
-                              if (!vetor) {
-                                showNotification('Logotipo', 'Envie um SVG, sem fundo.', 'warning');
+                              const erroLogo = validarArquivoLogo(arquivo);
+                              if (erroLogo) {
+                                showNotification('Logotipo', erroLogo, 'warning');
                                 return;
                               }
                               const destino = persistedId || id;
                               if (!destino) {
-                                showNotification('Logotipo', 'Salve o cliente antes de enviar o arquivo.', 'warning');
+                                setLogoPendente(arquivo);
+                                showNotification('Logotipo', 'Arquivo aceito. Ele sobe quando o cliente for salvo.', 'info');
                                 return;
                               }
-                              const caminho = `portal-logos/${destino}-${Date.now()}-${arquivo.name.replace(/[^\w.]+/g, '-')}`;
-                              const { error } = await supabase.storage.from('mission-evidence').upload(caminho, arquivo, { upsert: true });
-                              if (error) {
-                                showNotification('Logotipo', error.message, 'error');
-                                return;
+                              try {
+                                const urlLogo = await enviarLogoCliente(String(destino), arquivo);
+                                setLogoPendente(null);
+                                setFormData((prev) => ({ ...prev, portal_logo_url: urlLogo }));
+                                showNotification('Logotipo', 'Arquivo enviado. Salve o cliente para gravar o endereço.', 'success');
+                              } catch (erroEnvio) {
+                                showNotification('Logotipo', erroEnvio instanceof Error ? erroEnvio.message : 'Falha no envio do logotipo.', 'error');
                               }
-                              const { data } = supabase.storage.from('mission-evidence').getPublicUrl(caminho);
-                              setFormData((prev) => ({ ...prev, portal_logo_url: data.publicUrl }));
                             }} />
+                            <p className="text-[10px] text-gray-500">PNG ou SVG, até 2 MB. O comercial precisa de site e logotipo. Cadastro antigo sem esses dados continua no banco.</p>
+                            {logoPendente && !formData.portal_logo_url && (
+                              <p className="text-[10px] font-bold text-slate-700" data-testid="text-logo-pendente">Arquivo pronto: {logoPendente.name}</p>
+                            )}
                             {formData.portal_logo_url && <ImagemSegura src={formData.portal_logo_url} alt="Logotipo do portal" className="h-10 w-auto object-contain" />}
                           </div>
                           <label className="text-xs font-bold text-slate-600">Cor principal
@@ -2022,19 +2120,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3" data-testid="card-tabela-regional">
                       <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
                           <div>
-                              <h4 className="text-xs font-bold text-gray-700 uppercase">Vigência da tabela regional</h4>
-                              <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Diretoria e administrador. Aplica as seis regiões padrão. Rotas de cidade não são reescritas.</p>
+                              <h4 className="text-xs font-bold text-gray-700 uppercase">Tabela 2027</h4>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Diretoria e administrador. Aplica as seis regiões padrão. Rotas de cidade não são reescritas. Linhas de 2026 já gravadas permanecem no banco.</p>
                           </div>
                           <div className="flex flex-wrap items-center gap-2">
-                              <select
-                                  className="p-2 border rounded text-xs font-bold bg-white uppercase"
-                                  value={tabelaVigencia}
-                                  onChange={e => setTabelaVigencia(e.target.value as VersaoTabelaRegional)}
-                                  data-testid="select-tabela-vigencia"
-                              >
-                                  <option value="2026">Tabela 2026</option>
-                                  <option value="2027">Tabela 2027</option>
-                              </select>
                               <button
                                   type="button"
                                   onClick={handleAplicarTabelaRegional}
@@ -2055,13 +2144,20 @@ const ClientForm: React.FC<ClientFormProps> = ({
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                           {FAIXAS_REGIONAIS.map((faixa) => (
                               <div key={faixa.region} className="text-[10px] font-bold uppercase text-gray-600 border border-gray-100 rounded-lg px-3 py-2">
-                                  {faixa.nome}: R$ {(tabelaVigencia === '2027' ? faixa.km2027 : faixa.km2026).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/km · 100 km / 3 h
+                                  {faixa.nome}: R$ {faixa.km2027.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/km · 100 km / 3 h
                               </div>
                           ))}
                       </div>
                   </div>
               )}
 
+              <RotaGoogleCotacao
+                  origem={cotacaoOrigem}
+                  destino={cotacaoDestino}
+                  onOrigem={setCotacaoOrigem}
+                  onDestino={setCotacaoDestino}
+                  onKm={setCotacaoKm}
+              />
               <QuoteCalculatorCard
                   cliente={formData.name}
                   versao={tabelaVigencia}
@@ -2072,44 +2168,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   onOrigem={setCotacaoOrigem}
                   onDestino={setCotacaoDestino}
                   onKm={setCotacaoKm}
+                  ocultarCampos
               />
 
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">{editingPriceId ? <Edit size={14}/> : <Plus size={14}/>} {editingPriceId ? 'Editar Regra' : 'Adicionar Nova Regra'}</h4>
-                <form onSubmit={handlePriceSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="md:col-span-1"><label className={LABEL_CLASS}>Região</label><select required className="w-full p-2 border rounded text-xs font-bold bg-white uppercase" value={priceRegion} onChange={e => setPriceRegion(e.target.value)}><option value="">Selecione...</option>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                    <div className="md:col-span-2"><label className={LABEL_CLASS}>Descrição</label><input required type="text" className="w-full p-2 border rounded text-xs font-bold uppercase" value={priceDescription} onChange={e => setPriceDescription(e.target.value)} /></div>
-                    <div>
-                        <label className={LABEL_CLASS}>Acionamento</label>
-                        <div className="relative">
-                            <input required type="text" className={`w-full p-2 border rounded text-xs font-bold ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={priceFormData.activation_fee} onChange={e => setPriceFormData({...priceFormData, activation_fee: e.target.value})} readOnly={!isFinanceAdmin} />
-                            {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                        </div>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div><label className={LABEL_CLASS}>Franquia KM</label><input required type="text" className="w-full p-2 border rounded text-xs" value={priceFormData.franchise_km} onChange={e => setPriceFormData({...priceFormData, franchise_km: e.target.value})} /></div>
-                    <div><label className={LABEL_CLASS}>Franquia Horas</label><input required type="text" className="w-full p-2 border rounded text-xs" value={priceFormData.franchise_hours} onChange={e => setPriceFormData({...priceFormData, franchise_hours: e.target.value})} /></div>
-                    <div>
-                        <label className={LABEL_CLASS}>KM Extra</label>
-                        <div className="relative">
-                            <input required type="text" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={priceFormData.price_per_extra_km} onChange={e => setPriceFormData({...priceFormData, price_per_extra_km: e.target.value})} readOnly={!isFinanceAdmin} />
-                            {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                        </div>
-                    </div>
-                    <div>
-                        <label className={LABEL_CLASS}>Hora Extra</label>
-                        <div className="relative">
-                            <input required type="text" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={priceFormData.price_per_extra_hour} onChange={e => setPriceFormData({...priceFormData, price_per_extra_hour: e.target.value})} readOnly={!isFinanceAdmin} />
-                            {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                        </div>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2"><button type="submit" disabled={isSavingPrice} className="px-4 py-1.5 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 flex items-center gap-2">{isSavingPrice ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Regra</button></div>
-                </form>
-              </div>
-              
               <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
                 <Search size={14} className="text-gray-400" />
                 <input
@@ -2123,7 +2184,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 {priceSearch && (
                     <button onClick={() => setPriceSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-price-search">Limpar</button>
                 )}
-                <SeletorVigencia versao={tabelaVigencia} onChange={setTabelaVigencia} testId="seletor-vigencia-precos" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase">Tabela 2027 · </span>
                 <span className="text-[10px] font-bold text-gray-400 uppercase">
                     {priceSearch ? `${tabelasDaVigencia.filter(t => (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length} / ${tabelasDaVigencia.length}` : `${tabelasDaVigencia.length} itens`}
                 </span>
@@ -2160,14 +2221,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                         <div className="flex flex-col items-center gap-0.5">
                                             <span className="bg-green-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 shadow-sm"><Check size={8} strokeWidth={4} /> Reajustado</span>
                                             {table.last_adjustment_date && (
-                                                <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {new Date(table.last_adjustment_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
+                                                <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {formatDateBR(table.last_adjustment_date)}</span>
                                             )}
                                         </div>
                                     ) : (
                                         <span className="text-gray-300 font-bold uppercase text-[8px]">Pendente</span>
                                     )}
                                 </td>
-                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button>{ehLinhaPadraoRegional(table.operation_type) && <button type="button" onClick={() => abrirEdicaoRegional(table)} className="px-2 py-1 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50 rounded inline-flex items-center gap-1" title="Editar tarifa regional" data-testid={`button-editar-regional-${table.id}`}><Edit size={12} /> Editar</button>}{!ehLinhaPadraoRegional(table.operation_type) && <button onClick={() => handleEditPrice(table)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit size={12} /></button>}<button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
+                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button>{ehLinhaPadraoRegional(table.operation_type) && <button type="button" onClick={() => abrirEdicaoRegional(table)} className="px-2 py-1 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50 rounded inline-flex items-center gap-1" title="Editar tarifa regional" data-testid={`button-editar-regional-${table.id}`}><Edit size={12} /> Editar</button>}<button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
                             </tr> 
                         ))}
                     </tbody>

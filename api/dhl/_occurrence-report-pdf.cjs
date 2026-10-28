@@ -31,44 +31,52 @@ var import_supabase_js3 = require("@supabase/supabase-js");
 // lib/dateUtils.ts
 var TMSEG_TIMEZONE = "America/Sao_Paulo";
 var TZ = TMSEG_TIMEZONE;
-var TIME_HM = {
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: TZ
-};
-var DATE_SHORT = {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  timeZone: TZ
-};
-var DATETIME_SHORT = {
-  day: "2-digit",
-  month: "2-digit",
-  year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: TZ
-};
+function dataCivilBR(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+function partesBR(d, tipo) {
+  const parts = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: TZ,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(d);
+  return parts.find((p) => p.type === tipo)?.value || "";
+}
 function toDate(value) {
   if (value == null || value === "") return null;
   const d = value instanceof Date ? value : new Date(value);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 var formatDateBR = (date) => {
+  if (typeof date === "string") {
+    const civil = dataCivilBR(date);
+    if (civil) return civil;
+  }
   const d = toDate(date);
   if (!d) return "\u2014";
-  return d.toLocaleDateString("pt-BR", DATE_SHORT);
+  return `${partesBR(d, "day")}/${partesBR(d, "month")}/${partesBR(d, "year")}`;
 };
 var formatDateTimeBR = (date) => {
+  if (typeof date === "string") {
+    const civil = dataCivilBR(date);
+    if (civil) return civil;
+  }
   const d = toDate(date);
   if (!d) return "\u2014";
-  return d.toLocaleString("pt-BR", DATETIME_SHORT);
+  const hora = partesBR(d, "hour").padStart(2, "0");
+  const minuto = partesBR(d, "minute").padStart(2, "0");
+  return `${partesBR(d, "day")}/${partesBR(d, "month")}/${partesBR(d, "year")} ${hora}:${minuto}`;
 };
 var formatTimeBR = (date, fallback = "\u2014") => {
   const d = toDate(date);
   if (!d) return fallback;
-  return d.toLocaleTimeString("pt-BR", TIME_HM);
+  return `${partesBR(d, "hour").padStart(2, "0")}:${partesBR(d, "minute").padStart(2, "0")}`;
 };
 
 // lib/dhlOccurrenceReport/photoUtils.ts

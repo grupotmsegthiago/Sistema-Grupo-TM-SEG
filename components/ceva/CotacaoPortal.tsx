@@ -3,7 +3,7 @@ import { Autocomplete, GoogleMap, Marker, OverlayView, Polyline, useLoadScript }
 import { ArrowLeftRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Route, Satellite, Trash2 } from 'lucide-react';
 import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
 import { authFetch } from '../../lib/authFetch';
-import { logoConhecido, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
+import { logoConhecido, logoSeguro, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
 import { pecasPublicadas, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import { dadosConfiaveis, dadosDaProposta, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
 import {
@@ -46,8 +46,9 @@ import {
 import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
 import { ExperienciaProposta } from './ExperienciaProposta';
 import { usePortalCliente } from './portalMarca';
-import { getRegionFromLocation, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
+import { clienteContratualDhlOuIbl, getRegionFromLocation, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
 import { exigeAceiteDoCliente, nomePdfCotacao, pedidoParaRegistro, reservarNumeroCotacao, TEXTO_ACEITE_OS } from '../../lib/portalCliente/historicoCotacoes';
+import { calcularTrechoProposta, somarTrechos, type TrechoPersistido } from '../../lib/portalCliente/trechosProposta';
 import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
 import { HistoricoCotacoes } from './HistoricoCotacoes';
 
@@ -283,6 +284,8 @@ function MapaCotacao(props: {
   onGerar: () => void;
   onSalvar: () => void;
   onPdf: () => void;
+  rotuloGerar?: string;
+  rotuloSalvar?: string;
 }) {
   const mapa = useRef<google.maps.Map | null>(null);
   const [rota, setRota] = useState<google.maps.DirectionsResult | null>(null);
@@ -475,10 +478,10 @@ function MapaCotacao(props: {
           <AceiteClienteOs marcado={props.aceite} onChange={props.onAceite} />
         )}
         <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando || (props.exigirAceite && !props.aceite)} data-testid="gerar-proposta" className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
-          <FileText size={16} /> Gerar proposta
+          <FileText size={16} /> {props.rotuloGerar || 'Gerar proposta'}
         </button>
         <button type="button" onClick={props.onSalvar} disabled={!props.podeGerar || props.salvando || props.gerando || (props.exigirAceite && !props.aceite)} data-testid="salvar-cotacao" className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/30 bg-white/15 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
-          {props.salvando ? 'Salvando cotação…' : 'Salvar cotação'}
+          {props.salvando ? 'Salvando cotação…' : (props.rotuloSalvar || 'Salvar cotação')}
         </button>
         {!props.podeGerar && <p className="mt-2 text-[11px] font-semibold text-slate-300">{props.km == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
         {props.exigirAceite && props.podeGerar && !props.aceite && <p className="mt-2 text-[11px] font-semibold text-slate-300">Marque o aceite para gerar a proposta.</p>}
@@ -537,6 +540,7 @@ export const CotacaoPortal: React.FC<{
   const [placeOrigem, setPlaceOrigem] = useState<string | null>(null);
   const [placeDestino, setPlaceDestino] = useState<string | null>(null);
   const [paradas, setParadas] = useState<{ id: number; texto: string; coordenada: Coordenada | null; placeId: string | null }[]>([]);
+  const [trechosExtras, setTrechosExtras] = useState<{ id: number; origem: string; destino: string; km: string; kmExtra: string; horaExtra: string }[]>([]);
   const [kmRota, setKmRota] = useState<number | null>(null);
   const [duracaoSeg, setDuracaoSeg] = useState<number | null>(null);
   const [proposta, setProposta] = useState<PropostaPortal | null>(null);
@@ -548,6 +552,7 @@ export const CotacaoPortal: React.FC<{
   const [editando, setEditando] = useState<Record<string, boolean>>({});
   const [carretaPronta, setCarretaPronta] = useState<string | null>(null);
   const [logoPronto, setLogoPronto] = useState<string | null>(null);
+  const [fichaCliente, setFichaCliente] = useState<{ nome: string; fantasia: string; cnpj: string; site: string; logo: string | null } | null>(null);
   const [operacoes, setOperacoes] = useState<string | null>(null);
   const [recargaHistorico, setRecargaHistorico] = useState(0);
   const [avisoHistorico, setAvisoHistorico] = useState('');
@@ -625,6 +630,30 @@ export const CotacaoPortal: React.FC<{
 
   const clienteDaRegiao = clienteNome || portal.marca.rotulo;
   useEffect(() => {
+    if (!clienteNome) {
+      setFichaCliente(null);
+      return;
+    }
+    let ativo = true;
+    void (async () => {
+      const { supabase } = await import('../../lib/supabase');
+      const idCliente = Number(clientId);
+      let consulta = supabase.from('clients').select('name, trading_name, cnpj, portal_site, portal_logo_url');
+      consulta = Number.isFinite(idCliente) && idCliente > 0 ? consulta.eq('id', idCliente) : consulta.ilike('name', clienteNome);
+      const { data } = await consulta.limit(1).maybeSingle();
+      if (!ativo || !data) return;
+      const linha = data as { name?: string | null; trading_name?: string | null; cnpj?: string | null; portal_site?: string | null; portal_logo_url?: string | null };
+      setFichaCliente({
+        nome: String(linha.name || clienteNome),
+        fantasia: String(linha.trading_name || ''),
+        cnpj: String(linha.cnpj || ''),
+        site: String(linha.portal_site || ''),
+        logo: logoSeguro(linha.portal_logo_url),
+      });
+    })();
+    return () => { ativo = false; };
+  }, [clienteNome, clientId]);
+  useEffect(() => {
     setRegiao((atual) => regiaoAcompanhaOrigem(origem, clienteDaRegiao, atual));
   }, [origem, clienteDaRegiao]);
   useEffect(() => {
@@ -661,9 +690,51 @@ export const CotacaoPortal: React.FC<{
     vigenciaFallback: resolvida?.vigencia,
   }), [clienteDaRegiao, origem, kmRota, versaoAtiva, linhasTarifa, tabela, resolvida?.vigencia]);
   const frases = proposta?.acordada ? FRASES_ACORDADA : FRASES_NOVA;
+  const resumoTrechos = useMemo(() => {
+    const lista: TrechoPersistido[] = [];
+    let erro = '';
+    if (clienteContratualDhlOuIbl(clienteDaRegiao)) return { trechos: lista, soma: somarTrechos(lista), erro };
+    if (contaAtual.aplicar && origem.trim() && destino.trim() && kmRota != null && kmRota > 0) {
+      const principal = calcularTrechoProposta({
+        origem,
+        destino,
+        km: kmRota,
+        cliente: clienteDaRegiao,
+        versao: versaoAtiva,
+        linhas: linhasTarifa,
+        tarifaKmFallback: tabela?.kmExtra,
+        horaExtraFallback: tabela?.horaExtra,
+        vigenciaFallback: resolvida?.vigencia,
+      });
+      if (principal.ok) lista.push(principal.trecho);
+      else erro = principal.error;
+    }
+    for (const extra of trechosExtras) {
+      if (!extra.origem.trim() && !extra.destino.trim() && !extra.km.trim() && !extra.kmExtra.trim() && !extra.horaExtra.trim()) continue;
+      const calculado = calcularTrechoProposta({
+        origem: extra.origem,
+        destino: extra.destino,
+        km: Number(String(extra.km).replace(',', '.')),
+        cliente: clienteDaRegiao,
+        versao: versaoAtiva,
+        linhas: linhasTarifa,
+        vigenciaFallback: versaoAtiva,
+        kmExtraInformado: extra.kmExtra.trim() ? Number(String(extra.kmExtra).replace(',', '.')) : null,
+        horaExtraInformado: extra.horaExtra.trim() ? Number(String(extra.horaExtra).replace(',', '.')) : null,
+      });
+      if (!calculado.ok) {
+        erro = erro || calculado.error;
+        continue;
+      }
+      lista.push(calculado.trecho);
+    }
+    return { trechos: lista, soma: somarTrechos(lista), erro };
+  }, [contaAtual, origem, destino, kmRota, clienteDaRegiao, versaoAtiva, linhasTarifa, tabela, resolvida?.vigencia, trechosExtras]);
+  const extraPreenchido = trechosExtras.some((extra) => extra.origem.trim() || extra.destino.trim() || extra.km.trim());
   const podeGerar = Boolean(
     origem.trim() && destino.trim() && kmRota != null && kmRota > 0
-    && (tabela || getRegionFromLocation(origem, '', clienteDaRegiao).region),
+    && (tabela || getRegionFromLocation(origem, '', clienteDaRegiao).region)
+    && (!extraPreenchido || (resumoTrechos.trechos.length > 1 && !resumoTrechos.erro)),
   );
   const exigirAceite = exigeAceiteDoCliente(Boolean(clienteNome), portal.ler()?.user.equipeInterna === true);
 
@@ -725,6 +796,16 @@ export const CotacaoPortal: React.FC<{
     nova.kmRota = kmRota;
     nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
     const usouMinimo = conta.aplicar ? conta.usouMinimo : kmRota <= 100;
+    if (resumoTrechos.trechos.length > 1 && !resumoTrechos.erro) {
+      const ultimo = resumoTrechos.trechos[resumoTrechos.trechos.length - 1];
+      nova.trechos = resumoTrechos.trechos;
+      nova.acionamento = resumoTrechos.soma.total;
+      nova.kmRota = resumoTrechos.soma.km;
+      nova.kmFaturado = resumoTrechos.soma.kmFaturado;
+      nova.horasContadas = resumoTrechos.soma.horas;
+      nova.destino = ultimo.destino;
+      nova.operacao = `${nova.regiao} — ${resumoTrechos.trechos.length} trechos`;
+    }
     return { nova, usouMinimo, vigencia: vigente };
   };
 
@@ -780,6 +861,7 @@ export const CotacaoPortal: React.FC<{
     setEsperandoCena(false);
     setEtapa('proposta');
     setAvisoSalva('');
+    setTrechosExtras([]);
     setOrigem('');
     setDestino('');
     setCoordOrigem(null);
@@ -918,6 +1000,14 @@ export const CotacaoPortal: React.FC<{
       operacao: nova.operacao,
       usouMinimo,
       vigencia,
+      ...(nova.trechos && nova.trechos.length > 1 ? {
+        trechos: nova.trechos,
+        valor: nova.acionamento,
+        km: nova.kmRota,
+        horas: nova.horasContadas,
+        destino: nova.destino,
+        acionamento: nova.acionamento,
+      } : {}),
       ...(exigirAceite && contexto.aceite ? { aceiteCliente: { texto: TEXTO_ACEITE_OS, em: new Date().toISOString() } } : {}),
     };
     try {
@@ -1009,9 +1099,19 @@ export const CotacaoPortal: React.FC<{
     const noPortal = !clienteNome;
     const logoPortal = noPortal && (portal.marca.logo.startsWith('/') || portal.marca.logo.startsWith('https://')) ? portal.marca.logo : null;
     const carreta = carretaDoCliente(clienteVisual);
-    const marca = logoConhecido(clienteVisual) || logoPortal;
     const trabalhar = async () => {
       if (!trajeto) return;
+      let logoCliente: string | null = null;
+      if (clienteNome) {
+        const { supabase } = await import('../../lib/supabase');
+        const idCliente = Number(clientId);
+        let consulta = supabase.from('clients').select('portal_logo_url');
+        consulta = Number.isFinite(idCliente) && idCliente > 0 ? consulta.eq('id', idCliente) : consulta.ilike('name', clienteNome);
+        const { data } = await consulta.limit(1).maybeSingle();
+        logoCliente = logoSeguro((data as { portal_logo_url?: string | null } | null)?.portal_logo_url);
+      }
+      const marca = logoCliente || logoConhecido(clienteVisual) || logoPortal;
+      if (!ativo) return;
       const mapa = await pedirMapaBase64(trajeto, (corpo) => (
         clienteNome
           ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
@@ -1024,10 +1124,20 @@ export const CotacaoPortal: React.FC<{
     };
     void trabalhar();
     return () => { ativo = false; };
-  }, [trajeto, clienteVisual, clienteNome, portal]);
+  }, [trajeto, clienteVisual, clienteNome, clientId, portal]);
 
   return (
     <section className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+      {fichaCliente && (
+        <div className="xl:col-span-2 flex items-center gap-4 rounded-[28px] border border-white/80 bg-white p-4" data-testid="ficha-cliente-cotacao">
+          {fichaCliente.logo ? <img src={fichaCliente.logo} alt="" className="h-12 w-auto max-w-[120px] object-contain" /> : <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-[10px] font-black text-slate-400">LOGO</span>}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black uppercase text-slate-900">{fichaCliente.nome}</p>
+            <p className="text-[11px] font-semibold text-slate-500">{fichaCliente.fantasia || 'Cliente da carteira'}{fichaCliente.cnpj ? ` · ${fichaCliente.cnpj}` : ''}</p>
+            <p className="truncate text-[11px] text-slate-400">{fichaCliente.site || 'Site não informado'}</p>
+          </div>
+        </div>
+      )}
       <style>{`.pac-container { z-index: 20000 !important; }`}</style>
       <div className="grid gap-4">
         <div className="rounded-[28px] border border-white/80 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
@@ -1118,8 +1228,59 @@ export const CotacaoPortal: React.FC<{
           conta={contaAtual}
           ocultarCampos
         />
+        <div className="rounded-2xl border border-gray-200 bg-white p-4" data-testid="trechos-proposta">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Trechos</p>
+              <h3 className="text-sm font-black text-gray-900">Origem e destino na mesma proposta</h3>
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-9 items-center gap-2 rounded-xl bg-slate-100 px-3 text-xs font-black text-[#152c54]"
+              onClick={() => setTrechosExtras((lista) => lista.length >= 7 ? lista : [...lista, { id: Date.now(), origem: '', destino: '', km: '', kmExtra: '', horaExtra: '' }])}
+            >
+              <Plus size={14} /> Adicionar trecho
+            </button>
+          </div>
+          {trechosExtras.map((extra, indice) => (
+            <div key={extra.id} className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_90px_90px_90px_auto]">
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold uppercase" placeholder="Origem" value={extra.origem} data-testid={`trecho-origem-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, origem: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold uppercase" placeholder="Destino" value={extra.destino} data-testid={`trecho-destino-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, destino: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold" placeholder="KM" inputMode="decimal" value={extra.km} data-testid={`trecho-km-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, km: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold" placeholder="KM extra" inputMode="decimal" value={extra.kmExtra} data-testid={`trecho-km-extra-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, kmExtra: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold" placeholder="Hora extra" inputMode="decimal" value={extra.horaExtra} data-testid={`trecho-hora-extra-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, horaExtra: evento.target.value } : item))} />
+              <button type="button" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-500" aria-label="Remover trecho" onClick={() => setTrechosExtras((lista) => lista.filter((item) => item.id !== extra.id))}><Trash2 size={14} /></button>
+            </div>
+          ))}
+          {resumoTrechos.erro && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900" data-testid="trechos-erro">{resumoTrechos.erro}</p>}
+          {resumoTrechos.trechos.length > 0 && (
+            <table className="mt-3 w-full text-left text-[11px]">
+              <thead className="text-[10px] uppercase text-gray-400">
+                <tr><th className="py-1">Trecho</th><th>KM excedente</th><th>Horas excedentes</th><th className="text-right">Valor</th></tr>
+              </thead>
+              <tbody>
+                {resumoTrechos.trechos.map((trecho, indice) => (
+                  <tr key={`${trecho.origem}-${indice}`} className="border-t border-gray-100">
+                    <td className="py-1 pr-2 font-bold text-gray-800">{indice + 1}. {trecho.origem} → {trecho.destino}</td>
+                    <td>{trecho.kmExcedente.toLocaleString('pt-BR')} km</td>
+                    <td>{trecho.horasExcedentes.toLocaleString('pt-BR')} h</td>
+                    <td className="text-right font-black">{trecho.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-200 font-black text-gray-900" data-testid="trechos-total">
+                  <td className="py-2">Total</td>
+                  <td>{resumoTrechos.soma.kmExcedente.toLocaleString('pt-BR')} km</td>
+                  <td>{resumoTrechos.soma.horasExcedentes.toLocaleString('pt-BR')} h</td>
+                  <td className="text-right">{resumoTrechos.soma.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
         {avisoSalva && <p className="rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-testid="aviso-cotacao-salva">{avisoSalva}</p>}
-        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} salvando={salvandoCotacao} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onSalvar={salvarCotacaoAtual} onPdf={preverPdf} />
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} salvando={salvandoCotacao} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onSalvar={salvarCotacaoAtual} onPdf={preverPdf} rotuloSalvar={clienteNome ? 'Salvar rascunho' : undefined} rotuloGerar={clienteNome ? 'Emitir proposta' : undefined} />
         <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} onEditar={editarCotacao} />
         {isGenerating && (
           <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">

@@ -269,6 +269,21 @@ export type PropostaPortal = {
   horasContadas?: number | null;
   /** Pernoite da rota, quando a proposta traz o valor. Sem número, o e-mail omite a linha. */
   pernoite?: number | null;
+  /** Mais de um trecho na mesma proposta. Um trecho só deixa este campo de fora. */
+  trechos?: Array<{
+    origem: string;
+    destino: string;
+    km: number;
+    kmFaturado: number;
+    horas: number;
+    kmExcedente: number;
+    horasExcedentes: number;
+    kmExtra: number;
+    horaExtra: number;
+    valor: number;
+    regiao: string;
+    usouMinimo: boolean;
+  }>;
 };
 
 export type ContaVisivelCotacao =

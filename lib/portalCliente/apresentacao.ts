@@ -1,4 +1,5 @@
 import { numerosDaTela, rotulosSemAno, type PropostaPortal } from './cotacao.js';
+import { conferirTrechosGravados } from './trechosProposta.js';
 
 export const MARCA_TMSEG = {
   nome: 'Grupo TM SEG',
@@ -163,6 +164,16 @@ export function cartaDaProposta(proposta: PropostaPortal, operacoes?: string | n
     'Rota',
     caminhoDaProposta(proposta),
     '',
+    ...(proposta.trechos && proposta.trechos.length > 1
+      ? [
+        'Trechos',
+        ...proposta.trechos.map((trecho, indice) => (
+          `${indice + 1}. ${trecho.origem} → ${trecho.destino}: ${moeda(trecho.valor)}. Excedente ${quantidade(trecho.kmExcedente)} km e ${quantidade(trecho.horasExcedentes)} h.`
+        )),
+        `Total dos trechos: ${moeda(proposta.trechos.reduce((soma, trecho) => soma + trecho.valor, 0))}.`,
+        '',
+      ]
+      : []),
     ...condicoesDaProposta(proposta),
     '',
     'Serviços',
@@ -198,6 +209,11 @@ export function propostaRecebida(bruto: unknown): PropostaPortal | null {
   const horasContadas = Number(item.horasContadas);
   const kmRota = Number(item.kmRota);
   const pernoite = Number(item.pernoite);
+  const vigencia = item.vigencia === '2027' ? '2027' : '2026';
+  const varios = Array.isArray(item.trechos) && item.trechos.length > 1
+    ? conferirTrechosGravados(item.trechos, '', vigencia)
+    : null;
+  if (varios && !varios.ok) return null;
   return {
     acordada: Boolean(item.acordada),
     regiao: String(item.regiao || '').slice(0, 80),
@@ -210,7 +226,8 @@ export function propostaRecebida(bruto: unknown): PropostaPortal | null {
     kmExtra: numeros[3],
     horaExtra: numeros[4],
     operacao: String(item.operacao || 'escolta').slice(0, 160),
-    vigencia: item.vigencia === '2027' ? '2027' : '2026',
+    vigencia,
+    ...(varios && varios.ok ? { trechos: varios.trechos, acionamento: varios.total } : {}),
     kmRota: Number.isFinite(kmRota) && kmRota > 0 ? kmRota : null,
     duracaoMin: Number(item.duracaoMin) > 0 ? Number(item.duracaoMin) : null,
     kmFaturado: Number.isFinite(kmFaturado) && kmFaturado > 0 ? kmFaturado : null,

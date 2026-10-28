@@ -1,4 +1,4 @@
-import { formatDateTimeBR } from '../lib/dateUtils';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Mission, MissionStatus, MissionLog, User as UserType, Agent, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
@@ -1740,9 +1740,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
         // a cópia funcionar no Safari, montamos o texto numa Promise e passamos
         // ela direto ao clipboard (gesto-safe) — sem dar await antes de copiar.
         const buildText = async (): Promise<string> => {
-        const dateObj = new Date(mission.startTime || mission.createdAt);
-        const dateStr = dateObj.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
-        const timeStr = dateObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+        const dateObj = mission.startTime || mission.createdAt;
+        const dateStr = formatDateBR(dateObj);
+        const timeStr = formatTimeBR(dateObj, '');
         const formatFL = formatAgentShortName;
         const { occurrence: locationOccurrence, city: cityField } = parseMonitoringLocation(mission.currentLocation);
         const locationParts = (mission.currentLocation || 'AGUARDANDO INÍCIO').split('|');

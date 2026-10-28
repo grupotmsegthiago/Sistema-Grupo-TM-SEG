@@ -5,7 +5,7 @@ import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
 import { dadosDaProposta, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
 import { cenaOficial, textoDuracaoViagem, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import { rotuloCidadeUf, tituloCidade } from '../../lib/portalCliente/rotaCotacao';
-import { CenaRotaVisual } from './ClientTruckVisual';
+import { CenaRotaVisual, ClientTruckVisual } from './ClientTruckVisual';
 
 function reais(valor: number): string {
   return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -161,6 +161,7 @@ export const PropostaPremium: React.FC<{
   const mapa = mapaLimpo || (!printMapa ? (cena?.mapa || '') : '');
   const carreta = cena?.carreta || oficial.recorte;
   const logo = cena?.logo || oficial.logo;
+  const logoNaCarreta = logo && /^https:\/\//.test(logo) ? logo : (oficial.slug === 'ceva' ? null : logo);
   const capa = pecas?.capa || hero || null;
   const capaMarca = ['dhl', 'ibl'].includes(oficial.slug) ? `/propostas-premium/capas/${oficial.slug}.webp` : '';
   const [capaFalhou, setCapaFalhou] = useState(false);
@@ -213,7 +214,7 @@ export const PropostaPremium: React.FC<{
         )}
         {!fundo ? (
           <figure className="banner-caminhao pointer-events-none absolute inset-y-0 right-0 w-[46%]">
-            <img src={oficial.veiculo} alt="" className="caminhao-proposta absolute bottom-1 right-1 h-52 w-auto max-w-[58%] object-contain drop-shadow-[0_22px_18px_rgba(0,0,0,0.65)] sm:h-60" />
+            <ClientTruckVisual cliente={cliente} src={oficial.veiculo} logo={logoNaCarreta} className="caminhao-proposta absolute bottom-1 right-1 h-52 w-auto max-w-[58%] object-contain drop-shadow-[0_22px_18px_rgba(0,0,0,0.65)] sm:h-60" />
           </figure>
         ) : null}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-[#07090e] via-[#07090e]/78 to-transparent" />
@@ -268,7 +269,7 @@ export const PropostaPremium: React.FC<{
           {mapa ? (
             <figure className="mapa-perspectiva mapa-palco px-3 pb-3">
               <div className="mapa-placa overflow-hidden rounded-xl shadow-[0_28px_36px_rgba(0,0,0,0.55),0_0_22px_rgba(208,18,26,0.28)]">
-                <CenaRotaVisual mapa={mapa} carreta={carreta} logo={oficial.slug === 'ceva' ? null : logo} faixa={false} />
+                <CenaRotaVisual mapa={mapa} carreta={carreta} logo={logoNaCarreta} faixa={false} />
               </div>
               <figcaption className="mt-2 text-[10px] text-white/45">Mapa: Google. O traçado vermelho é o da rota calculada.</figcaption>
             </figure>
@@ -284,6 +285,22 @@ export const PropostaPremium: React.FC<{
             <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs"><span className="block text-[10px] uppercase tracking-wide text-emerald-400">Origem</span><span className="mt-1 block font-semibold">{proposta.origem}</span></p>
             <p className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-xs"><span className="block text-[10px] uppercase tracking-wide text-[#d0121a]">Destino</span><span className="mt-1 block font-semibold">{proposta.destino}</span></p>
           </div>
+          {proposta.trechos && proposta.trechos.length > 1 ? (
+            <table className="mx-4 mb-3 w-[calc(100%-2rem)] text-left text-[11px]" data-testid="proposta-trechos">
+              <thead className="uppercase text-white/45">
+                <tr><th className="py-1">Trecho</th><th>Excedente</th><th className="text-right">Valor</th></tr>
+              </thead>
+              <tbody>
+                {proposta.trechos.map((trecho, indice) => (
+                  <tr key={`${trecho.origem}-${indice}`} className="border-t border-white/10">
+                    <td className="py-1 pr-2">{indice + 1}. {trecho.origem} → {trecho.destino}</td>
+                    <td>{trecho.kmExcedente.toLocaleString('pt-BR')} km · {trecho.horasExcedentes.toLocaleString('pt-BR')} h</td>
+                    <td className="text-right font-semibold">{reais(trecho.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2 px-4 pb-3 text-[11px] text-white/80">
             {marcos.map((marco, indice) => (
               <React.Fragment key={`${marco}-${indice}`}>

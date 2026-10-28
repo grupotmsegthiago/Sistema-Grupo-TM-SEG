@@ -1,5 +1,21 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-28. Na Tabela de Custos do fornecedor já salvo, o botão Exportar Excel baixa a grade visível (respeita a busca). Custo base fica vermelho; reajuste ativo fica verde, com a data em DD/MM/AAAA. Valores da tabela não mudam. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. Em Contas a Pagar / Receber, abaixo das etapas e acima dos filtros, há um gráfico recolhido de Receber x Pagar. Ele lê os títulos já carregados (`INCOME` e `EXPENSE`), pelo vencimento, sem gravar e sem mudar fórmula. Datas em DD/MM/AAAA, fuso de Brasília. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. A exibição de data no front-end passa por `formatDateBR` e `formatDateTimeBR` (`DD/MM/AAAA` e `DD/MM/AAAA HH:mm`, fuso `America/Sao_Paulo`, 24h). Data civil `AAAA-MM-DD` não recua um dia. Formulário, JSON, API e PostgreSQL continuam em ISO. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. Na Tabela de Preços da Diretoria, a vigência nova fica na Tabela 2027. Os seletores 2026/2027 saíram. O bloco Adicionar nova regra saiu. Origem e destino dessa cotação usam o Google e preenchem o km. Sem linha gravada do cliente, o card usa o piso 2027 da região reconhecida e chama `calculateTripCost`. O tempo do Google fica só como tempo de viagem; as horas faturadas saem da quilometragem. O comercial não abre essa aba: no cliente, ele vê Cotações, com a ficha (razão, CNPJ, site e logo), os trechos e a carreta. Linhas de 2026 já gravadas continuam no banco. A fórmula não mudou. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. Recorte D: a cotação aceita vários trechos na mesma proposta. Cada um usa `calculateTripCost`. O total é a soma. Km extra, hora extra e acionamento da Tabela 2027 não descem do piso da faixa; valor maior continua valendo. Os trechos ficam no snapshot de `quotes`. O logotipo já gravado no cliente entra na carreta. O e-mail da proposta continua com o link de 10 dias e a cópia para o cliente, o comercial e thiago@grupotmseg.com.br. Sem migration e sem mudança da fórmula. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. Recorte C: no quadro de comissões, o card avisa OS concluída há mais de 35 dias sem fatura, na TM SEG e na Torres. A data é a de conclusão já gravada. O valor é o que já está na OS. Sem migration e sem mudança de cálculo. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. Recorte B: no cadastro, o comercial precisa de site com http ou https e de logotipo PNG ou SVG de até 2 MB. Diretoria salva cliente antigo sem esses dados. A coluna no banco não virou obrigatória. O arquivo sobe no bucket que já existia. Sem migration. Tabela 2027, comissão, OS e Torres não mudaram. Ainda não foi publicado.
+
+Atualizado em 2026-10-28. Recorte A da carteira: a raiz do CNPJ (8 dígitos) bloqueia filial de outro comercial no cadastro do cliente. A mesma carteira pode incluir a filial. Sem migration. Tabela 2027, comissão, OS e Torres não mudaram. Ainda não foi publicado.
+
 Atualizado em 2026-10-27. A sequência `os_gtm_seq` foi alinhada ao maior GTM já gravado. O ponteiro está em 8933 e a próxima chamada atômica entrega 8934. A OS 8933 é da Intermodal, criada fora da sequência. O pedido da CEVA no localhost ainda não foi enviado. O motor de cálculo não mudou. Ainda não foi publicado.
 
 Atualizado em 2026-10-27. O portal deixa de numerar a OS pelas últimas 40 gravações. A migration `2026_10_27_os_gtm_seq.sql` cria a sequência e ainda não foi aplicada. Sem ela, o código lê o maior GTM da base. Falha de e-mail não desfaz a OS. Constraint do banco volta no JSON. A tabela do cliente continua nas 10 OS aprovadas da rota. O motor de cálculo não mudou. Ainda não foi publicado.

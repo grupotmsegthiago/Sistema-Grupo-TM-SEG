@@ -40,6 +40,7 @@ import ReceivablePaymentsModal from './ReceivablePaymentsModal';
 import ReceivablePayConfirmModal from './ReceivablePayConfirmModal';
 import { extractParentTransactionId } from '../lib/financial/confirmReceivablePay';
 import CashFlowPreviewButton from './CashFlowPreviewButton';
+import FluxoCaixaComparativo from './FluxoCaixaComparativo';
 import { extractAnticipationId, extractAnticipationDates } from '../lib/financial/paymentAnticipation';
 import PaymentAnticipationModal from './PaymentAnticipationModal';
 import { extractAsaasReceiptDetails } from '../lib/asaasReceiptDetails';
@@ -2058,6 +2059,8 @@ const FinancialTransactionList: React.FC = () => {
                     ))}
                 </div>
             </div>
+
+            <FluxoCaixaComparativo lancamentos={transactions} categorias={categories} carregando={loading} />
 
             {renderStepContent()}
         </div>

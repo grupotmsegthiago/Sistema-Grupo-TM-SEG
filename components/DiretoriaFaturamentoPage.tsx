@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
+import { formatDateBR } from '../lib/dateUtils';
 import { carregarPainelFaturamento } from '../lib/faturamento/carregarPainelFaturamento';
 import type { LinhaRelatorioFaturamento, SemaforoFaturamento } from '../lib/faturamento/painelFaturamento';
 
@@ -16,10 +17,7 @@ function fmtBRL(n: number): string {
 
 function fmtDate(d?: string | null): string {
   if (!d || d === '—') return '—';
-  const s = String(d).slice(0, 10);
-  const [y, m, day] = s.split('-');
-  if (!y || !m || !day) return s;
-  return `${day}/${m}/${y}`;
+  return formatDateBR(d);
 }
 
 function SemaforoDot({ s }: { s: SemaforoFaturamento }) {

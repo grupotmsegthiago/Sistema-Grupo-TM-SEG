@@ -4,6 +4,7 @@ import { googleMapsLoadConfig } from '../../lib/maps';
 import { ITENS_MEDICAO, type MedicaoCliente } from '../../lib/portalCliente/medicao';
 import type { FotoEvento } from '../../lib/portalCliente/fotosMedicao';
 import { relatoMedicao, type TrechoRelato } from '../../lib/portalCliente/relatoMedicao';
+import { formatDateBR, formatTimeBR } from '../../lib/dateUtils';
 
 export type LinhaMedicao = {
   os: string;
@@ -55,22 +56,16 @@ function km(valor: number | null | undefined): string {
   return valor.toLocaleString('pt-BR');
 }
 
-function instante(valor: string | null): Date | null {
-  if (!valor) return null;
-  const data = new Date(valor);
-  return Number.isNaN(data.getTime()) ? null : data;
-}
-
 function hora(valor: string | null): string {
-  const data = instante(valor);
-  if (!data) return valor || '—';
-  return data.toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  if (!valor) return '—';
+  const texto = formatTimeBR(valor, '');
+  return texto && texto !== '—' ? texto : valor;
 }
 
 function dia(valor: string | null): string {
-  const data = instante(valor);
-  if (!data) return '';
-  return data.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  if (!valor) return '';
+  const texto = formatDateBR(valor);
+  return texto === '—' ? '' : texto;
 }
 
 function Campo(props: { rotulo: string; linhas: string[] }) {

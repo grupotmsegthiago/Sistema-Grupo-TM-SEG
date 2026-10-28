@@ -18,6 +18,13 @@ import {
 } from './quadroFaturamentoComissao.js';
 import { carregarQuadroTorres } from './quadroTorres.js';
 import { carregarCoberturaOsPeriodo, coberturaVazia, type CoberturaOsPeriodo } from './coberturaOsPeriodo.js';
+import {
+  alertaOsSemFaturaVazio,
+  carregarAlertaOsSemFatura35,
+  filtrarAlertaOs35,
+  type AlertaOsSemFatura35,
+} from './osSemFatura35.js';
+import { createTorresAdminClient } from './torresSupabase.js';
 import type { ComissaoDbClient } from './comissaoCore.js';
 import { carregarIniciosComissao, filtrarLinhasAposCadastro } from './dataInicioComissao.js';
 import type { RotaMissaoComissao } from './rotaMissaoComissao.js';
@@ -29,6 +36,7 @@ export type QuadroComissoesApiResult = {
   meses: string[];
   pendencias: Awaited<ReturnType<typeof carregarPendenciasComissao>>['pendencias'];
   cobertura: CoberturaOsPeriodo;
+  alertaOs35?: AlertaOsSemFatura35;
   iniciosComissao: Record<string, string>;
   rotasTorres: RotaMissaoComissao[];
   error?: string;
@@ -56,6 +64,7 @@ export function restringirQuadroAoComercial(
         porCliente: [],
         totais: { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 },
       },
+      alertaOs35: filtrarAlertaOs35(quadro.alertaOs35, ''),
       iniciosComissao: {},
       rotasTorres: quadro.rotasTorres || [],
     };
@@ -86,6 +95,7 @@ export function restringirQuadroAoComercial(
         { missoes: 0, faturadas: 0, semFatura: 0, receita: 0, custo: 0, lucro: 0 },
       ),
     },
+    alertaOs35: filtrarAlertaOs35(quadro.alertaOs35, id),
     iniciosComissao: inicio ? { [id]: inicio } : {},
     rotasTorres: quadro.rotasTorres || [],
   };
@@ -106,18 +116,20 @@ export async function montarQuadroComissoesApi(
       meses: [],
       pendencias: [],
       cobertura: coberturaVazia('ERRO', comErr.message, true),
+      alertaOs35: alertaOsSemFaturaVazio('ERRO', comErr.message),
       iniciosComissao: {},
       rotasTorres: [],
       error: comErr.message,
     };
   }
   const lista = (comerciais || []) as Array<{ id: string; nome?: string | null }>;
-  const [quadro, torres, cobertura, pend, inicios] = await Promise.all([
+  const [quadro, torres, cobertura, pend, inicios, alertaOs35] = await Promise.all([
     carregarQuadroTmSeg(sb, periodStart, periodEnd, lista),
     carregarQuadroTorres(sb, periodStart, periodEnd, lista),
     carregarCoberturaOsPeriodo(sb, periodStart, periodEnd, lista),
     carregarPendenciasComissao(sb),
     carregarIniciosComissao(sb),
+    carregarAlertaOsSemFatura35(sb, createTorresAdminClient()),
   ]);
   const linhasOs = montarQuadroClientes(
     faturasDeOsParaQuadro(cobertura.itens),
@@ -145,6 +157,7 @@ export async function montarQuadroComissoesApi(
     meses: [...new Set([...quadro.meses, ...mesesTorres])].sort().reverse(),
     pendencias: pend.ok ? pend.pendencias : [],
     cobertura,
+    alertaOs35,
     iniciosComissao: Object.fromEntries(inicios),
     rotasTorres: torres.rotas || [],
     error: quadro.error || torres.error || (!pend.ok ? pend.error : undefined) || cobertura.error,

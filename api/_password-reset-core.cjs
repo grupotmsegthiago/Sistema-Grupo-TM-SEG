@@ -32,7 +32,8 @@ var passwordReset_exports = {};
 __export(passwordReset_exports, {
   handlePasswordResetConfirm: () => handlePasswordResetConfirm,
   handlePasswordResetRequest: () => handlePasswordResetRequest,
-  handlePasswordResetValidate: () => handlePasswordResetValidate
+  handlePasswordResetValidate: () => handlePasswordResetValidate,
+  redefinirComTextoDeCriacao: () => redefinirComTextoDeCriacao
 });
 module.exports = __toCommonJS(passwordReset_exports);
 var import_crypto2 = __toESM(require("crypto"), 1);
@@ -1360,8 +1361,13 @@ async function handlePasswordResetRequest(body) {
   const dados = body || {};
   const userId = String(dados.userId || "").trim();
   const senderName = typeof dados.senderName === "string" ? dados.senderName : void 0;
-  const canal = dados.canal === "whatsapp" ? "whatsapp" : "email";
+  const canal = dados.canal === "whatsapp" ? "whatsapp" : dados.canal === "texto" ? "texto" : "email";
   if (!userId) return { status: 400, body: { error: "userId obrigat\xF3rio" } };
+  if (canal === "texto") {
+    const sb2 = clienteAdmin();
+    if (!sb2) return { status: 503, body: { error: "Servidor de usu\xE1rios indispon\xEDvel." } };
+    return redefinirComTextoDeCriacao(sb2, userId);
+  }
   if (canal === "whatsapp") {
     const telefone = normalizarTelefoneWhatsapp(dados.telefone);
     if (!telefone) {
@@ -1370,6 +1376,68 @@ async function handlePasswordResetRequest(body) {
     return redefinirPorWhatsapp(userId, telefone);
   }
   return redefinirPorEmail(userId, senderName);
+}
+async function redefinirComTextoDeCriacao(sb2, userId) {
+  const { data: userData, error: userErr } = await sb2.from("system_users").select("id, name, email, user_type, client_id, permissions").eq("id", userId).single();
+  if (userErr || !userData?.email) return { status: 404, body: { error: "Usu\xE1rio n\xE3o encontrado" } };
+  const portal = userData.user_type === "client" && userData.client_id ? await portalDoCliente(sb2, userData.client_id) : null;
+  const soPortal = usuarioSoPortal(userData.permissions);
+  let acessoId = null;
+  if (portal) {
+    const acesso = await lerAcessoPortal(sb2, {
+      tabela: portal.tabelas.usuarios,
+      email: String(userData.email),
+      clientId: userData.client_id
+    });
+    if (!acesso.ok) return { status: 500, body: { error: acesso.error } };
+    acessoId = acesso.id;
+    if (soPortal && acessoId == null) {
+      return {
+        status: 409,
+        body: { error: "O acesso ao portal deste e-mail n\xE3o foi encontrado. Salve o usu\xE1rio com Acesso ao portal e tente de novo." }
+      };
+    }
+  }
+  const senha = gerarSenhaTemporaria();
+  if (portal && acessoId != null) {
+    const aplicado = await aplicarSenhaNoPortal(sb2, {
+      tabela: portal.tabelas.usuarios,
+      email: String(userData.email),
+      clientId: userData.client_id,
+      senha,
+      trocarSenha: true
+    });
+    if (!aplicado.ok || !aplicado.atualizado) {
+      return {
+        status: 500,
+        body: {
+          error: aplicado.ok ? "O acesso do portal n\xE3o foi encontrado para gravar a senha. A senha atual foi mantida." : `A senha do portal n\xE3o foi gravada. ${aplicado.error}`
+        }
+      };
+    }
+  }
+  try {
+    await gravarSenhaNoServidor(sb2, String(userData.id), senha, { force_password_change: true });
+    await exigirTrocaNoProximoAcesso(sb2, String(userData.id));
+  } catch (erro) {
+    const texto = erro instanceof Error ? erro.message : "Falha ao gravar a senha";
+    console.error("[PasswordReset] texto de cria\xE7\xE3o", texto);
+    return {
+      status: 500,
+      body: {
+        error: portal && acessoId != null ? "A senha do portal foi gravada, mas o cadastro do sistema n\xE3o. Clique de novo em Redefinir senha." : "A senha n\xE3o foi gravada. Tente de novo."
+      }
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      success: true,
+      senha,
+      message: "Senha nova gerada. Copie a mensagem e envie ao usu\xE1rio.",
+      ...portal && acessoId != null ? { portal: true, rotulo: portal.rotulo, caminho: portal.caminho } : { portal: false }
+    }
+  };
 }
 async function redefinirPorEmail(userId, senderName) {
   const sb2 = clienteAdmin();
@@ -1561,5 +1629,6 @@ async function handlePasswordResetConfirm(body) {
 0 && (module.exports = {
   handlePasswordResetConfirm,
   handlePasswordResetRequest,
-  handlePasswordResetValidate
+  handlePasswordResetValidate,
+  redefinirComTextoDeCriacao
 });

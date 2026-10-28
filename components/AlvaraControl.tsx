@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { ProviderData } from '../types';
@@ -342,12 +343,8 @@ const AlvaraControl: React.FC = () => {
                             ) : (
                                 filtered.map(p => {
                                     const isVencido = p.status === 'Alvará Vencido';
-                                    // Parse date correctly with timezone consideration
-                                    let date = null;
-                                    if (p.alvaraValidity) {
-                                        const [year, month, day] = p.alvaraValidity.split('-').map(Number);
-                                        date = new Date(year, month - 1, day);
-                                    }
+                                    // Data civil AAAA-MM-DD: a exibição passa por formatDateBR, sem deslocar o dia.
+                                    const validadeCivil = p.alvaraValidity ? String(p.alvaraValidity).slice(0, 10) : '';
                                     
                                     return (
                                         <tr key={p.id} className={`hover:bg-gray-50 transition-colors ${isVencido ? 'bg-red-50/20' : ''}`}>
@@ -356,10 +353,10 @@ const AlvaraControl: React.FC = () => {
                                                 <div className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">CNPJ: {p.cnpj}</div>
                                             </td>
                                             <td className="px-6 py-4 text-center">
-                                                {date ? (
+                                                {validadeCivil ? (
                                                     <div className={`inline-flex flex-col items-center p-2 rounded-lg border ${isVencido ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
                                                         <Calendar size={14} className="mb-1" />
-                                                        <span className="text-xs font-black font-mono">{date.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
+                                                        <span className="text-xs font-black font-mono">{formatDateBR(validadeCivil)}</span>
                                                     </div>
                                                 ) : (
                                                     <span className="text-gray-300 font-black text-[10px] uppercase">Pendente</span>

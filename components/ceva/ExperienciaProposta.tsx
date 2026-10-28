@@ -12,6 +12,7 @@ import { nomePdfCotacao } from '../../lib/portalCliente/historicoCotacoes';
 import type { CenaVisual } from '../../lib/portalCliente/frotaVisual';
 import { nomeArquivoPdfProposta, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
 import { authFetch } from '../../lib/authFetch';
+import { formatDateBR } from '../../lib/dateUtils';
 import { PropostaPremium } from './PropostaPremium';
 import { usePortalCliente } from './portalMarca';
 
@@ -22,7 +23,7 @@ function textoEnvio(corpo: { para?: unknown; copias?: unknown }, digitado: strin
 }
 
 function dataDaProposta(): string {
-  return new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+  return formatDateBR(new Date());
 }
 
 export const ExperienciaProposta: React.FC<{
@@ -115,9 +116,7 @@ export const ExperienciaProposta: React.FC<{
       if (!resposta.ok || typeof corpo.caminho !== 'string') throw new Error(corpo.error || 'Não foi possível gerar o link.');
       const url = `${window.location.origin}${corpo.caminho}`;
       await navigator.clipboard.writeText(url);
-      const validade = typeof corpo.expiraEm === 'string'
-        ? new Date(corpo.expiraEm).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' })
-        : '';
+      const validade = typeof corpo.expiraEm === 'string' ? formatDateBR(corpo.expiraEm) : '';
       const mesmo = corpo.reutilizado === true;
       setLinkAviso(validade
         ? (mesmo ? `O mesmo link de antes. Vale até ${validade}. Não é gerado outro nestes 10 dias.` : `Link copiado. Vale até ${validade}. A pessoa só vê esta proposta.`)

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
-import { formatDateTimeBR } from '../lib/dateUtils';
+import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
@@ -115,8 +115,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDate = (d: string) => {
   if (!d) return '-';
-  const dt = new Date(d + (d.length === 10 ? 'T12:00:00' : ''));
-  return dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const texto = formatDateBR(d);
+  return texto === '—' ? '-' : texto;
 };
 
 const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void }> = ({ onNavigate }) => {
