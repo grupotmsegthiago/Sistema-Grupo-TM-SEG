@@ -273,7 +273,11 @@ async function gravarSenhaNoServidor(cliente, usuarioId, senha, extras = {}) {
   }
   const legado = { password: senha };
   for (const [chave, valor] of Object.entries(extras)) {
-    if (chave === "session_epoch" || chave === "force_password_change") continue;
+    if (chave === "session_epoch") continue;
+    if (chave === "force_password_change") {
+      if (valor === false) legado[chave] = false;
+      continue;
+    }
     legado[chave] = valor;
   }
   const texto = await cliente.from("system_users").update(legado).eq("id", usuarioId);

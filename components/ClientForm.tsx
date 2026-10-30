@@ -1320,17 +1320,28 @@ const ClientForm: React.FC<ClientFormProps> = ({
       () => filtrarPorVigencia(priceTables, tabelaVigencia, (tabela) => versaoDaLinhaTarifaria(tabela.operation_type)),
       [priceTables, tabelaVigencia],
   );
+  const tabelasExibidas = useMemo(() => {
+      const termo = priceSearch.trim().toLowerCase();
+      if (!termo) return priceTables;
+      return priceTables.filter((tabela) => (tabela.operation_type || '').toLowerCase().includes(termo));
+  }, [priceTables, priceSearch]);
+  const linhasProposta = useMemo(
+      () => tabelasDaVigencia.filter((tabela) => selectedPriceIds.includes(tabela.id)),
+      [tabelasDaVigencia, selectedPriceIds],
+  );
   useEffect(() => {
-      const visiveis = new Set(tabelasDaVigencia.map((tabela) => tabela.id));
+      const visiveis = new Set(priceTables.map((tabela) => tabela.id));
       setSelectedPriceIds((atual) => {
           const proximo = atual.filter((id) => visiveis.has(id));
           return proximo.length === atual.length ? atual : proximo;
       });
-  }, [tabelasDaVigencia]);
+  }, [priceTables]);
 
   const handleSelectAllPrices = () => {
-      if (selectedPriceIds.length === tabelasDaVigencia.length && tabelasDaVigencia.length > 0) setSelectedPriceIds([]);
-      else setSelectedPriceIds(tabelasDaVigencia.map(t => t.id));
+      const ids = tabelasExibidas.map((tabela) => tabela.id);
+      const todos = ids.length > 0 && ids.every((id) => selectedPriceIds.includes(id));
+      if (todos) setSelectedPriceIds((atual) => atual.filter((id) => !ids.includes(id)));
+      else setSelectedPriceIds(ids);
   };
 
   const handleSelectPriceRow = (id: string) => {
@@ -1357,11 +1368,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           <CommercialProposalModal 
             onClose={() => { setIsProposalModalOpen(false); fetchClientData(); }} 
             clientName={formData.trading_name || formData.name} 
-            priceTables={
-              selectedPriceIds.length > 0
-                ? tabelasDaVigencia.filter((t) => selectedPriceIds.includes(t.id))
-                : tabelasDaVigencia
-            }
+            priceTables={linhasProposta}
             contactName={formData.contact} 
             email={formData.email} 
             cnpj={formData.cnpj} 
@@ -1421,11 +1428,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (selectedPriceIds.length === 0) {
+                  if (linhasProposta.length === 0) {
                     setActiveTab('costs');
                     showNotification(
                       'Atenção',
-                      'Na aba Tabela de Preços, marque as rotas/tabelas que devem entrar na proposta. Só as selecionadas serão emitidas no documento.',
+                      selectedPriceIds.length > 0
+                        ? 'A Tabela 2026 (ANTIGA) fica na grade. A proposta nova usa as linhas da Tabela 2027.'
+                        : 'Na aba Tabela de Preços, marque as linhas da Tabela 2027 para a proposta.',
                       'warning',
                     );
                     return;
@@ -1436,7 +1445,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 data-testid="button-gerar-proposta"
               >
                 <ScrollText size={18} /> Gerar Contrato / Proposta
-                {selectedPriceIds.length > 0 ? ` (${selectedPriceIds.length})` : ''}
+                {linhasProposta.length > 0 ? ` (${linhasProposta.length})` : ''}
               </button>
             )}
         </div>}
@@ -2138,8 +2147,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               <h3 className="font-bold text-base uppercase tracking-tighter">Reajuste Seletivo</h3>
                               <p className="text-[10px] text-white/80 uppercase font-bold tracking-widest mt-1">
                                   {selectedPriceIds.length > 0
-                                    ? `${selectedPriceIds.length} itens marcados — entram na proposta / reajuste / exclusão`
-                                    : 'Marque as rotas abaixo para a proposta, reajuste ou exclusão'}
+                                    ? `${selectedPriceIds.length} itens marcados. Proposta nova: ${linhasProposta.length} da Tabela 2027. Reajuste e exclusão usam a marca, inclusive 2026 (ANTIGA).`
+                                    : 'A Tabela 2026 (ANTIGA) aparece na grade. Proposta nova usa a Tabela 2027.'}
                               </p>
                           </div>
                       </div>
@@ -2227,9 +2236,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 {priceSearch && (
                     <button onClick={() => setPriceSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-price-search">Limpar</button>
                 )}
-                <span className="text-[10px] font-bold text-gray-400 uppercase">Tabela 2027 · </span>
-                <span className="text-[10px] font-bold text-gray-400 uppercase">
-                    {priceSearch ? `${tabelasDaVigencia.filter(t => (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length} / ${tabelasDaVigencia.length}` : `${tabelasDaVigencia.length} itens`}
+                <span className="text-[10px] font-bold text-gray-400 uppercase" data-testid="contador-tabelas-preco">
+                    {tabelasExibidas.length} itens · 2026 (ANTIGA) {tabelasExibidas.filter((tabela) => versaoDaLinhaTarifaria(tabela.operation_type) === '2026').length}
                 </span>
               </div>
 
@@ -2237,7 +2245,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 <table className="w-full text-left border-collapse table-auto">
                     <thead className="bg-gray-100 text-gray-600 font-bold uppercase">
                         <tr className="text-[10px]">
-                            <th className="pl-4 py-3 w-8"><button onClick={handleSelectAllPrices} className="flex items-center text-gray-400">{selectedPriceIds.length === tabelasDaVigencia.length && tabelasDaVigencia.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></th>
+                            <th className="pl-4 py-3 w-8"><button onClick={handleSelectAllPrices} className="flex items-center text-gray-400">{tabelasExibidas.length > 0 && tabelasExibidas.every((tabela) => selectedPriceIds.includes(tabela.id)) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></th>
                             <th className="p-2">Operação / Rota</th>
                             <th className="p-2 text-right">Acionamento</th>
                             <th className="p-2 text-center">Franquia</th>
@@ -2248,13 +2256,20 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {tabelasDaVigencia.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length === 0 && (
-                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs" data-testid="precos-vigencia-vazia">{priceSearch ? `Nenhuma tabela encontrada para "${priceSearch}"` : `Nenhuma linha da Tabela ${tabelaVigencia}.`}</td></tr>
+                        {tabelasExibidas.length === 0 && (
+                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs" data-testid="precos-vigencia-vazia">{priceSearch ? `Nenhuma tabela encontrada para "${priceSearch}"` : 'Nenhuma linha na tabela de preços deste cliente.'}</td></tr>
                         )}
-                        {tabelasDaVigencia.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).map((table) => (
+                        {tabelasExibidas.map((table) => (
                             <tr key={table.id} className={`text-[11px] transition-all ${selectedPriceIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/30'}`}>
                                 <td className="pl-4 py-2"><button onClick={() => handleSelectPriceRow(table.id)}>{selectedPriceIds.includes(table.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></td>
-                                <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>{table.operation_type}</td>
+                                <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>
+                                    <span className="inline-flex flex-wrap items-center gap-2">
+                                        {table.operation_type}
+                                        {versaoDaLinhaTarifaria(table.operation_type) === '2026' && (
+                                            <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[8px] font-black uppercase" data-testid={`badge-tabela-antiga-${table.id}`}>2026 (ANTIGA)</span>
+                                        )}
+                                    </span>
+                                </td>
                                 <td className={`p-2 text-right font-mono font-black ${table.adjustment_status ? 'text-green-700' : 'text-gray-900'}`}>R$ {(table.activation_fee ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                 <td className="p-2 text-center text-gray-500">{table.franchise_km}km / {table.franchise_hours}h</td>
                                 <td className="p-2 text-right text-red-600 font-bold">R$ {(table.price_per_extra_km ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
@@ -2271,7 +2286,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                         <span className="text-gray-300 font-bold uppercase text-[8px]">Pendente</span>
                                     )}
                                 </td>
-                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button>{ehLinhaPadraoRegional(table.operation_type) && <button type="button" onClick={() => abrirEdicaoRegional(table)} className="px-2 py-1 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50 rounded inline-flex items-center gap-1" title="Editar tarifa regional" data-testid={`button-editar-regional-${table.id}`}><Edit size={12} /> Editar</button>}<button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
+                                <td className="p-2 text-right"><div className="flex justify-end gap-1">{versaoDaLinhaTarifaria(table.operation_type) === '2027' && <button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta" data-testid={`button-proposta-linha-${table.id}`}><FileText size={12} /></button>}{ehLinhaPadraoRegional(table.operation_type) && <button type="button" onClick={() => abrirEdicaoRegional(table)} className="px-2 py-1 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50 rounded inline-flex items-center gap-1" title="Editar tarifa regional" data-testid={`button-editar-regional-${table.id}`}><Edit size={12} /> Editar</button>}<button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
                             </tr> 
                         ))}
                     </tbody>

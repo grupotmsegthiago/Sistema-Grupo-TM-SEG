@@ -1,5 +1,7 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 30/10/2026 na `dev`. A aba Tabela de Preços voltou a mostrar as linhas de 2026, com a marca 2026 (ANTIGA). A cotação nova e a proposta comercial continuam na Tabela 2027. Arquivos: `components/ClientForm.tsx` e `scripts/trechos-proposta.test.ts`. Sem banco, sem motor da OS e sem função nova na Vercel.
+
 Executado em 30/10/2026 na `dev`. Nova senha temporária do Rafael Lima (id 33), com troca obrigatória. A anterior tinha cifrão e o login em texto recusa `$`. A geração em `lib/senhaTemporaria.ts` deixou de usar cifrão. Em `lib/sessao/gravarSenha.ts`, quando não existe `password_hash`, o valor verdadeiro da troca obrigatória não é regravado a cada login, e o falso da troca de senha é gravado. O login local abriu a tela de alteração obrigatória. A sessão veio com perfil COMERCIAL e as permissões início, clientes, cotações e ordens de serviço. A senha definitiva não foi criada aqui. Ainda não foi publicado.
 
 Executado em 30/10/2026 na `dev`. Isolamento do comercial na aplicação e no perfil gravado.
@@ -60,6 +62,51 @@ Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a suge
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
 
 # Próxima Execução Proposta
+
+## Tabela de Preços: mostrar 2026 (ANTIGA) sem cotação nova
+
+Executada em 30/10/2026, com o pedido "pode publicar".
+
+### Objetivo da Tarefa
+
+Na aba Tabela de Preços do cliente, as linhas de 2026 e as rotas que não se chamam `TABELA 2027` voltaram a aparecer, com a marca **2026 (ANTIGA)**. Cotação nova, card da cotação e proposta comercial continuam só com a Tabela 2027. Nada foi apagado do banco.
+
+### Passo a Passo Sequencial
+
+1. Ler `components/ClientForm.tsx`: a lista usa `filtrarPorVigencia(..., '2027')`.
+2. A grade passa a listar todas as linhas já carregadas de `client_price_tables`.
+3. Linha cuja versão é 2026 ganha o rótulo `2026 (ANTIGA)`.
+4. O card de cotação, o botão de proposta da linha 2026 e o Gerar Contrato / Proposta continuam recebendo só linhas 2027.
+5. Reajuste, exclusão e edição da linha antiga permanecem na grade.
+6. Ajustar o teste que exige a lista presa em 2027 e rodar o teste da vigência.
+7. Conferir a aba no localhost.
+
+### Ficheiros Afetados
+
+- `components/ClientForm.tsx`
+- `scripts/trechos-proposta.test.ts` (asserção da lista)
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md` (só depois da execução)
+
+### Garantias de Não Impacto
+
+- `calculateMissionFinancials` não entra.
+- DHL e IBL não mudam.
+- Nenhuma coluna, migration ou função nova na Vercel.
+- Datas continuam em Brasília, 24 horas.
+- Cotação nova não grava vigência 2026.
+
+### Nove pontos
+
+1. Objetivo: a Diretoria enxerga a tabela antiga e não abre cotação nova com ela.
+2. Já existe: `versaoDaLinhaTarifaria` e `filtrarPorVigencia` em `lib/precificacao/tabela2027.ts`. A vigência da cotação segue 2027.
+3. Fonte única: `client_price_tables`. A tela só deixa de esconder a leitura.
+4. Writers: nenhum neste ajuste. Readers: a grade da aba Tabela de Preços.
+5. Testes: `scripts/vigencia-tabela.test.tsx` e `scripts/trechos-proposta.test.ts`.
+6. OS, financeiro, Asaas, NF, TORRES e WhatsApp não entram.
+7. Reutiliza o classificador que já existe. Sem arquivo novo.
+8. Arquivo novo: não.
+9. O efeito é só de exibição e de bloqueio da cotação nova na linha antiga. Sem banco e sem produção até o pedido de publicar.
 
 ## Pré-fatura mensal — executada em 30/10/2026
 

@@ -163,6 +163,9 @@ test('a tela da cotação mostra os trechos e lê o logotipo já gravado no clie
   assert.equal(cadastro.includes('seletor-vigencia-precos'), false);
   assert.equal(cadastro.includes('select-tabela-vigencia'), false);
   assert.match(cadastro, /tabelaVigencia: VersaoTabelaRegional = '2027'/);
+  assert.match(cadastro, /2026 \(ANTIGA\)/);
+  assert.match(cadastro, /linhas=\{tabelasDaVigencia\}/);
+  assert.match(cadastro, /tabelasExibidas/);
   assert.match(cadastro, /perfilComercial\) return tab.id === 'quotes'/);
   assert.match(cadastro, /RotaGoogleCotacao/);
   assert.match(tela, /data-testid="trechos-proposta"/);
