@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-30. A pré-fatura mensal está no código, no menu Financeiro e na aba Serviços mensais do cliente. A migration `migrations/2026_10_30_pre_fatura_mensal.sql` não foi aplicada. Sem ela, a tela avisa e não grava. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 2026-10-30. A criação da OS e o salvamento operacional passam a gravar receita e custo com `calculateMissionFinancials` quando mudam quilômetro, hora, pedágio ou fornecedor. OS aprovada, conferida, com ajuste manual, cancelada ou com prejuízo travado não é reescrita. No mês de outubro/2026 o card tinha 11 OS. A GTM-8940 foi alinhada (receita R$ 730 para R$ 876 e custo R$ 1.000 para R$ 600). As outras 10 permaneceram: aprovadas, cancelada ou prejuízo real já igual ao motor. O card ficou em 10. Ainda não foi publicado.
+
 Atualizado em 2026-10-28. Na Tabela de Custos do fornecedor já salvo, o botão Exportar Excel baixa a grade visível (respeita a busca). Custo base fica vermelho; reajuste ativo fica verde, com a data em DD/MM/AAAA. Valores da tabela não mudam. Ainda não foi publicado.
 
 Atualizado em 2026-10-28. Em Contas a Pagar / Receber, abaixo das etapas e acima dos filtros, há um gráfico recolhido de Receber x Pagar. Ele lê os títulos já carregados (`INCOME` e `EXPENSE`), pelo vencimento, sem gravar e sem mudar fórmula. Datas em DD/MM/AAAA, fuso de Brasília. Ainda não foi publicado.

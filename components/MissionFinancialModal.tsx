@@ -7,6 +7,7 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
+import { calcularValoresOficiais, colunasDoMotor, osImpedeSincronia } from '../lib/billing/sincronizarValoresOs';
 import { escolherTabelaProxima, quilometragemRegistrada } from '../lib/rotaAprovadaTabela';
 import {
   isDhlSupplyClient,
@@ -2076,6 +2077,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               provider_start_time: provEditStartTime ? datetimeLocalToIsoBR(provEditStartTime) : null,
               provider_end_time: provEditEndTime ? datetimeLocalToIsoBR(provEditEndTime) : null
           };
+          const kmFornecedor = (valor: any) => typeof valor === 'number' ? valor : parseFloat(String(valor || '0').replace(',', '.'));
+          const inicioFornecedor = provData.provider_start_km != null ? kmFornecedor(provData.provider_start_km) : kmFornecedor(mission.startKm || (mission as any).start_km);
+          const fimFornecedor = provData.provider_end_km != null ? kmFornecedor(provData.provider_end_km) : kmFornecedor(mission.endKm || (mission as any).end_km);
+          const kmFornecedorValido = inicioFornecedor > 0 && fimFornecedor > 0 && fimFornecedor >= inicioFornecedor;
+          const horaInicioFornecedor = provData.provider_start_time ? new Date(provData.provider_start_time) : null;
+          const horaFimFornecedor = provData.provider_end_time ? new Date(provData.provider_end_time) : null;
+          const horasFornecedor = horaInicioFornecedor && horaFimFornecedor
+              ? Math.max(0, (horaFimFornecedor.getTime() - horaInicioFornecedor.getTime()) / (1000 * 60 * 60))
+              : 0;
+          const valoresFornecedor = osImpedeSincronia(mission) ? null : colunasDoMotor(
+              { revenue: mission.revenue_value, cost: mission.cost_value },
+              calcularValoresOficiais({
+                  mission: { ...mission, ...provData, provider_ops_edited: true },
+                  clientTables,
+                  providerTables,
+                  clientData,
+                  providers: providersList,
+                  providerOpsOverride: {
+                      distanceKm: kmFornecedorValido ? (fimFornecedor - inicioFornecedor) : Number(mission.totalDistance || (mission as any).total_distance || 0),
+                      durationHours: horasFornecedor,
+                  },
+              }),
+              !!mission.is_same_os,
+          );
 
           let columnsExist = true;
           let gravadoProvOps = await gravarMissaoConfirmada(mission.id, {
@@ -2085,14 +2110,16 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
               provider_end_time: provData.provider_end_time,
               provider_ops_edited: true,
               last_update: new Date().toISOString(),
-              updated_by: userName
+              updated_by: userName,
+              ...(valoresFornecedor || {}),
           });
 
           if (gravadoProvOps.error?.message?.includes('does not exist')) {
               columnsExist = false;
               gravadoProvOps = await gravarMissaoConfirmada(mission.id, {
                   last_update: new Date().toISOString(),
-                  updated_by: userName
+                  updated_by: userName,
+                  ...(valoresFornecedor || {}),
               });
           }
           if (gravadoProvOps.error) throw gravadoProvOps.error;

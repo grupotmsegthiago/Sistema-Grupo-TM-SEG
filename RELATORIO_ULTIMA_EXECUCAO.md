@@ -1,5 +1,17 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 30/10/2026 na branch `cursor/pre-fatura-desenho-0f12`, depois da frase "Fluxo aprovado, pode executar".
+
+A pré-fatura mensal foi codificada. Menu Financeiro → Pré-fatura, herdando `fin-billing`. Aba Serviços mensais no cliente, só para Diretoria, Administrador e Financeiro, com o cliente já salvo. Aprovar não chama Asaas. Gerar fatura reusa `POST /api/asaas/create-charge` sem OS. A migration `migrations/2026_10_30_pre_fatura_mensal.sql` está no repositório e não foi aplicada. Sem ela a tela mostra o aviso e não grava. O motor da OS, a tabela de preço, DHL/IBL, Asaas e o limite de funções da Vercel não mudaram. Ainda não foi publicado.
+
+Testes: `./node_modules/.bin/tsx --test scripts/pre-fatura-mensal.test.ts` — 8 passaram.
+
+No mesmo pedido, a receita e o custo da OS passam a ser gravados pelo motor oficial. Na criação, a prévia de quilômetro dividido por 45 deixa de ser o valor salvo quando o motor acha a tabela. No salvamento operacional, a mesma gravação reescreve `revenue_value` e `cost_value` se mudaram quilômetro, hora, pedágio ou fornecedor, ou se a OS foi concluída. Não reescreve OS aprovada, conferida, com ajuste manual, cancelada, recusada ou com prejuízo travado. Não zera valor já gravado quando o motor não acha tabela.
+
+Passagem de outubro/2026 (01/10 a 30/10, fuso de Brasília), a mesma conta do card: 11 OS. Gravada só a GTM-8940, da Intermodal, concluída, sem aprovação e com motivo "AGUARDANDO DEFINIÇÃO". Receita de R$ 730 para R$ 876. Custo de R$ 1.000 para R$ 600. Conferido no banco. O card passou a 10. As outras 10 ficaram: cinco aprovadas, uma cancelada e quatro em que o motor já coincidia com o valor salvo (prejuízo real). Ainda não foi publicado.
+
+Testes: `./node_modules/.bin/tsx --test scripts/sincronizar-valores-os.test.ts` — 4 passaram.
+
 Executado em 28/10/2026 na `dev`. A Tabela de Custos do fornecedor ganhou o botão Exportar Excel. O arquivo usa a paleta da grade: faixa escura, custo base vermelho, reajuste pendente cinza e reajuste ativo verde. A busca da tela filtra as linhas. Nenhum valor de custo é alterado. Ainda não foi publicado.
 
 Testes: `npx tsx --test scripts/tabela-custo-fornecedor-export.test.ts` — 1 passou.
@@ -22,9 +34,9 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
-## Pré-fatura mensal — aguardando aprovação (30/10/2026)
+## Pré-fatura mensal — executada em 30/10/2026
 
-Baseline de leitura: `main` `3ff6522b`. Nenhum código foi alterado. A execução continua travada até a frase **Fluxo aprovado, pode executar**.
+Autorização recebida: "Fluxo aprovado, pode executar". Baseline de leitura: `main` `3ff6522b`. A migration não foi aplicada e nada foi publicado.
 
 O Gemini fechou os quatro pontos. Este registro corrige o que não cabe no banco atual e deixa a fórmula do proporcional em aberto.
 
@@ -77,9 +89,9 @@ Motor da OS, `client_price_tables`, contratos DHL/IBL, boletim de viagens, Asaas
 6. OS, pedágio, comissão, NF e WhatsApp não mudam de regra. Asaas só é chamado no Gerar fatura, pelo fluxo atual.
 7. Reutilizar fatura, título, arredondamento e PDF. Estender o menu. Não estender a tabela de preço.
 8. Arquivos novos porque não há tabela nem tela de mensalidade.
-9. Parado. Sem a frase de aprovação, sem migration aplicada e sem código de produção.
+9. Executado em 30/10/2026. A migration continua sem aplicação. O código não foi publicado.
 
-### Telas pedidas em 30/10/2026 — ainda sem código
+### Telas pedidas em 30/10/2026 — implementadas, aguardando a migration no banco
 
 1. Aba Serviços mensais na ficha do cliente, para Diretoria, Administrador e Financeiro, com o cliente já salvo. Campos: nome curto, descrição que sai no PDF, quantidade, escala, horário, valor mensal, início, fim opcional e ativo. Salvar não mexe em pré-fatura já gerada.
 2. Menu Financeiro, ao lado do Boletim, para quem já abre o boletim. Cliente e mês. Monta o rascunho com os serviços vigentes. Valor a faturar nasce igual ao valor mensal. Proporcional, reembolso, extra, desconto, complementar e exclusão pedem justificativa e gravam valor anterior, valor novo, usuário e horário. Sem conta automática de dias.

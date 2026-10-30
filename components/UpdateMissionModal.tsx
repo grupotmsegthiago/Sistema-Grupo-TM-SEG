@@ -11,6 +11,7 @@ import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
 import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm, zeroValueEditReasons } from '../lib/financialUtils';
+import { operacaoDoFormularioMudou, osImpedeSincronia } from '../lib/billing/sincronizarValoresOs';
 import { questionTableAgainstRoute, type TableRouteQuestion } from '../lib/tableRouteQuestion';
 import { generateContent } from '../lib/gemini';
 import { optimizeImageForAI } from '../lib/imageForAI';
@@ -2710,15 +2711,25 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             }
 
-            // Recálculo das tabelas só aqui: o operador confirmou o checklist e apertou salvar.
-            // Não roda em segundo plano. OS aprovada, com edição manual ou recusada fica de fora.
-            const manualFinancialEdit = !!((mission as any).revenue_edit_reason || (mission as any).cost_edit_reason);
-            if (
-                finalizeConfirmedRef.current
-                && finalStatus === MissionStatus.COMPLETED
-                && !manualFinancialEdit
-                && !(mission as any).billing_approved
-            ) {
+            // O motor oficial entra na mesma gravação quando km, hora, pedágio ou fornecedor mudam,
+            // e também na conclusão. OS aprovada, conferida ou com ajuste manual fica de fora.
+            const mudouOperacao = operacaoDoFormularioMudou(
+                originalKmHoursRef.current
+                    ? { ...originalKmHoursRef.current, provider: mission.provider || '' }
+                    : null,
+                {
+                    provider: editData.provider || '',
+                    startKm: editData.startKm || '',
+                    endKm: editData.endKm || '',
+                    startDate: editData.startDate || '',
+                    endDate: editData.endDate || '',
+                    startTime: editData.startTime || '',
+                    endTime: editData.endTime || '',
+                    tollValue: editData.tollValue || '',
+                },
+            );
+            const impedeSincronia = osImpedeSincronia(mission, { statusDestino: finalStatus });
+            if (!impedeSincronia && (mudouOperacao || (finalizeConfirmedRef.current && finalStatus === MissionStatus.COMPLETED))) {
                 try {
                     let pctSaveTables = providerCostTables;
                     if (!pctSaveTables.length) {

@@ -24,6 +24,7 @@ import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFit
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { destinoBloqueiaSugestao, SEM_TABELA_CUSTO_SUGERIDA } from '../lib/billing/tabelaNaCriacao';
+import { calcularValoresOficiais, janelaZeradaNaCriacao } from '../lib/billing/sincronizarValoresOs';
 import { useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
@@ -1187,6 +1188,36 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               finalDestination = isDhl ? `RAIO ${radius} KM — DESTINO A DEFINIR` : `${radius}KM DE ACOMPANHAMENTO`;
           }
 
+          const inicioPrevisto = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).toISOString();
+          const janelaPrevista = janelaZeradaNaCriacao(inicioPrevisto);
+          const oficial = calcularValoresOficiais({
+              mission: {
+                  client: formData.client,
+                  provider: activeProvider || '',
+                  origin: route.origin,
+                  destination: finalDestination,
+                  status: MissionStatus.SOLICITED,
+                  totalDistance: displayDist,
+                  startTime: janelaPrevista.startTime,
+                  endTime: janelaPrevista.endTime,
+                  is_same_os: !!currentFlags.isSameOs,
+                  mission_type: formData.missionType || 'Caracterizada',
+              },
+              clientTables: clientPriceTables,
+              providerTables: providerCostTables,
+              clientData: dbClients.find((c) => c.name === formData.client),
+              providers: dbProviders,
+              clientTableId: revTable?.id ? String(revTable.id) : null,
+              providerTableId: cstTable?.id ? String(cstTable.id) : null,
+          });
+          if (oficial && !manualOverrides.revenue && oficial.tabelaCliente && oficial.receitaServico > 0) {
+              revenue = oficial.receitaServico;
+          }
+          if (currentFlags.isSameOs) cost = 0;
+          else if (oficial && !manualOverrides.cost && oficial.tabelaFornecedor && oficial.custoServico > 0) {
+              cost = oficial.custoServico;
+          }
+
           setFormData(prev => ({
               ...prev, provider: activeProvider,
               revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
@@ -1199,7 +1230,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (cstTable) setManualCostTableId(cstTable.id.toString());
           else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) setManualCostTableId('');
       } finally { setIsCalculating(false); }
-  }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
+  }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, formData.scheduledDate, formData.scheduledTime, formData.missionType, clientPriceTables, providerCostTables, dbClients, dbProviders, manualOverrides.revenue, manualOverrides.cost]);
 
   const calculateTollQualP = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; distance?: number; provider?: string } | null> => {
       try {
@@ -1556,6 +1587,37 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     }
 
     const tollPair = tollPersistencePair(resolvedTollValue, !!formData.isSameOs, formData.client);
+    const janelaCriacao = janelaZeradaNaCriacao(scheduledDateTime.toISOString());
+    const oficialCriacao = calcularValoresOficiais({
+        mission: {
+            client: formData.client,
+            provider: formData.provider || '',
+            origin: formData.origin,
+            destination: formData.destination,
+            status: MissionStatus.SOLICITED,
+            totalDistance: resolvedDistance,
+            startTime: janelaCriacao.startTime,
+            endTime: janelaCriacao.endTime,
+            is_same_os: !!formData.isSameOs,
+            mission_type: formData.missionType || 'Caracterizada',
+            toll_value: resolvedTollValue,
+        },
+        clientTables: clientPriceTables,
+        providerTables: providerCostTables,
+        clientData: dbClients.find((c) => c.name === formData.client),
+        providers: dbProviders,
+        clientTableId: manualRevenueTableId || null,
+        providerTableId: manualCostTableId && manualCostTableId !== SEM_TABELA_CUSTO_SUGERIDA ? manualCostTableId : null,
+    });
+    let receitaGravada = parseFloat(formData.revenueValue) || 0;
+    let custoGravado = formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0);
+    if (oficialCriacao && !manualOverrides.revenue && oficialCriacao.tabelaCliente && oficialCriacao.receitaServico > 0) {
+        receitaGravada = oficialCriacao.receitaServico;
+    }
+    if (formData.isSameOs) custoGravado = 0;
+    else if (oficialCriacao && !manualOverrides.cost && oficialCriacao.tabelaFornecedor && oficialCriacao.custoServico > 0) {
+        custoGravado = oficialCriacao.custoServico;
+    }
 
     try {
         let attempts = 0, saved = false, finalId = '';
@@ -1576,7 +1638,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 total_distance: resolvedDistance > 0 ? resolvedDistance : parseFloat(formData.totalDistance),
                 start_time: scheduledIso,
                 mission_type: formData.missionType || 'Caracterizada', 
-                revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
+                revenue_value: receitaGravada, cost_value: custoGravado,
                 toll_value: tollPair.toll_value,
                 toll_value_provider: tollPair.toll_value_provider,
                 valor_zero_motivo: valorZeroMotivo,
