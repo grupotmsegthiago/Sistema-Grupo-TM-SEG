@@ -1,5 +1,11 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Validado em 30/10/2026 no localhost, sem publicar. A chave da Torres não está no `.env.local`: a leitura ao vivo não rodou. O espelho tem 170 linhas ativas e nenhuma com prefixo `inv:`. Em outubro/2026 o quadro da Torres soma R$ 298.103,65 em 94 faturas, igual à soma do detalhe, sem id repetido. A simulação `inv:` contra o mesmo espelho manteve 94 faturas e o mesmo valor. Sem a chave, o sincronismo devolveu aviso, não chamou o push e não falhou. As 95 comissões em aguardando ficam com a coluna A pagar vazia. Cassiane Garcia está abaixo do piso, com comissão e bônus zerados. A tela do navegador permaneceu no login.
+
+Executado em 30/10/2026 na `dev`, a partir do plano de correção da auditoria de comissões. `mesclarLinhasQuadro` trata `inv:` e o id cru como a mesma origem. Sem a chave da Torres, `sincronizarComissoesTorres` não dispara o push e devolve aviso, sem falhar a rota. `roundMoney` soma `Number.EPSILON` antes de arredondar o centavo. Não houve UPDATE em `clients.responsavel_comercial_id` na TM SEG nem na Torres: o banco não diz qual vendedor é de cada cliente. As 4.723 OS sem fatura não foram alteradas.
+
+Executado em 30/10/2026 na `dev`, a pedido de "pode tirar isso do cockpit da diretoria". Saíram do Cockpit os blocos Ocorrências em aberto e Tabelas que não combinam com a rota, na Visão Geral e na aba Operação. O componente de ocorrências permanece na Inteligência Financeira. A caixa de cartas permanece. Arquivo: `components/dashboard/DashboardDiretoria.tsx`. Sem banco, sem motor da OS e sem publicação.
+
 Executado em 30/10/2026 na branch `cursor/pre-fatura-desenho-0f12`, depois da frase "Fluxo aprovado, pode executar".
 
 A pré-fatura mensal foi codificada. Menu Financeiro → Pré-fatura, herdando `fin-billing`. Aba Serviços mensais no cliente, só para Diretoria, Administrador e Financeiro, com o cliente já salvo. Aprovar não chama Asaas. Gerar fatura reusa `POST /api/asaas/create-charge` sem OS. A migration `migrations/2026_10_30_pre_fatura_mensal.sql` está no repositório e não foi aplicada. Sem ela a tela mostra o aviso e não grava. O motor da OS, a tabela de preço, DHL/IBL, Asaas e o limite de funções da Vercel não mudaram. Ainda não foi publicado.

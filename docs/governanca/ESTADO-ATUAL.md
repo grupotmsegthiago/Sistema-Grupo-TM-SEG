@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-30. No quadro de comissões, a mesma fatura da Torres deixa de somar duas vezes quando o id ao vivo vem com `inv:` e o espelho guarda o id cru. Sem `TORRES_SUPABASE_SERVICE_ROLE_KEY`, o sincronismo não chama o push. O arredondamento de centavos da comissão usa `Number.EPSILON`. Responsável comercial dos clientes não foi preenchido. Ainda não foi publicado.
+
+Atualizado em 2026-10-30. No Cockpit da Diretoria saíram os blocos Ocorrências em aberto e Tabelas que não combinam com a rota, na Visão Geral e na Operação. Ocorrências continuam na Inteligência Financeira. A caixa de cartas da tabela errada continua. O motor da OS não mudou. Ainda não foi publicado.
+
 Atualizado em 2026-10-30. A pré-fatura mensal está no código, no menu Financeiro e na aba Serviços mensais do cliente. A migration `migrations/2026_10_30_pre_fatura_mensal.sql` não foi aplicada. Sem ela, a tela avisa e não grava. O motor da OS não mudou. Ainda não foi publicado.
 
 Atualizado em 2026-10-30. A criação da OS e o salvamento operacional passam a gravar receita e custo com `calculateMissionFinancials` quando mudam quilômetro, hora, pedágio ou fornecedor. OS aprovada, conferida, com ajuste manual, cancelada ou com prejuízo travado não é reescrita. No mês de outubro/2026 o card tinha 11 OS. A GTM-8940 foi alinhada (receita R$ 730 para R$ 876 e custo R$ 1.000 para R$ 600). As outras 10 permaneceram: aprovadas, cancelada ou prejuízo real já igual ao motor. O card ficou em 10. Ainda não foi publicado.

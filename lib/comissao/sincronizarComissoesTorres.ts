@@ -240,9 +240,19 @@ export async function sincronizarComissoesTorres(
   const periodo = periodoSyncComissoes(today);
   const start = opts?.periodStart || periodo.start;
   const end = opts?.periodEnd || periodo.end;
+  const env = opts?.env || process.env;
   const live = opts?.sbTorres === undefined ? createTorresAdminClient() : opts.sbTorres;
   if (!live) {
-    const push = await dispararPushTorres({ fetchFn: opts?.fetchFn, env: opts?.env });
+    if (!String(env.TORRES_SUPABASE_SERVICE_ROLE_KEY || '').trim()) {
+      console.warn('[Sync] TORRES_SUPABASE_SERVICE_ROLE_KEY ausente. Push ignorado com segurança.');
+      return {
+        ...empty,
+        ok: true,
+        pushed: false,
+        error: 'Leitura da Torres indisponível. O quadro segue o que já está gravado.',
+      };
+    }
+    const push = await dispararPushTorres({ fetchFn: opts?.fetchFn, env });
     return {
       ...empty,
       ok: push.ok,

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { calcularComissao } from '../lib/comissao/comissaoCalc';
+import { calcularComissao, roundMoney } from '../lib/comissao/comissaoCalc';
 import { extractFaturaNumeroFromNotes } from '../lib/comissao/comissaoCore';
 import { canAccessComissoesComerciais, comissaoSomentePropria } from '../lib/diretoriaAccess';
 
@@ -12,6 +12,12 @@ describe('comissao comercial — cálculo', () => {
     assert.equal(c.valorBaseLiquida, 8400);
     assert.equal(c.valorComissao, 252);
     assert.match(c.formatado.comissao, /252/);
+  });
+
+  it('arredonda 1,005 para 1,01 e mantém o centavo já exato', () => {
+    assert.equal(roundMoney(1.005), 1.01);
+    assert.equal(roundMoney(252), 252);
+    assert.equal(roundMoney(Number.NaN), 0);
   });
 
   it('aceita regra específica do comercial', () => {
@@ -409,6 +415,16 @@ describe('comissao comercial — quadro por cliente', () => {
     const mesclado = mesclarLinhasQuadro(live, linhas);
     assert.equal(mesclado.length, 1);
     assert.equal(mesclado[0].detalhes.length, 1);
+    assert.equal(mesclado[0].faturamento, 3299.67);
+    const aoVivo = [{
+      ...live[0],
+      faturamento: 3299.67,
+      detalhes: [{ ...live[0].detalhes[0], id: 'inv:1ba27c7a-8451-45c0-b274-7df40bc3495d' }],
+    }];
+    const semPrefixo = mesclarLinhasQuadro(aoVivo, linhas);
+    assert.equal(semPrefixo[0].detalhes.length, 1);
+    assert.equal(semPrefixo[0].faturas, 1);
+    assert.equal(semPrefixo[0].faturamento, 3299.67);
     assert.equal(faturaClienteEstaPaga({ status: 'RECEIVED', paymentDate: null }), true);
     assert.equal(faturaClienteEstaPaga({ status: 'PENDING' }), false);
   });
@@ -1302,7 +1318,7 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
     const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
     const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, {
       sbTorres: null,
-      env: { COMISSAO_INGEST_TOKEN: 'tok' },
+      env: { COMISSAO_INGEST_TOKEN: 'tok', TORRES_SUPABASE_SERVICE_ROLE_KEY: 'presente' },
       fetchFn: (async () =>
         new Response(JSON.stringify({
           ok: true,
@@ -1319,9 +1335,21 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
 
   it('não inventa faturamento se o envio da TORRES não estiver autorizado', async () => {
     const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
-    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, { sbTorres: null, env: {} });
-    assert.equal(r.ok, false);
+    let chamou = false;
+    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, {
+      sbTorres: null,
+      env: {},
+      fetchFn: (async () => {
+        chamou = true;
+        return new Response('{}', { status: 500 });
+      }) as typeof fetch,
+    });
+    assert.equal(chamou, false);
+    assert.equal(r.ok, true);
+    assert.equal(r.pushed, false);
+    assert.equal(r.generated, 0);
     assert.equal(r.liveDisponivel, false);
+    assert.match(String(r.error || ''), /já está gravado/);
     assert.doesNotMatch(String(r.error || ''), /TORRES_SUPABASE_SERVICE_ROLE_KEY/);
   });
 

@@ -10,8 +10,6 @@ import {
 } from 'lucide-react';
 import DiretoriaSistemaTab from './DiretoriaSistemaTab';
 import CockpitEvidenceByOperator from '../CockpitEvidenceByOperator';
-import CockpitOpenOccurrences from '../CockpitOpenOccurrences';
-import CockpitTabelaErrada from '../CockpitTabelaErrada';
 import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
 import CashFlowPreviewButton from '../CashFlowPreviewButton';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
@@ -730,8 +728,6 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderGeral = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <div className="lg:col-span-12"><CockpitOpenOccurrences /></div>
-      <div className="lg:col-span-12"><CockpitTabelaErrada /></div>
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dívidas · Contas · Receita</p>
         {liquidezResumoSection}
@@ -919,8 +915,6 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderOperacao = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-      <div className="lg:col-span-12"><CockpitOpenOccurrences /></div>
-      <div className="lg:col-span-12"><CockpitTabelaErrada /></div>
       <div className="lg:col-span-12"><CockpitEvidenceByOperator /></div>
       <div className="lg:col-span-4 grid grid-cols-2 gap-3">
         <KpiTile label="OS no período" value={String(operational.missionCount)} />
