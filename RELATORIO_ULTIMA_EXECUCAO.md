@@ -79,6 +79,13 @@ Motor da OS, `client_price_tables`, contratos DHL/IBL, boletim de viagens, Asaas
 8. Arquivos novos porque não há tabela nem tela de mensalidade.
 9. Parado. Sem a frase de aprovação, sem migration aplicada e sem código de produção.
 
+### Telas pedidas em 30/10/2026 — ainda sem código
+
+1. Aba Serviços mensais na ficha do cliente, para Diretoria, Administrador e Financeiro, com o cliente já salvo. Campos: nome curto, descrição que sai no PDF, quantidade, escala, horário, valor mensal, início, fim opcional e ativo. Salvar não mexe em pré-fatura já gerada.
+2. Menu Financeiro, ao lado do Boletim, para quem já abre o boletim. Cliente e mês. Monta o rascunho com os serviços vigentes. Valor a faturar nasce igual ao valor mensal. Proporcional, reembolso, extra, desconto, complementar e exclusão pedem justificativa e gravam valor anterior, valor novo, usuário e horário. Sem conta automática de dias.
+3. Aprovar só no rascunho. Trava a edição. O PDF oficial sai do snapshot travado. Antes disso o PDF leva a marca Rascunho.
+4. Gerar fatura só com status Aprovada e sem fatura ligada. Chama `POST /api/asaas/create-charge` com o total, sem OS. Esse caminho já grava `financial_invoices` e um `financial_transactions` INCOME. A tela só guarda o id e marca Faturada. A nota segue o worker que já existe. Não cria segundo título.
+
 ## Suíte comercial do prompt (28/10/2026) — recorte A executado
 
 Baseline `efcb4000` na `dev`. Recorte A aprovado e executado em 28/10/2026. Sem migration, sem tabela nova e sem mudança de preço ou comissão. Ainda não foi publicado.
