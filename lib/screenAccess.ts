@@ -48,6 +48,7 @@ export const SCREEN_PERMISSION_ALIASES: Record<string, string> = {
   'rh-employee-profile': 'rh-employees',
   'ai-support': 'dashboard',
   'meu-portal': 'dashboard',
+  'fin-pre-fatura': 'fin-billing',
 };
 
 /** Áreas internas bloqueadas para usuário-cliente do portal. */

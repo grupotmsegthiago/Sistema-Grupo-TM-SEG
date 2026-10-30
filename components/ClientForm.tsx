@@ -21,6 +21,7 @@ import CommercialProposalModal from './CommercialProposalModal';
 import ClientPriceCalculator from './ClientPriceCalculator';
 import QuotePrintModal from './QuotePrintModal';
 import ClientContractTab from './ClientContractTab';
+import ClientMonthlyServicesTab from './ClientMonthlyServicesTab';
 import { contentTypeLogo, pendenciaMarcaComercial, validarArquivoLogo } from '../lib/clienteMarca';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
 import {
@@ -126,7 +127,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     nfAddressRequiredHint = false,
 }) => {
   const { showNotification } = useNotification();
-  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
+  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts' | 'monthly-services'>('registration');
   const [cancellationDrafts, setCancellationDrafts] = useState<Record<string, string>>({});
   const [savingCancellationId, setSavingCancellationId] = useState<string | null>(null);
   const [cancellationSearch, setCancellationSearch] = useState('');
@@ -1410,10 +1411,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
       )}
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
-          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'cancellation', label: 'Cancelamento', icon: XCircle }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
+          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'monthly-services', label: 'Serviços mensais', icon: Calendar }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'cancellation', label: 'Cancelamento', icon: XCircle }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
               if (tab.id === 'registration') return true;
               if (perfilComercial) return tab.id === 'quotes' && !!id;
-              if (tab.id === 'contracts') return !!id && isFinanceAdmin;
+              if (tab.id === 'contracts' || tab.id === 'monthly-services') return !!id && isFinanceAdmin;
               return isFinanceAdmin;
           }).map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><tab.icon size={14} /> {tab.label}</button>
@@ -2366,6 +2367,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>
       )}
       {activeTab === 'vehicles' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientVehicleList onAddVehicle={onAddVehicle} onEdit={onEditVehicle} clientId={id ? parseInt(id) : undefined} embedded={true} /></div>}
+      {activeTab === 'monthly-services' && id && (
+          <ClientMonthlyServicesTab clientId={id} clientName={formData.trading_name || formData.name} />
+      )}
       {activeTab === 'contracts' && id && (
           <ClientContractTab
             clientId={id}

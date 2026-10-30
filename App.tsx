@@ -106,6 +106,7 @@ import DiretoriaFaturamentoPage from './components/DiretoriaFaturamentoPage';
 import GestorFiscalPage from './components/gestorFiscal/GestorFiscalPage';
 import GestaoInvestimento from './components/investimentos/GestaoInvestimento'; 
 import ClientBillingReport from './components/ClientBillingReport';
+import PreFaturaMensal from './components/PreFaturaMensal';
 import DailyCashMovement from './components/DailyCashMovement';
 import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
@@ -691,6 +692,7 @@ const App: React.FC = () => {
           ? <AprovacoesPendentesPage onOpenMission={handleOpenBillingMission} />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
+      case 'fin-pre-fatura': return <PreFaturaMensal onNavigate={navigateTo} />;
       case 'fin-billing': return (
         <ClientBillingReport
           onNavigate={navigateTo}
