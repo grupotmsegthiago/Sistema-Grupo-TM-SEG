@@ -18,6 +18,7 @@ import {
   type PerfilCeva,
 } from '../lib/cevaPortal/regrasAcesso';
 import { portalDaFicha } from '../lib/cevaPortal/portalServidor';
+import { generateTemporaryPassword, mensagemAcessoSistema } from '../lib/senhaTemporaria';
 
 interface EquipmentItem {
   id: string;
@@ -83,7 +84,12 @@ function textoDaMensagem(credenciais: { name: string; email: string; password: s
       manteveSenha: credenciais.manteveSenha === true,
     });
   }
-  return `🔐 *GRUPO TMSEG — Acesso ao Sistema*\n\nOlá *${credenciais.name}*,\n\nSeu acesso ao sistema foi criado com sucesso.\n\n📧 *Login:* ${credenciais.email}\n🔑 *Senha:* ${credenciais.password}\n🌐 *Link:* ${window.location.origin}\n\n⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.\n\nEm caso de dúvidas, entre em contato com o suporte.\n\n_Grupo TMSEG — Gestão Operacional_`;
+  return mensagemAcessoSistema({
+    name: credenciais.name,
+    email: credenciais.email,
+    password: credenciais.password,
+    origem: window.location.origin,
+  });
 }
 
 const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
@@ -275,11 +281,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   };
 
   const generateRandomPassword = () => {
-      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
-      let pass = "";
-      for (let i = 0; i < 10; i++) {
-          pass += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
+      const pass = generateTemporaryPassword(10);
       setGeneratedPass(pass);
       setFormData(prev => ({ ...prev, password: pass }));
   };
@@ -315,6 +317,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
       setIsSaving(true);
       try {
+          const senhaInformada = String(formData.password || '').trim();
           const payload: any = {
               name: formData.name,
               email: formData.email,
@@ -410,7 +413,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   setCreatedCredentials({
                       name: payload.name,
                       email: payload.email,
-                      password: payload.password,
+                      password: senhaInformada,
                       type: 'Portal do cliente',
                       link,
                       rotulo: portalCliente.rotulo,
@@ -426,7 +429,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               setCreatedCredentials({
                   name: payload.name,
                   email: payload.email,
-                  password: payload.password,
+                  password: senhaInformada,
                   type: userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno'
               });
               setCredentialsCopied(false);
@@ -438,7 +441,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                       body: JSON.stringify({
                           name: payload.name,
                           email: payload.email,
-                          password: payload.password,
+                          password: senhaInformada,
                           userType: userType,
                           profileName: profiles.find(p => String(p.id) === String(formData.profileId))?.name || '',
                           verificationCode: verCode,

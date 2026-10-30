@@ -2230,7 +2230,7 @@ export async function registerRoutes(
   app.post("/api/email/welcome", requireAuth, async (req: Request, res: Response) => {
     try {
       const { name, email, password, userType, profileName, verificationCode } = req.body;
-      if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
+      if (!name || !email || !password || String(password).trim() === 'undefined') return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
       const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
       const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl, verificationCode);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });

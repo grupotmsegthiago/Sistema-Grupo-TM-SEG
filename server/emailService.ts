@@ -754,6 +754,8 @@ export async function sendMirroringEvidenceEmail(
 }
 
 export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string, verificationCode?: string): Promise<boolean> {
+  const senha = String(user.password || '').trim();
+  if (!senha || senha === 'undefined') return false;
   const typeLabel = user.userType === 'client' ? 'Cliente' : user.userType === 'provider' ? 'Fornecedor' : 'Interno';
 
   const verificationBlock = verificationCode ? `
@@ -773,7 +775,7 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
       ${user.profileName ? `<tr><td>Perfil</td><td>${user.profileName}</td></tr>` : ''}
       <tr><td>Link do Sistema</td><td><a href="${systemUrl}" style="color:#c0392b; font-weight:600;">${systemUrl}</a></td></tr>
       <tr><td>Login (E-mail)</td><td>${user.email}</td></tr>
-      <tr><td>Senha Temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:14px;">${user.password}</code></td></tr>
+      <tr><td>Senha Temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:14px;">${textoDeEmail(senha)}</code></td></tr>
     </table>
     ${verificationBlock}
     <div class="highlight-box">

@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-30. O e-mail e a mensagem de acesso de usuário novo usam a senha digitada no formulário. Antes o texto lia um campo que não existe no cadastro e saía `undefined`. A troca no primeiro acesso continua em `force_password_change`. A senha do Rafael Lima foi regravada e a troca segue obrigatória. O e-mail não saiu desta máquina porque o SMTP local está vazio. Ainda não foi publicado.
+
 Atualizado em 2026-10-30. No quadro de comissões, a mesma fatura da Torres deixa de somar duas vezes quando o id ao vivo vem com `inv:` e o espelho guarda o id cru. Sem `TORRES_SUPABASE_SERVICE_ROLE_KEY`, o sincronismo não chama o push. O arredondamento de centavos da comissão usa `Number.EPSILON`. Responsável comercial dos clientes não foi preenchido. Ainda não foi publicado.
 
 Atualizado em 2026-10-30. No Cockpit da Diretoria saíram os blocos Ocorrências em aberto e Tabelas que não combinam com a rota, na Visão Geral e na Operação. Ocorrências continuam na Inteligência Financeira. A caixa de cartas da tabela errada continua. O motor da OS não mudou. Ainda não foi publicado.

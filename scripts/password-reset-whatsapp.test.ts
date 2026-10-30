@@ -118,7 +118,11 @@ test('a função da Vercel usa o bundle e a tela do cliente tem o botão', () =>
   assert.match(form, /button-reset-password-copy/);
   assert.match(form, /canal: 'texto'/);
   assert.match(form, /textoDaMensagem\(createdCredentials\)/);
-  assert.match(form, /foi criado com sucesso/);
+  assert.match(form, /password: senhaInformada/);
+  assert.doesNotMatch(form, /payload\.password/);
+  const mensagem = readFileSync('lib/senhaTemporaria.ts', 'utf8');
+  assert.match(form, /mensagemAcessoSistema/);
+  assert.match(mensagem, /foi criado com sucesso/);
   assert.match(form, /import React/);
 });
 
