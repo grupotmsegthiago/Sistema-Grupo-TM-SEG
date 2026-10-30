@@ -1,7 +1,8 @@
 const MAIUSCULAS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const MINUSCULAS = 'abcdefghijkmnopqrstuvwxyz';
 const NUMEROS = '23456789';
-const ESPECIAIS = '@#$%&*';
+/** Sem cifrão: senha em texto com $ é recusada no login (parece hash). */
+const ESPECIAIS = '@#%&*';
 const TODAS = MAIUSCULAS + MINUSCULAS + NUMEROS + ESPECIAIS;
 
 function indice(limite: number): number {

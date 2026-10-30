@@ -10,7 +10,8 @@ describe('senha temporária', () => {
     assert.match(senha, /[A-Z]/);
     assert.match(senha, /[a-z]/);
     assert.match(senha, /[2-9]/);
-    assert.match(senha, /[@#$%&*]/);
+    assert.match(senha, /[@#%&*]/);
+    assert.equal(senha.includes('$'), false);
     assert.notEqual(senha, 'undefined');
   });
 

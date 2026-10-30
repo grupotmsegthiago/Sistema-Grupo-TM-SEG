@@ -1,5 +1,24 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 30/10/2026 na `dev`. Nova senha temporária do Rafael Lima (id 33), com troca obrigatória. A anterior tinha cifrão e o login em texto recusa `$`. A geração em `lib/senhaTemporaria.ts` deixou de usar cifrão. Em `lib/sessao/gravarSenha.ts`, quando não existe `password_hash`, o valor verdadeiro da troca obrigatória não é regravado a cada login, e o falso da troca de senha é gravado. O login local abriu a tela de alteração obrigatória. A sessão veio com perfil COMERCIAL e as permissões início, clientes, cotações e ordens de serviço. A senha definitiva não foi criada aqui. Ainda não foi publicado.
+
+Executado em 30/10/2026 na `dev`. Isolamento do comercial na aplicação e no perfil gravado.
+
+Objetivo: o comercial vê a própria carteira e não abre agentes, fornecedores, alvará nem contratos.
+
+A SQL enviada não foi executada. O navegador usa a chave anônima e não chama `supabase.auth.signIn`, então `auth.uid()` fica vazio. `system_users` não tem coluna `perfil` e o id do usuário é número, não uuid. As políticas abertas se chamam `public_access_clients`, `public_access_missions`, `public_access_quotes` e `Allow all for comissoes`. Trocar isso pela SQL enviada deixaria clientes, OS, cotações e comissões vazios para a Diretoria também. Enquanto a chave anônima ler essas tabelas, um filtro de tela não substitui RLS.
+
+O que foi feito:
+- `lib/screenAccess.ts` nega ao comercial as telas fora da carteira, inclusive formulários derivados.
+- Perfil `COMERCIAL` (id 7) atualizado para `dashboard`, `clients-group`, `clients`, `quotes`, `missions`, `monitoring-group`. Os quatro usuários desse perfil não têm permissão extra em `system_users`.
+- `ClientList` e o combo de cliente da cotação filtram por `responsavel_comercial_id`. Sem o vínculo, a lista fica vazia.
+- No cadastro, o responsável comercial fica travado e o salvamento grava o id do usuário logado.
+- O aviso de pedágio da página inicial, para o comercial, só lista OS dos nomes da carteira.
+
+Carteira hoje: Rafael Lima tem cadastro de comercial e 0 clientes vinculados. Miguel Mota tem 16. Cassiane Garcia tem 1. Waldir Comin e Thiago Arruda estão no perfil COMERCIAL e não têm linha em `comerciais`; a lista deles fica vazia até existir o vínculo. Nenhum responsável foi preenchido em massa.
+
+Motor da OS, comissão, Asaas, NF e Torres não mudaram. Ainda não foi publicado.
+
 Executado em 30/10/2026 na `dev`. O cadastro de usuário passa a senha informada para o e-mail, para o modal e para a mensagem copiada. O template de boas-vindas recusa senha vazia ou o texto `undefined`. Não foi criada tabela nova nem usuário no Supabase Auth: o acesso continua em `system_users` e a troca obrigatória continua em `force_password_change`. A senha de Rafael Lima (`rafa.stlima@gmail.com`, id 33) foi regravada com troca obrigatória. O SMTP local não tem senha, então o e-mail não foi disparado daqui.
 
 Validado em 30/10/2026 no localhost, sem publicar. A chave da Torres não está no `.env.local`: a leitura ao vivo não rodou. O espelho tem 170 linhas ativas e nenhuma com prefixo `inv:`. Em outubro/2026 o quadro da Torres soma R$ 298.103,65 em 94 faturas, igual à soma do detalhe, sem id repetido. A simulação `inv:` contra o mesmo espelho manteve 94 faturas e o mesmo valor. Sem a chave, o sincronismo devolveu aviso, não chamou o push e não falhou. As 95 comissões em aguardando ficam com a coluna A pagar vazia. Cassiane Garcia está abaixo do piso, com comissão e bônus zerados. A tela do navegador permaneceu no login.

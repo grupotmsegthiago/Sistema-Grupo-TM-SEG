@@ -30,20 +30,23 @@ type SbLite = {
 export async function carregarNomesClientesDoComercial(
   sb: SbLite,
   usuarioId: number | string | null | undefined,
-): Promise<{ comercialId: string | null; nomes: string[] }> {
+): Promise<{ comercialId: string | null; nomes: string[]; ids: number[] }> {
   const idNum = idUsuarioNumerico(usuarioId);
-  if (!idNum) return { comercialId: null, nomes: [] };
+  if (!idNum) return { comercialId: null, nomes: [], ids: [] };
   const { data: comercial, error: comErr } = await sb
     .from('comerciais')
     .select('id')
     .eq('usuario_id', idNum)
     .maybeSingle();
-  if (comErr || !comercial?.id) return { comercialId: null, nomes: [] };
+  if (comErr || !comercial?.id) return { comercialId: null, nomes: [], ids: [] };
   const comercialId = String(comercial.id);
   const { data: clientes, error: cliErr } = await sb
     .from('clients')
-    .select('name, trading_name')
+    .select('id, name, trading_name')
     .eq('responsavel_comercial_id', comercialId);
-  if (cliErr) return { comercialId, nomes: [] };
-  return { comercialId, nomes: nomesParaEscopoCliente(clientes || []) };
+  if (cliErr) return { comercialId, nomes: [], ids: [] };
+  const ids = (clientes || [])
+    .map((c: { id?: number | string | null }) => Number(c.id))
+    .filter((id: number) => Number.isFinite(id));
+  return { comercialId, nomes: nomesParaEscopoCliente(clientes || []), ids };
 }

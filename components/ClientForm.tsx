@@ -35,6 +35,7 @@ import {
   perfilEhComercialRole,
   type ClienteCarteiraRow,
 } from '../lib/clientDuplicateGuard';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalPorNomeCliente, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
 import { limparSlug, slugDeNome, slugPublico } from '../lib/portalCliente/slug';
@@ -360,16 +361,47 @@ const ClientForm: React.FC<ClientFormProps> = ({
         try { setCurrentUser(JSON.parse(storedUser)); } catch (e) { console.error(e); }
     }
     fetchClientData();
-    supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name')
-        .then(({ data }) => data && setClientsList(data as any));
+    void (async () => {
+      try {
+        const usuario = JSON.parse(localStorage.getItem('userData') || '{}');
+        let consulta = supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name');
+        if (perfilEhComercialRole(usuario?.role)) {
+          const carteira = await carregarNomesClientesDoComercial(supabase, usuario?.id);
+          if (!carteira.ids.length) {
+            setClientsList([]);
+            return;
+          }
+          consulta = consulta.in('id', carteira.ids);
+        }
+        const { data } = await consulta;
+        if (data) setClientsList(data as any);
+      } catch {
+        const usuario = (() => {
+          try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+        })();
+        if (perfilEhComercialRole(usuario?.role)) setClientsList([]);
+      }
+    })();
     void (async () => {
       await sincronizarComerciaisDeUsuarios(supabase);
-      const { data } = await supabase
+      const usuario = (() => {
+        try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+      })();
+      let consulta = supabase
         .from('comerciais')
         .select('id, nome, usuario_id')
         .eq('ativo', true)
         .not('usuario_id', 'is', null)
         .order('nome');
+      if (perfilEhComercialRole(usuario?.role)) {
+        const idNum = Number(usuario?.id);
+        if (!Number.isFinite(idNum) || idNum <= 0) {
+          setComerciais([]);
+          return;
+        }
+        consulta = consulta.eq('usuario_id', idNum);
+      }
+      const { data } = await consulta;
       if (data) setComerciais(data as any);
     })();
   }, [id]);
@@ -784,7 +816,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Portal', 'Informe o endereço da página do cliente.', 'warning');
       return;
     }
+    let comercialForcado = '';
     if (perfilEhComercialRole(currentUser?.role)) {
+      comercialForcado = comercialIdDoUsuarioLogado(comerciais, currentUser?.id) || '';
+      if (!comercialForcado) {
+        showNotification('Cadastro', 'Seu usuário ainda não está vinculado a um comercial. O cliente não foi salvo.', 'error');
+        return;
+      }
       const faltaMarca = pendenciaMarcaComercial({
         website: formData.portal_site,
         logoUrl: formData.portal_logo_url,
@@ -799,7 +837,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     setDuplicateError('');
     try {
       const editingId = persistedId || (id ? String(id) : null);
-      const comercialIdPayload = comercialIdDoCadastro();
+      const comercialIdPayload = comercialForcado || comercialIdDoCadastro();
 
       // Bloqueia CNPJ/CPF duplicado e filial de outra carteira no TM SEG (cadastro Torres é outro sistema).
       if (cnpjDigits.length === 11 || cnpjDigits.length === 14) {
@@ -1501,10 +1539,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
                           className={INPUT_CLASS}
                           value={formData.responsavel_comercial_id}
                           onChange={e => setFormData({...formData, responsavel_comercial_id: e.target.value})}
+                          disabled={perfilComercial}
                           data-testid="select-responsavel-comercial"
                         >
-                            <option value="">— Sem comercial (não gera comissão) —</option>
-                            {comerciais.map((c) => (
+                            {!perfilComercial && <option value="">— Sem comercial (não gera comissão) —</option>}
+                            {(perfilComercial
+                              ? comerciais.filter((c) => String(c.id) === String(formData.responsavel_comercial_id))
+                              : comerciais
+                            ).map((c) => (
                               <option key={c.id} value={c.id}>{c.nome}</option>
                             ))}
                         </select>

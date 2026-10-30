@@ -122,6 +122,27 @@ test('grava hash e, se a coluna não existe, preserva o texto', async () => {
   assert.equal(chamadas[1].password, 'senha-ficticia-nova');
   assert.equal(chamadas[1].force_password_change, undefined);
   assert.equal(chamadas[1].session_epoch, undefined);
+});
+
+test('sem hash, a troca de senha grava force_password_change false', async () => {
+  const chamadas: Record<string, unknown>[] = [];
+  const cliente = {
+    from() {
+      return {
+        update(valores: Record<string, unknown>) {
+          chamadas.push(valores);
+          return {
+            eq: async () => ({ error: chamadas.length === 1 ? { message: 'column password_hash does not exist' } : null }),
+          };
+        },
+      };
+    },
+  };
+  const modo = await gravarSenhaNoServidor(cliente, 'fun', 'senha-ficticia-nova', { force_password_change: false });
+  assert.equal(modo, 'texto');
+  assert.equal(chamadas[1].password, 'senha-ficticia-nova');
+  assert.equal(chamadas[1].force_password_change, false);
+  assert.equal(chamadas[1].session_epoch, undefined);
   assert.equal(JSON.stringify(chamadas).includes('senha-ficticia-nova') && chamadas[0].password === null, true);
 });
 

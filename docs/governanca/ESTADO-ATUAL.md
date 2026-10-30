@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-10-30. A senha temporária do Rafael Lima foi regravada e `force_password_change` está ligado. Senha em texto com cifrão não entra: o login trata `$` como hash. A geração nova não usa cifrão. Sem a coluna `password_hash`, a troca de senha grava `force_password_change` falso para o modal soltar. O site de produção ainda não tem esse ajuste. Ainda não foi publicado.
+
+Atualizado em 2026-10-30. O perfil COMERCIAL no banco ficou só com início, clientes, cotações, ordens de serviço e os grupos desses menus. No código, esse perfil não abre agentes, fornecedores, alvará, contratos, usuários/veículos/rotas do cliente nem relatório de OS, mesmo que a permissão antiga ainda esteja na sessão. Cliente, cotação e o aviso de pedágio do início usam a carteira (`responsavel_comercial_id`). O comercial não escolhe outro responsável no cadastro. A SQL com `auth.uid()` não foi aplicada: o login não cria sessão no Supabase Auth, então essa política esvaziaria o sistema inteiro. O navegador ainda fala com o banco pela chave anônima. Ainda não foi publicado.
+
 Atualizado em 2026-10-30. O e-mail e a mensagem de acesso de usuário novo usam a senha digitada no formulário. Antes o texto lia um campo que não existe no cadastro e saía `undefined`. A troca no primeiro acesso continua em `force_password_change`. A senha do Rafael Lima foi regravada e a troca segue obrigatória. O e-mail não saiu desta máquina porque o SMTP local está vazio. Ainda não foi publicado.
 
 Atualizado em 2026-10-30. No quadro de comissões, a mesma fatura da Torres deixa de somar duas vezes quando o id ao vivo vem com `inv:` e o espelho guarda o id cru. Sem `TORRES_SUPABASE_SERVICE_ROLE_KEY`, o sincronismo não chama o push. O arredondamento de centavos da comissão usa `Number.EPSILON`. Responsável comercial dos clientes não foi preenchido. Ainda não foi publicado.

@@ -168,7 +168,8 @@ test('ClientForm: após insert guarda id e não duplica no retry; comercial auto
 test('ClientList carteira comercial oculta inativos e dedupa', () => {
   const clientList = readFileSync('components/ClientList.tsx', 'utf8');
   assert.match(clientList, /status',\s*'Ativo'|eq\('status',\s*'Ativo'\)/);
-  assert.match(clientList, /montarFiltroOrCarteiraComercial/);
+  assert.match(clientList, /eq\('responsavel_comercial_id', comercialId\)/);
+  assert.doesNotMatch(clientList, /montarFiltroOrCarteiraComercial/);
   assert.match(clientList, /deduparClientesPorDocumento/);
   assert.match(clientList, /responsavel_comercial_id/);
 });

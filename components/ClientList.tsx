@@ -9,7 +9,6 @@ import {
   comercialIdDoUsuarioLogado,
   deduparClientesPorDocumento,
   documentoCorrespondeBusca,
-  montarFiltroOrCarteiraComercial,
   perfilEhComercialRole,
 } from '../lib/clientDuplicateGuard';
 import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
@@ -97,7 +96,7 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
       if (lockedClientId) {
           query = query.eq('id', lockedClientId);
       } else if (isCommercial) {
-          // Comercial: só Ativos da carteira (cadastrou OU responsável). Inativos/duplicatas somem.
+          // Comercial: só Ativos cujo responsável é o cadastro dele. Sem vínculo, lista vazia.
           query = query.eq('status', 'Ativo');
           let comercialId: string | null = null;
           if (currentUser?.id) {
@@ -106,19 +105,8 @@ const ClientList: React.FC<ClientListProps> = ({ onAddClient, onEdit }) => {
               .select('id, usuario_id');
             comercialId = comercialIdDoUsuarioLogado(comerciaisRows || [], currentUser.id);
           }
-          const allowedIds =
-            currentUser?.permissions
-              ?.filter((p: string) => p.startsWith('client_view:'))
-              .map((p: string) => p.split(':')[1]) || [];
-          const orFilter = montarFiltroOrCarteiraComercial({
-            userName: currentUser?.name,
-            comercialId,
-            extraIds: allowedIds,
-          });
-          if (!orFilter) {
-            return [];
-          }
-          query = query.or(orFilter);
+          if (!comercialId) return [];
+          query = query.eq('responsavel_comercial_id', comercialId);
       }
 
       const { data, error } = await query;

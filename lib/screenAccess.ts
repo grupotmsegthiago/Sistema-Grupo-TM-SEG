@@ -132,6 +132,30 @@ export function hasProfilePermission(user: ScreenAccessUser | null | undefined, 
   return perms.includes(id);
 }
 
+/** Fora da carteira do comercial: agentes, fornecedores, alvará, contratos e telas vizinhas. */
+const TELAS_FORA_DA_CARTEIRA_COMERCIAL = new Set([
+  'contract-manager',
+  'client-users',
+  'client-vehicles',
+  'client-routes',
+  'providers-group',
+  'providers',
+  'alvara-control',
+  'provider-users',
+  'provider-vehicles',
+  'provider-agents',
+  'provider-technologies',
+  'provider-activation-map',
+  'mission-report',
+  'shift-handover',
+]);
+
+function comercialForaDaCarteira(user: ScreenAccessUser | null | undefined, screenId: string): boolean {
+  if (!isPerfilComercial(user)) return false;
+  const id = resolvePermissionId(screenId);
+  return TELAS_FORA_DA_CARTEIRA_COMERCIAL.has(screenId) || TELAS_FORA_DA_CARTEIRA_COMERCIAL.has(id);
+}
+
 function isClientForbidden(screenId: string): boolean {
   const id = resolvePermissionId(screenId);
   if (CLIENT_FORBIDDEN_IDS.has(id)) return true;
@@ -154,6 +178,8 @@ function childrenOfGroup(groupId: string): string[] {
  */
 export function canAccessScreen(user: ScreenAccessUser | null | undefined, screenId: string): boolean {
   if (!user || !screenId) return false;
+
+  if (comercialForaDaCarteira(user, screenId)) return false;
 
   if (isRestrictedClientUser(user) && isClientForbidden(screenId)) {
     return false;

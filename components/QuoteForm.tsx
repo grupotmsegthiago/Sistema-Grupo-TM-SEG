@@ -11,6 +11,8 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { useNotification } from '../lib/NotificationContext';
 import { authFetch } from '../lib/authFetch';
 import { rotaDaTabelaOperacao } from '../lib/comercial/auditoriaFaturamentoTabela';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
+import { perfilEhComercialRole } from '../lib/clientDuplicateGuard';
 
 declare const google: any;
 
@@ -70,8 +72,23 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
   const loadInitialData = async () => {
       setIsLoading(true);
       try {
-          const { data: clientsData } = await supabase.from('clients').select('*').eq('status', 'Ativo').order('name');
-          if (clientsData) setClients(clientsData as any);
+          const usuario = (() => {
+            try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+          })();
+          let consultaClientes = supabase.from('clients').select('*').eq('status', 'Ativo').order('name');
+          if (perfilEhComercialRole(usuario?.role) && !usuario?.permissions?.includes('*')) {
+            const carteira = await carregarNomesClientesDoComercial(supabase, usuario?.id);
+            if (!carteira.ids.length) {
+              setClients([]);
+            } else {
+              consultaClientes = consultaClientes.in('id', carteira.ids);
+              const { data: clientsData } = await consultaClientes;
+              if (clientsData) setClients(clientsData as any);
+            }
+          } else {
+            const { data: clientsData } = await consultaClientes;
+            if (clientsData) setClients(clientsData as any);
+          }
           if (id) {
               const { data: quote } = await supabase.from('quotes').select('*').eq('id', id).single();
               if (quote) {
@@ -145,6 +162,13 @@ const QuoteForm: React.FC<Props> = ({ onBack, id }) => {
         return;
       }
       if (formData.items.length === 0) { showNotification('Atenção', 'Adicione uma região.', 'warning'); return; }
+      const usuario = (() => {
+        try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+      })();
+      if (perfilEhComercialRole(usuario?.role) && !clients.some((c) => String(c.id) === String(formData.clientId))) {
+        showNotification('Cliente', 'Escolha um cliente da sua carteira.', 'error');
+        return;
+      }
       setIsSaving(true);
       try {
           const payload = { client_id: parseInt(formData.clientId), client_name: formData.clientName, origin: rota.origem, destination: rota.destino, total_km: parseFloat(formData.totalKm) || 0, total_hours: parseFloat(formData.totalHours) || 0, total_value: totalValue, status: 'Rascunho', items: formData.items, contract_details: formData.contractDetails, created_by: JSON.parse(localStorage.getItem('userData') || '{}').name };

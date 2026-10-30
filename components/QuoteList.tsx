@@ -13,6 +13,8 @@ import {
 } from '../lib/comercial/tabelaPrecosRegionais';
 import { checkAndExpireQuotations } from '../lib/precificacao/expirarCotacoes';
 import { cotacaoSelecionavel, cotacaoVencida, patchExpiracaoCotacao } from '../lib/precificacao/tabela2027';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
+import { perfilEhComercialRole } from '../lib/clientDuplicateGuard';
 
 interface Props {
   onAdd: () => void;
@@ -80,15 +82,21 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
             clients:client_id(id, name, created_by)
         `).order('created_at', { ascending: false });
         
+        const comercial = perfilEhComercialRole(user?.role) && !user?.permissions?.includes('*');
+        let idsCarteira: number[] = [];
+        if (comercial) {
+            const carteira = await carregarNomesClientesDoComercial(supabase, user?.id);
+            idsCarteira = carteira.ids;
+            if (!idsCarteira.length) {
+                setQuotes([]);
+                setClientMap({});
+                setDbStatus('ok');
+                return;
+            }
+            quoteQuery = quoteQuery.in('client_id', idsCarteira);
+        }
         if (clientName) {
             quoteQuery = quoteQuery.eq('client_name', clientName);
-        } else if ((user?.role || '').toLowerCase() === 'comercial' && !user?.permissions?.includes('*')) {
-            const allowedIds = user?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
-            if (allowedIds.length > 0) {
-                quoteQuery = quoteQuery.or(`created_by.eq."${user?.name}",client_id.in.(${allowedIds.join(',')})`);
-            } else {
-                quoteQuery = quoteQuery.eq('created_by', user?.name);
-            }
         }
 
         try {
@@ -97,9 +105,12 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
             console.warn('[Cotações] expiração:', erroExpiracao);
         }
 
+        const nomesClientes = comercial
+            ? supabase.from('clients').select('name, trading_name').in('id', idsCarteira)
+            : supabase.from('clients').select('name, trading_name');
         const [quotesRes, clientsRes] = await Promise.all([
             quoteQuery,
-            supabase.from('clients').select('name, trading_name')
+            nomesClientes,
         ]);
 
         if (quotesRes.error) throw quotesRes.error;

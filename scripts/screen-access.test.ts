@@ -146,6 +146,25 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     assert.doesNotMatch(app, /rl === 'avançado' \|\| rl === 'avancado' \|\| rl === 'diretoria'/);
   });
 
+  it('comercial fica na carteira mesmo com as telas antigas no perfil', () => {
+    const comercial = {
+      role: 'COMERCIAL',
+      permissions: [
+        'dashboard', 'clients-group', 'client-routes', 'client-users', 'providers-group',
+        'providers', 'alvara-control', 'provider-users', 'provider-vehicles', 'provider-agents',
+        'provider-technologies', 'client-vehicles', 'contract-manager', 'quotes', 'clients',
+        'missions', 'monitoring-group', 'mission-report', 'shift-handover', '*',
+      ],
+    };
+    for (const tela of ['provider-agents', 'providers', 'alvara-control', 'contract-manager', 'provider-form', 'mission-report', 'client-users', 'client-vehicles', 'client-routes']) {
+      assert.equal(canAccessScreen(comercial, tela), false, tela);
+    }
+    for (const tela of ['dashboard', 'clients', 'quotes', 'missions', 'comissoes-comerciais', 'client-form', 'quote-form']) {
+      assert.equal(canAccessScreen(comercial, tela), true, tela);
+    }
+    assert.equal(canAccessScreen({ role: 'Diretoria', permissions: ['providers', 'provider-agents'] }, 'provider-agents'), true);
+  });
+
   it('wildcard * libera telas comuns (não quebra exclusividade dos Thiagos no cockpit)', () => {
     const admin = { name: 'Maria', role: 'Administrador', permissions: ['*'] };
     assert.equal(hasProfilePermission(admin, 'profiles'), true);
