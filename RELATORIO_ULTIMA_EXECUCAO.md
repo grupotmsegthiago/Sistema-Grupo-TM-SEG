@@ -22,6 +22,63 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
+## Pré-fatura mensal — aguardando aprovação (30/10/2026)
+
+Baseline de leitura: `main` `3ff6522b`. Nenhum código foi alterado. A execução continua travada até a frase **Fluxo aprovado, pode executar**.
+
+O Gemini fechou os quatro pontos. Este registro corrige o que não cabe no banco atual e deixa a fórmula do proporcional em aberto.
+
+### Objetivo da Tarefa
+
+Cadastrar serviço mensal na ficha do cliente e gerar, no Financeiro, uma pré-fatura da competência. O valor faturado daquele mês pode ser ajustado com justificativa. O valor mensal cadastrado e as outras competências permanecem. O boletim de OS continua só com viagens.
+
+### Decisões trazidas do Gemini
+
+1. Um único título a receber, pelo total a faturar da competência.
+2. A pré-fatura é documento interno de conferência. Asaas e PlugNotas só no clique **Gerar fatura**, no fluxo que já existe.
+3. Boletim de OS (`missions`) e pré-fatura mensal ficam separados. Cada um gera a própria `financial_invoices`.
+4. PDF no modelo Flash: cabeçalho PRÉ-FATURA TM SEG, emissor, cliente, bloco de situação, quatro colunas (COBRANÇA, DESCRIÇÃO DA COBRANÇA, VALOR MENSAL, VALOR) e total. O arquivo modelo não está no repositório; o layout segue a leitura do Gemini.
+
+### Correções em relação ao desenho do Gemini
+
+- `clients.id` é `bigint`. `financial_invoices.id` é `uuid`. `system_users.id` é `bigint`. Quem alterou grava nome e o id numérico do usuário. Não usar UUID de `auth.users`.
+- Aprovar congela o snapshot e não chama Asaas. Gerar fatura é o segundo clique, reusando a emissão já existente.
+- Não há motor de “fluxo de aprovação configurado” no código. A aprovação fica com Financeiro e Diretoria, o mesmo grupo que já fatura.
+- O exemplo R$ 4.555,57 é 60% de R$ 7.592,62. Não é o rateio de 13/10 a 31/10. O proporcional entra como ajuste manual com justificativa. A fórmula automática de dias fica de fora até haver regra escrita.
+- Cada alteração de valor guarda valor anterior, valor novo, motivo, usuário e horário de Brasília. Um campo único de motivo não basta.
+- Linha extra (extraordinário, reembolso, desconto, complementar, exclusão) não exige serviço cadastrado. Linha excluída sai da soma e permanece no histórico.
+- PDF com jsPDF, no caminho que o boletim e o contrato já usam. Sem função nova no `vercel.json`.
+- A migration fica no repositório e não é aplicada por este fluxo. Quem aplica é o proprietário.
+
+### Passo a Passo Sequencial
+
+1. Migration nova, sem `exec_sql` e sem rodar no banco: `client_monthly_services`, `client_pre_invoices`, `client_pre_invoice_items`, `client_pre_invoice_adjustments`.
+2. Aba Serviços mensais em `ClientForm`, só com cliente já salvo.
+3. Tela no Financeiro: cliente + competência `AAAA-MM`. Copia os serviços cuja vigência cobre o mês para um rascunho. Um rascunho aberto por cliente e mês.
+4. Ajustes no rascunho, com trilha. Total = soma dos valores a faturar, em `roundMoney`.
+5. PDF e histórico. Aprovar trava a edição.
+6. Gerar fatura, só com pré-fatura aprovada: grava `financial_invoices`, um `financial_transactions` INCOME com o total, e liga `financial_invoice_id`. Asaas e PlugNotas pelo caminho já existente. Sem OS fictícia.
+
+### Ficheiros previstos
+
+`migrations/2026_10_30_pre_fatura_mensal.sql`, `lib/billing/preFaturaMensal.ts`, `scripts/pre-fatura-mensal.test.ts`, `components/ClientForm.tsx`, `components/ClientMonthlyServicesTab.tsx`, `components/PreFaturaMensal.tsx`, `App.tsx` (entrada de menu, sem função Vercel nova). `lib/financialUtils.ts` não entra.
+
+### Garantias de Não Impacto
+
+Motor da OS, `client_price_tables`, contratos DHL/IBL, boletim de viagens, Asaas, PlugNotas, limite de 50 funções e horário `America/Sao_Paulo` em 24 h permanecem. A pré-fatura não escreve em `missions`.
+
+### Nove pontos
+
+1. Negócio: cobrar mensalidade de posto sem alterar a escolta por viagem.
+2. Já existe: cliente, boletim de OS, fatura, título a receber, `roundMoney`, jsPDF.
+3. Fonte única futura: serviço em `client_monthly_services`; pré-fatura no snapshot; fatura em `financial_invoices`; título em `financial_transactions`.
+4. Writers: a aba do cliente e a tela do Financeiro. Readers: PDF, histórico e o contas a receber já existente.
+5. Testes: vigência, soma, ajuste que não volta no cadastro, segunda competência intacta, total único do título. Sem chamada real ao Asaas.
+6. OS, pedágio, comissão, NF e WhatsApp não mudam de regra. Asaas só é chamado no Gerar fatura, pelo fluxo atual.
+7. Reutilizar fatura, título, arredondamento e PDF. Estender o menu. Não estender a tabela de preço.
+8. Arquivos novos porque não há tabela nem tela de mensalidade.
+9. Parado. Sem a frase de aprovação, sem migration aplicada e sem código de produção.
+
 ## Suíte comercial do prompt (28/10/2026) — recorte A executado
 
 Baseline `efcb4000` na `dev`. Recorte A aprovado e executado em 28/10/2026. Sem migration, sem tabela nova e sem mudança de preço ou comissão. Ainda não foi publicado.
