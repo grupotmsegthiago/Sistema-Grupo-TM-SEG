@@ -27,6 +27,7 @@ import {
     findMunicipalServiceOption,
     isAmazonBillingClient,
     MUNICIPAL_SERVICE_OPTIONS,
+    resolveAsaasNationalMonitoring,
     resolveMunicipalServiceForClient,
 } from '../lib/billing/municipalServiceOptions';
 import {
@@ -3607,6 +3608,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         skipBoleto,
                         municipalServiceCode: municipalOpt.code,
                         municipalServiceName: municipalOpt.name,
+                        municipalServiceOptionId: municipalOpt.id,
                         missionIds: bulletinMissionIds,
                         periodStart: startDate || undefined,
                         periodEnd: endDate || undefined,
@@ -3750,6 +3752,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     skipBoleto,
                     municipalServiceCode: municipalOpt.code,
                     municipalServiceName: municipalOpt.name,
+                    municipalServiceOptionId: municipalOpt.id,
                     missionIds: bulletinMissionIds,
                     periodStart: startDate || undefined,
                     periodEnd: endDate || undefined,
@@ -4268,6 +4271,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     </div>
                                     {(() => {
                                         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
+                                        const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
+                                        const national = resolveAsaasNationalMonitoring({
+                                            optionId: municipalOpt.id,
+                                            municipalCode: municipalOpt.code,
+                                            serviceDescription: municipalOpt.descriptionBase,
+                                            clientName: selectedClient?.name,
+                                            tradingName: selectedClient?.trading_name,
+                                        });
                                         return (
                                             <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2 space-y-2" data-testid="section-invoice-cnae">
                                                 <div className="flex items-start justify-between gap-2">
@@ -4301,6 +4312,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                         </select>
                                                     </div>
                                                 )}
+                                                <div className="bg-white border border-green-300 rounded-lg px-2.5 py-2 space-y-1" data-testid="section-nf-conferencia">
+                                                    <p className="text-[8px] font-black text-green-800 uppercase">Conferência da NF Asaas</p>
+                                                    <p className="text-[10px] text-gray-800"><span className="font-black">ISS:</span> 2% sem retenção. PIS, COFINS, CSLL, IR e INSS sem destaque.</p>
+                                                    {national && (
+                                                        <div data-testid="section-nf-nacional-monitoramento">
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">Código nacional:</span> {national.federalServiceTaxCode}</p>
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">NBS:</span> {national.nbsCode}</p>
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">Municipal:</span> {municipalOpt.code}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })()}

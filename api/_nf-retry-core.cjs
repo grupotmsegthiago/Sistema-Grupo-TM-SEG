@@ -1204,7 +1204,7 @@ function removeDuplicatedDescription(serviceDescription, observations) {
   return suffix.replace(/^[\s|:;,\-–—]+/, "");
 }
 function removeRedundantMunicipalServiceLine(observations) {
-  return observations.split("|").map((part) => part.trim()).filter(Boolean).filter((part) => !/^CNAE\/Servi[cç]o municipal:/i.test(part)).join("|");
+  return observations.split("|").map((part) => part.trim()).filter(Boolean).filter((part) => !/^CNAE\/Servi[cç]o municipal:/i.test(part)).filter((part) => !/^Opção serviço NF:/i.test(part)).join("|");
 }
 function truncateAsaasServiceDescription(value, maxLength = ASAAS_SERVICE_DESCRIPTION_MAX_LENGTH) {
   const text = String(value || "").trimEnd();
@@ -1241,6 +1241,32 @@ function normalizeAsaasNfDiscrimination(input) {
   return { serviceDescription: truncateAsaasServiceDescription(discrimination) };
 }
 
+// lib/billing/municipalServiceOptions.ts
+function isAmazonBillingClient(name, tradingName) {
+  return `${name || ""} ${tradingName || ""}`.toUpperCase().includes("AMAZON");
+}
+var ASAAS_MONITORAMENTO_NACIONAL = {
+  federalServiceTaxCode: "110501",
+  nbsCode: "1.1802.30.00",
+  municipalServiceCode: "07930",
+  issRate: 2
+};
+function resolveAsaasNationalMonitoring(input) {
+  if (isAmazonBillingClient(input.clientName, input.tradingName)) return null;
+  const optionId = String(input.optionId || "").trim().toLowerCase();
+  const code = String(input.municipalCode || "").replace(/\D/g, "");
+  const desc = String(input.serviceDescription || "");
+  if (optionId === "escolta" || optionId === "rastreamento" || code === "06298") return null;
+  if (/escolta/i.test(desc) && optionId !== "intermediacao") return null;
+  if (optionId === "intermediacao" || code === "07930") {
+    return {
+      federalServiceTaxCode: ASAAS_MONITORAMENTO_NACIONAL.federalServiceTaxCode,
+      nbsCode: ASAAS_MONITORAMENTO_NACIONAL.nbsCode
+    };
+  }
+  return null;
+}
+
 // server/asaasService.ts
 function asaasCompanies() {
   return {
@@ -1265,7 +1291,8 @@ function asaasCompanies() {
       aliases: ["TM SEGURAN\xC7A", "TM SEGURANCA", "TMSEGURANCA", "TMSEGURAN\xC7A", "SEGURAN\xC7A", "SEGURANCA", "TM SEGURANCA CONSULTORIA"],
       nf: {
         serviceDescription: "Ref. aos Servi\xE7os de Intermedia\xE7\xE3o de Escolta Armada",
-        issRate: 5,
+        // ISS 2% em todas as empresas: o DAS já é pago fora da nota, sem retenção.
+        issRate: 2,
         retainIss: false,
         municipalServiceCode: "07930",
         municipalServiceName: "07930 - Monitoramento e rastreamento a dist\xE2ncia de ve\xEDculos, cargas, pessoas e semoventes"
@@ -1278,7 +1305,8 @@ function asaasCompanies() {
       aliases: ["TM SECURITY", "TMSECURITY", "SECURITY", "TM SECURITY GESTAO", "TM SECURITY GEST\xC3O"],
       nf: {
         serviceDescription: "Ref. aos Servi\xE7os de Intermedia\xE7\xE3o de Escolta Armada",
-        issRate: 5,
+        // ISS 2% em todas as empresas: o DAS já é pago fora da nota, sem retenção.
+        issRate: 2,
         retainIss: false,
         municipalServiceCode: "07930",
         municipalServiceName: "07930 - Monitoramento e rastreamento a dist\xE2ncia de ve\xEDculos, cargas, pessoas e semoventes"
@@ -1556,8 +1584,25 @@ async function scheduleInvoice(params) {
     }
   }
   if (params.externalReference) body.externalReference = params.externalReference;
+  const national = resolveAsaasNationalMonitoring({
+    optionId: params.municipalServiceOptionId,
+    municipalCode: body.municipalServiceCode,
+    serviceDescription: rawDesc,
+    clientName: params.clientName
+  });
+  if (national) {
+    taxes.federalServiceTaxCode = national.federalServiceTaxCode;
+    taxes.nbsCode = national.nbsCode;
+    taxes.iss = 2;
+    taxes.retainIss = false;
+    taxes.pis = 0;
+    taxes.cofins = 0;
+    taxes.csll = 0;
+    taxes.inss = 0;
+    taxes.ir = 0;
+  }
   console.log(
-    `[Asaas NF] POST /invoices payment=${params.paymentId} company=${companyEntry.name} code=${body.municipalServiceCode || body.municipalServiceId || "-"}`
+    `[Asaas NF] POST /invoices payment=${params.paymentId} company=${companyEntry.name} code=${body.municipalServiceCode || body.municipalServiceId || "-"} nacional=${taxes.federalServiceTaxCode || "-"} nbs=${taxes.nbsCode || "-"}`
   );
   try {
     return await asaasFetch("/invoices", { method: "POST", body: JSON.stringify(body) }, params.company);
@@ -1926,15 +1971,18 @@ function parseInvoiceNfMeta(inv) {
   const notes = String(inv.notes || inv.description || "").trim();
   if (!notes) return {};
   const lines = notes.split("\n").map((l) => l.trim()).filter(Boolean);
-  const main = lines.find((l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l));
+  const main = lines.find((l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l) && !/^Opção serviço NF:/i.test(l));
   const cnaeLine = lines.find((l) => /^CNAE\//i.test(l)) || "";
+  const optionLine = lines.find((l) => /^Opção serviço NF:/i.test(l)) || "";
   const codeMatch = cnaeLine.match(/(\d{4,6})/);
   const nameMatch = cnaeLine.match(/—\s*(.+)$/);
+  const optionId = optionLine.split(":").slice(1).join(":").trim().toLowerCase();
   return {
     serviceDescription: main || void 0,
     observations: notes.slice(0, 500),
     municipalServiceCode: codeMatch?.[1],
-    municipalServiceName: nameMatch?.[1]?.trim()
+    municipalServiceName: nameMatch?.[1]?.trim(),
+    municipalServiceOptionId: optionId || void 0
   };
 }
 var PENDING_NF_STATUSES = ["ERROR", "FAILED", "PENDING", "PROCESSING", "SCHEDULED", "RETRY", "SYNCHRONIZED"];
@@ -2215,7 +2263,8 @@ async function retryOne(inv, opts) {
     serviceDescription: opts?.serviceDescription || nfMeta.serviceDescription,
     observations: nfMeta.observations,
     municipalServiceCode: nfMeta.municipalServiceCode,
-    municipalServiceName: nfMeta.municipalServiceName
+    municipalServiceName: nfMeta.municipalServiceName,
+    municipalServiceOptionId: nfMeta.municipalServiceOptionId
   };
   const reissueCount = (inv.nf_retry_count || 0) + 1;
   let currentInvoice = null;

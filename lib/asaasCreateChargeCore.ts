@@ -162,6 +162,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
     const observations = body.observations;
     const municipalServiceCode = body.municipalServiceCode as string | undefined;
     const municipalServiceName = body.municipalServiceName as string | undefined;
+    const municipalServiceOptionId = String(body.municipalServiceOptionId || '').trim().toLowerCase();
 
     const noBoleto = skipBoleto === true || String(skipBoleto || '').toLowerCase() === 'true';
     const nfObservations = String(observations || '').trim();
@@ -275,6 +276,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
               nfServiceText,
               `Ref. rastreio: ${externalRef}`,
               nfMunicipalCode ? `CNAE/Serviço municipal: ${nfMunicipalCode}` : '',
+              municipalServiceOptionId ? `Opção serviço NF: ${municipalServiceOptionId}` : '',
             ]
               .filter(Boolean)
               .join('\n'),
@@ -535,6 +537,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
               nfMunicipalCode
                 ? `CNAE/Serviço municipal: ${nfMunicipalCode}${nfMunicipalName ? ` — ${nfMunicipalName}` : ''}`
                 : '',
+              municipalServiceOptionId ? `Opção serviço NF: ${municipalServiceOptionId}` : '',
             ]
               .filter(Boolean)
               .join('\n'),

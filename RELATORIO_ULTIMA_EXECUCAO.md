@@ -1,5 +1,15 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 03/11/2026 na branch `cursor/nf-asaas-monitoramento-nacional`, criada a partir da `dev` `a0aa8aa9`. A branch de WhatsApp `feat/whatsapp-desktop-instalador` não foi alterada.
+
+Objetivo: na emissão Asaas do monitoramento ligado ao municipal 07930, enviar o código nacional 110501 e a NBS 1.1802.30.00, com ISS 2% e sem retenção, porque o DAS já é pago.
+
+Arquivos: `server/asaasService.ts`, `lib/billing/municipalServiceOptions.ts`, `lib/asaasCreateChargeCore.ts`, `lib/nfDiscrimination.ts`, `server/nfRetryWorker.ts`, `components/ClientBillingReport.tsx`, `scripts/asaas-national-monitoring.test.ts`.
+
+O municipal 07930 permanece. Escolta, código 06298 e a regra da Amazon não recebem 110501 nem NBS. A alíquota Asaas das três empresas passou a 2%, inclusive na escolta e no 06298, porque a taxa é da empresa e o pedido foi manter todos em 2% sem desconto na nota. A PlugNotas continua com a alíquota que já tinha. Não houve Focus, não houve banco e não houve publicação.
+
+O teste T14 de `scripts/nf-retry-individual.test.ts` já falha nesta `dev`: o Controle de Faturas não contém `/api/nf/retry-now?limit=10&reopen=1`. Esse arquivo não entrou nesta alteração.
+
 Executado em 30/10/2026 na `dev`. A aba Tabela de Preços voltou a mostrar as linhas de 2026, com a marca 2026 (ANTIGA). A cotação nova e a proposta comercial continuam na Tabela 2027. Arquivos: `components/ClientForm.tsx` e `scripts/trechos-proposta.test.ts`. Sem banco, sem motor da OS e sem função nova na Vercel.
 
 Executado em 30/10/2026 na `dev`. Nova senha temporária do Rafael Lima (id 33), com troca obrigatória. A anterior tinha cifrão e o login em texto recusa `$`. A geração em `lib/senhaTemporaria.ts` deixou de usar cifrão. Em `lib/sessao/gravarSenha.ts`, quando não existe `password_hash`, o valor verdadeiro da troca obrigatória não é regravado a cada login, e o falso da troca de senha é gravado. O login local abriu a tela de alteração obrigatória. A sessão veio com perfil COMERCIAL e as permissões início, clientes, cotações e ordens de serviço. A senha definitiva não foi criada aqui. Ainda não foi publicado.

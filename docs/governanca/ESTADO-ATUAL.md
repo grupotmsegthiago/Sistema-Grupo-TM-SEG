@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-03. Na branch `cursor/nf-asaas-monitoramento-nacional`, a partir da `dev` `a0aa8aa9`. A NF Asaas de monitoramento/intermediação no municipal 07930, fora Amazon, escolta e 06298, passa a enviar código nacional 110501 e NBS 1.1802.30.00. O municipal 07930 permanece. ISS das três empresas na Asaas fica 2%, sem retenção e sem destaque de PIS, COFINS, CSLL, IR e INSS. PlugNotas, Focus, Torres e a branch de WhatsApp não foram alteradas. Ainda não foi publicado.
+
 Atualizado em 2026-10-30. Na aba Tabela de Preços do cliente, a grade volta a listar todas as linhas de `client_price_tables`. A que não começa com `TABELA 2027` aparece com a marca 2026 (ANTIGA). O card de cotação e o Gerar Contrato / Proposta continuam só com a Tabela 2027. O botão de proposta da linha some na 2026. Reajuste, edição e exclusão seguem na grade. Nada foi apagado do banco. O motor da OS não mudou.
 
 Atualizado em 2026-10-30. A senha temporária do Rafael Lima foi regravada e `force_password_change` está ligado. Senha em texto com cifrão não entra: o login trata `$` como hash. A geração nova não usa cifrão. Sem a coluna `password_hash`, a troca de senha grava `force_password_change` falso para o modal soltar. O site de produção ainda não tem esse ajuste. Ainda não foi publicado.
