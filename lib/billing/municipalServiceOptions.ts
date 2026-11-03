@@ -130,18 +130,25 @@ export function defaultMunicipalServiceForClient(
   return findMunicipalServiceOption('escolta');
 }
 
-/** Trinca nacional do monitoramento (Asaas). O municipal 07930 continua no campo municipal. */
+/**
+ * Portal Nacional não aceita o código municipal antigo 07930.
+ * O código de serviço vai pontuado (11.05.01). O código nacional de 6 dígitos vai em federalServiceTaxCode.
+ * 06298 continua de fora: a contabilidade ainda não passou o código nacional dele.
+ */
 export const ASAAS_MONITORAMENTO_NACIONAL = {
   federalServiceTaxCode: '110501',
+  /** Formato de 8 caracteres exigido pelo Portal Nacional no código de serviço. */
+  portalServiceCode: '11.05.01',
   nbsCode: '1.1802.30.00',
-  municipalServiceCode: '07930',
+  /** Código municipal antigo. Serve só para reconhecer o serviço; não é enviado ao portal. */
+  legacyMunicipalServiceCode: '07930',
   issRate: 2,
 } as const;
 
 /**
- * Código nacional e NBS só no monitoramento/intermediação ligado ao 07930.
- * Escolta, 06298 e cliente Amazon ficam de fora.
- * Sem opção gravada, a descrição com "escolta" também fica de fora.
+ * Converte o serviço 07930 para o padrão do Portal Nacional.
+ * Vale para monitoramento, escolta e Amazon quando o código resolvido é 07930,
+ * porque o portal recusa esse código antigo em qualquer um desses casos.
  */
 export function resolveAsaasNationalMonitoring(input: {
   optionId?: string | null;
@@ -149,18 +156,18 @@ export function resolveAsaasNationalMonitoring(input: {
   serviceDescription?: string | null;
   clientName?: string | null;
   tradingName?: string | null;
-}): { federalServiceTaxCode: string; nbsCode: string } | null {
-  if (isAmazonBillingClient(input.clientName, input.tradingName)) return null;
+}): { federalServiceTaxCode: string; nbsCode: string; portalServiceCode: string } | null {
   const optionId = String(input.optionId || '').trim().toLowerCase();
   const code = String(input.municipalCode || '').replace(/\D/g, '');
-  const desc = String(input.serviceDescription || '');
-  if (optionId === 'escolta' || optionId === 'rastreamento' || code === '06298') return null;
-  if (/escolta/i.test(desc) && optionId !== 'intermediacao') return null;
-  if (optionId === 'intermediacao' || code === '07930') {
-    return {
-      federalServiceTaxCode: ASAAS_MONITORAMENTO_NACIONAL.federalServiceTaxCode,
-      nbsCode: ASAAS_MONITORAMENTO_NACIONAL.nbsCode,
-    };
-  }
-  return null;
+  if (optionId === 'rastreamento' || code === '06298') return null;
+  const isLegacyMonitoring =
+    optionId === 'escolta' ||
+    optionId === 'intermediacao' ||
+    code === ASAAS_MONITORAMENTO_NACIONAL.legacyMunicipalServiceCode;
+  if (!isLegacyMonitoring) return null;
+  return {
+    federalServiceTaxCode: ASAAS_MONITORAMENTO_NACIONAL.federalServiceTaxCode,
+    nbsCode: ASAAS_MONITORAMENTO_NACIONAL.nbsCode,
+    portalServiceCode: ASAAS_MONITORAMENTO_NACIONAL.portalServiceCode,
+  };
 }
