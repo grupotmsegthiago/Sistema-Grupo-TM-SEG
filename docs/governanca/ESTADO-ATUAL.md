@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-03. O botão Reemitir da fatura `TMSEG-20261103-162641-WVPS` respondia "Fatura não encontrada" porque a consulta pedia `due_date` e `description`, colunas que não existem em `financial_invoices`. A nota está pausada com o erro do código antigo. A busca foi corrigida. A reemissão manual ainda depende deste deploy.
+
 Atualizado em 2026-11-03. O Portal Nacional recusou o código municipal 07930. A nota Asaas desse serviço passa a enviar o código de serviço 11.05.01, o código nacional 110501 e a NBS 1.1802.30.00. Isso vale para monitoramento, escolta e Amazon quando o código resolvido é 07930. O 06298 permanece sem código nacional. ISS continua 2%, sem retenção. Ainda depende de publicação.
 
 Atualizado em 2026-11-03. Na branch `cursor/nf-asaas-monitoramento-nacional`, a partir da `dev` `a0aa8aa9`. A NF Asaas de monitoramento/intermediação no municipal 07930, fora Amazon, escolta e 06298, passa a enviar código nacional 110501 e NBS 1.1802.30.00. O municipal 07930 permanece. ISS das três empresas na Asaas fica 2%, sem retenção e sem destaque de PIS, COFINS, CSLL, IR e INSS. PlugNotas, Focus, Torres e a branch de WhatsApp não foram alteradas. Ainda não foi publicado.

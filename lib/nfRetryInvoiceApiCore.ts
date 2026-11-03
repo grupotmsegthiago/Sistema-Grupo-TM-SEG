@@ -40,8 +40,10 @@ export type RetryOneFn = (
   opts?: { manualRetry?: boolean },
 ) => Promise<RetryOneResult>;
 
+// financial_invoices não tem due_date nem description. Pedi-las faz o PostgREST
+// falhar e o botão Reemitir responder "Fatura não encontrada".
 const INVOICE_SELECT =
-  'id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, due_date, description, notes, created_at';
+  'id, client, number, amount, asaas_payment_id, asaas_invoice_id, issuer_company, nf_status, nf_last_error, nf_retry_count, nf_retry_paused, nf_provider, plugnotas_invoice_id, plugnotas_protocol, notes, created_at';
 
 export function inferNfProvider(inv: ManualRetryInvoiceRow): 'ASAAS' | 'PLUGNOTAS' {
   const rawProvider = String(inv.nf_provider || '').toUpperCase();
@@ -83,11 +85,12 @@ export async function loadInvoiceForManualRetry(
 
   const sb = createSupabaseAdminClient();
   if (!sb) return null;
-  const { data } = await sb
+  const { data, error } = await sb
     .from('financial_invoices')
     .select(INVOICE_SELECT)
     .eq('id', id)
     .maybeSingle();
+  if (error) throw new Error(error.message);
   return (data as ManualRetryInvoiceRow | null) ?? null;
 }
 

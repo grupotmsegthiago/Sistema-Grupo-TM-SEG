@@ -101,6 +101,15 @@ describe('Retry manual individual — UI e contratos', () => {
     assert.match(ui, /formatManualRetryFeedback/);
     assert.match(ui, /Erro ao reemitir NF:/);
   });
+
+  it('T18 — a busca da reemissão não pede coluna inexistente', () => {
+    const core = fs.readFileSync('lib/nfRetryInvoiceApiCore.ts', 'utf8');
+    const select = core.match(/const INVOICE_SELECT =\s*'([^']+)'/);
+    assert.ok(select);
+    assert.doesNotMatch(select[1], /\bdue_date\b/);
+    assert.doesNotMatch(select[1], /\bdescription\b/);
+    assert.match(select[1], /\bnotes\b/);
+  });
 });
 
 describe('Retry manual individual — core SSOT', () => {
