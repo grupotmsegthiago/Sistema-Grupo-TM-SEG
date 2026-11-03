@@ -3,6 +3,10 @@ import { describe, it } from 'node:test';
 import { handleRhInitRequest } from '../api/rh-init.ts';
 import { handleRhEmployeeListRequest } from '../api/rh-employee-list.ts';
 import { handleRhEmployeeCostsRequest } from '../api/rh-employee-costs.ts';
+import { emitirSessao } from '../lib/sessao/token';
+
+process.env.SESSION_SECRET = 'segredo-de-teste-rh-papel';
+const tokenComum = emitirSessao(process.env.SESSION_SECRET, 'user-common').token;
 
 const principal = {
   id: 'user-common',
@@ -34,7 +38,7 @@ function responseMock() {
 
 function request(
   method: 'GET' | 'POST',
-  token = 'tmseg-token-user-common-123456',
+  token = tokenComum,
   forgedRole = 'rh',
 ) {
   return {

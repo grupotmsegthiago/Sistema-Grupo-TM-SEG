@@ -1,4 +1,4 @@
-import { fetchAllKeysetPages } from '../supabasePaging';
+import { fetchAllKeysetPages } from '../supabasePaging.js';
 
 export const BILLING_DATASET_INCOMPLETE_MESSAGE =
   'Não foi possível carregar todas as OS do período. O faturamento foi bloqueado para evitar valores incompletos.';

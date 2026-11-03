@@ -4,6 +4,9 @@ import { fetchAllPages } from '../lib/supabasePaging';
 import { AlertTriangle, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 
 import { formatDateBR } from '../lib/dateUtils';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
+import { perfilEhComercialRole } from '../lib/clientDuplicateGuard';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
 
 interface PendingMission {
     id: string;
@@ -20,26 +23,52 @@ interface Props {
 
 const formatDate = (d: string | null) => formatDateBR(d);
 
+function readSessionUser(): { role?: string | null } | null {
+    try {
+        return JSON.parse(localStorage.getItem('userData') || '{}');
+    } catch {
+        return null;
+    }
+}
+
 const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
     const [missions, setMissions] = useState<PendingMission[]>([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(false);
     const [listTruncated, setListTruncated] = useState(false);
 
+    const ocultaFinanceiro = isPerfilAvancado(readSessionUser());
+
     const load = useCallback(async () => {
+        if (isPerfilAvancado(readSessionUser())) {
+            setMissions([]);
+            setLoading(false);
+            return;
+        }
         setLoading(true);
         try {
+            const sessao = readSessionUser() as { role?: string | null; id?: number | string | null; permissions?: string[] | null };
+            const comercial = perfilEhComercialRole(sessao?.role) && !sessao?.permissions?.includes('*');
+            const nomesCarteira = comercial
+                ? (await carregarNomesClientesDoComercial(supabase, sessao?.id)).nomes
+                : null;
+            if (comercial && !nomesCarteira?.length) {
+                setMissions([]);
+                setListTruncated(false);
+                return;
+            }
             // Só pedágios pendentes de OS concluídas a partir de maio/2026.
             const { rows: candidateMissions, truncated } = await fetchAllPages<PendingMission>(
                 async (from, size) => {
-                    const { data, error } = await supabase
+                    let consulta = supabase
                         .from('missions')
                         .select('id, client, origin, destination, end_time, last_update')
                         .eq('status', 'Concluída')
                         .is('toll_value', null)
                         .gte('end_time', '2026-05-01')
-                        .order('end_time', { ascending: false })
-                        .range(from, from + size - 1);
+                        .order('end_time', { ascending: false });
+                    if (nomesCarteira) consulta = consulta.in('client', nomesCarteira);
+                    const { data, error } = await consulta.range(from, from + size - 1);
                     return { data, error };
                 },
                 100,
@@ -81,6 +110,7 @@ const PendingTollConfirmationBanner: React.FC<Props> = ({ onOpenMission }) => {
         };
     }, [load]);
 
+    if (ocultaFinanceiro) return null;
     if (loading && missions.length === 0) return null;
     if (!loading && missions.length === 0) return null;
 

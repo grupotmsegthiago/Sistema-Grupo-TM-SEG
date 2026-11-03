@@ -47,6 +47,9 @@ describe('Pedido de análise de OS', () => {
     assert.match(pendingPage, /parseJsonResponse/);
     assert.match(pendingPage, /Array\.isArray\(data\.items\)/);
     assert.match(pendingPage, /os-analysis-load-error/);
+    assert.match(pendingPage, /Verificado/);
+    assert.match(pendingPage, /item\.status !== 'reviewed'/);
+    assert.match(pendingPage, /filter === 'open'/);
     assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'request'/);
     assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'inbox'/);
     assert.match(fs.readFileSync('api/os-analysis.ts', 'utf8'), /op === 'claim'/);

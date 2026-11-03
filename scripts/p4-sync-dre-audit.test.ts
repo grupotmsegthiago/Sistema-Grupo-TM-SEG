@@ -212,17 +212,32 @@ describe('P4-SYNC-DRE — divergências comprovadas (sem alterar código)', () =
   it('KM autorizado sem displacement salvo → canônico deriva, DRE ignora', () => {
     const mission = {
       status: MissionStatus.COMPLETED,
+      client: 'CLIENTE TESTE',
       revenue_value: 500,
       cost_value: 300,
       billing_approved: true,
       dhl_deslocamento_km: 50,
-      displacement_value: 0,
-      displacement_value_provider: 0,
+      displacement_value: null,
+      displacement_value_provider: null,
       origin: 'SAO PAULO - SP',
       is_same_os: false,
     };
+    const refsComTaxa: CanonicalRefs = {
+      clientTables: [{
+        id: 't1',
+        client: 'CLIENTE TESTE',
+        operation_type: 'PADRAO',
+        activation_fee: 500,
+        franchise_km: 100,
+        franchise_hours: 8,
+        price_per_extra_km: 6.9,
+        price_per_extra_hour: 50,
+      } as CanonicalRefs['clientTables'][number]],
+      providerTables: [],
+      clientsData: [],
+    };
     const dre = aggregateFinancialDreMissionTotals([mission]);
-    const canon = computeCanonicalRevenueCost(mission, emptyRefs);
+    const canon = computeCanonicalRevenueCost(mission, refsComTaxa);
     assert.equal(dre.missionDisplacementClient, 0);
     assert.equal(dre.missionDisplacementProvider, 0);
     assert.ok(canon.dispRev > 0 || canon.dispCost > 0, 'canônico deriva deslocamento do KM');
@@ -329,16 +344,31 @@ describe('P4-SYNC-DRE — regra oficial formalizada (CASO 1–6)', () => {
   it('CASO 2 — KM autorizado sem displacement_value → Diretoria deriva, DRE não', () => {
     const mission = {
       status: MissionStatus.COMPLETED,
+      client: 'CLIENTE TESTE',
       revenue_value: 500,
       cost_value: 300,
       billing_approved: true,
       dhl_deslocamento_km: 50,
-      displacement_value: 0,
-      displacement_value_provider: 0,
+      displacement_value: null,
+      displacement_value_provider: null,
       origin: 'SAO PAULO - SP',
     };
+    const refsComTaxa: CanonicalRefs = {
+      clientTables: [{
+        id: 't1',
+        client: 'CLIENTE TESTE',
+        operation_type: 'PADRAO',
+        activation_fee: 500,
+        franchise_km: 100,
+        franchise_hours: 8,
+        price_per_extra_km: 6.9,
+        price_per_extra_hour: 50,
+      } as CanonicalRefs['clientTables'][number]],
+      providerTables: [],
+      clientsData: [],
+    };
     const dre = aggregateFinancialDreMissionTotals([mission]);
-    const canon = computeCanonicalRevenueCost(mission, emptyRefs);
+    const canon = computeCanonicalRevenueCost(mission, refsComTaxa);
     assert.equal(dre.missionDisplacementClient, 0);
     assert.equal(dre.missionDisplacementProvider, 0);
     assert.ok(canon.dispRev > 0 || canon.dispCost > 0);

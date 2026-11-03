@@ -7,10 +7,11 @@ import {
 } from '../lib/veladaFinalize';
 
 test('velada pass-through vale para conclusão e cancelamento', () => {
-  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'completed' }), true);
-  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'cancelled' }), true);
-  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'refused' }), false);
-  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: false, kind: 'cancelled' }), false);
+  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'completed', isVelada: true }), true);
+  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'cancelled', isVelada: true }), true);
+  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'refused', isVelada: true }), false);
+  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: false, kind: 'cancelled', isVelada: true }), false);
+  assert.equal(isVeladaPassThroughTerminal({ odometerExempt: true, kind: 'completed', isVelada: false }), false);
 });
 
 test('velada concluída com hora final não cai em Pendente sem KM', () => {
@@ -54,4 +55,6 @@ test('checklist de cancelamento velada dispensa KM obrigatório', () => {
   assert.match(src, /isVeladaPassThroughTerminal/);
   assert.match(src, /shouldDowngradeCompletedToPending/);
   assert.match(src, /veladaPassThrough \? '\(opcional\)' : '\*'/);
+  assert.match(src, /requireKmPhoto: !veladaPassThrough/);
+  assert.match(src, /!veladaPassThrough && \(!evidenceOk \|\| odoUploading\)/);
 });

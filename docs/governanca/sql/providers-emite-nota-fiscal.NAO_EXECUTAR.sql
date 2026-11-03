@@ -1,0 +1,19 @@
+-- NÃO EXECUTAR.
+-- Preparação da coluna do Gestor Fiscal. Não aplicar em produção nesta etapa.
+-- Não há policy, grant nem escrita de dado aqui.
+--
+-- Quando houver autorização, descomentar só no projeto ajhmmjuewdsukecaimik:
+--
+-- ALTER TABLE providers
+--   ADD COLUMN IF NOT EXISTS emite_nota_fiscal text
+--   DEFAULT 'nao_informado';
+--
+-- ALTER TABLE providers
+--   DROP CONSTRAINT IF EXISTS providers_emite_nota_fiscal_check;
+--
+-- ALTER TABLE providers
+--   ADD CONSTRAINT providers_emite_nota_fiscal_check
+--   CHECK (emite_nota_fiscal IN ('sim', 'nao', 'nao_informado'));
+--
+-- A tela já lê essa coluna se ela existir. Se a consulta falhar, a emissão fica
+-- "não informado" e nada é gravado.

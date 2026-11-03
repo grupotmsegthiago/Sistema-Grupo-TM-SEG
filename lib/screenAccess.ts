@@ -12,9 +12,13 @@ import {
   canAccessComissoesComerciais,
   canAccessFaturamentoDiretoria,
   DIRETORIA_MENU_SCREEN_IDS,
+  isPerfilComercial,
 } from './diretoriaAccess';
 import { canAccessMissionReport } from './missionReportAccess';
 import { canViewOsAnalysisPendencies } from './osAnalysisAccess';
+import { APROVACOES_PENDENTES_SCREEN, canViewAprovacoesPendentes } from './aprovacoesPendentesAccess';
+import { canViewRankingDhl } from './rankingDhlAccess';
+import { isPerfilAvancado, telaFinanceiraOcultaParaAvancado } from './avancadoFinanceBlock';
 
 export type ScreenAccessUser = {
   name?: string | null;
@@ -43,6 +47,8 @@ export const SCREEN_PERMISSION_ALIASES: Record<string, string> = {
   'rh-employee-form': 'rh-employees',
   'rh-employee-profile': 'rh-employees',
   'ai-support': 'dashboard',
+  'meu-portal': 'dashboard',
+  'fin-pre-fatura': 'fin-billing',
 };
 
 /** Áreas internas bloqueadas para usuário-cliente do portal. */
@@ -80,6 +86,7 @@ const CLIENT_FORBIDDEN_IDS = new Set([
   'diretoria-group',
   'diretoria-cockpit',
   'diretoria-faturamento',
+  'gestor-fiscal',
   'comissoes-comerciais',
   'gestao-investimento',
   'os-analysis-pending',
@@ -125,6 +132,30 @@ export function hasProfilePermission(user: ScreenAccessUser | null | undefined, 
   return perms.includes(id);
 }
 
+/** Fora da carteira do comercial: agentes, fornecedores, alvará, contratos e telas vizinhas. */
+const TELAS_FORA_DA_CARTEIRA_COMERCIAL = new Set([
+  'contract-manager',
+  'client-users',
+  'client-vehicles',
+  'client-routes',
+  'providers-group',
+  'providers',
+  'alvara-control',
+  'provider-users',
+  'provider-vehicles',
+  'provider-agents',
+  'provider-technologies',
+  'provider-activation-map',
+  'mission-report',
+  'shift-handover',
+]);
+
+function comercialForaDaCarteira(user: ScreenAccessUser | null | undefined, screenId: string): boolean {
+  if (!isPerfilComercial(user)) return false;
+  const id = resolvePermissionId(screenId);
+  return TELAS_FORA_DA_CARTEIRA_COMERCIAL.has(screenId) || TELAS_FORA_DA_CARTEIRA_COMERCIAL.has(id);
+}
+
 function isClientForbidden(screenId: string): boolean {
   const id = resolvePermissionId(screenId);
   if (CLIENT_FORBIDDEN_IDS.has(id)) return true;
@@ -148,12 +179,30 @@ function childrenOfGroup(groupId: string): string[] {
 export function canAccessScreen(user: ScreenAccessUser | null | undefined, screenId: string): boolean {
   if (!user || !screenId) return false;
 
+  if (comercialForaDaCarteira(user, screenId)) return false;
+
   if (isRestrictedClientUser(user) && isClientForbidden(screenId)) {
     return false;
   }
 
+  if (isPerfilAvancado(user) && telaFinanceiraOcultaParaAvancado(resolvePermissionId(screenId))) {
+    return false;
+  }
+
+  // Controle diário: qualquer usuário interno, menos o comercial e o portal do cliente.
+  if (screenId === 'controle-diario') {
+    if (isRestrictedClientUser(user) || isPerfilComercial(user)) return false;
+    return true;
+  }
+
   // Dashboard é a home segura de qualquer usuário autenticado (mesmo sem item no perfil).
   if (screenId === 'dashboard') return true;
+
+  // Treinamento: quem já entra revê as aulas. Portal do cliente não entra.
+  if (screenId === 'treinamento') {
+    if (isRestrictedClientUser(user)) return false;
+    return true;
+  }
 
   // Cockpit / Gestão Investimento: exclusivo dos Thiagos (não basta perfil).
   if (DIRETORIA_MENU_SCREEN_IDS.has(screenId)) {
@@ -164,6 +213,12 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
   if (screenId === 'diretoria-faturamento') {
     return canAccessFaturamentoDiretoria(user) && hasProfilePermission(user, screenId);
   }
+  // Mesma audiência do Faturamento. Herda a permissão já vinculada para não exigir gravação de perfil.
+  if (screenId === 'gestor-fiscal') {
+    return canAccessFaturamentoDiretoria(user) && (
+      hasProfilePermission(user, 'gestor-fiscal') || hasProfilePermission(user, 'diretoria-faturamento')
+    );
+  }
   if (screenId === 'comissoes-comerciais') {
     return canAccessComissoesComerciais(user);
   }
@@ -173,9 +228,26 @@ export function canAccessScreen(user: ScreenAccessUser | null | undefined, scree
     return canViewOsAnalysisPendencies(user);
   }
 
+  // Aprovações Pendentes: Financeiro e Diretoria (nem * libera outro perfil).
+  if (screenId === APROVACOES_PENDENTES_SCREEN) {
+    return canViewAprovacoesPendentes(user);
+  }
+
+  // Ranking DHL (prêmio): só Diretoria e Financeiro. O link some para os demais.
+  if (screenId === 'ranking-dhl') {
+    return canViewRankingDhl(user);
+  }
+
   // Relatório de OS: helper já inclui permissão `mission-report` + allowlist.
   if (screenId === 'mission-report') {
     return canAccessMissionReport(user);
+  }
+
+  // Cadastro de Viaturas é operacional (inclusive vínculo para a DHL).
+  // O perfil Financeiro não usa essa tela.
+  if (resolvePermissionId(screenId) === 'provider-vehicles') {
+    const role = (user.role || '').toLowerCase();
+    if (role === 'financeiro') return false;
   }
 
   // Grupos do menu: visível somente se algum filho estiver acessível.
@@ -197,7 +269,7 @@ export function fallbackScreenForUser(user: ScreenAccessUser | null | undefined)
         if (child.id === 'dashboard') continue;
         if (canAccessScreen(user, child.id)) return child.id;
       }
-    } else if (item.id !== 'dashboard' && canAccessScreen(user, item.id)) {
+    } else if (item.id !== 'dashboard' && item.id !== 'treinamento' && canAccessScreen(user, item.id)) {
       return item.id;
     }
   }

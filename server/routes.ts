@@ -1,23 +1,37 @@
 import type { Express, Request, Response } from "express";
+import { usuarioIdDoToken } from "../lib/sessao/token";
+import { registrarSessaoExpress } from "../lib/sessao/express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient, getSupabaseAnonKey, getSupabaseServerKey, getSupabaseServiceRoleKey, getSupabaseUrl } from "./supabaseConfig";
 import webpush from "web-push";
 import { calculateMissionFinancials } from "../lib/financialUtils";
+import { clienteContratualDhlOuIbl, ehLinhaPadraoRegional, patchEdicaoRegional, registroVigenciaTabelaRegional, vigenciaTabelaInformada } from "../lib/precificacao/tabela2027";
+import { preservarParPedagioNoRecalculo } from "../lib/toll/clientTollBilling";
 import { computeRouteDistanceKm, computeRouteProgressKm, normalizeRouteAddress } from "../lib/routeDistance";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
-import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendPasswordResetEmail, sendBillingEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider } from "./emailService";
+import { sendMissionEmailToClient, sendMissionEmailToProvider, sendMissionResendToClient, sendMirroringEvidenceEmail, sendMissionChangeNotificationToClient, sendMissionChangeNotificationToProvider, sendWelcomeEmail, sendTestEmail, sendVerificationCodeEmail, sendLegalReportEmail, sendPendingInfoReport, sendApprovalPendingReport, sendCancelledMissingInfoEmail, sendDailyMissingInfoReport, sendStuckNfsReport, sendMissionEndToClient, sendMissionEndToProvider, sendPaymentAnticipationEmail, sendSystemAlertEmail } from "./emailService";
+import { handlePasswordResetConfirm, handlePasswordResetRequest, handlePasswordResetValidate } from "../lib/passwordReset";
+import { registerTabelaRotaAlerta } from "./tabelaRotaAlerta";
+import { montarEmailAuditoriaFaturamento, rotaDaTabelaOperacao } from "../lib/comercial/auditoriaFaturamentoTabela";
 import { runEmailHealthCheck } from "./emailHealth";
 import { registerDhlIntakeRoutes, runDhlIntakeMigrations } from "./dhlSupplierIntake";
 import { registerRhRoutes } from "./rhRoutes";
+import { handleFinancialTransactionPaymentsRequest } from "../api/financial-transaction-payments";
+import { atenderDadosProtegidos } from "../lib/dadosProtegidos/proxy";
+import { handleFinancialPaymentsInitRequest } from "../api/financial-payments-init";
 import { registerOsAnalysisRoutes } from "./osAnalysisRequests";
 import { registerGestaoInvestimentoRoutes } from "./gestaoInvestimentoRoutes";
 import { registerSupportAgentsRoutes } from "./supportAgentsRoutes";
 import { registerComissaoQuadroRoutes } from "./comissaoQuadroRoutes";
 import { registerLiveTrackRoutes } from "./liveTrackRoutes";
+import { notifyVeladaClosureComplete } from "./veladaClosureWorker";
+import { registerCevaPortalRoutes } from "./cevaPortal";
+import { registerClientePortalRoutes, registerIblPortalRoutes } from "./iblPortal";
+import { registerPortalClienteAcesso } from "./portalClienteAcesso";
 import { runRhMigrations } from "./rhMigrations";
 import { findOrCreateCustomer, createPayment, getPayment, getPaymentPixQrCode, getPaymentBankSlip, listPayments, deletePayment, mapAsaasStatus, isAsaasConfigured, getAsaasCompanies, scheduleInvoice, listMunicipalServices, getInvoiceByPayment, getAllBalances, transferPixFromCompany } from "./asaasService";
 import {
@@ -79,6 +93,8 @@ import {
   restorePatrimonioFromBackup,
 } from "./patrimonioStore";
 import { ADD_MISSION_COLUMNS_RESPONSE, buildProviderOpsColumnsResponse } from "../lib/migrationEndpointPayloads";
+import { canAccessScreen } from "../lib/screenAccess";
+import { normalizeControleDiarioNote, normalizeControleDiarioNoteKind } from "../lib/controleDiarioNotas";
 import {
   getSupabaseBillingLinks,
   getSupabaseDbMetrics,
@@ -103,6 +119,14 @@ import {
   executeProductivityDailyReport,
   registerProductivityReportSchedule,
 } from "./productivityReport";
+import {
+  registerNightWatchdogSchedule,
+  registerNightWatchRoutes,
+} from "./nightWatchdog";
+import {
+  registerForceLogoutRoutes,
+} from "./forceLogoutAll";
+import { FORCE_LOGOUT_SETTINGS_KEY } from "../lib/forceLogout";
 import {
   AUDIT_SUMMARY_DEFAULTS,
   AUDIT_SUMMARY_SETTINGS_KEY,
@@ -304,8 +328,7 @@ const roleCache = new Map<string, { role: string; expiresAt: number }>();
 const ROLE_CACHE_TTL = 5 * 60 * 1000;
 
 function extractUserIdFromToken(token: string): string | null {
-  const match = token.match(/(?:tmseg-token|impersonation-token)-(.+)-(\d+)$/);
-  return match ? match[1] : null;
+  return usuarioIdDoToken(token);
 }
 
 type ResolvedPrincipal = { id: string; name: string | null; email: string | null; role: string; clientId: string | null; permissions: string[] };
@@ -432,6 +455,36 @@ export async function registerRoutes(
   app.get('/api/health', (_req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: Date.now(), uptime: process.uptime() });
   });
+
+  // Mesma função da Vercel. Sem esta rota o Express devolve o HTML do site e o Cockpit quebra o JSON.
+  // O arquivo api/dados-protegidos.ts faz createRequire(import.meta.url) no carregamento.
+  // No bundle CJS esse endereço vem vazio e derruba o Express inteiro. Aqui entra o módulo direto.
+  app.post('/api/dados-protegidos', async (req, res) => {
+    const bruto = req.body;
+    let pedido: { method?: string; url?: string; headers?: Record<string, string>; body?: string | null } = {};
+    if (bruto && typeof bruto === 'object' && !Array.isArray(bruto)) {
+      pedido = bruto as typeof pedido;
+    } else if (typeof bruto === 'string' && bruto.trim()) {
+      try { pedido = JSON.parse(bruto) as typeof pedido; } catch { pedido = {}; }
+    }
+    const autorizacao = req.headers.authorization;
+    const resposta = await atenderDadosProtegidos({
+      method: String(pedido.method || 'GET'),
+      url: String(pedido.url || ''),
+      headers: pedido.headers || {},
+      body: pedido.body ?? null,
+      authorization: Array.isArray(autorizacao) ? String(autorizacao[0] || '') : String(autorizacao || ''),
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    res.status(200).json({
+      status: resposta.status,
+      body: resposta.body,
+      contentType: resposta.contentType,
+      contentRange: resposta.contentRange,
+    });
+  });
+
+  registrarSessaoExpress(app);
 
   // Task #87 — Permite enviar um relatório manual para um e-mail de teste sem
   // alterar a configuração persistida. Retorna a lista normalizada como string
@@ -710,21 +763,27 @@ export async function registerRoutes(
           const revDiff = Math.abs(calcRev - savedRev);
           const costDiff = Math.abs(calcCost - savedCost);
 
-          const calcToll = r2(fd.tollValue || 0);
+          const parPedagio = preservarParPedagioNoRecalculo({
+            tollValue: m.toll_value,
+            tollValueProvider: m.toll_value_provider,
+            isSameOs: !!m.is_same_os,
+          });
           const oldToll = r2(m.toll_value || 0);
-          const tollDiff = Math.abs(calcToll - oldToll);
+          const oldTollProv = m.toll_value_provider == null ? null : r2(Number(m.toll_value_provider) || 0);
+          const tollMudou = Math.abs(parPedagio.toll_value - oldToll) > 0.009
+            || (parPedagio.escreverFornecedor && oldTollProv != null && Math.abs((parPedagio.toll_value_provider ?? 0) - oldTollProv) > 0.009);
 
-          if (revDiff > 1 || costDiff > 1 || tollDiff > 0.5) {
-            const tollProv = m.is_same_os ? 0 : calcToll;
-            await sb.from('missions').update({
+          if (revDiff > 1 || costDiff > 1 || tollMudou) {
+            const payloadPedagio: Record<string, unknown> = {
               revenue_value: calcRev,
               cost_value: calcCost,
-              toll_value: calcToll,
-              toll_value_provider: r2(tollProv),
-              last_update: new Date().toISOString()
-            }).eq('id', m.id);
+              toll_value: parPedagio.toll_value,
+              last_update: new Date().toISOString(),
+            };
+            if (parPedagio.escreverFornecedor) payloadPedagio.toll_value_provider = parPedagio.toll_value_provider;
+            await sb.from('missions').update(payloadPedagio).eq('id', m.id);
             updated++;
-            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, oldToll: oldToll, newToll: calcToll, revDiff: r2(revDiff), costDiff: r2(costDiff) });
+            details.push({ id: m.id, client: m.client, oldRev: savedRev, newRev: calcRev, oldCost: savedCost, newCost: calcCost, oldToll, newToll: parPedagio.toll_value, tollOrigem: parPedagio.origem, revDiff: r2(revDiff), costDiff: r2(costDiff) });
           } else {
             skipped++;
           }
@@ -808,6 +867,20 @@ export async function registerRoutes(
   registerSupportAgentsRoutes(app, requireAuth, requireRole);
   registerComissaoQuadroRoutes(app, requireAuth);
   registerLiveTrackRoutes(app);
+  registerCevaPortalRoutes(app);
+  registerIblPortalRoutes(app);
+  registerClientePortalRoutes(app);
+  registerPortalClienteAcesso(app);
+
+  app.post('/api/missions/:id/velada-closure-notify', requireAuth, async (req: Request, res: Response) => {
+    try {
+      const result = await notifyVeladaClosureComplete(String(req.params.id || ''));
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error('[VeladaClosure]', e?.message || e);
+      res.status(500).json({ error: e?.message || 'Falha ao avisar o fechamento da velada.' });
+    }
+  });
 
   app.post('/api/missions/:id/loss-alert-email', requireAuth, async (req: Request, res: Response) => {
     try {
@@ -873,6 +946,77 @@ export async function registerRoutes(
     } catch (e: any) {
       console.error('[Loss Alert]', e.message);
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.patch('/api/clients/:clientId/pricing-tables/:id', requireAuth, requireRole('diretoria', 'administrador', 'admin'), async (req: Request, res: Response) => {
+    try {
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
+      const clientId = String(req.params.clientId || '').trim();
+      const rowId = String(req.params.id || '').trim();
+      const corpo = req.body || {};
+      const { data: cliente, error: erroCliente } = await sb.from('clients').select('id, name').eq('id', clientId).maybeSingle();
+      if (erroCliente) return res.status(500).json({ error: erroCliente.message });
+      if (!cliente?.name) return res.status(404).json({ error: 'Cliente não encontrado.' });
+      const { data: linha, error: erroLinha } = await sb.from('client_price_tables').select('id, client, operation_type').eq('id', rowId).maybeSingle();
+      if (erroLinha) return res.status(500).json({ error: erroLinha.message });
+      if (!linha) return res.status(404).json({ error: 'Linha não encontrada.' });
+      if (String(linha.client || '').trim() !== String(cliente.name).trim()) {
+        return res.status(404).json({ error: 'A linha não pertence a este cliente.' });
+      }
+      if (ehLinhaPadraoRegional(String(linha.operation_type || '')) && clienteContratualDhlOuIbl(String(cliente.name))) {
+        return res.status(409).json({ error: 'DHL e IBL permanecem na tabela contratual.' });
+      }
+      const patch = patchEdicaoRegional({
+        id: rowId,
+        clientName: String(cliente.name),
+        ratePerKm: corpo.rate_per_km,
+        extraHourRate: corpo.extra_hour_rate,
+        franchiseKm: corpo.franchise_km,
+        franchiseHours: corpo.franchise_hours,
+        linhas: [{ id: String(linha.id), client: String(linha.client || '') }],
+      });
+      if (!patch.ok) return res.status(400).json({ error: patch.erro });
+      const { data, error } = await sb
+        .from('client_price_tables')
+        .update(patch.payload)
+        .eq('id', patch.id)
+        .eq('client', String(cliente.name))
+        .select('id, client, operation_type, price_per_extra_km, price_per_extra_hour, franchise_km, franchise_hours, activation_fee')
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      const usuario = (req as any).user;
+      await sb.from('system_logs').insert([{
+        action_type: 'UPDATE',
+        entity: 'ClientPriceTable',
+        entity_id: patch.id,
+        user_id: usuario?.id || null,
+        user_name: usuario?.name || 'Diretoria',
+        details: `Edição regional de ${cliente.name}: ${linha.operation_type}. KM ${patch.payload.price_per_extra_km}, hora extra ${patch.payload.price_per_extra_hour}, franquia ${patch.payload.franchise_km} km / ${patch.payload.franchise_hours} h.`,
+        created_at: new Date().toISOString(),
+      }]);
+      return res.json({ ok: true, linha: data });
+    } catch (erro: any) {
+      return res.status(500).json({ error: erro?.message || 'Falha ao editar a linha.' });
+    }
+  });
+
+  // A vigência da tabela regional não pode ir pelo cliente anon: o RLS de system_settings recusa a linha nova.
+  // service_role ignora o RLS. O perfil sai de system_users + profiles, não do JWT.
+  app.post('/api/pricing/tabela-regional-vigente', requireAuth, requireRole('diretoria', 'administrador', 'admin'), async (req: Request, res: Response) => {
+    try {
+      const versao = vigenciaTabelaInformada(req.body?.versao);
+      if (!versao) return res.status(400).json({ error: 'Informe a vigência 2026 ou 2027.' });
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(503).json({ error: 'Supabase não configurado' });
+      const usuario = (req as any).user;
+      const linha = registroVigenciaTabelaRegional(versao, usuario?.name || 'Diretoria', new Date().toISOString());
+      const { error } = await sb.from('system_settings').upsert(linha, { onConflict: 'key' });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ ok: true, versao });
+    } catch (erro: any) {
+      return res.status(500).json({ error: erro?.message || 'Falha ao gravar a vigência.' });
     }
   });
 
@@ -993,7 +1137,7 @@ export async function registerRoutes(
   // Versão atual do servidor — lida do constants.ts a cada request.
   // O client compara com sua APP_VERSION em memória; se divergir, faz hard-reset
   // automático e recarrega para garantir bundle sempre atualizado.
-  app.get('/api/version', (_req: Request, res: Response) => {
+  app.get('/api/version', async (_req: Request, res: Response) => {
     try {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       const constantsPath = path.resolve(process.cwd(), 'constants.ts');
@@ -1003,10 +1147,23 @@ export async function registerRoutes(
         const m = txt.match(/APP_VERSION\s*=\s*["']([^"']+)["']/);
         if (m) version = m[1];
       }
+      let forceLogoutSignal: string | null = null;
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
+          .maybeSingle();
+        const raw = data?.value != null ? String(data.value).trim() : '';
+        forceLogoutSignal = raw || null;
+      } catch {
+        /* ignore */
+      }
       res.json({
         version,
         deploymentId: process.env.REPLIT_DEPLOYMENT_ID || null,
         builtAt: Date.now(),
+        forceLogoutSignal,
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -1874,6 +2031,69 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/email/payment-anticipation", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const body = req.body || {};
+      if (!body.anticipationId) return res.status(400).json({ success: false, error: 'anticipationId obrigatório' });
+      if (!body.plan || Number(body.plan.residual) <= 0.009) {
+        return res.status(400).json({ success: false, error: 'E-mail só é enviado quando há ressalva (saldo a receber).' });
+      }
+      const success = await sendPaymentAnticipationEmail({
+        to: 'financeiro@grupotmseg.com.br',
+        anticipationId: String(body.anticipationId),
+        entityName: String(body.entityName || 'Cliente'),
+        createdBy: String(body.createdBy || ''),
+        residualDueDate: String(body.residualDueDate || ''),
+        linkedSummary: String(body.linkedSummary || ''),
+        fields: body.fields || {},
+        plan: body.plan,
+        titles: Array.isArray(body.titles) ? body.titles : [],
+      });
+      res.json({ success, message: success ? 'E-mail enviado ao financeiro.' : 'Falha ao enviar e-mail' });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/email/auditar-faturamento", requireAuth, requireRole('administrador', 'diretoria', 'financeiro', 'comercial', 'ceo'), async (req: Request, res: Response) => {
+    try {
+      const clientId = Number(req.body?.clientId);
+      const operationType = String(req.body?.operationType || '').trim();
+      const clienteNome = String(req.body?.clientName || '').trim();
+      const rota = rotaDaTabelaOperacao(operationType);
+      if (!rota) return res.status(400).json({ ok: false, error: 'A tabela não tem origem e destino no formato CIDADE X CIDADE.' });
+      const sb = createSupabaseAdminClient();
+      if (!sb || !Number.isFinite(clientId) || clientId <= 0) {
+        return res.status(400).json({ ok: false, error: 'Cliente inválido para avisar o comercial.' });
+      }
+      const { data: client } = await sb.from('clients').select('id, name, responsavel_comercial_id').eq('id', clientId).maybeSingle();
+      let email = '';
+      let comercial = '';
+      if (client?.responsavel_comercial_id) {
+        const { data: com } = await sb.from('comerciais').select('nome, email, usuario_id').eq('id', client.responsavel_comercial_id).maybeSingle();
+        comercial = String(com?.nome || '').trim();
+        email = String(com?.email || '').trim();
+        if (!email && com?.usuario_id) {
+          const { data: user } = await sb.from('system_users').select('email, name').eq('id', com.usuario_id).maybeSingle();
+          email = String(user?.email || '').trim();
+          comercial = comercial || String(user?.name || '').trim();
+        }
+      }
+      if (!email) return res.status(200).json({ ok: false, error: 'O comercial deste cliente não tem e-mail cadastrado.' });
+      const emailMontado = montarEmailAuditoriaFaturamento({
+        cliente: String(client?.name || clienteNome || 'o cliente'),
+        tabela: operationType,
+        origem: rota.origem,
+        destino: rota.destino,
+        comercial,
+      });
+      const success = await sendSystemAlertEmail([email], emailMontado.subject, emailMontado.html);
+      res.json({ ok: success, to: email, error: success ? undefined : 'Falha ao enviar o e-mail.' });
+    } catch (err: any) {
+      res.status(200).json({ ok: false, error: err.message });
+    }
+  });
+
   app.get("/api/email/health", requireAuth, requireRole('diretoria', 'administrador', 'ceo'), async (req: Request, res: Response) => {
     try {
       const sendTestTo = typeof req.query?.sendTestTo === 'string' ? req.query.sendTestTo : undefined;
@@ -2010,7 +2230,7 @@ export async function registerRoutes(
   app.post("/api/email/welcome", requireAuth, async (req: Request, res: Response) => {
     try {
       const { name, email, password, userType, profileName, verificationCode } = req.body;
-      if (!name || !email || !password) return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
+      if (!name || !email || !password || String(password).trim() === 'undefined') return res.status(400).json({ error: 'Campos name, email e password são obrigatórios' });
       const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
       const success = await sendWelcomeEmail({ name, email, password, userType: userType || 'internal', profileName }, systemUrl, verificationCode);
       res.json({ success, message: success ? 'E-mail de boas-vindas enviado!' : 'Falha ao enviar e-mail' });
@@ -2021,31 +2241,8 @@ export async function registerRoutes(
 
   app.post("/api/password-reset/request", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { userId, senderName } = req.body;
-      if (!userId) return res.status(400).json({ error: 'userId obrigatório' });
-
-      const { data: userData, error: userErr } = await supabase.from('system_users').select('id, name, email').eq('id', userId).single();
-      if (userErr || !userData) return res.status(404).json({ error: 'Usuário não encontrado' });
-
-      const crypto = await import('crypto');
-      const token = crypto.randomBytes(32).toString('hex');
-      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-
-      const { error: updateErr } = await supabase.from('system_users').update({
-        password_reset_token: token,
-        password_reset_expires: expiresAt,
-        force_password_change: true
-      }).eq('id', userId);
-      if (updateErr) throw updateErr;
-
-      const { data: verifyData } = await supabase.from('system_users').select('password_reset_token').eq('id', userId).single();
-      console.log(`[PasswordReset] Token gravado para user ${userId}: ${verifyData?.password_reset_token ? 'SIM' : 'NÃO'}`);
-
-      const systemUrl = process.env.SYSTEM_URL || `https://${process.env.REPLIT_DOMAINS?.split(',')[0] || 'sistema.grupotmseg.com.br'}`;
-      const resetLink = `${systemUrl}/reset-password?token=${token}`;
-
-      const success = await sendPasswordResetEmail(userData.email, userData.name, resetLink, senderName);
-      res.json({ success, message: success ? 'E-mail de redefinição enviado!' : 'Falha ao enviar e-mail' });
+      const result = await handlePasswordResetRequest(req.body || {});
+      res.status(result.status).json(result.body);
     } catch (err: any) {
       console.error('[PasswordReset] Erro:', err.message);
       res.status(500).json({ error: err.message });
@@ -2054,17 +2251,8 @@ export async function registerRoutes(
 
   app.post("/api/password-reset/validate", async (req: Request, res: Response) => {
     try {
-      const { token } = req.body;
-      if (!token) return res.status(400).json({ error: 'Token obrigatório' });
-
-      const { data, error } = await supabase.from('system_users').select('id, name, email, password_reset_expires').eq('password_reset_token', token).single();
-      if (error || !data) return res.status(404).json({ error: 'Token inválido ou expirado' });
-
-      if (new Date(data.password_reset_expires) < new Date()) {
-        return res.status(410).json({ error: 'Token expirado' });
-      }
-
-      res.json({ valid: true, userName: data.name, userEmail: data.email });
+      const result = await handlePasswordResetValidate(req.body || {});
+      res.status(result.status).json(result.body);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2072,26 +2260,8 @@ export async function registerRoutes(
 
   app.post("/api/password-reset/confirm", async (req: Request, res: Response) => {
     try {
-      const { token, newPassword } = req.body;
-      if (!token || !newPassword) return res.status(400).json({ error: 'Token e nova senha são obrigatórios' });
-      if (newPassword.length < 6) return res.status(400).json({ error: 'A senha deve ter no mínimo 6 caracteres' });
-
-      const { data, error } = await supabase.from('system_users').select('id, name, password_reset_expires').eq('password_reset_token', token).single();
-      if (error || !data) return res.status(404).json({ error: 'Token inválido ou expirado' });
-
-      if (new Date(data.password_reset_expires) < new Date()) {
-        return res.status(410).json({ error: 'Token expirado' });
-      }
-
-      const { error: updateErr } = await supabase.from('system_users').update({
-        password: newPassword,
-        password_reset_token: null,
-        password_reset_expires: null,
-        force_password_change: false
-      }).eq('id', data.id);
-      if (updateErr) throw updateErr;
-
-      res.json({ success: true, message: 'Senha alterada com sucesso!' });
+      const result = await handlePasswordResetConfirm(req.body || {});
+      res.status(result.status).json(result.body);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2974,6 +3144,22 @@ export async function registerRoutes(
   registerDhlIntakeRoutes(app, requireAuth, requireRole, resolveUserRole, resolvePrincipal);
   registerRhRoutes(app, requireAuth, requireRole);
 
+  // Pagamentos parciais. Sem esta rota o Vite devolve o HTML do site e o modal quebra no JSON.
+  app.all('/api/financial-transaction-payments', async (req: Request, res: Response) => {
+    try {
+      await handleFinancialTransactionPaymentsRequest(req, res);
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e?.message || 'Falha ao carregar pagamentos' });
+    }
+  });
+  app.all('/api/financial-payments-init', async (req: Request, res: Response) => {
+    try {
+      await handleFinancialPaymentsInitRequest(req, res);
+    } catch (e: any) {
+      if (!res.headersSent) res.status(500).json({ error: e?.message || 'Falha ao preparar pagamentos' });
+    }
+  });
+
   // POST/GET /api/dhl/occurrence-report — Plano de Ação DHL (somente diretoria)
   app.post('/api/dhl/occurrence-report', requireAuth, requireRole('diretoria'), async (req: Request, res: Response) => {
     try {
@@ -3653,7 +3839,12 @@ export async function registerRoutes(
       const r2 = (n: number) => Math.round(Number(n || 0) * 100) / 100;
       const newRevenue = r2(result.client.serviceTotal || 0);
       const newCost = mission.is_same_os ? 0 : r2(result.provider.serviceTotal || 0);
-      const newToll = r2(result.tollValue ?? mission.toll_value ?? 0);
+      const parPedagio = preservarParPedagioNoRecalculo({
+        tollValue: mission.toll_value,
+        tollValueProvider: mission.toll_value_provider,
+        isSameOs: !!mission.is_same_os,
+      });
+      const newToll = parPedagio.toll_value;
       const oldRevenue = Number(mission.revenue_value || 0);
       const oldCost = Number(mission.cost_value || 0);
 
@@ -3661,12 +3852,14 @@ export async function registerRoutes(
         return res.json({ skipped: true, reason: 'no_change', revenue: oldRevenue, cost: oldCost });
       }
 
-      const { error: upErr } = await supabaseAdmin.from('missions').update({
+      const payloadCancel: Record<string, unknown> = {
         revenue_value: newRevenue,
         cost_value: newCost,
         toll_value: newToll,
         last_update: new Date().toISOString(),
-      }).eq('id', missionId);
+      };
+      if (parPedagio.escreverFornecedor) payloadCancel.toll_value_provider = parPedagio.toll_value_provider;
+      const { error: upErr } = await supabaseAdmin.from('missions').update(payloadCancel).eq('id', missionId);
       if (upErr) return res.status(500).json({ error: upErr.message });
 
       try {
@@ -3711,6 +3904,13 @@ export async function registerRoutes(
       if (mission.billing_approved) {
         return res.status(403).json({ error: 'OS aprovada para faturamento — recálculo bloqueado. Desfaça a aprovação primeiro.' });
       }
+      // Prejuízo analisado e travado: recálculo só com perfil Diretoria.
+      if (mission.negative_margin_locked) {
+        const role = String((req as any).user?.role || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (role !== 'diretoria') {
+          return res.status(403).json({ error: 'OS com prejuízo analisado e travada. Somente a Diretoria pode alterar.' });
+        }
+      }
       // BLINDAGEM: se houve edição manual com motivo, exige confirmação dupla explícita.
       if ((mission.revenue_edit_reason || mission.cost_edit_reason) && confirm !== 'OVERWRITE_MANUAL_EDIT') {
         return res.status(409).json({
@@ -3746,13 +3946,20 @@ export async function registerRoutes(
         const newRevenue = result.client.serviceTotal || 0;
         const newCost = mission.is_same_os ? 0 : (result.provider.serviceTotal || 0);
 
-        await supabaseAdmin.from('missions').update({
+        const parPedagio = preservarParPedagioNoRecalculo({
+          tollValue: mission.toll_value,
+          tollValueProvider: mission.toll_value_provider,
+          isSameOs: !!mission.is_same_os,
+        });
+        const payloadForca: Record<string, unknown> = {
           revenue_value: newRevenue,
           cost_value: newCost,
-          toll_value: result.tollValue || mission.toll_value || 0,
+          toll_value: parPedagio.toll_value,
           billing_verified_by: null,
           snapshot_approved_by: null,
-        }).eq('id', missionId);
+        };
+        if (parPedagio.escreverFornecedor) payloadForca.toll_value_provider = parPedagio.toll_value_provider;
+        await supabaseAdmin.from('missions').update(payloadForca).eq('id', missionId);
 
         try {
           await supabaseAdmin.from('system_logs').insert([{
@@ -3763,7 +3970,7 @@ export async function registerRoutes(
             details: JSON.stringify({
               source: '/api/missions/:id/force-recalculate',
               before: { revenue_value: mission.revenue_value, cost_value: mission.cost_value, toll_value: mission.toll_value },
-              after: { revenue_value: newRevenue, cost_value: newCost, toll_value: result.tollValue || mission.toll_value || 0 },
+              after: { revenue_value: newRevenue, cost_value: newCost, toll_value: parPedagio.toll_value, tollOrigem: parPedagio.origem },
               confirmed_overwrite: !!(mission.revenue_edit_reason || mission.cost_edit_reason),
             })
           }]);
@@ -3821,7 +4028,7 @@ export async function registerRoutes(
 
       for (const raw of (missions || [])) {
         try {
-          if (raw.billing_approved) {
+          if (raw.billing_approved || raw.negative_margin_locked) {
             skipped++;
             continue;
           }
@@ -3842,58 +4049,23 @@ export async function registerRoutes(
 
           const newRevenue = calc.client.serviceTotal || 0;
           const newCost = raw.is_same_os ? 0 : (calc.provider.serviceTotal || 0);
-          const newToll = calc.tollValue || raw.toll_value || 0;
+          const parPedagio = preservarParPedagioNoRecalculo({
+            tollValue: raw.toll_value,
+            tollValueProvider: raw.toll_value_provider,
+            isSameOs: !!raw.is_same_os,
+          });
+          const newToll = parPedagio.toll_value;
           const oldRevenue = raw.revenue_value || 0;
           const oldCost = raw.cost_value || 0;
-          const clientServiceOnly = calc.client.serviceTotal || 0;
-
-          const snapData = {
-            activationFee: calc.client.base || 0,
-            kmExtraTotal: calc.client.extraKmVal || 0,
-            hrExtraTotal: calc.client.extraHrVal || 0,
-            kmExtraQtd: calc.client.excessKm || 0,
-            hrExtraQtd: calc.client.excessHours || 0,
-            tollVal: newToll,
-            franchiseKm: calc.client.franchiseKm || 0,
-            franchiseHours: calc.client.franchiseHours || 0,
-            unitKm: calc.client.unitPriceKm || 0,
-            unitHr: calc.client.unitPriceHour || 0,
-            kmTotal: raw.end_km && raw.start_km ? (raw.end_km - raw.start_km) : (raw.total_distance || 0),
-            durationHours: calc.durationHours || 0,
-            revenueServiceOnly: clientServiceOnly,
-            costServiceOnly: calc.provider.serviceTotal || 0,
-            totalGeral: clientServiceOnly + newToll,
-            clientTableId: calc.client.tableId || null,
-            providerTableId: (calc.provider.tableId && !String(calc.provider.tableId).startsWith('auto-')) ? calc.provider.tableId : null,
-            tableName: calc.client.tableName || '',
-            route: (() => {
-              const co = (raw.origin || '').split(',')[0].split('-')[0].trim();
-              const cd = (raw.destination || '').split(',')[0].split('-')[0].trim();
-              return co && cd ? `${co} X ${cd}` : co || cd || raw.region || '-';
-            })(),
-            approved_by: 'Sistema (Recalcular e Comparar)',
-            approved_at: new Date().toISOString(),
-            tollProvider: calc.tollValue || 0,
-            systemCalculatedRevenue: newRevenue,
-            systemCalculatedCost: newCost,
-          };
-
-          await supabaseAdmin.from('missions').update({
+          const payloadComparar: Record<string, unknown> = {
             revenue_value: newRevenue,
             cost_value: newCost,
             toll_value: newToll,
-            snapshot_data: snapData,
-            snapshot_approved_by: 'Sistema (Recalcular e Comparar)',
-            snapshot_approved_at: new Date().toISOString(),
-          }).eq('id', raw.id);
-
-          await supabaseAdmin.from('system_logs').insert({
-            entity: 'BillingSnapshot',
-            entity_id: raw.id,
-            action_type: 'snapshot_save',
-            details: JSON.stringify(snapData),
-            created_by: 'Sistema (Recalcular e Comparar)',
-          });
+          };
+          if (parPedagio.escreverFornecedor) payloadComparar.toll_value_provider = parPedagio.toll_value_provider;
+          // Recálculo não é aprovação: não grava snapshot_approved_by nem log BillingSnapshot.
+          // Carimbo antigo permanece no banco. Aprovação humana posterior cria o snapshot oficial.
+          await supabaseAdmin.from('missions').update(payloadComparar).eq('id', raw.id);
 
           try {
             await supabaseAdmin.from('system_logs').insert([{
@@ -3905,17 +4077,16 @@ export async function registerRoutes(
                 source: 'POST /api/billing/recalculate-client',
                 client: clientName,
                 period: { startDate: startDate || null, endDate: endDate || null },
+                aprovacao: false,
                 before: {
                   revenue_value: oldRevenue,
                   cost_value: oldCost,
                   toll_value: raw.toll_value ?? null,
-                  snapshot_data: raw.snapshot_data ?? null,
                 },
                 after: {
                   revenue_value: newRevenue,
                   cost_value: newCost,
                   toll_value: newToll,
-                  snapshot_data: snapData,
                 },
               })
             }]);
@@ -4079,13 +4250,20 @@ export async function registerRoutes(
             await supabaseAdmin.from('system_logs').delete().eq('entity', 'BillingAdjustment').eq('entity_id', m.id);
 
             const newRevenue = result.client.serviceTotal || 0;
-            const { error: upErr } = await supabaseAdmin.from('missions').update({
+            const parPedagio = preservarParPedagioNoRecalculo({
+              tollValue: m.toll_value,
+              tollValueProvider: m.toll_value_provider,
+              isSameOs: !!m.is_same_os,
+            });
+            const payloadDiv: Record<string, unknown> = {
               revenue_value: newRevenue,
               cost_value: m.is_same_os ? 0 : calcCost,
-              toll_value: result.tollValue || m.toll_value || 0,
+              toll_value: parPedagio.toll_value,
               billing_verified_by: null,
               snapshot_approved_by: null,
-            }).eq('id', m.id);
+            };
+            if (parPedagio.escreverFornecedor) payloadDiv.toll_value_provider = parPedagio.toll_value_provider;
+            const { error: upErr } = await supabaseAdmin.from('missions').update(payloadDiv).eq('id', m.id);
 
             if (upErr) { errorList.push(`${m.id}: ${upErr.message}`); continue; }
 
@@ -4105,7 +4283,7 @@ export async function registerRoutes(
                   after: {
                     revenue_value: newRevenue,
                     cost_value: m.is_same_os ? 0 : calcCost,
-                    toll_value: result.tollValue || m.toll_value || 0,
+                    toll_value: parPedagio.toll_value,
                   },
                   diffCost: Math.round((calcCost - savedCost) * 100) / 100,
                 })
@@ -4997,6 +5175,63 @@ export async function registerRoutes(
       res.status(500).json({ error: e.message });
     }
   });
+
+  // Observação do Controle Diário. A leitura e a gravação passam pelo cliente
+  // Supabase do servidor. Nesta máquina não há senha direta do Postgres, e o
+  // pool pg quebrava com "password must be a string".
+  const denyControleDiarioNotes = (req: Request, res: Response): boolean => {
+    const principal = (req as any).user as ResolvedPrincipal | undefined;
+    if (!canAccessScreen(principal, 'controle-diario')) {
+      res.status(403).json({ error: 'Acesso restrito ao Controle Diário' });
+      return true;
+    }
+    return false;
+  };
+
+  app.get("/api/controle-diario-notas", requireAuth, requireRole('*'), async (req: Request, res: Response) => {
+    if (denyControleDiarioNotes(req, res)) return;
+    try {
+      const ids = String(req.query.ids || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter((item) => item && item.length <= 80)
+        .slice(0, 400);
+      if (!ids.length) return res.json([]);
+      const { data, error } = await supabase
+        .from('controle_diario_notas')
+        .select('id, mission_id, note, kind, created_by, created_at')
+        .in('mission_id', ids)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      res.json(data || []);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  app.post("/api/controle-diario-notas", requireAuth, requireRole('*'), async (req: Request, res: Response) => {
+    if (denyControleDiarioNotes(req, res)) return;
+    try {
+      const missionId = String(req.body?.mission_id || '').trim();
+      const note = normalizeControleDiarioNote(req.body?.note);
+      const kind = normalizeControleDiarioNoteKind(req.body?.kind);
+      if (!missionId || missionId.length > 80) return res.status(400).json({ error: 'OS obrigatória' });
+      if (!note) return res.status(400).json({ error: 'Escreva a observação antes de salvar' });
+      const principal = (req as any).user as ResolvedPrincipal;
+      const createdBy = String(principal?.name || principal?.email || '').trim();
+      if (!createdBy) return res.status(400).json({ error: 'Usuário sem nome para registrar a observação' });
+      const { data, error } = await supabase
+        .from('controle_diario_notas')
+        .insert({ mission_id: missionId, note, kind, created_by: createdBy })
+        .select('id, mission_id, note, kind, created_by, created_at')
+        .single();
+      if (error) throw error;
+      res.json(data);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+  registerTabelaRotaAlerta(app, supabase, requireAuth, requireRole);
   // =============================================================
 
   app.post("/api/investment/init", requireAuth, requireInvestmentApiAccess(), async (_req: Request, res: Response) => {
@@ -5840,6 +6075,35 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.post("/api/nf/sync-receivables", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (_req: Request, res: Response) => {
+    try {
+      const { syncPaidInvoicesToReceivablesNow } = await import('../lib/invoiceReceivableSync.js');
+      res.json(await syncPaidInvoicesToReceivablesNow());
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.post("/api/nf/manual-payment", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const principal = (req as any).user as { name?: string | null; email?: string | null } | undefined;
+      const { registrarBaixaManualFatura } = await import('../lib/invoiceManualPayment.js');
+      const result = await registrarBaixaManualFatura({
+        invoiceId: String(req.body?.invoiceId || ''),
+        paymentDate: String(req.body?.paymentDate || ''),
+        evidenceUrl: String(req.body?.evidenceUrl || ''),
+        note: req.body?.note ? String(req.body.note) : null,
+        invoiceAmount: Number(req.body?.invoiceAmount || 0),
+        receivedAmount: req.body?.receivedAmount ?? '',
+        reason: req.body?.reason ? String(req.body.reason) : null,
+        registeredBy: principal?.name || principal?.email || 'sistema',
+      });
+      res.json(result);
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+    }
+  });
+
   // ═══════════════════════════════════════════════════════
   // PLUGNOTAS — Provider de NFS-e alternativo (coexistência com Asaas)
   // ═══════════════════════════════════════════════════════
@@ -6093,6 +6357,14 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         patch.nf_history = [...existing, entry].slice(-50);
 
         await sb.from('financial_invoices').update(patch).eq('id', inv.id);
+        if (status === 'AUTHORIZED' && pdfUrl) {
+          try {
+            const { sendInvoiceBillingEmail } = await import('./invoiceBillingEmail');
+            await sendInvoiceBillingEmail({ invoiceId: inv.id });
+          } catch (emailErr: any) {
+            console.log(`[Fatura Email] webhook ${inv.id}: ${emailErr?.message || emailErr}`);
+          }
+        }
         updated++;
       }
       console.log(`[PlugNotas Webhook] processado — ${updated} fatura(s) atualizada(s).`);
@@ -6207,105 +6479,25 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
 
   app.post("/api/asaas/send-billing-email", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
-      const { paymentId, clientName, clientCnpj, clientEmail, value, dueDate, description, invoiceNumber, issuerCompany } = req.body;
-      if (!paymentId || !clientEmail || !value || !dueDate) {
-        return res.status(400).json({ error: 'paymentId, clientEmail, value e dueDate são obrigatórios' });
+      const paymentId = req.body?.paymentId;
+      if (!paymentId) {
+        return res.status(400).json({ error: 'paymentId é obrigatório' });
       }
-
-      const company = issuerCompany || undefined;
-      let pixData = null, bankSlipData = null, invoiceData: any = null;
-
-      try { pixData = await getPaymentPixQrCode(paymentId, company); } catch (_) {}
-      try { bankSlipData = await getPaymentBankSlip(paymentId, company); } catch (_) {}
-
-      // Provider-aware: primeiro tenta resolver a NF a partir da fatura no banco
-      // (que conhece nf_provider, nf_image_url, nf_number e plugnotas_invoice_id).
-      // Só consulta a API do Asaas se a fatura local indicar provider ASAAS ou
-      // não tiver dados suficientes (compatibilidade com cobranças antigas).
-      let dbInvoiceRow: any = null;
-      try {
-        const { data: rows } = await supabaseAdmin
-          .from('financial_invoices')
-          .select('nf_provider, nf_image_url, nf_number, nf_status, plugnotas_invoice_id, asaas_invoice_id')
-          .eq('asaas_payment_id', paymentId)
-          .order('created_at', { ascending: false })
-          .limit(1);
-        dbInvoiceRow = rows && rows[0] ? rows[0] : null;
-      } catch (_) { /* fallback abaixo */ }
-
-      const dbProvider = (dbInvoiceRow?.nf_provider || '').toUpperCase();
-      if (dbProvider === 'PLUGNOTAS' && dbInvoiceRow?.nf_image_url) {
-        invoiceData = {
-          id: dbInvoiceRow.plugnotas_invoice_id || null,
-          status: dbInvoiceRow.nf_status || 'AUTHORIZED',
-          number: dbInvoiceRow.nf_number || null,
-          pdfUrl: dbInvoiceRow.nf_image_url,
-          provider: 'PLUGNOTAS',
-        };
-      } else {
-        try {
-          const invoicesResp = await getInvoiceByPayment(paymentId, company);
-          if (invoicesResp?.data?.length > 0) {
-            invoiceData = invoicesResp.data[0];
-          }
-        } catch (_) {}
-        // Se a fatura local diz PLUGNOTAS mas ainda não tem PDF, expõe explicitamente
-        // para o operador em vez de buscar (e nunca encontrar) no Asaas.
-        if (!invoiceData && dbProvider === 'PLUGNOTAS') {
-          invoiceData = {
-            id: dbInvoiceRow.plugnotas_invoice_id || null,
-            status: dbInvoiceRow.nf_status || 'PROCESSING',
-            number: dbInvoiceRow.nf_number || null,
-            pdfUrl: dbInvoiceRow.nf_image_url || null,
-            provider: 'PLUGNOTAS',
-          };
-        }
-      }
-
-      let payment: any = null;
-      try { payment = await getPayment(paymentId, company); } catch (_) {}
-
-      const hasBoleto = !!(payment?.bankSlipUrl || bankSlipData);
-      const hasNf = !!(invoiceData?.pdfUrl);
-      const forceParam = req.body.force === true;
-
-      if (!hasBoleto && !forceParam) {
-        return res.status(400).json({ error: 'Boleto ainda não disponível. Sincronize o status primeiro.', hasBoleto: false, hasNf });
-      }
-      if (!hasNf && !forceParam) {
-        return res.status(400).json({ error: 'Nota Fiscal ainda não disponível. Sincronize o status primeiro.', hasBoleto, hasNf: false });
-      }
-
-      const result = await sendBillingEmail({
-        clientName: clientName || 'Cliente',
-        clientCnpj: clientCnpj || '',
-        clientEmail,
-        invoiceNumber: invoiceNumber || undefined,
-        issuerCompany: issuerCompany || 'Grupo TM SEG',
-        value: parseFloat(value),
-        dueDate,
-        description: description || undefined,
-        paymentId,
-        boletoUrl: payment?.bankSlipUrl || undefined,
-        pixPayload: pixData?.payload || undefined,
-        pixQrCodeBase64: pixData?.encodedImage || undefined,
-        boletoBarcode: bankSlipData?.barCode || undefined,
-        boletoDigitableLine: bankSlipData?.identificationField || undefined,
-        nfPdfUrl: invoiceData?.pdfUrl || undefined,
-        nfNumber: invoiceData?.number || undefined,
-      });
-
-      const responseBody = {
+      // Reenvio manual: sempre os 2 primeiros e-mails do responsável financeiro.
+      const { sendInvoiceBillingEmail } = await import('./invoiceBillingEmail');
+      const result = await sendInvoiceBillingEmail({ paymentId, resend: true });
+      const status = result.success ? 200 : (result.skipped ? 400 : 502);
+      res.status(status).json({
         success: result.success,
+        skipped: result.skipped || false,
         messageId: result.messageId || null,
         recipients: result.recipients || [],
         rejected: result.rejected || [],
         error: result.error || undefined,
-        nfIncluded: hasNf,
-        boletoIncluded: hasBoleto,
-        pixIncluded: !!pixData,
-      };
-      res.status(result.success ? 200 : 502).json(responseBody);
+        nfIncluded: !!result.nfIncluded,
+        boletoIncluded: !!result.boletoIncluded,
+        pixIncluded: !!result.pixIncluded,
+      });
     } catch (err: any) {
       console.error('[Email] Erro ao enviar email de cobrança:', err.message);
       res.status(500).json({ error: err.message });
@@ -6434,12 +6626,18 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
         if (isPaid) {
           const { data: inv } = await supabase.from('financial_invoices').select('number, client').eq('id', invoiceId).single();
           if (inv?.number) {
+            const { receivableMatchFilter } = await import('../lib/invoiceReceivableSync.js');
             await supabase.from('financial_transactions')
-              .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
-              .ilike('description', `%${inv.number}%`)
-              .eq('status', 'PENDING');
+              .update({ status: 'PAID', payment_date: new Date().toISOString().split('T')[0] })
+              .eq('type', 'INCOME')
+              .in('status', ['PENDING', 'OVERDUE'])
+              .or(receivableMatchFilter(inv.number, paymentId));
             console.log(`[Asaas] Baixa automática: NF ${inv.number} — ${inv.client}`);
           }
+          try {
+            const { syncPaidInvoicesToReceivablesNow } = await import('../lib/invoiceReceivableSync.js');
+            await syncPaidInvoicesToReceivablesNow();
+          } catch { /* a fatura já foi marcada; a sincronização geral tenta de novo na tela */ }
         }
       }
 
@@ -6475,6 +6673,12 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
       res.json(await runAsaasSyncOpenPayments({
         queryLimit: req.query.limit,
         bodyLimit: req.body?.limit,
+        queryOffset: req.query.offset,
+        bodyOffset: req.body?.offset,
+        queryRetroactivePaid: req.query.retroactivePaid,
+        bodyRetroactivePaid: req.body?.retroactivePaid,
+        queryCursor: req.query.cursor,
+        bodyCursor: req.body?.cursor,
       }));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -9224,8 +9428,11 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
-  // Relatório diário de produtividade / vigia noturna (09h → só diretoria)
+  // Relatório diário de produtividade / vigia noturna (09h + 21h → só diretoria)
   registerProductivityReportSchedule(supabase);
+  registerNightWatchdogSchedule(supabase);
+  registerNightWatchRoutes(app, supabase, requireAuth);
+  registerForceLogoutRoutes(app, supabase, requireAuth, requireRole);
 
   app.post(
     '/api/admin/productivity-report',
@@ -9239,6 +9446,8 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
             : null;
         const result = await executeProductivityDailyReport(supabase, {
           overrideEmails: override,
+          period:
+            req.body?.period === 'today_so_far' ? 'today_so_far' : 'previous_day',
         });
         res.json({ ok: true, ...result, testMode: !!override });
       } catch (e: any) {

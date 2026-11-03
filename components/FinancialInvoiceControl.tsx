@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
-import { formatDateTimeBR } from '../lib/dateUtils';
+import { formatDateBR, formatDateTimeBR } from '../lib/dateUtils';
 import { supabase } from '../lib/supabase';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import {
@@ -15,25 +15,22 @@ import {
   invoiceControlChargeStatus,
 } from '../lib/invoiceDisplay';
 import {
-  clearInvoiceWatch,
-  readInvoiceWatch,
-} from '../lib/invoiceCleanSlate';
-import { kickNfRetryCycle } from '../lib/kickNfSchedule';
-import {
   buildManualRetryConfirmMessage,
   canShowAsaasManualRetry,
   formatManualRetryFeedback,
   missingAsaasPaymentFeedback,
 } from '../lib/nfRetryInvoiceFeedback';
-import { formatEmailRecipients, parseEmailRecipients } from '../lib/email/recipientList';
+import { pickMedicaoRecipients } from '../lib/billing/invoiceBillingEmailPolicy';
 import FaturamentoAlertBanner from './FaturamentoAlertBanner';
 import {
   FileText, Search, Filter, RefreshCw, ExternalLink, Copy, CheckCircle2,
   AlertCircle, Clock, XCircle, DollarSign, Receipt, Eye, Loader2,
   Calendar, Building2, Hash, ArrowUpDown, ChevronDown, ChevronUp,
   Ban, CreditCard, QrCode, Barcode, Download, X, ImageIcon, Trash2,
-  Mail, Send
+  Mail, Send, Banknote
 } from 'lucide-react';
+import InvoiceManualPaymentDialog from './InvoiceManualPaymentDialog';
+import ManualBilledInvoiceDialog from './ManualBilledInvoiceDialog';
 
 interface Invoice {
   id: string;
@@ -51,6 +48,7 @@ interface Invoice {
   issuer_company?: string;
   boleto_due_date?: string;
   asaas_payment_id?: string;
+  asaas_invoice_id?: string;
   asaas_status?: string;
   asaas_invoice_url?: string;
   asaas_bankslip_url?: string;
@@ -66,6 +64,14 @@ interface Invoice {
   nf_provider?: string;
   plugnotas_invoice_id?: string;
   plugnotas_protocol?: string;
+  manual_payment_date?: string | null;
+  manual_payment_evidence_url?: string | null;
+  manual_payment_by?: string | null;
+  manual_payment_at?: string | null;
+  manual_payment_note?: string | null;
+  manual_payment_amount?: number | null;
+  manual_payment_interest?: number | null;
+  manual_payment_reason?: string | null;
 }
 
 interface NfHistoryEntry {
@@ -86,6 +92,7 @@ const HISTORY_ACTION_LABEL: Record<string, { label: string; color: string; bg: s
   'stuck-alert': { label: 'TRAVADA — alerta', color: 'text-white', bg: 'bg-red-600', border: 'border-red-700', icon: AlertCircle },
   'lookup-error': { label: 'Falha de consulta', color: 'text-gray-700', bg: 'bg-gray-100', border: 'border-gray-200', icon: AlertCircle },
   'provider-failover': { label: 'Failover Asaas → PlugNotas', color: 'text-cyan-700', bg: 'bg-cyan-50', border: 'border-cyan-200', icon: RefreshCw },
+  'manual-payment': { label: 'Baixa manual', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200', icon: CheckCircle2 },
 };
 
 interface ProviderPreferences {
@@ -108,14 +115,12 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
 const fmtBRL = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDate = (d: string) => {
   if (!d) return '-';
-  const dt = new Date(d + (d.length === 10 ? 'T12:00:00' : ''));
-  return dt.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const texto = formatDateBR(d);
+  return texto === '—' ? '-' : texto;
 };
 
 const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void }> = ({ onNavigate }) => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const invoicesRef = useRef<Invoice[]>([]);
-  invoicesRef.current = invoices;
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -130,9 +135,10 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   const [retryingNfId, setRetryingNfId] = useState<string | null>(null);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [showRetroModal, setShowRetroModal] = useState(false);
+  const [showManualBilledModal, setShowManualBilledModal] = useState(false);
   const [retroForm, setRetroForm] = useState({ client: '', number: '', amount: '', date: '', dueDate: '', notes: '', issuer_company: 'TM GESTÃO' });
   const [savingRetro, setSavingRetro] = useState(false);
-  const [bulkRetrying, setBulkRetrying] = useState(false);
+  const [backfillingPaid, setBackfillingPaid] = useState(false);
   const [issuerSummary, setIssuerSummary] = useState<Array<{ company: string; total: number; authorized: number; synchronized: number; scheduled: number; error: number; stuck: number; canceled: number; other: number; asaas?: number; plugnotas?: number }>>([]);
   const [issuerFilter, setIssuerFilter] = useState<string | null>(null);
   const [issuerStateFilter, setIssuerStateFilter] = useState<'total' | 'authorized' | 'scheduled' | 'stuck' | null>(null);
@@ -141,6 +147,7 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   const [plugnotasConfigured, setPlugnotasConfigured] = useState(false);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [reissuePlugnotasId, setReissuePlugnotasId] = useState<string | null>(null);
+  const [manualPayInvoice, setManualPayInvoice] = useState<Invoice | null>(null);
   const [providerByPipeline, setProviderByPipeline] = useState<Record<string, { total: number; authorized: number; error: number; stuck: number; processing: number }>>({});
 
   const fetchIssuerSummary = useCallback(async () => {
@@ -224,48 +231,57 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
     }
   };
 
-  const handleBulkRetryNfs = async () => {
-    if (!confirm('Reemitir NFs pendentes agora?\n\nIsso vai:\n• Reabrir pausadas soft\n• Tentar autorizar até 10 NFs\n• Cancelar e reagendar só quando seguro (anti-duplicata)')) return;
-    setBulkRetrying(true);
-    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    // Handler leve (nf-control) — 100s; se a chave Asaas estiver inválida, falha rápido com 401.
-    const hang = setTimeout(() => ctrl?.abort(), 100_000);
+  const handleBackfillPaidAsaas = async () => {
+    if (!confirm(
+      'Sincronizar pagamentos já recebidos no Asaas?\n\n' +
+      'O sistema vai consultar todas as faturas pagas, em lotes, e registrar no Contas a Receber: valor pago, data, juros/multa, líquido e tarifa. A operação é idempotente.',
+    )) return;
+    setBackfillingPaid(true);
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    let updated = 0;
+    let errors = 0;
+    let pages = 0;
     try {
-      const res = await authFetch('/api/nf/retry-now?limit=10&reopen=1', {
-        method: 'POST',
-        ...(ctrl ? { signal: ctrl.signal } : {}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        const err = String(data.error || `HTTP ${res.status}`);
-        if (/chave de API|401|403|ASAAS_TMGESTAO/i.test(err)) {
-          throw new Error(
-            `${err}\n\nA chave Asaas na Vercel está inválida/expirada.\n` +
-              `Atualize ASAAS_TMGESTAO_API (TM GESTÃO) com $aact_prod_... do painel Asaas e faça Redeploy.\n` +
-              `Diagnóstico: /api/asaas/status?probe=1`,
-          );
+      do {
+        const params = new URLSearchParams({ retroactivePaid: '1', limit: '10' });
+        if (cursor) params.set('cursor', cursor);
+        const response = await authFetch(`/api/asaas/sync-open-payments?${params.toString()}`, {
+          method: 'POST',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data?.success !== true) {
+          throw new Error(data?.error || `Falha na sincronização retroativa (${response.status})`);
         }
-        throw new Error(err || 'Falha ao executar ciclo.');
-      }
-      const parts = [
-        `${data.reopened || 0} reaberta(s)`,
-        `${data.processed || 0} processada(s)`,
-        `✓ ${data.ok || 0} OK`,
-        `⏸ ${data.paused || 0} pausada(s)`,
-        `🚨 ${data.stuck || 0} travada(s)`,
-        `✗ ${data.errors || 0} erro(s)`,
-      ];
-      alert('Ciclo de reemissão concluído!\n\n' + parts.join('\n'));
-      await fetchInvoices();
+        for (const id of data.checkedIds || []) {
+          if (seen.has(id)) throw new Error(`Consulta retroativa repetiu a fatura ${id}`);
+          seen.add(id);
+        }
+        updated += Number(data.backfilledPaid || 0);
+        errors += Number(data.errors || 0);
+        pages += 1;
+        if (!data.hasMore) {
+          cursor = null;
+          break;
+        }
+        const next = String(data.nextCursor || '').trim();
+        if (!next || next === cursor) throw new Error('Paginação retroativa não avançou');
+        cursor = next;
+        if (pages > 500) throw new Error('Paginação retroativa excedeu o limite de segurança');
+      } while (cursor);
+
+      await fetchInvoices({ silent: true });
       await fetchIssuerSummary();
+      alert(
+        `Sincronização retroativa concluída.\n\n` +
+        `${seen.size} fatura(s) consultada(s)\n` +
+        `${updated} pagamento(s) atualizado(s)\n` +
+        `${errors} erro(s)`,
+      );
     } catch (e: any) {
-      const msg = e?.name === 'AbortError'
-        ? 'Tempo esgotado no ciclo (100s). Parte pode ter sido processada — atualize a lista.'
-        : (e.message || 'Erro');
-      alert('Erro: ' + msg);
+      alert(`Erro na sincronização retroativa: ${e?.message || e}`);
     } finally {
-      clearTimeout(hang);
-      setBulkRetrying(false);
+      setBackfillingPaid(false);
     }
   };
 
@@ -286,8 +302,6 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
     } finally {
       if (!silent) setLoading(false);
     }
-    // Schema/init opcional — fire-and-forget (Express catch-all pode estar lento).
-    void authFetch('/api/supabase/init-invoices', { method: 'POST' }).catch(() => {});
   }, []);
 
   useEffect(() => { fetchInvoices(); fetchIssuerSummary(); fetchProviderPreferences(); }, [fetchInvoices, fetchIssuerSummary, fetchProviderPreferences]);
@@ -295,135 +309,17 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   // Realtime: refresh silencioso — não recoloca "Carregando faturas..." na tela.
   useRealtimeRefresh('financial_invoices', () => { fetchInvoices({ silent: true }); fetchIssuerSummary(); });
 
-  // Ao abrir: lista NA HORA → sync/retry NF → limpeza antiga em background.
-  // Após emitir (Amazon etc.): acompanha Processando→Emitida com poll curto.
-  const autoHealStarted = useRef(false);
+  // Abertura só relê a lista. Sync, retry e limpeza continuam nos botões e no cron.
   useEffect(() => {
-    if (autoHealStarted.current) return;
-    autoHealStarted.current = true;
     let cancelled = false;
-    const withTimeout = (ms: number) => {
-      const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-      const t = setTimeout(() => ctrl?.abort(), ms);
-      return { ctrl, clear: () => clearTimeout(t) };
-    };
-    const syncOpen = async (limit = 15) => {
-      const syncT = withTimeout(25_000);
-      try {
-        await authFetch(`/api/asaas/sync-open-payments?limit=${limit}`, {
-          method: 'POST',
-          ...(syncT.ctrl ? { signal: syncT.ctrl.signal } : {}),
-        });
-      } catch (e) {
-        console.warn('[InvoiceControl] sync-open-payments falhou/timeout', e);
-      } finally {
-        syncT.clear();
-      }
-    };
-    const heal = async () => {
-      // 1) Mostra faturas novas imediatamente (não espera wipe).
-      await fetchInvoices({ silent: true });
-      await fetchIssuerSummary();
+    const poll = setInterval(() => {
       if (cancelled) return;
-
-      // 2) Sync + retry — o que o usuário espera ver como Processando→Emitida.
-      await syncOpen(30);
-      if (cancelled) return;
-      const retryT = withTimeout(40_000);
-      try {
-        await authFetch('/api/nf/retry-now?limit=5&reopen=1', {
-          method: 'POST',
-          ...(retryT.ctrl ? { signal: retryT.ctrl.signal } : {}),
-        });
-      } catch (e) {
-        console.warn('[InvoiceControl] nf/retry-now leve falhou/timeout', e);
-      } finally {
-        retryT.clear();
-      }
-      if (cancelled) return;
-      await fetchInvoices({ silent: true });
-      await fetchIssuerSummary();
-
-      // 3) Wipe da fila antiga em background (já pode estar skipped no servidor).
-      const wipeT = withTimeout(55_000);
-      try {
-        const wipeRes = await authFetch('/api/nf/ensure-clean-slate', {
-          method: 'POST',
-          ...(wipeT.ctrl ? { signal: wipeT.ctrl.signal } : {}),
-        });
-        const wipe = await wipeRes.json().catch(() => ({}));
-        if (wipe?.cancelled > 0) {
-          console.info(`[InvoiceControl] Fila antiga arquivada: ${wipe.cancelled} fatura(s).`);
-          await fetchInvoices({ silent: true });
-          await fetchIssuerSummary();
-        } else if (wipe?.error) {
-          console.warn('[InvoiceControl] clean-slate:', wipe.error);
-        }
-      } catch (e) {
-        console.warn('[InvoiceControl] ensure-clean-slate falhou/timeout', e);
-      } finally {
-        wipeT.clear();
-      }
-    };
-    void heal();
-
-    // Poll a cada 15s: sync pesado só se há NF Processando ou veio de emissão recente.
-    let ticks = 0;
-    const pollTick = async () => {
-      if (cancelled) return;
-      ticks += 1;
-      const watch = readInvoiceWatch();
-      const hasProcessing = invoicesRef.current.some((i) => {
-        const st = invoiceControlChargeStatus(i.status, i.nf_status, i.boleto_due_date);
-        if (st === 'CANCELADA' || st === 'PAGA') return false;
-        return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused }) === 'aguardando';
-      });
-      const activeWatch = !!watch || hasProcessing;
-      // Idle: refresh leve a cada 60s (4 ticks).
-      if (!activeWatch && ticks % 4 !== 0) return;
-      await syncOpen(activeWatch ? 25 : 10);
-      if (cancelled) return;
-      // Enquanto houver NF em fila (Processando sem invoice Asaas), empurra o worker
-      // a cada ~30s — não depende só do cron nem do botão "Reemitir TODAS".
-      if (activeWatch && ticks % 2 === 0) {
-        const needsSchedule = invoicesRef.current.some((i) => {
-          const st = invoiceControlChargeStatus(i.status, i.nf_status, i.boleto_due_date);
-          if (st === 'CANCELADA' || st === 'PAGA') return false;
-          if ((i.nf_provider || 'ASAAS').toUpperCase() === 'PLUGNOTAS') return false;
-          if (!i.asaas_payment_id) return false;
-          if (i.asaas_invoice_id) return false;
-          return nfStatusBucket(i.nf_status, { paused: !!i.nf_retry_paused }) === 'aguardando';
-        });
-        if (needsSchedule) kickNfRetryCycle(8);
-      }
-      if (cancelled) return;
-      await fetchInvoices({ silent: true });
-      if (watch?.paymentIds?.length) {
-        try {
-          const { data: rows } = await supabase
-            .from('financial_invoices')
-            .select('id, nf_status, asaas_payment_id, nf_retry_paused')
-            .in('asaas_payment_id', watch.paymentIds);
-          const pending = (rows || []).some((r) =>
-            nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused }) === 'aguardando'
-            || nfStatusBucket(r.nf_status, { paused: !!(r as any).nf_retry_paused }) === 'nenhuma',
-          );
-          if (!pending && (rows || []).length > 0) clearInvoiceWatch();
-        } catch {
-          /* ignore */
-        }
-      }
-      if (ticks >= 48) clearInvoiceWatch();
-    };
-    const poll = setInterval(() => { void pollTick(); }, 15_000);
-    let quick: ReturnType<typeof setTimeout> | undefined;
-    if (readInvoiceWatch()) {
-      quick = setTimeout(() => { void pollTick(); }, 3_000);
-    }
+      void fetchInvoices({ silent: true });
+      void fetchIssuerSummary();
+    }, 60_000);
     return () => {
       cancelled = true;
       clearInterval(poll);
-      if (quick) clearTimeout(quick);
     };
   }, [fetchInvoices, fetchIssuerSummary]);
 
@@ -539,40 +435,25 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   };
 
   const handleSendEmail = async (inv: Invoice) => {
-    let registeredRecipients = '';
+    let recipients: string[] = [];
     try {
-      let { data: clientRows } = await supabase
+      const clientName = String(inv.client || '').trim();
+      const fragment = clientName.replace(/[%_,.()'"\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 24);
+      const { data: clientRows } = await supabase
         .from('clients')
-        .select('medicao_email, email, operational_email')
-        .eq('name', inv.client)
-        .limit(1);
-      if (!clientRows?.length) {
-        ({ data: clientRows } = await supabase
-          .from('clients')
-          .select('medicao_email, email, operational_email')
-          .eq('trading_name', inv.client)
-          .limit(1));
-      }
-      const client = clientRows?.[0] as any;
-      registeredRecipients = formatEmailRecipients(
-        client?.medicao_email || client?.email || client?.operational_email || '',
-      );
+        .select('name, trading_name, medicao_email, status')
+        .or(`name.ilike."%${fragment}%",trading_name.ilike."%${fragment}%"`)
+        .limit(30);
+      recipients = pickMedicaoRecipients(clientName, clientRows || []);
     } catch (error) {
       console.warn('[Email] Não foi possível carregar destinatários cadastrados:', error);
     }
 
-    const typedRecipients = prompt(
-      'E-mails do cliente para envio da medição, boleto e faturamento:',
-      registeredRecipients,
-    );
-    if (typedRecipients === null) return;
-    const recipients = parseEmailRecipients(typedRecipients);
     if (recipients.length === 0) {
-      alert('Informe ao menos um e-mail válido.');
+      alert('Cadastre o E-mail responsável financeiro (medição / cobrança) no cliente. O envio usa no máximo os 2 primeiros.');
       return;
     }
-    const clientEmail = recipients.join(', ');
-    if (!confirm(`Enviar email de cobrança para:\n${clientEmail}\n\nFatura: NF ${inv.number}\nValor: ${fmtBRL(inv.amount)}\nCliente: ${inv.client}`)) return;
+    if (!confirm(`Enviar cobrança para:\n${recipients.join('\n')}\n\nCópia: financeiro@grupotmseg.com.br e thiago@grupotmseg.com.br\n\nFatura: NF ${inv.number}\nValor: ${fmtBRL(inv.amount)}\nCliente: ${inv.client}`)) return;
     setSendingEmailId(inv.id);
     try {
       const res = await authFetch('/api/asaas/send-billing-email', {
@@ -580,13 +461,6 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentId: inv.asaas_payment_id,
-          clientName: inv.client,
-          clientEmail,
-          value: inv.amount,
-          dueDate: inv.boleto_due_date || inv.date,
-          invoiceNumber: inv.number,
-          issuerCompany: inv.issuer_company || '',
-          description: `Cobrança ref. NF ${inv.number}`,
         }),
       });
       const result = await res.json();
@@ -751,11 +625,11 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
           <p className="text-xs text-gray-400 font-semibold mt-1">Notas Fiscais, Boletos, Cobranças Asaas — Integrado ao Contas a Receber</p>
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
-          <button onClick={handleBulkRetryNfs} disabled={bulkRetrying} className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-bulk-retry-nfs" title="Executa o ciclo do worker imediatamente — cancela e reagenda NFs travadas">
-            {bulkRetrying ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Reemitir TODAS NFs pendentes
+          <button onClick={() => void handleBackfillPaidAsaas()} disabled={backfillingPaid} className="flex items-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm disabled:opacity-60" data-testid="btn-backfill-paid-asaas" title="Busca no Asaas os detalhes das faturas já pagas">
+            {backfillingPaid ? <Loader2 size={14} className="animate-spin" /> : <Banknote size={14} />} {backfillingPaid ? 'Sincronizando pagos...' : 'Sincronizar pagos antigos'}
           </button>
-          <button onClick={() => setShowRetroModal(true)} className="flex items-center gap-2 bg-blue-700 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-retro-invoice">
-            <Calendar size={14} /> Lançar Retroativo
+          <button onClick={() => setShowManualBilledModal(true)} className="flex items-center gap-2 bg-indigo-700 hover:bg-indigo-800 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm" data-testid="btn-manual-billed-invoice">
+            <Receipt size={14} /> Incluir Faturamento
           </button>
           <button
             onClick={async () => {
@@ -1004,6 +878,9 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                         <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-black border ${cfg.color} ${cfg.bg} ${cfg.border}`} data-testid={`payment-status-${inv.id}`}>
                           <StatusIcon size={10} /> {payLabel}
                         </span>
+                        {inv.manual_payment_at && (
+                          <span className="block mt-1 text-[8px] font-black text-emerald-700 uppercase">Baixa manual</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 font-mono font-bold text-gray-900 text-xs">{inv.number}</td>
                       <td className="px-4 py-3 font-bold text-gray-800 text-xs uppercase">{inv.client}</td>
@@ -1032,12 +909,17 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {(inv.asaas_payment_id || inv.plugnotas_invoice_id) ? (() => {
+                        {(inv.asaas_payment_id || inv.plugnotas_invoice_id || inv.nf_image_url) ? (() => {
                           const ns = inv.nf_status?.toUpperCase();
                           const ref = inv.nf_retry_at || inv.created_at;
                           const ageH = ref ? Math.floor((Date.now() - new Date(ref).getTime()) / 3600_000) : null;
                           const isStuckSync = ns === 'SYNCHRONIZED' && ageH !== null && ageH >= 24;
-                          const invProvider = String(inv.nf_provider || '').toUpperCase() === 'PLUGNOTAS' || inv.plugnotas_invoice_id ? 'PLUGNOTAS' : 'ASAAS';
+                          const configuredProvider = String(inv.nf_provider || '').toUpperCase();
+                          const invProvider = configuredProvider === 'MANUAL'
+                            ? 'MANUAL'
+                            : configuredProvider === 'PLUGNOTAS' || inv.plugnotas_invoice_id
+                              ? 'PLUGNOTAS'
+                              : 'ASAAS';
                           const paused = !!inv.nf_retry_paused;
                           const bucket = nfStatusBucket(ns, { stuckByAge: isStuckSync, paused });
                           const shortLabel = nfBucketLabel(bucket);
@@ -1092,7 +974,19 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                               <Receipt size={14} />
                             </a>
                           )}
-                          {!inv.nf_image_url && !inv.boleto_image_url && !inv.asaas_bankslip_url && !(inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url) && (
+                          {inv.manual_payment_evidence_url && (
+                            <a
+                              href={inv.manual_payment_evidence_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-700 hover:text-emerald-900"
+                              title="Comprovante do pagamento"
+                              data-testid={`doc-comprovante-${inv.id}`}
+                            >
+                              <Banknote size={14} />
+                            </a>
+                          )}
+                          {!inv.nf_image_url && !inv.boleto_image_url && !inv.asaas_bankslip_url && !inv.manual_payment_evidence_url && !(inv.nf_status === 'AUTHORIZED' && inv.asaas_invoice_url) && (
                             <span className="text-gray-300 text-[10px]">—</span>
                           )}
                         </div>
@@ -1142,6 +1036,12 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                               </button>
                             ) : null;
                           })()}
+                          {chargeStatus !== 'CANCELADA' && chargeStatus !== 'PAGA' && (
+                            <button onClick={() => setManualPayInvoice(inv)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1.5 rounded-lg flex items-center gap-1" title="Baixa manual do pagamento" data-testid={`btn-manual-pay-${inv.id}`}>
+                              <Banknote size={13} />
+                              <span className="hidden lg:inline text-[9px] font-bold">Baixa</span>
+                            </button>
+                          )}
                           {inv.status !== 'CANCELADA' && inv.status !== 'PAGA' && (
                             <button onClick={() => handleCancelInvoice(inv)} disabled={cancellingId === inv.id} className="bg-red-50 hover:bg-red-100 text-red-500 p-1.5 rounded-lg" title="Cancelar" data-testid={`btn-cancel-${inv.id}`}>
                               {cancellingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <Ban size={13} />}
@@ -1157,6 +1057,14 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
           </div>
         )}
       </div>
+
+      {manualPayInvoice && (
+        <InvoiceManualPaymentDialog
+          invoice={manualPayInvoice}
+          onClose={() => setManualPayInvoice(null)}
+          onSaved={() => { setManualPayInvoice(null); void fetchInvoices(); }}
+        />
+      )}
 
       {showDetail && selectedInvoice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -1255,6 +1163,26 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                       </div>
                     </div>
 
+                    {inv.manual_payment_at && (
+                      <div className="border border-emerald-200 bg-emerald-50 rounded-xl p-4 space-y-1" data-testid="manual-payment-audit">
+                        <p className="text-[9px] font-black text-emerald-700 uppercase tracking-widest">Baixa manual</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Pagamento:</span> {fmtDate(inv.manual_payment_date || '')}</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Valor recebido:</span> {fmtBRL(Number(inv.manual_payment_amount || inv.amount || 0))}</p>
+                        {Number(inv.manual_payment_interest || 0) > 0.009 && (
+                          <p className="text-xs text-emerald-950"><span className="font-black">Juros:</span> {fmtBRL(Number(inv.manual_payment_interest))} sobre o valor da fatura {fmtBRL(inv.amount)}</p>
+                        )}
+                        {inv.manual_payment_reason && (
+                          <p className="text-xs text-emerald-950"><span className="font-black">Motivo:</span> {inv.manual_payment_reason}</p>
+                        )}
+                        <p className="text-xs text-emerald-950"><span className="font-black">Quem registrou:</span> {inv.manual_payment_by || '—'}</p>
+                        <p className="text-xs text-emerald-950"><span className="font-black">Quando:</span> {formatDateTimeBR(inv.manual_payment_at)}</p>
+                        {inv.manual_payment_note && <p className="text-xs text-emerald-950"><span className="font-black">Observação:</span> {inv.manual_payment_note}</p>}
+                        {inv.manual_payment_evidence_url && (
+                          <a href={inv.manual_payment_evidence_url} target="_blank" rel="noreferrer" className="inline-flex text-xs font-bold text-emerald-800 underline">Ver evidência do extrato</a>
+                        )}
+                      </div>
+                    )}
+
                     {inv.notes && (
                       <div className="bg-gray-50 rounded-lg p-3">
                         <p className="text-[9px] font-black text-gray-400 uppercase mb-1">Observações</p>
@@ -1341,6 +1269,11 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
                       {inv.boleto_image_url && (
                         <button onClick={() => setShowImageModal(inv.boleto_image_url!)} className="flex items-center gap-1.5 text-[10px] font-bold text-orange-600 bg-orange-50 px-3 py-2 rounded-lg border border-orange-200 hover:bg-orange-100">
                           <Receipt size={12} /> Ver Boleto
+                        </button>
+                      )}
+                      {chargeStatus !== 'PAGA' && chargeStatus !== 'CANCELADA' && (
+                        <button type="button" onClick={() => setManualPayInvoice(inv)} className="flex items-center gap-1.5 text-[10px] font-bold text-white bg-emerald-700 px-3 py-2 rounded-lg hover:bg-emerald-800" data-testid={`btn-manual-pay-detail-${inv.id}`}>
+                          <Banknote size={12} /> Baixa manual
                         </button>
                       )}
                       {inv.asaas_payment_id && inv.status !== 'PAGA' && inv.status !== 'CANCELADA' && (
@@ -1546,6 +1479,16 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
             </div>
           </div>
         </div>
+      )}
+      {showManualBilledModal && (
+        <ManualBilledInvoiceDialog
+          onClose={() => setShowManualBilledModal(false)}
+          onSaved={() => {
+            setShowManualBilledModal(false);
+            void fetchInvoices();
+            void fetchIssuerSummary();
+          }}
+        />
       )}
     </div>
   );

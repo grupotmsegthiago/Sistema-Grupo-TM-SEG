@@ -252,6 +252,10 @@ export type LinhaRelatorioComissao = {
   valor_faturamento?: number | null;
   valor_comissao?: number | null;
   status?: string | null;
+  os_numero?: string | null;
+  origem?: string | null;
+  destino?: string | null;
+  data_missao?: string | null;
 };
 
 export function montarCsvRelatorioComissoes(
@@ -268,17 +272,25 @@ export function montarCsvRelatorioComissoes(
     'Faturamento (R$)',
     'Comissão (R$)',
     'Status',
+    'OS',
+    'Origem',
+    'Destino',
+    'Data da missão',
   ];
   const body = rows.map((r) => [
     csvCell(r.empresa || 'TM SEG'),
     csvCell(r.cliente_nome || ''),
     csvCell(r.comercial_nome || meta.comercialNome || ''),
     csvCell(r.fatura_numero || ''),
-    csvCell(String(r.data_faturamento || '').slice(0, 10)),
-    csvCell(labelQuinzena(quinzenaDeDataFaturamento(r.data_faturamento))),
+    csvCell(String(r.data_missao || r.data_faturamento || '').slice(0, 10)),
+    csvCell(labelQuinzena(quinzenaDeDataFaturamento(r.data_missao || r.data_faturamento))),
     csvCell(roundMoney(Number(r.valor_faturamento) || 0).toFixed(2).replace('.', ',')),
     csvCell(roundMoney(Number(r.valor_comissao) || 0).toFixed(2).replace('.', ',')),
     csvCell(r.status || ''),
+    csvCell(r.os_numero || ''),
+    csvCell(r.origem || ''),
+    csvCell(r.destino || ''),
+    csvCell(String(r.data_missao || '').slice(0, 10)),
   ].join(';'));
   return [headers.join(';'), ...body].join('\n');
 }

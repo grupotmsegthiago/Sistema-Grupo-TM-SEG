@@ -28,11 +28,11 @@ describe('Permissões financeiras do Plínio', () => {
   it('T03 bloqueia aprovação e libera Salvar só no fornecedor', () => {
     const source = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     assert.match(source, /if \(isProviderOnlyUser && approve\)/);
-    assert.match(source, /disabled=\{isProviderOnlyUser \|\| isUpdating/);
+    assert.match(source, /disabled=\{[^}]*isProviderOnlyUser \|\| isUpdating/);
     assert.match(source, /readOnly=\{clientFinanceInputLocked\}/);
     assert.match(source, /canSaveProviderAdjustments = isProviderOnlyUser/);
-    assert.match(source, /providerFinanceInputLocked = isEffectivelyLocked && !isProviderOnlyUser/);
-    assert.match(source, /disabled=\{isUpdating \|\| \(!canSaveProviderAdjustments/);
+    assert.match(source, /providerFinanceInputLocked = negativeLockBlocks \|\| \(isEffectivelyLocked && !isProviderOnlyUser\)/);
+    assert.match(source, /disabled=\{isUpdating \|\| negativeLockBlocks \|\| \(!canSaveProviderAdjustments/);
   });
 
   it('T04 não classifica mais Plínio como Diretoria ou re-aprovador', () => {
@@ -47,7 +47,8 @@ describe('Permissões financeiras do Plínio', () => {
   it('T05 exclui controller/Plínio do gate operacional que grava pedágio do cliente', () => {
     const source = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
     assert.match(source, /isProviderOnlyControllerUser\(currentUser\)/);
-    assert.match(source, /const allowedFirstNames = \['barbara', 'simone'\]/);
+    assert.match(source, /isFinanceProfileRole\(currentUser\?\.role\)/);
+    assert.doesNotMatch(source, /allowedFirstNames = \['barbara', 'simone'\]/);
     assert.match(source, /if \(isProviderOnlyUser\) \{\s*showNotification\('Sem Permissão'/);
     assert.match(source, /kind === 'completed' && !mission\.billing_approved && !isProviderOnlyUser/);
     assert.doesNotMatch(source, /name\.includes\('plinio'\) \|\| name\.includes\('plínio'\)/);
@@ -62,12 +63,12 @@ describe('Permissões financeiras do Plínio', () => {
     assert.ok(start >= 0 && end > start);
     assert.match(payloadBlock, /buildProviderOnlyMissionPayload\(/);
     assert.match(payloadBlock, /costValue:/);
+    assert.doesNotMatch(payloadBlock, /tollValue:/);
     assert.match(payloadBlock, /tollValueProvider:/);
     assert.match(payloadBlock, /displacementValueProvider:/);
-    assert.doesNotMatch(payloadBlock, /\n\s+toll_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+revenue_value:/);
     assert.doesNotMatch(payloadBlock, /\n\s+billing_approved:/);
-    assert.match(source, /const providerSelectorDisabled = !fullEditMode && \(mission\.is_same_os/);
+    assert.match(source, /const providerSelectorDisabled = negativeLockBlocks \|\| \(!fullEditMode && \(mission\.is_same_os/);
   });
 });
 
@@ -95,11 +96,15 @@ describe('Destinatários de medição, boleto e faturamento', () => {
     );
   });
 
-  it('T09 cobrança usa e-mails de medição cadastrados como sugestão', () => {
+  it('T09 cobrança usa no máximo os 2 primeiros e-mails do responsável financeiro', () => {
     const source = fs.readFileSync('components/FinancialInvoiceControl.tsx', 'utf8');
-    assert.match(source, /select\('medicao_email, email, operational_email'\)/);
-    assert.match(source, /client\?\.medicao_email \|\| client\?\.email/);
-    assert.match(source, /parseEmailRecipients\(typedRecipients\)/);
+    assert.match(source, /select\('name, trading_name, medicao_email, status'\)/);
+    assert.match(source, /pickMedicaoRecipients\(clientName, clientRows \|\| \[\]\)/);
+    assert.doesNotMatch(source, /parseEmailRecipients\(typedRecipients\)/);
+    const mail = fs.readFileSync('server/emailService.ts', 'utf8');
+    const billing = mail.slice(mail.indexOf('export async function sendBillingEmail'), mail.indexOf('export async function sendLegalReportEmail'));
+    assert.match(billing, /slice\(0, 2\)/);
+    assert.match(billing, /cc: \['financeiro@grupotmseg.com.br', 'thiago@grupotmseg.com.br'\]/);
   });
 
   it('T10 APIs verificam os destinatários aceitos e rejeitados pelo SMTP', () => {

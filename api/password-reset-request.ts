@@ -1,5 +1,12 @@
+import { createRequire } from 'node:module';
 import { authToken, parseJsonBody } from '../lib/email/missionEmailHelpers.js';
-import { handlePasswordResetRequest } from '../lib/passwordReset.js';
+
+const require = createRequire(import.meta.url);
+// Bundle CJS do build. Import de lib/passwordReset.js quebrava na Vercel
+// (FUNCTION_INVOCATION_FAILED / ERR_MODULE_NOT_FOUND) por import sem extensão.
+const { handlePasswordResetRequest } = require('./_password-reset-core.cjs') as {
+  handlePasswordResetRequest: (body: unknown) => Promise<{ status: number; body: Record<string, unknown> }>;
+};
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

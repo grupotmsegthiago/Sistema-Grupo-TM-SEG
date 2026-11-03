@@ -48,6 +48,93 @@ test('evaluateRegionalTableConstraint — tabela genérica por KM não é bloque
   assert.equal(r.blocked, false);
 });
 
+test('evaluateRegionalTableConstraint — Guarulhos x Serra não usa a rota de Goiânia', () => {
+  const r = evaluateRegionalTableConstraint('SUDESTE - GUARULHOS-GOIANIA 951KM', {
+    originCity: 'GUARULHOS',
+    destCity: 'SERRA',
+    originRegion: 'SUDESTE',
+    originUF: 'SP',
+    originAddress: 'GUARULHOS, SP',
+  });
+  assert.equal(r.blocked, true);
+  assert.match(r.reason, /BLOQUEIO ROTA \(GOIANIA\)/);
+});
+
+test('evaluateRegionalTableConstraint — Guarulhos x Goiânia aceita a rota nomeada', () => {
+  const r = evaluateRegionalTableConstraint('SUDESTE - GUARULHOS-GOIANIA 951KM', {
+    originCity: 'GUARULHOS',
+    destCity: 'GOIANIA',
+    originRegion: 'SUDESTE',
+    originUF: 'SP',
+    originAddress: 'GUARULHOS, SP',
+  });
+  assert.equal(r.blocked, false);
+  assert.equal(r.matchedCity, 'GUARULHOS');
+});
+
+test('evaluateRegionalTableConstraint — barra entre cidades continua alternativa de origem', () => {
+  const r = evaluateRegionalTableConstraint('PALHOCA / FLORIANOPOLIS - ATE 100KM', {
+    originCity: 'PALHOCA',
+    destCity: 'SERRA',
+    originRegion: 'SUL',
+    originUF: 'SC',
+    originAddress: 'Palhoça - SC',
+  });
+  assert.equal(r.blocked, false);
+  assert.equal(r.matchedCity, 'PALHOCA');
+});
+
+test('calculateMissionFinancials — Guarulhos x Serra não fatura pela tabela de Goiânia', () => {
+  const mission: any = {
+    id: 'GTM-TEST-SERRA',
+    client: 'CLIENTE TESTE',
+    provider: 'FORNECEDOR TESTE',
+    origin: 'GUARULHOS, SP',
+    destination: 'SERRA, ES',
+    total_distance: 945,
+    traveled_distance: 945,
+    mission_type: 'Caracterizada',
+    status: 'Concluída',
+    start_time: '2026-10-01T10:00:00Z',
+    end_time: '2026-10-01T22:00:00Z',
+  };
+  const clientTables: any[] = [
+    {
+      id: 'c-goiania',
+      client: 'CLIENTE TESTE',
+      operation_type: 'SUDESTE - GUARULHOS-GOIANIA 951KM',
+      activation_fee: 900,
+      franchise_km: 951,
+      franchise_hours: 25,
+      price_per_extra_km: 4,
+      price_per_extra_hour: 40,
+    },
+    {
+      id: 'c-1000',
+      client: 'CLIENTE TESTE',
+      operation_type: '1000KM',
+      activation_fee: 800,
+      franchise_km: 1000,
+      franchise_hours: 25,
+      price_per_extra_km: 4,
+      price_per_extra_hour: 40,
+    },
+  ];
+  const providerTables: any[] = [{
+    id: 'p-1000',
+    provider: 'FORNECEDOR TESTE',
+    operation_type: '1000KM',
+    activation_cost: 500,
+    franchise_km: 1000,
+    franchise_hours: 25,
+    cost_per_extra_km: 2,
+    cost_per_extra_hour: 20,
+  }];
+  const fin = calculateMissionFinancials(mission, clientTables, providerTables);
+  assert.equal(fin.client.tableId, 'c-1000');
+  assert.doesNotMatch(String(fin.client.tableName || ''), /GOIANIA/i);
+});
+
 test('evaluateRegionalTableConstraint — SUDESTE não confunde com SUL', () => {
   const r = evaluateRegionalTableConstraint('SUDESTE - ATE 100KM', {
     originCity: 'SAO PAULO',

@@ -754,6 +754,8 @@ export async function sendMirroringEvidenceEmail(
 }
 
 export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string, verificationCode?: string): Promise<boolean> {
+  const senha = String(user.password || '').trim();
+  if (!senha || senha === 'undefined') return false;
   const typeLabel = user.userType === 'client' ? 'Cliente' : user.userType === 'provider' ? 'Fornecedor' : 'Interno';
 
   const verificationBlock = verificationCode ? `
@@ -773,7 +775,7 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
       ${user.profileName ? `<tr><td>Perfil</td><td>${user.profileName}</td></tr>` : ''}
       <tr><td>Link do Sistema</td><td><a href="${systemUrl}" style="color:#c0392b; font-weight:600;">${systemUrl}</a></td></tr>
       <tr><td>Login (E-mail)</td><td>${user.email}</td></tr>
-      <tr><td>Senha Temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:14px;">${user.password}</code></td></tr>
+      <tr><td>Senha Temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:14px;">${textoDeEmail(senha)}</code></td></tr>
     </table>
     ${verificationBlock}
     <div class="highlight-box">
@@ -794,6 +796,43 @@ export async function sendWelcomeEmail(user: WelcomeEmailData, systemUrl: string
     return true;
   } catch (err: any) {
     console.error(`[Email] Erro ao enviar boas-vindas para ${user.email}:`, err.message);
+    return false;
+  }
+}
+
+function textoDeEmail(valor: string): string {
+  return valor.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Senha do portal CEVA. Só o destinatário liberado pelo administrador recebe. */
+export async function sendCevaPortalAccessEmail(input: { nome: string; email: string; senhaTemporaria: string }): Promise<boolean> {
+  const link = systemAppUrl('/ceva');
+  const html = baseTemplate(`
+    <h2>Acesso ao Controle de Escolta</h2>
+    <p>Olá, <strong>${textoDeEmail(input.nome)}</strong>.</p>
+    <p>O administrador liberou o seu acesso ao controle de escolta da CEVA. Use a senha temporária abaixo e troque-a no primeiro acesso. A troca é obrigatória.</p>
+    <table class="info-table">
+      <tr><td>Link</td><td><a href="${link}" style="color:#c0392b; font-weight:600;">${link}</a></td></tr>
+      <tr><td>E-mail</td><td>${textoDeEmail(input.email)}</td></tr>
+      <tr><td>Senha temporária</td><td><code style="background:#f0f0f0; padding:2px 8px; border-radius:3px; font-size:16px;">${textoDeEmail(input.senhaTemporaria)}</code></td></tr>
+    </table>
+    <div class="highlight-box">
+      <p><strong>Primeiro acesso:</strong> entre com esta senha e cadastre uma nova antes de abrir o controle. Não encaminhe este e-mail.</p>
+    </div>
+    <p>Atenciosamente,<br><strong>Equipe Grupo TM SEG</strong></p>
+  `);
+
+  try {
+    await transporter.sendMail({
+      from: SMTP_FROM,
+      to: input.email,
+      subject: 'Acesso ao Controle de Escolta CEVA',
+      html,
+    });
+    console.log(`[Email] Acesso CEVA → ${input.email}`);
+    return true;
+  } catch (err: any) {
+    console.error(`[Email] Falha no acesso CEVA para ${input.email}:`, err.message);
     return false;
   }
 }
@@ -918,6 +957,7 @@ export interface BillingEmailData {
   boletoDigitableLine?: string;
   nfPdfUrl?: string;
   nfNumber?: string;
+  attachments?: { filename: string; content: Buffer; contentType: string }[];
 }
 
 function formatCurrency(val: number): string {
@@ -1043,23 +1083,29 @@ export async function sendBillingEmail(data: BillingEmailData): Promise<{
     ${nfBlock}
 
     <div class="highlight-box">
-      <p><strong>Observação:</strong> Em caso de dúvidas sobre esta cobrança, entre em contato pelo e-mail <a href="mailto:adm@grupotmseg.com.br">adm@grupotmseg.com.br</a>.</p>
+      <p>Segue a <strong>Nota Fiscal</strong>, o <strong>boleto</strong> e o <strong>boletim de medição</strong> das OS desta fatura. A cópia deste e-mail vai para <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
+      <p><strong>Dúvidas:</strong> responda este e-mail ou fale com <a href="mailto:financeiro@grupotmseg.com.br">financeiro@grupotmseg.com.br</a>.</p>
     </div>
     <p>Atenciosamente,<br><strong>${data.issuerCompany}</strong></p>
   `);
 
   try {
-    const recipients = parseEmailRecipients(data.clientEmail);
+    const recipients = parseEmailRecipients(data.clientEmail).slice(0, 2);
     if (recipients.length === 0) {
       return { success: false, error: 'Nenhum destinatário válido informado.' };
     }
     const mailOptions: any = {
       from: SMTP_FROM,
       to: recipients,
-      cc: ['financeiro@grupotmseg.com.br'],
-      bcc: ['thiago@grupotmseg.com.br'],
-      subject: `Cobrança ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
+      cc: ['financeiro@grupotmseg.com.br', 'thiago@grupotmseg.com.br'],
+      replyTo: 'financeiro@grupotmseg.com.br',
+      subject: `NF, boleto e boletim — ${data.invoiceNumber ? `NF ${data.invoiceNumber} — ` : ''}${formatCurrency(data.value)} — Venc. ${formatDueDate(data.dueDate)} — ${data.issuerCompany}`,
       html,
+      attachments: (data.attachments || []).map((anexo) => ({
+        filename: anexo.filename,
+        content: anexo.content,
+        contentType: anexo.contentType,
+      })),
     };
 
     const info = await transporter.sendMail(mailOptions);
@@ -1951,6 +1997,118 @@ export async function sendDhlIntakeOperationalFollowupEmail(opts: {
     html,
   });
   console.log(`[Email] DHL intake operational follow-up → ${opts.to} | ${opts.pending.length} link(s)`);
+}
+
+function escapeHtml(value: string | number | null | undefined): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export type PaymentAnticipationEmailPayload = {
+  to?: string;
+  anticipationId: string;
+  entityName: string;
+  createdBy?: string;
+  residualDueDate: string;
+  linkedSummary: string;
+  fields: {
+    nfNumber?: string;
+    operationDate?: string;
+    averageRatePct?: number;
+    netAnticipated?: number;
+    offeredAmount?: number;
+    titleId?: string;
+    itemId?: string;
+    paymentDate?: string;
+  };
+  plan: {
+    saldoTotal: number;
+    juros: number;
+    valorLiquido: number;
+    residual: number;
+    settlement?: string;
+  };
+  titles?: Array<{
+    id?: string;
+    description?: string;
+    amount?: number;
+    entity_name?: string | null;
+  }>;
+};
+
+/** Ressalva de antecipação — cobrança do cliente para o financeiro. */
+export async function sendPaymentAnticipationEmail(
+  payload: PaymentAnticipationEmailPayload,
+): Promise<boolean> {
+  const to = payload.to || 'financeiro@grupotmseg.com.br';
+  const brl = (n: number) =>
+    (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const f = payload.fields || {};
+  const p = payload.plan || { saldoTotal: 0, juros: 0, valorLiquido: 0, residual: 0 };
+  const rows = (payload.titles || [])
+    .map(
+      (t) => `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(t.description || t.id || '—')}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;">${escapeHtml(t.entity_name || payload.entityName)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${escapeHtml(brl(Number(t.amount) || 0))}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const content = `
+    <h2>Ressalva de antecipação de pagamento</h2>
+    <p>Foi lançada uma antecipação com <strong>saldo a receber</strong>. Cobrar o cliente <strong>${escapeHtml(payload.entityName)}</strong> até <strong>${escapeHtml(payload.residualDueDate)}</strong>.</p>
+    <table class="info-table">
+      <tr><td>Cliente</td><td>${escapeHtml(payload.entityName)}</td></tr>
+      <tr><td>Nº da NF (operação)</td><td>${escapeHtml(f.nfNumber || '—')}</td></tr>
+      <tr><td>Data da operação</td><td>${escapeHtml(f.operationDate || '—')}</td></tr>
+      <tr><td>Data do pagamento</td><td>${escapeHtml(f.paymentDate || '—')}</td></tr>
+      <tr><td>Taxa média aprovada</td><td>${escapeHtml(f.averageRatePct ?? 0)}%</td></tr>
+      <tr><td>Id do título</td><td>${escapeHtml(f.titleId || '—')}</td></tr>
+      <tr><td>Id do item</td><td>${escapeHtml(f.itemId || '—')}</td></tr>
+      <tr><td>Valor ofertado</td><td>${escapeHtml(brl(Number(f.offeredAmount) || 0))}</td></tr>
+      <tr><td>Saldo total (NFs)</td><td>${escapeHtml(brl(p.saldoTotal))}</td></tr>
+      <tr><td>Juros de antecipação</td><td>${escapeHtml(brl(p.juros))}</td></tr>
+      <tr><td>Valor líquido antecipado</td><td>${escapeHtml(brl(p.valorLiquido))}</td></tr>
+      <tr><td>Saldo a receber (ressalva)</td><td><strong>${escapeHtml(brl(p.residual))}</strong></td></tr>
+      <tr><td>Vencimento da ressalva</td><td>${escapeHtml(payload.residualDueDate)}</td></tr>
+      <tr><td>Notas vinculadas</td><td>${escapeHtml(payload.linkedSummary || '—')}</td></tr>
+      <tr><td>Operação</td><td>${escapeHtml(payload.anticipationId)}</td></tr>
+      <tr><td>Lançado por</td><td>${escapeHtml(payload.createdBy || 'Sistema')}</td></tr>
+    </table>
+    ${rows ? `<h2>Títulos baixados</h2>
+    <table class="info-table" style="width:100%;">
+      <tr><td>Descrição</td><td>Cliente</td><td>Valor</td></tr>
+      ${rows}
+    </table>` : ''}
+    <div class="highlight-box">
+      <p>Ação: cobrar do cliente a ressalva de ${escapeHtml(brl(p.residual))} com prazo de 15 dias (${escapeHtml(payload.residualDueDate)}).</p>
+    </div>
+  `;
+
+  try {
+    await Promise.race([
+      transporter.sendMail({
+        from: SMTP_FROM,
+        to,
+        subject: `[Antecipação] Ressalva ${brl(p.residual)} — ${payload.entityName || 'Cliente'}`,
+        html: baseTemplate(content, payload.createdBy),
+      }),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Timeout SMTP ao enviar e-mail da antecipação')), 20_000);
+      }),
+    ]);
+    console.log(`[Email] Antecipação/ressalva → ${to} | ${payload.anticipationId}`);
+    return true;
+  } catch (e: any) {
+    console.error(`[Email] Falha antecipação: ${e?.message}`);
+    throw e;
+  }
 }
 
 export { transporter };

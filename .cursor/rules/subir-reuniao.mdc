@@ -1,0 +1,33 @@
+---
+description: Quando o usuário disser Subir reunião, publicar o pacote da reunião operacional
+alwaysApply: true
+---
+
+# Subir reunião
+
+Quando o usuário escrever **Subir reunião**, **subir reuniao**, **subir a reunião** ou **sobe a reunião**, publique na hora o pacote desta reunião. Não peça confirmação. Siga o fluxo de `publicar.mdc`.
+
+## O que entra no commit
+
+Todo o trabalho operacional ainda não publicado, inclusive:
+
+- Controle Diário (acesso interno exceto comercial, layout, filtro por mês e data, rota cidade-UF, status antes da data inicial, finalizadas embaixo, ocorrência piscando, passagem de plantão, link de editar ou auditar a OS)
+- Ocorrência na OS (texto, print, histórico, auditoria)
+- Trava de prejuízo (Giovanna Marsili, Beatriz Rocha, Thiago Moreira; depois só Diretoria edita)
+- Alerta de velada ATIVA e TM SEG (KM final, hora final, pedágio, e-mails, 48 horas)
+- Cobrança de print de início e evidência do fim na finalização
+- Painel de evidência por operador no Cockpit
+- Correção da lista de Pendências de OS
+- Este texto de reunião em `docs/reuniao/SUBIR-REUNIAO.md`
+- Migrations `2026_09_29_*.sql` e testes `scripts/*` correspondentes
+
+Nunca incluir `.env`, chaves ou credenciais.
+
+## Fluxo
+
+1. `git status` e `git branch`. Trabalhar na `dev`.
+2. Commit descritivo na `dev` com os arquivos acima.
+3. `.\publicar.ps1` na raiz.
+4. Confirmar merge `dev` → `main`, push e retorno à `dev`.
+5. Confirmar o projeto Vercel **sistema-grupo-tm-seg** (`sistema.grupotmseg.com.br`). Nunca usar o projeto `workspace`.
+6. Responder em português que a reunião subiu e que a Vercel faz o deploy da `main`.

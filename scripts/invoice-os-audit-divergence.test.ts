@@ -4,8 +4,15 @@ import fs from 'node:fs';
 import {
   avaliarDivergenciaFatura,
   auditarDivergenciasInvoices,
+  consolidarDivergenciasComNf,
+  faturaEhDeOutroCnpj,
+  candidatasDaMesmaAuditoria,
   filtrarDivergenciasAbertas,
+  filtrarDivergenciasDiretoria,
+  filtrarDivergenciasNaoVerificadas,
   formatarTagDivergencia,
+  listarNfCandidatasDoCliente,
+  nfEhDoMesmoCliente,
   valoresDivergem,
 } from '../lib/billing/auditarDivergenciasFinanceiras';
 import { somarReceitasOs } from '../lib/billing/sincronizarFaturaAberta';
@@ -150,6 +157,86 @@ describe('auditoria de divergência — consulta encadeada', () => {
   });
 });
 
+describe('auditoria de divergência — outra NF do mesmo cliente', () => {
+  const base = {
+    status: 'EMITIDA',
+    consultaOsIncompleta: false,
+    valorComissaoFaturamento: null,
+  };
+
+  it('soma a outra NF e some quando o conjunto fecha', () => {
+    assert.equal(nfEhDoMesmoCliente('INTERMODAL BRASIL', 'INTERMODAL BRASIL LOGISTICA S.A.'), true);
+    assert.equal(nfEhDoMesmoCliente('CESLOG', 'LUFT LOGISTICS'), false);
+    const fechou = consolidarDivergenciasComNf(
+      [
+        { ...base, invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', valorFatura: 176350.81, missionIds: ['os-1'] },
+        { ...base, invoiceId: 'b', faturaNumero: 'NF-B', cliente: 'CESLOG FILIAL', valorFatura: 12721.19, missionIds: [] },
+      ],
+      { 'os-1': 189072 },
+      [{ invoiceId: 'a', outraInvoiceId: 'b' }],
+    );
+    assert.equal(fechou.length, 0);
+  });
+
+  it('se ainda divergir depois do vínculo, sobe para a diretoria', () => {
+    const aberto = consolidarDivergenciasComNf(
+      [
+        { ...base, invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', valorFatura: 100, missionIds: ['os-1'] },
+      ],
+      { 'os-1': 180 },
+      [],
+    );
+    assert.equal(aberto.length, 1);
+    assert.equal(aberto[0].escalarDiretoria, false);
+    assert.equal(filtrarDivergenciasDiretoria(aberto).length, 0);
+
+    const residual = consolidarDivergenciasComNf(
+      [
+        { ...base, invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', valorFatura: 100, missionIds: ['os-1'] },
+        { ...base, invoiceId: 'b', faturaNumero: 'NF-B', cliente: 'CESLOG SP', valorFatura: 20, missionIds: ['os-2'] },
+      ],
+      { 'os-1': 180, 'os-2': 30 },
+      [{ invoiceId: 'a', outraInvoiceId: 'b' }],
+    );
+    assert.equal(residual.length, 1);
+    assert.equal(residual[0].escalarDiretoria, true);
+    assert.equal(residual[0].valorOs, 210);
+    assert.equal(residual[0].valorFatura, 120);
+    assert.equal(filtrarDivergenciasDiretoria(residual).length, 1);
+  });
+
+  it('lista todas as NFs de outro CNPJ e esconde o mesmo CNPJ', async () => {
+    const clientes = [
+      { name: 'INTERMODAL BRASIL LOGISTICA S.A.', trading_name: 'INTERMODAL', cnpj: '03.558.055/0001-00' },
+      { name: 'CESLOG', trading_name: 'CESLOG', cnpj: '11.111.111/0001-11' },
+    ];
+    assert.equal(faturaEhDeOutroCnpj('INTERMODAL BRASIL LOGISTICA S.A.', 'INTERMODAL', clientes), false);
+    assert.equal(faturaEhDeOutroCnpj('INTERMODAL BRASIL LOGISTICA S.A.', 'CESLOG', clientes), true);
+
+    const db = seedDb();
+    db.financial_invoices.push(
+      { id: 'inv-mesmo', client: 'INTERMODAL', number: 'NF-MESMO', status: 'EMITIDA', amount: 10 },
+      { id: 'inv-outro', client: 'CESLOG', number: 'NF-OUTRO', status: 'PAGA', amount: 20 },
+      { id: 'inv-cancel', client: 'AMAZON', number: 'NF-CANC', status: 'CANCELADA', amount: 30 },
+    );
+    (db as MemoryDb).clients = clientes;
+    const res = await listarNfCandidatasDoCliente('INTERMODAL BRASIL LOGISTICA S.A.', ['inv-open'], { sb: createMemorySb(db) as never });
+    assert.equal(res.ok, true);
+    assert.deepEqual(res.itens.map((i) => i.id), ['inv-paga', 'inv-outro', 'inv-ok']);
+    assert.equal(res.itens.find((i) => i.id === 'inv-outro')?.cnpj, '11.111.111/0001-11');
+  });
+
+  it('o vínculo usa as faturas desta auditoria e o verificado some da fila', () => {
+    const tela = [
+      { invoiceId: 'a', faturaNumero: 'NF-A', cliente: 'CESLOG', status: 'EMITIDA', valorOs: 10, valorFatura: 8, valorComissaoFaturamento: null, diferencaFatura: 2, diferencaComissao: null, osCount: 1, missionIdSync: 'os', estado: 'DIVERGENTE' as const, podeSincronizar: true, escalarDiretoria: false, nfsVinculadas: [] },
+      { invoiceId: 'b', faturaNumero: 'NF-B', cliente: 'LUFT', status: 'EMITIDA', valorOs: 5, valorFatura: 4, valorComissaoFaturamento: null, diferencaFatura: 1, diferencaComissao: null, osCount: 1, missionIdSync: 'os2', estado: 'DIVERGENTE' as const, podeSincronizar: true, escalarDiretoria: false, nfsVinculadas: [] },
+    ];
+    assert.deepEqual(candidatasDaMesmaAuditoria(tela, 'a').map((n) => n.id), ['b']);
+    assert.equal(filtrarDivergenciasNaoVerificadas(tela, ['a']).length, 1);
+    assert.equal(filtrarDivergenciasNaoVerificadas(tela, ['a'])[0].invoiceId, 'b');
+  });
+});
+
 describe('auditoria de divergência — UI Diretoria', () => {
   it('painel usa a tag pedida e o botão Sincronizar Valor chama sincronizarFaturaPorOS', () => {
     const panel = fs.readFileSync('components/InvoiceDivergenceAuditPanel.tsx', 'utf8');
@@ -161,8 +248,16 @@ describe('auditoria de divergência — UI Diretoria', () => {
     assert.match(panel, /formatarTagDivergencia/);
     assert.match(panel, /Sincronizar Valor/);
     assert.match(panel, /sincronizarFaturaPorOS/);
-    assert.match(page, /InvoiceDivergenceAuditPanel/);
-    assert.match(dash, /InvoiceDivergenceAuditPanel/);
+    const financeiro = fs.readFileSync('components/FinancialDashboard.tsx', 'utf8');
+    assert.match(financeiro, /InvoiceDivergenceAuditPanel audiencia="financeiro"/);
+    assert.match(financeiro, /from 'react'/);
+    assert.match(dash, /InvoiceDivergenceAuditPanel audiencia="diretoria"/);
+    assert.doesNotMatch(page, /InvoiceDivergenceAuditPanel/);
+    assert.match(panel, /Vincular outra NF/);
+    assert.match(panel, /Verificado/);
+    assert.match(panel, /candidatasDaMesmaAuditoria/);
+    assert.doesNotMatch(panel, /listarNfCandidatasDoCliente/);
+    assert.match(panel, /from 'react'/);
     assert.match(page, /data-testid="comissoes-comerciais-page"/);
   });
 });

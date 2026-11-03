@@ -4,6 +4,9 @@
  */
 import { handleAsaasPaymentWebhook } from '../lib/asaasWebhookCore.js';
 import { verifyAsaasPaymentWebhookRequest } from '../lib/asaasWebhookAuth.js';
+import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada.js';
+
+instalarAvisoComissaoLiberada();
 
 type WebhookDeps = {
   handleWebhook?: typeof handleAsaasPaymentWebhook;

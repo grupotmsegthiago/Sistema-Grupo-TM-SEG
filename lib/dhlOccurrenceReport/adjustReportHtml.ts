@@ -259,6 +259,10 @@ REGRAS OBRIGATÓRIAS:
 5. Em textos narrativos, prefira "parceiro" ou "fornecedor" em vez de citar o nome comercial do parceiro. Tom construtivo e profissional, sem linguagem punitiva ou acusatória que manche a imagem do parceiro.
 6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necessário. Respeite o formato de cada bloco: respostas de célula de tabela devem ser curtas e diretas; blocos de síntese/causa podem ser um parágrafo.
 7. Escreva em português do Brasil. Se faltar informação para algum bloco, produza um texto coerente e neutro com base no que existe, sem inventar dados factuais.
+8. O plano de ação é o que o cliente precisa ver: demonstre que a TM SEG está tratando a ocorrência em conjunto com o fornecedor, com ações, responsáveis e prazos. Reescreva os blocos ac-*, ap-*, contencao-*, 5pq-* e 5w2h-* para ESTA ocorrência. Não repita a história de outra S.E. Não afirme troca de viatura, rota invertida ou sobreposição de janela se isso não estiver nos DADOS ou no e-mail.
+9. Blocos prazo-ac-* e prazo-ap-*: devolva SOMENTE "dd/mm/aaaa", "Imediato" ou "Semanal". A data de emissão está nos DADOS DO SISTEMA e é o marco zero. Todo prazo datado deve ser igual ou posterior a essa emissão. Não reuse datas de exemplo anteriores à emissão.
+10. Bloco cronograma: reescreva no formato "dd/mm/aaaa ──● ...", usando exatamente os mesmos prazos dos blocos prazo-*. Inclua a emissão, as ações com o fornecedor e o encerramento do acompanhamento cerca de 30 dias depois.
+11. Não invente quantidade de missões históricas. Se o número não estiver nos DADOS, não cite contagem (ex.: "380 missões").
 
 DADOS DO SISTEMA (fatos reais):
 ${context.factsBlock}

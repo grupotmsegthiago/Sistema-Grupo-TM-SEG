@@ -4,6 +4,10 @@ import { getScheduledTicks } from "./scheduledRegistry";
 import { runRetryCycle } from "./nfRetryWorker";
 import { runFinancialReportTick } from "./financialReportWorker";
 import { runClientEmailQueueCycle } from "./clientEmailQueueWorker";
+import {
+  INVOICE_BILLING_EMAIL_RESEND_FROM,
+  INVOICE_BILLING_EMAIL_RESEND_TO,
+} from "../lib/billing/invoiceBillingEmailPolicy";
 import { runDhlWorkerTick } from "./dhlSupplierIntake";
 import { runZapiWatchdogTick } from "./zapiWatchdog";
 import { runBillingSyncTick } from "./billingSyncWorker";
@@ -28,6 +32,9 @@ function cronRoute(app: Express, path: string, job: CronJob) {
 export function registerCronRoutes(app: Express): void {
   cronRoute(app, "/api/cron/minute", async () => {
     runFinancialReportTick();
+    void import("./veladaClosureWorker")
+      .then(({ runVeladaClosureEscalation }) => runVeladaClosureEscalation())
+      .catch((e: any) => console.warn("[Cron] velada closure:", e?.message || e));
     for (const tick of getScheduledTicks()) {
       await tick();
     }
@@ -44,7 +51,17 @@ export function registerCronRoutes(app: Express): void {
   });
 
   cronRoute(app, "/api/cron/nf-retry", () => runRetryCycle());
-  cronRoute(app, "/api/cron/email-queue", () => runClientEmailQueueCycle());
+  cronRoute(app, "/api/cron/email-queue", async () => {
+    await runClientEmailQueueCycle();
+    const { runPendingInvoiceBillingEmails } = await import("./invoiceBillingEmail");
+    const resendSetembro = await runPendingInvoiceBillingEmails({
+      fromDate: INVOICE_BILLING_EMAIL_RESEND_FROM,
+      toDate: INVOICE_BILLING_EMAIL_RESEND_TO,
+      limit: 8,
+    });
+    const billingEmails = await runPendingInvoiceBillingEmails({ limit: 8 });
+    return { resendSetembro, billingEmails };
+  });
   cronRoute(app, "/api/cron/dhl", () => runDhlWorkerTick());
   cronRoute(app, "/api/cron/zapi", () => runZapiWatchdogTick());
   cronRoute(app, "/api/cron/billing-sync", () => runBillingSyncTick());
@@ -58,7 +75,11 @@ export function registerCronRoutes(app: Express): void {
     const comissoes = sb
       ? await sincronizarComissoesTmETorres(sb)
       : { ok: false, error: "supabase_unavailable" };
-    return { maintenance, comissoes };
+    const { checkAndExpireQuotations } = await import("../lib/precificacao/expirarCotacoes");
+    const expiracao = sb
+      ? await checkAndExpireQuotations(sb as never)
+      : { expiradas: false, colunaAusente: false, erro: "supabase_unavailable" };
+    return { maintenance, comissoes, expiracao };
   });
 
   console.log("[Cron] Rotas /api/cron/* registradas (Vercel Cron Jobs).");

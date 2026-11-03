@@ -9,6 +9,7 @@
 import { createRequire } from "node:module";
 import { createSupabaseAdminClient } from "../lib/supabaseAdmin.js";
 import { readBearer, resolveLitePrincipal } from "../lib/tmsegAuth.js";
+import { preservarParPedagioNoRecalculo } from "../lib/toll/clientTollBilling.js";
 
 const require = createRequire(import.meta.url);
 
@@ -143,21 +144,27 @@ export default async function handler(
         const calcCost = r2(m.is_same_os ? 0 : fd.provider.serviceTotal);
         const savedRev = r2(m.revenue_value || 0);
         const savedCost = r2(m.cost_value || 0);
-        const calcToll = r2(fd.tollValue || 0);
-        const oldToll = r2(m.toll_value || 0);
         const revDiff = Math.abs(calcRev - savedRev);
         const costDiff = Math.abs(calcCost - savedCost);
-        const tollDiff = Math.abs(calcToll - oldToll);
+        const parPedagio = preservarParPedagioNoRecalculo({
+          tollValue: m.toll_value,
+          tollValueProvider: m.toll_value_provider,
+          isSameOs: !!m.is_same_os,
+        });
+        const oldToll = r2(m.toll_value || 0);
+        const oldTollProv = m.toll_value_provider == null ? null : r2(Number(m.toll_value_provider) || 0);
+        const tollMudou = Math.abs(parPedagio.toll_value - oldToll) > 0.009
+          || (parPedagio.escreverFornecedor && oldTollProv != null && Math.abs((parPedagio.toll_value_provider ?? 0) - oldTollProv) > 0.009);
 
-        if (revDiff > 1 || costDiff > 1 || tollDiff > 0.5) {
-          const tollProv = m.is_same_os ? 0 : calcToll;
-          const { error: uErr } = await sb.from("missions").update({
+        if (revDiff > 1 || costDiff > 1 || tollMudou) {
+          const payload: Record<string, unknown> = {
             revenue_value: calcRev,
             cost_value: calcCost,
-            toll_value: calcToll,
-            toll_value_provider: r2(tollProv),
+            toll_value: parPedagio.toll_value,
             last_update: new Date().toISOString(),
-          }).eq("id", m.id);
+          };
+          if (parPedagio.escreverFornecedor) payload.toll_value_provider = parPedagio.toll_value_provider;
+          const { error: uErr } = await sb.from("missions").update(payload).eq("id", m.id);
           if (uErr) {
             errors++;
             continue;

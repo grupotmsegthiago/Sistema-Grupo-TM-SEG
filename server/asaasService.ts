@@ -8,6 +8,7 @@ import {
 } from '../lib/asaasTransferPixCore';
 import { getAsaasApiKeyTmGestao, getAsaasApiKeyTmSeguranca, getAsaasApiKeyTmSecurity } from '../lib/asaasEnvKeys';
 import { normalizeAsaasNfDiscrimination } from '../lib/nfDiscrimination';
+import { resolveAsaasNationalMonitoring } from '../lib/billing/municipalServiceOptions';
 
 export const GRUPO_TMSEG_WALLET_ID = '6641fec4-8476-48e3-90a8-3db6b14f538c';
 
@@ -59,7 +60,8 @@ function asaasCompanies(): Record<string, CompanyConfig> {
       aliases: ['TM SEGURANÇA', 'TM SEGURANCA', 'TMSEGURANCA', 'TMSEGURANÇA', 'SEGURANÇA', 'SEGURANCA', 'TM SEGURANCA CONSULTORIA'],
       nf: {
         serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
-        issRate: 5,
+        // ISS 2% em todas as empresas: o DAS já é pago fora da nota, sem retenção.
+        issRate: 2,
         retainIss: false,
         municipalServiceCode: '07930',
         municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
@@ -72,7 +74,8 @@ function asaasCompanies(): Record<string, CompanyConfig> {
       aliases: ['TM SECURITY', 'TMSECURITY', 'SECURITY', 'TM SECURITY GESTAO', 'TM SECURITY GESTÃO'],
       nf: {
         serviceDescription: 'Ref. aos Serviços de Intermediação de Escolta Armada',
-        issRate: 5,
+        // ISS 2% em todas as empresas: o DAS já é pago fora da nota, sem retenção.
+        issRate: 2,
         retainIss: false,
         municipalServiceCode: '07930',
         municipalServiceName: '07930 - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes',
@@ -558,6 +561,8 @@ export async function scheduleInvoice(params: {
   /** Override do código de serviço municipal (ex.: 06298 Amazon). */
   municipalServiceCode?: string;
   municipalServiceName?: string;
+  /** Id da opção do modal (escolta, rastreamento, intermediacao). */
+  municipalServiceOptionId?: string;
   clientCnpj?: string;
   clientName?: string;
   taxes?: {
@@ -576,7 +581,17 @@ export async function scheduleInvoice(params: {
   // Sempre consulta cadastro (Amazon: regra fixa 07930/agenciamento no lookup).
   const clientDefaults = await lookupClientNfDefaults(params.clientCnpj, params.clientName);
   const isAmazonNf = isAmazonClientLabel(params.clientName);
-  const taxes = {
+  const taxes: {
+    retainIss: boolean;
+    iss: number;
+    cofins: number;
+    csll: number;
+    inss: number;
+    ir: number;
+    pis: number;
+    federalServiceTaxCode?: string;
+    nbsCode?: string;
+  } = {
     retainIss: params.taxes?.retainIss ?? nfConfig.retainIss,
     iss: params.taxes?.iss ?? nfConfig.issRate,
     cofins: params.taxes?.cofins ?? nfConfig.cofins ?? 0,
@@ -653,9 +668,29 @@ export async function scheduleInvoice(params: {
     }
   }
   if (params.externalReference) body.externalReference = params.externalReference;
+  // Monitoramento 07930 (não escolta, não 06298, não Amazon): código nacional + NBS.
+  // O municipal 07930 permanece. ISS 2% e sem retenção, porque o DAS já é pago.
+  const national = resolveAsaasNationalMonitoring({
+    optionId: params.municipalServiceOptionId,
+    municipalCode: body.municipalServiceCode,
+    serviceDescription: rawDesc,
+    clientName: params.clientName,
+  });
+  if (national) {
+    taxes.federalServiceTaxCode = national.federalServiceTaxCode;
+    taxes.nbsCode = national.nbsCode;
+    taxes.iss = 2;
+    taxes.retainIss = false;
+    taxes.pis = 0;
+    taxes.cofins = 0;
+    taxes.csll = 0;
+    taxes.inss = 0;
+    taxes.ir = 0;
+  }
   console.log(
     `[Asaas NF] POST /invoices payment=${params.paymentId} company=${companyEntry.name} ` +
-      `code=${body.municipalServiceCode || body.municipalServiceId || '-'}`,
+      `code=${body.municipalServiceCode || body.municipalServiceId || '-'} ` +
+      `nacional=${taxes.federalServiceTaxCode || '-'} nbs=${taxes.nbsCode || '-'}`,
   );
   try {
     return await asaasFetch('/invoices', { method: 'POST', body: JSON.stringify(body) }, params.company);

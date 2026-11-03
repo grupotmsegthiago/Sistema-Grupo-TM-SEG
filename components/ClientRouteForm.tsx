@@ -2,11 +2,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Save, Navigation, MapPin, Building2, Ruler, Loader2, Plus, Trash2, Map as MapIcon, DollarSign, AlertTriangle, Calculator, Info, Check, ExternalLink, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { Client, ClientPriceTable, QuoteItem } from '../types';
 import { useLoadScript, Autocomplete, GoogleMap, DirectionsRenderer } from '@react-google-maps/api';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { calculateDistance } from '../lib/utils';
 import { useNotification } from '../lib/NotificationContext';
+import {
+  camposAoSalvarRota,
+  colunaRegionalAusente,
+  extrairCep,
+  getRegionFromLocation,
+  type ResultadoRegiao,
+  type TipoRota,
+} from '../lib/precificacao/tabela2027';
+import {
+  destinoDirections,
+  enderecoComUf,
+  lerCoordenada,
+  mensagemFalhaDirections,
+  rotaAdministrativaPronta,
+  statusDaFalhaDirections,
+} from '../lib/portalCliente/rotaCotacao';
 
 declare const google: any;
 
@@ -58,6 +75,9 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
   const [formData, setFormData] = useState({
     name: '', client: '', origin: '', destination: '', distance: '', code: '', price: ''
   });
+  const [routeType, setRouteType] = useState<'' | TipoRota>('');
+  const [regionInfo, setRegionInfo] = useState<ResultadoRegiao | null>(null);
+  const [rotaConsumidaId, setRotaConsumidaId] = useState<string | null>(null);
 
   const [autoName, setAutoName] = useState(true);
   const [coords, setCoords] = useState<{ origin: { lat: number; lng: number } | null; destination: { lat: number; lng: number } | null; waypoints: { lat: number; lng: number }[]; }>({ origin: null, destination: null, waypoints: [] });
@@ -65,6 +85,10 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
   const [directionsResponse, setDirectionsResponse] = useState<any>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [isCalculating, setIsCalculating] = useState(false);
+  const [duracaoMinutos, setDuracaoMinutos] = useState<number | null>(null);
+  const [avisoRota, setAvisoRota] = useState('');
+  const coordsRef = useRef(coords);
+  coordsRef.current = coords;
   const [isSaving, setIsSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   
@@ -76,7 +100,7 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
         const user = JSON.parse(storedUser);
-        if (user.role === 'Administrador' || user.role === 'Diretoria' || user.permissions?.includes('*')) setIsAdmin(true);
+        if (user.role === 'Administrador' || user.role === 'Diretoria' || user.permissions?.includes('*') || isFinanceProfileRole(user.role)) setIsAdmin(true);
     }
     async function loadData() {
         const { data: clientsData } = await supabase.from('clients').select('*').eq('status', 'Ativo');
@@ -85,6 +109,14 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
             const { data } = await supabase.from('client_routes').select('*').eq('id', id).single();
             if (data) {
                 setFormData({ name: data.name, client: data.client, origin: data.origin, destination: data.destination, distance: data.distance, code: data.code || '000', price: data.toll_cost ? data.toll_cost.toFixed(2) : '' });
+                setRouteType(data.route_type === 'esporadica' ? 'esporadica' : data.route_type === 'fixa' ? 'fixa' : '');
+                setRotaConsumidaId(data.consumed_in_order_id || null);
+                const calculada = getRegionFromLocation(data.origin || '', '', data.client || '');
+                if (!calculada.region && data.region && !calculada.clienteContratual) {
+                    setRegionInfo({ ...calculada, region: data.region, aplicaPrecificacaoRegional: true, motivo: 'uf' });
+                } else {
+                    setRegionInfo(calculada);
+                }
                 setAutoName(false);
             }
         } else {
@@ -103,10 +135,19 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
       let place: any;
       if (type === 'origin') {
           place = originRef.current?.getPlace();
-          if (place?.geometry) { const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }; setFormData(prev => ({ ...prev, origin: place.formatted_address || '' })); setCoords(prev => ({ ...prev, origin: loc })); }
+          if (place?.geometry) {
+              const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
+              const endereco = enderecoComUf(place) || place.formatted_address || '';
+              setFormData(prev => ({ ...prev, origin: endereco }));
+              setCoords(prev => ({ ...prev, origin: loc }));
+              const componentes = place.address_components || [];
+              const uf = componentes.find((c: any) => (c.types || []).includes('administrative_area_level_1'))?.short_name || '';
+              const cidade = componentes.find((c: any) => (c.types || []).includes('locality') || (c.types || []).includes('administrative_area_level_2'))?.long_name || '';
+              setRegionInfo(getRegionFromLocation(cidade || endereco, uf, formData.client));
+          }
       } else if (type === 'destination') {
           place = destRef.current?.getPlace();
-          if (place?.geometry) { const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }; setFormData(prev => ({ ...prev, destination: place.formatted_address || '' })); setCoords(prev => ({ ...prev, destination: loc })); }
+          if (place?.geometry) { const loc = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }; setFormData(prev => ({ ...prev, destination: enderecoComUf(place) || place.formatted_address || '' })); setCoords(prev => ({ ...prev, destination: loc })); }
       } else if (type === 'waypoint' && typeof index === 'number') {
           place = waypointRefs.current[index]?.getPlace();
           if (place?.geometry) {
@@ -120,40 +161,140 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
   const calculateRouteAndName = async () => {
     if (!formData.origin || !formData.destination || !isLoaded) return;
     setIsCalculating(true);
+    setAvisoRota('');
     try {
         const directionsService = new google.maps.DirectionsService();
-        const waypointsData = waypoints.filter(wp => wp.trim() !== '').map(wp => ({ location: wp, stopover: true }));
-        const result = await directionsService.route({ origin: formData.origin, destination: formData.destination, waypoints: waypointsData, travelMode: google.maps.TravelMode.DRIVING });
-        if (result.status === 'OK') {
-            setDirectionsResponse(result);
-            let totalDistMeters = 0; result.routes[0].legs.forEach((leg: any) => { totalDistMeters += leg.distance?.value || 0; });
-            const totalDistKm = (totalDistMeters / 1000).toFixed(1);
-            setFormData(prev => ({ ...prev, distance: totalDistKm }));
-            if (autoName) {
-                const originText = formData.origin.split(',')[1]?.trim() || formData.origin.split(',')[0];
-                const destText = formData.destination.split(',')[1]?.trim() || formData.destination.split(',')[0];
-                const uf = extractUFFromAddress(formData.origin);
-                const reg = uf ? getRegionByUF(uf) : '';
-                const routeName = `${reg ? reg + ' - ' : ''}${originText} x ${destText}${waypoints.length > 0 ? ' (+'+waypoints.length+' PARADAS)' : ''} (${formData.code})`;
-                setFormData(prev => ({ ...prev, name: routeName.toUpperCase() }));
-            }
+        const waypointsData = waypoints
+            .map((wp, index) => ({ texto: wp.trim(), coordenada: coords.waypoints[index] || null }))
+            .filter((item) => item.texto)
+            .map((item) => ({ location: destinoDirections(item.coordenada, item.texto), stopover: true }));
+        const result = await directionsService.route({
+            origin: destinoDirections(coords.origin, formData.origin),
+            destination: destinoDirections(coords.destination, formData.destination),
+            waypoints: waypointsData,
+            travelMode: google.maps.TravelMode.DRIVING,
+            region: 'BR',
+        });
+        if (result.status && result.status !== 'OK') {
+            setAvisoRota(mensagemFalhaDirections(result.status));
+            setDuracaoMinutos(null);
+            return;
         }
-    } catch (error: any) { console.error("Erro rota:", error); } finally { setIsCalculating(false); }
+        setDirectionsResponse(result);
+        let totalDistMeters = 0;
+        let totalSegundos = 0;
+        result.routes[0].legs.forEach((leg: any) => {
+            totalDistMeters += leg.distance?.value || 0;
+            totalSegundos += leg.duration?.value || 0;
+        });
+        const totalDistKm = (totalDistMeters / 1000).toFixed(1);
+        setDuracaoMinutos(totalSegundos > 0 ? Math.max(1, Math.round(totalSegundos / 60)) : null);
+        setFormData(prev => ({ ...prev, distance: totalDistKm }));
+        if (autoName) {
+            const originText = formData.origin.split(',')[1]?.trim() || formData.origin.split(',')[0];
+            const destText = formData.destination.split(',')[1]?.trim() || formData.destination.split(',')[0];
+            const uf = extractUFFromAddress(formData.origin);
+            const reg = uf ? getRegionByUF(uf) : '';
+            const routeName = `${reg ? reg + ' - ' : ''}${originText} x ${destText}${waypoints.length > 0 ? ' (+'+waypoints.length+' PARADAS)' : ''} (${formData.code})`;
+            setFormData(prev => ({ ...prev, name: routeName.toUpperCase() }));
+        }
+    } catch (error: any) {
+        console.error("Erro rota:", error);
+        setDuracaoMinutos(null);
+        setAvisoRota(mensagemFalhaDirections(statusDaFalhaDirections(error)));
+    } finally { setIsCalculating(false); }
   };
 
   useEffect(() => { if (formData.origin && formData.destination && formData.client && isLoaded) { const timer = setTimeout(() => calculateRouteAndName(), 800); return () => clearTimeout(timer); } }, [formData.origin, formData.destination, formData.client, waypoints, isLoaded]);
 
+  const resolverOrigem = async (texto: string) => {
+      const cep = extrairCep(texto);
+      const apenasCep = !!cep && texto.trim().replace(/\D/g, '') === cep;
+      if (cep && apenasCep) {
+          try {
+              const resposta = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+              const dados = await resposta.json();
+              if (!dados.erro && dados.uf) {
+                  const endereco = [dados.logradouro, dados.bairro, `${dados.localidade} - ${dados.uf}`, cep].filter(Boolean).join(', ');
+                  setFormData(prev => ({ ...prev, origin: endereco }));
+                  setRegionInfo(getRegionFromLocation(dados.localidade || '', dados.uf || '', formData.client));
+                  return;
+              }
+          } catch (erro) {
+              console.error('CEP da rota:', erro);
+          }
+      }
+      setRegionInfo(getRegionFromLocation(texto, '', formData.client));
+  };
+
+  const completarLugar = async (tipo: 'origin' | 'destination', texto: string) => {
+      const limpo = texto.trim();
+      if (!limpo || typeof google === 'undefined' || !google.maps?.Geocoder) return;
+      if (tipo === 'origin' ? coordsRef.current.origin : coordsRef.current.destination) return;
+      try {
+          const resposta = await new google.maps.Geocoder().geocode({ address: limpo, componentRestrictions: { country: 'BR' } });
+          const lugar = resposta.results?.[0];
+          const coordenada = lerCoordenada(lugar?.geometry?.location);
+          if (!coordenada) {
+              setAvisoRota(mensagemFalhaDirections('NOT_FOUND'));
+              return;
+          }
+          const endereco = enderecoComUf(lugar, limpo);
+          if (tipo === 'origin') {
+              setFormData(prev => ({ ...prev, origin: endereco }));
+              setCoords(prev => ({ ...prev, origin: coordenada }));
+              void resolverOrigem(endereco);
+          } else {
+              setFormData(prev => ({ ...prev, destination: endereco }));
+              setCoords(prev => ({ ...prev, destination: coordenada }));
+          }
+      } catch {
+          setAvisoRota(mensagemFalhaDirections('NOT_FOUND'));
+      }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault(); setIsSaving(true);
+    e.preventDefault();
+    const conferencia = rotaAdministrativaPronta({
+        origin: formData.origin,
+        destination: formData.destination,
+        distance: formData.distance,
+        durationMinutes: duracaoMinutos,
+    });
+    if (!conferencia.ok) {
+        showNotification('Atenção', conferencia.aviso, 'error');
+        return;
+    }
+    setIsSaving(true);
     try {
-        const payload = { code: formData.code, name: formData.name, client: formData.client, origin: formData.origin, destination: waypoints.length > 0 ? `${formData.destination} (Via: ${waypoints.join(' -> ')})` : formData.destination, distance: formData.distance, toll_cost: parseFloat(formData.price) || 0 };
-        if (id) {
-            const { error } = await supabase.from('client_routes').update(payload).eq('id', id);
-            if (error) throw new Error('Erro ao salvar rota: ' + error.message);
-        } else {
-            const { error } = await supabase.from('client_routes').insert([payload]);
-            if (error) throw new Error('Erro ao criar rota: ' + error.message);
+        const base = { code: formData.code, name: formData.name, client: formData.client, origin: formData.origin, destination: waypoints.length > 0 ? `${formData.destination} (Via: ${waypoints.join(' -> ')})` : formData.destination, distance: formData.distance, toll_cost: parseFloat(formData.price) || 0 };
+        // Nova rota não pede tipo nem região. Só uma rota já classificada (edição) regrava esses campos, para não apagar fixa/esporádica.
+        const tipoJaGravado = routeType === 'fixa' || routeType === 'esporadica';
+        const payload = tipoJaGravado
+            ? {
+                ...base,
+                ...camposAoSalvarRota({
+                    routeType,
+                    region: regionInfo?.aplicaPrecificacaoRegional ? regionInfo.region : null,
+                    jaConsumida: routeType === 'esporadica' && !!rotaConsumidaId,
+                    consumedInOrderId: rotaConsumidaId,
+                }),
+            }
+            : base;
+        const gravar = async (dados: Record<string, unknown>) => id
+            ? supabase.from('client_routes').update(dados).eq('id', id)
+            : supabase.from('client_routes').insert([dados]);
+        let { error } = await gravar(payload);
+        if (error && colunaRegionalAusente(error)) {
+            const retry = await gravar(base);
+            error = retry.error;
+            if (!error) {
+                showNotification('Rota salva', 'O banco ainda não tem as colunas de tipo e região. Aplique a migration para a classificação valer.', 'warning');
+                onSuccess();
+                return;
+            }
         }
+        if (error) throw new Error('Erro ao salvar rota: ' + error.message);
         showNotification('Sucesso', 'Rota salva!', 'success'); onSuccess();
     } catch (err: any) { showNotification('Erro', err.message, 'error'); } finally { setIsSaving(false); }
   };
@@ -205,18 +346,20 @@ const ClientRouteForm: React.FC<Props> = ({ onSuccess, id }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
              <div className="flex items-center gap-2 mb-4 pb-2 border-b border-gray-100"><Navigation size={18} className="text-blue-700" /><h3 className="font-bold text-sm text-gray-800 uppercase tracking-wider">Configuração de Trajeto</h3></div>
-             <div><label className={LABEL_CLASS}>1. Cliente</label><select required className={SELECT_CLASS} value={formData.client} onChange={e => setFormData(prev => ({ ...prev, client: e.target.value }))}><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}</select></div>
+             <div><label className={LABEL_CLASS}>1. Cliente</label><select required className={SELECT_CLASS} value={formData.client} onChange={e => { const cliente = e.target.value; setFormData(prev => ({ ...prev, client: cliente })); setRegionInfo(getRegionFromLocation(formData.origin, '', cliente)); }}><option value="">Selecione...</option>{clients.map(c => <option key={c.id} value={c.name}>{c.trading_name || c.name}</option>)}</select></div>
              <div className="space-y-4">
-                 <div className="relative"><label className={LABEL_CLASS}>2. Origem</label><Autocomplete onLoad={ref => originRef.current = ref} onPlaceChanged={() => handlePlaceSelect('origin')}><input type="text" required className={`${INPUT_WITH_ICON} border-blue-200`} placeholder="Endereço de saída..." value={formData.origin} onChange={e => setFormData({...formData, origin: e.target.value})} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-blue-600 pointer-events-none" /></div>
+                 <div className="relative"><label className={LABEL_CLASS}>2. Origem</label><Autocomplete onLoad={ref => originRef.current = ref} onPlaceChanged={() => handlePlaceSelect('origin')}><input type="text" required className={`${INPUT_WITH_ICON} border-blue-200`} placeholder="Endereço, cidade ou CEP..." value={formData.origin} onChange={e => { setFormData({...formData, origin: e.target.value}); setCoords(prev => ({ ...prev, origin: null })); setDuracaoMinutos(null); }} onBlur={(e) => { const texto = e.target.value; window.setTimeout(() => { void resolverOrigem(texto); void completarLugar('origin', texto); }, 280); }} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-blue-600 pointer-events-none" /></div>
                  {waypoints.map((wp, index) => (
                      <div key={index} className="relative pl-8 animate-fade-in"><div className="absolute left-2 top-8 w-0.5 h-full bg-gray-300 -translate-y-1/2"></div><label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">Parada {index + 1}</label><div className="flex gap-2"><div className="relative flex-1"><Autocomplete onLoad={ref => waypointRefs.current[index] = ref} onPlaceChanged={() => handlePlaceSelect('waypoint', index)}><input type="text" className={`${INPUT_WITH_ICON} border-gray-200`} placeholder="Endereço..." value={wp} onChange={e => { const nw = [...waypoints]; nw[index] = e.target.value; setWaypoints(nw); }} /></Autocomplete><MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-orange-500 pointer-events-none" /></div><button type="button" onClick={() => removeWaypoint(index)} className="p-3 text-gray-400 hover:text-red-600 border border-gray-200 rounded-lg"><Trash2 size={18} /></button></div></div>
                  ))}
                  <button type="button" onClick={addWaypoint} className="flex items-center gap-2 text-xs font-bold text-blue-600 hover:text-blue-800 ml-1"><Plus size={14} /> ADICIONAR PARADA (+)</button>
-                 <div className="relative pt-2"><label className={LABEL_CLASS}>3. Destino Final</label><Autocomplete onLoad={ref => destRef.current = ref} onPlaceChanged={() => handlePlaceSelect('destination')}><input type="text" required className={`${INPUT_WITH_ICON} border-red-200`} placeholder="Endereço de chegada..." value={formData.destination} onChange={e => setFormData({...formData, destination: e.target.value})} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-red-600 pointer-events-none" /></div>
+                 <div className="relative pt-2"><label className={LABEL_CLASS}>3. Destino Final</label><Autocomplete onLoad={ref => destRef.current = ref} onPlaceChanged={() => handlePlaceSelect('destination')}><input type="text" required className={`${INPUT_WITH_ICON} border-red-200`} placeholder="Endereço de chegada..." value={formData.destination} onChange={e => { setFormData({...formData, destination: e.target.value}); setCoords(prev => ({ ...prev, destination: null })); setDuracaoMinutos(null); }} onBlur={(e) => { const texto = e.target.value; window.setTimeout(() => { void completarLugar('destination', texto); }, 280); }} /></Autocomplete><MapPin size={18} className="absolute left-4 bottom-3.5 text-red-600 pointer-events-none" /></div>
              </div>
              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                  <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-gray-500 uppercase">Distância Total</span>{isCalculating && <Loader2 size={14} className="animate-spin text-red-600" />}</div>
                  <div className="flex items-center gap-2 text-2xl font-bold text-gray-900"><Ruler size={24} className="text-gray-400" />{formData.distance || '0.0'} <span className="text-sm text-gray-500 mt-2">KM</span></div>
+                 {duracaoMinutos != null && <p className="mt-1 text-xs font-semibold text-gray-500">Tempo de viagem: {duracaoMinutos} min</p>}
+                 {avisoRota && <p className="mt-2 text-xs font-bold text-red-700">{avisoRota}</p>}
                  <div className="mt-4 pt-3 border-t border-gray-200"><div className="flex justify-between items-center mb-1"><label className="text-[10px] font-bold text-gray-500 uppercase">Nome da Rota</label><label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" className="hidden" checked={autoName} onChange={(e) => setAutoName(e.target.checked)}/><div className={`w-3 h-3 border rounded flex items-center justify-center ${autoName ? 'bg-blue-600' : 'bg-white'}`}>{autoName && <Check size={8} className="text-white"/>}</div><span className="text-[10px] font-bold uppercase text-blue-600">Automático</span></label></div><input type="text" className={`w-full p-2 text-xs font-mono font-bold border rounded outline-none uppercase ${autoName ? 'bg-gray-100 text-gray-500' : 'bg-white text-gray-800'}`} value={formData.name} onChange={(e) => !autoName && setFormData(prev => ({ ...prev, name: e.target.value.toUpperCase() }))} readOnly={autoName} /></div>
              </div>
              {isAdmin && (<div className="p-4 rounded-lg border bg-green-50 border-green-200"><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold uppercase flex items-center gap-1 text-green-800"><DollarSign size={14}/> Valor da Cobrança</span></div><div className="relative"><span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-green-700">R$</span><input type="number" step="0.01" className="w-full pl-10 pr-4 py-3 bg-white border border-green-300 rounded-lg text-lg font-bold" placeholder="0.00" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} /></div></div>)}

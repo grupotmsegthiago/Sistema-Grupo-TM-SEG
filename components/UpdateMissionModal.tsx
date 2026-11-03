@@ -1,20 +1,26 @@
 import { formatDateBR, formatIsoDateBR, formatTimeAuditBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import OsActionPlanModal from './OsActionPlanModal';
+import BotaoRelatorioMissao from './BotaoRelatorioMissao';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB } from '../types';
+import { Mission, MissionStatus, ProviderData, Agent, Vehicle, User as UserType, ClientPriceTable, ClientVehicleDB, ProviderCostTable } from '../types';
 import { authFetch } from '../lib/authFetch';
-import { supabase, MISSION_UPDATES_BROADCAST_CHANNEL } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
+import { publishMissionLive } from '../lib/missionLiveBroadcast';
 import { fetchAllPages } from '../lib/supabasePaging';
 import { fetchParentMissionCandidates } from '../lib/parentMissionSearch';
 import { logAction } from '../lib/logger';
-import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
+import { calculateMissionFinancials, clientFuzzyFilter, extractCityFromAddress, resolveDisplacementFromAuthorizedKm, zeroValueEditReasons } from '../lib/financialUtils';
+import { operacaoDoFormularioMudou, osImpedeSincronia } from '../lib/billing/sincronizarValoresOs';
+import { questionTableAgainstRoute, type TableRouteQuestion } from '../lib/tableRouteQuestion';
 import { generateContent } from '../lib/gemini';
 import { optimizeImageForAI } from '../lib/imageForAI';
 import { withTimeout, TimeoutError } from '../lib/promiseTimeout';
 import { showWhatsappCopyPopup } from '../lib/whatsappCopyFlow';
 import { hasExplicitUpdatePrint, shouldSendClientGroupWhatsApp } from '../lib/clientGroupUpdateFilter';
-import { resolveStatusForSaveSubmit, statusToRestoreOnFinalizeCancel } from '../lib/missionSaveStatus';
-import { isVeladaPassThroughTerminal, shouldDowngradeCompletedToPending } from '../lib/veladaFinalize';
+import { canOperatorRefuseOs, resolveStatusForSaveSubmit, statusToRestoreOnFinalizeCancel } from '../lib/missionSaveStatus';
+import { isOdometerExemptProvider, isVeladaPassThroughTerminal, shouldDowngradeCompletedToPending } from '../lib/veladaFinalize';
+import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
 import {
   buildMonitoringWhatsAppReport,
   formatAgentShortName,
@@ -29,12 +35,16 @@ import {
   stampBrandOverlays,
   waitUntil,
 } from '../lib/brandPhotoStamp';
-import type { PrintPipelineTimings } from '../lib/printPipelineTypes';
 import DhlOccurrenceReportModal from './DhlOccurrenceReportModal';
 import { useNotification } from '../lib/NotificationContext';
 import { autoCalculateMissionCommissions } from '../lib/rh/commissionAuto';
-import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isFinanceProfileRole, isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isVsTransportesClient, referenciaPedidosVsFaltando } from '../lib/billing/vsTransportesPedido';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
+import { canEditNegativeMarginLockedOs, isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
+import { canSaveFinalizeEvidence, endEvidencePendingPatch, endEvidenceSavedPatch, shouldResetFinalizeChecklist } from '../lib/endEvidenceGate';
 import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
+import { garantirAlertaDhl, resolverAlertaDhl } from '../lib/dhlViaturaDisponivel';
 import {
   canUnlockPaidInvoiceLock,
   kmHorasValoresSnapshotMudou,
@@ -52,7 +62,7 @@ import {
   Loader2, Search, ChevronDown, UserPlus, Package, ShieldCheck, Check, BadgeCheck, Sparkles,
   Milestone, Timer, Calendar, Globe, Briefcase, Zap, TrendingUp, RefreshCw, User, Phone, CheckCircle2, Mail,
   ExternalLink, Radar, ArrowRightLeft, TableProperties, Gauge, XCircle, CalendarClock, CircleDot,
-  ClipboardList, UserX, FileText
+  ClipboardList, UserX, FileText, Lock
 } from 'lucide-react';
 import { useLoadScript, Autocomplete, GoogleMap, Marker } from '@react-google-maps/api';
 import { googleMapsApiKey, libraries, googleMapsLoadConfig } from '../lib/maps';
@@ -167,22 +177,27 @@ export interface FinalizeConfirmPayload {
     iso: string;
     endTravelIso: string | null;
     odometerPrintUrl: string | null;
+    tripEvidenceUrl?: string | null;
+    observacao?: string;
 }
 
-// Fornecedores ATIVA e TM SEG enviam o KM final só DEPOIS da missão na conclusão.
-// Evidência do encerramento é obrigatória para TODOS os status terminais.
-export const isOdometerExemptProvider = (providerName?: string): boolean => {
-    const raw = (providerName || '').toUpperCase();
-    const tokens = raw.split(/[^A-Z0-9]+/).filter(Boolean);
-    const collapsed = raw.replace(/\s+/g, '');
-    return tokens.includes('ATIVA') || collapsed.includes('TMSEG') || collapsed.includes('TMSECURITY');
-};
+// Fornecedores ATIVA e TM SEG: a regra do hodômetro está em lib/veladaFinalize.ts.
+// Evidência do encerramento continua obrigatória para todos os status terminais.
+export { isOdometerExemptProvider };
 
 interface OdometerAiResult {
     concluido: boolean;
     km_extraido: string | null;
     divergencia: boolean;
     justificativa: string;
+}
+
+/** Texto do lembrete: nome da tabela e o KM ou raio que o motor já escolheu. */
+function describeAppliedTable(name: string | undefined, franchiseKm: number, asRaio: boolean): string {
+    const label = (name || '').trim() || 'não identificada';
+    const km = Math.round(Number(franchiseKm) || 0);
+    if (km <= 0) return label;
+    return asRaio ? `${label} — raio de ${km} km` : `${label} — ${km} km`;
 }
 
 interface FinalizeChecklistDialogProps {
@@ -196,7 +211,10 @@ interface FinalizeChecklistDialogProps {
     mapLink: string;
     originCity: string;
     destCity: string;
-    appliedTableName: string;
+    clientTableLine: string;
+    providerTableLine: string;
+    clientRouteQuestion?: TableRouteQuestion;
+    providerRouteQuestion?: TableRouteQuestion;
     isRaio: boolean;
     raioFranchiseKm: number;
     startKm: number;
@@ -206,14 +224,15 @@ interface FinalizeChecklistDialogProps {
     defaultDateTime: string;
     minDateTime?: string;
     missionId: string;
+    isVelada?: boolean;
     onConfirm: (payload: FinalizeConfirmPayload) => void;
-    onCancel: () => void;
+    onCancel: (info?: { leavePending?: boolean }) => void;
 }
 
 const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     isOpen, kind, osLabel, providerName, dateLabel, isDhl, destinationAddress, mapLink,
-    originCity, destCity, appliedTableName, isRaio, raioFranchiseKm, startKm, defaultEndKm,
-    franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, onConfirm, onCancel,
+    originCity, destCity, clientTableLine, providerTableLine, clientRouteQuestion, providerRouteQuestion, isRaio, raioFranchiseKm, startKm, defaultEndKm,
+    franchiseKm, suggestions, defaultDateTime, minDateTime, missionId, isVelada = false, onConfirm, onCancel,
 }) => {
     const isCompleted = kind === 'completed';
     const isCancelled = kind === 'cancelled';
@@ -227,6 +246,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const [raioAnswer, setRaioAnswer] = useState<'yes' | 'no' | null>(null);
     const [raioRealKm, setRaioRealKm] = useState('');
     const [err, setErr] = useState('');
+    const [observacao, setObservacao] = useState('');
     // Trava de duplo-clique: o onConfirm do pai roda uma estimativa de pedágio
     // por IA (vários segundos) antes de fechar o dialog. Sem feedback, o operador
     // clicava "Finalizar" várias vezes. Esta flag desabilita o botão no 1º clique.
@@ -242,29 +262,41 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const [odoValidatedKm, setOdoValidatedKm] = useState<number | null>(null);
     const [odoErr, setOdoErr] = useState('');
     const [odoConfirmed, setOdoConfirmed] = useState(false);
+    const [tripPreview, setTripPreview] = useState('');
+    const [tripUrl, setTripUrl] = useState('');
+    const [tripUploading, setTripUploading] = useState(false);
+    const [tripErr, setTripErr] = useState('');
+    const [photoTimeConfirmed, setPhotoTimeConfirmed] = useState(false);
+    const checklistWasOpenRef = useRef(false);
 
     useEffect(() => {
-        if (isOpen) {
-            setEndKm(defaultEndKm);
-            setDt(defaultDateTime);
-            setEndTravelDt(defaultDateTime);
-            setChkAddress(false);
-            setChkCities(false);
-            setChkTable(false);
-            setRaioAnswer(null);
-            setRaioRealKm('');
-            setErr('');
-            setSubmitting(false);
-            setOdoFile(null);
-            setOdoPreview('');
-            setOdoUrl('');
-            setOdoUploading(false);
-            setOdoChecking(false);
-            setOdoResult(null);
-            setOdoValidatedKm(null);
-            setOdoErr('');
-            setOdoConfirmed(false);
-        }
+        const reset = shouldResetFinalizeChecklist(isOpen, checklistWasOpenRef.current);
+        checklistWasOpenRef.current = isOpen;
+        if (!reset) return;
+        setEndKm(defaultEndKm);
+        setDt(defaultDateTime);
+        setEndTravelDt(defaultDateTime);
+        setChkAddress(false);
+        setChkCities(false);
+        setChkTable(false);
+        setRaioAnswer(null);
+        setRaioRealKm('');
+        setErr('');
+        setSubmitting(false);
+        setOdoFile(null);
+        setOdoPreview('');
+        setOdoUrl('');
+        setOdoUploading(false);
+        setOdoChecking(false);
+        setOdoResult(null);
+        setOdoValidatedKm(null);
+        setOdoErr('');
+        setOdoConfirmed(false);
+        setTripPreview('');
+        setTripUrl('');
+        setTripUploading(false);
+        setTripErr('');
+        setPhotoTimeConfirmed(false);
     }, [isOpen, defaultEndKm, defaultDateTime]);
 
     if (!isOpen) return null;
@@ -284,6 +316,7 @@ const FinalizeChecklistDialog: React.FC<FinalizeChecklistDialogProps> = ({
     const veladaPassThrough = isVeladaPassThroughTerminal({
         odometerExempt,
         kind: isCompleted ? 'completed' : isCancelled ? 'cancelled' : 'refused',
+        isVelada,
     });
 
     // Evidência obrigatória em todo status terminal (Concluída, Cancelada, Recusada).
@@ -331,6 +364,27 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         }
     };
 
+    const compressEvidencePhoto = (file: File): Promise<Blob> => new Promise((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => {
+            const maxSide = 1920;
+            let w = img.width;
+            let h = img.height;
+            const scale = Math.min(1, maxSide / Math.max(w, h));
+            w = Math.max(1, Math.round(w * scale));
+            h = Math.max(1, Math.round(h * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error('canvas')); return; }
+            ctx.drawImage(img, 0, 0, w, h);
+            canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error('blob')), 'image/jpeg', 0.85);
+        };
+        img.onerror = () => reject(new Error('imagem'));
+        img.src = URL.createObjectURL(file);
+    });
+
     const handleOdometerImage = async (file: File) => {
         if (!file || !file.type.startsWith('image/')) { setOdoErr('O arquivo deve ser uma imagem.'); return; }
         setOdoErr(''); setOdoResult(null); setOdoConfirmed(false); setOdoValidatedKm(null);
@@ -339,10 +393,10 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         setOdoPreview(localPreview);
         setOdoUploading(true);
         try {
-            const ext = (file.name.split('.').pop() || 'png').toLowerCase();
             const folder = isCompleted ? 'odometer' : isRefused ? 'refused' : 'cancelled';
-            const path = `${folder}/${missionId}/${Date.now()}.${ext}`;
-            const { error: upErr } = await supabase.storage.from('mission-evidence').upload(path, file, { upsert: true, contentType: file.type });
+            const path = `${folder}/${missionId}/${Date.now()}.jpg`;
+            const photo = await compressEvidencePhoto(file).catch(() => file);
+            const { error: upErr } = await supabase.storage.from('mission-evidence').upload(path, photo, { upsert: true, contentType: 'image/jpeg' });
             if (upErr) throw upErr;
             const { data: pub } = supabase.storage.from('mission-evidence').getPublicUrl(path);
             const publicUrl = pub?.publicUrl || '';
@@ -372,6 +426,44 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
         }
     };
 
+    const handleTripImage = async (file: File) => {
+        if (!file || !file.type.startsWith('image/')) { setTripErr('O arquivo deve ser uma imagem.'); return; }
+        setTripErr('');
+        setTripPreview(URL.createObjectURL(file));
+        setTripUploading(true);
+        setTripUrl('');
+        try {
+            const path = `fim-viagem/${missionId}/${Date.now()}.jpg`;
+            const photo = await compressEvidencePhoto(file).catch(() => file);
+            const { error: upErr } = await supabase.storage.from('mission-evidence').upload(path, photo, { upsert: true, contentType: 'image/jpeg' });
+            if (upErr) throw upErr;
+            const publicUrl = supabase.storage.from('mission-evidence').getPublicUrl(path).data.publicUrl || '';
+            if (!publicUrl) throw new Error('A foto não devolveu o endereço.');
+            setTripUrl(publicUrl);
+            await supabase.from('system_logs').insert({
+                entity: 'MissionEvidence',
+                entity_id: missionId,
+                action_type: 'end_trip_photo',
+                details: JSON.stringify({ publicUrl, filePath: path, uploadedAt: new Date().toISOString(), context: 'Fim da viagem' }),
+                created_at: new Date().toISOString(),
+            });
+        } catch (e: any) {
+            setTripErr(e?.message || 'Falha ao carregar a foto do fim da viagem.');
+            setTripUrl('');
+        } finally {
+            setTripUploading(false);
+        }
+    };
+
+    const photosReady = !isCompleted || canSaveFinalizeEvidence({
+        tripUrl,
+        kmUrl: odoUrl,
+        tripUploading,
+        kmUploading: odoUploading,
+        timeConfirmed: photoTimeConfirmed,
+        requireKmPhoto: !veladaPassThrough,
+    });
+
     // Etapas visíveis nesta OS (para a barra de progresso).
     const steps = isRefused
         ? { refused: true }
@@ -397,7 +489,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
     const essentialDone = isRefused
         ? (evidenceOk && !!dt)
         : isCompleted
-            ? (!!dt && evidenceOk)
+            ? (!!dt && !!tripUrl && photoTimeConfirmed && (veladaPassThrough || evidenceOk))
             : isCancelled && veladaPassThrough
                 ? (!!dt && !!endTravelDt && evidenceOk)
                 : (!!dt && !!endTravelDt && endKmNum != null && endKmNum > 0 && evidenceOk);
@@ -417,7 +509,7 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (!isRefused && !chkAddress) { setErr('Confirme o endereço de destino final.'); return; }
             if (isRaio && !raioAnswer) { setErr('Responda se a viatura rodou o raio.'); return; }
             if (isRaio && raioAnswer === 'no' && (raioRealKm || '').trim() === '') { setErr('Informe o raio realmente rodado (km).'); return; }
-            if (!chkCities) { setErr('Confirme as cidades e a tabela aplicada.'); return; }
+            if (!chkCities) { setErr('Confirme as cidades e as tabelas do cliente e do fornecedor.'); return; }
         }
 
         if (isCompleted) {
@@ -428,7 +520,9 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             if (!odometerExempt) {
                 if (kmMismatch && !chkTable) { setErr('O KM rodado não bate com a tabela. Confirme a ciência da tabela aplicada.'); return; }
             }
-            if (!evidenceOk) { setErr('Cole ou anexe a evidência do encerramento (obrigatório).'); return; }
+            if (!veladaPassThrough && (!evidenceOk || odoUploading)) { setErr('Espere a foto do KM terminar de carregar.'); return; }
+            if (!tripUrl || tripUploading) { setErr('Espere a foto do fim da viagem terminar de carregar.'); return; }
+            if (!photoTimeConfirmed) { setErr('Confirme o horário do fim pela foto do fornecedor.'); return; }
             if (!dt) { setErr('Informe a data e a hora exata da finalização.'); return; }
         } else if (isCancelled) {
             if (!dt) { setErr('Informe a data e a hora do cancelamento.'); return; }
@@ -454,6 +548,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
             iso: parsed.toISOString(),
             endTravelIso: isCancelled && endTravelParsed && !isNaN(endTravelParsed.getTime()) ? endTravelParsed.toISOString() : null,
             odometerPrintUrl: evidenceOk ? (odoUrl || null) : null,
+            tripEvidenceUrl: tripUrl || null,
+            observacao: observacao.trim(),
         });
     };
 
@@ -541,12 +637,23 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                         </div>
                         <div className="mt-2 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3">
                             <TableProperties className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-                            <p className="text-[12px] font-medium text-blue-900">
-                                Lembrete: verifique se a <b>tabela aplicada</b> nesta OS está correta —
-                                <span className="font-bold"> {appliedTableName || 'tabela não identificada'}</span>.
-                            </p>
+                            <div className="text-[12px] font-medium text-blue-900">
+                                <p>Lembrete: verifique se as <b>tabelas do cliente e do fornecedor</b> desta OS estão corretas. O KM ou o raio abaixo já foi avaliado.</p>
+                                <p className="mt-1" data-testid="text-client-table">Cliente: <b>{clientTableLine || 'não identificada'}</b></p>
+                                <p data-testid="text-provider-table">Fornecedor: <b>{providerTableLine || 'não identificada'}</b></p>
+                            </div>
                         </div>
-                        <FinCheck label="Confirmo as cidades e a tabela aplicada" checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
+                        {[clientRouteQuestion, providerRouteQuestion].filter(Boolean).map((question) => (
+                            <div
+                                key={question!.headline + question!.answer}
+                                className={`mt-2 rounded-lg border p-3 text-[12px] font-medium ${question!.fits ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-amber-300 bg-amber-50 text-amber-950'}`}
+                                data-testid={question!.fits ? 'text-table-route-ok' : 'text-table-route-warn'}
+                            >
+                                <p className="font-black">{question!.headline}</p>
+                                <p className="mt-1">{question!.answer}</p>
+                            </div>
+                        ))}
+                        <FinCheck label={clientRouteQuestion?.fits === false || providerRouteQuestion?.fits === false ? 'Estou ciente: a tabela não é a exclusiva da origem, e mesmo assim confirmo' : 'Sim, a tabela bate com a origem e o destino'} checked={chkCities} onToggle={() => setChkCities(v => !v)} testId="check-cities" />
                     </FinSection>
                     </>
                     )}
@@ -564,7 +671,8 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                 </div>
                                 <div className="mt-2">
                                     <label className="text-[10px] font-semibold uppercase tracking-wide text-red-600">Data e hora exata da recusa *</label>
-                                    <input type="datetime-local" step={1} value={dt} min={minDateTime} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-real-time" />
+                                    <input type="datetime-local" step={1} value={dt} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-red-300 bg-white px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-red-500" data-testid="input-confirm-real-time" />
+                                    <p className="mt-1 text-[11px] font-medium text-red-800">Use o horário que aparece na evidência, mesmo que seja antes do início agendado da OS.</p>
                                 </div>
                             </div>
                             <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -603,7 +711,30 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                             )}
 
                             {/* Auditoria do hodômetro por IA */}
-                            {odometerExempt ? (
+                            {veladaPassThrough ? (
+                            <>
+                            <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
+                                <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                                <p className="text-[12px] font-medium text-blue-900">
+                                    Fornecedor <b>{providerName}</b>: o KM final chega depois que a viatura volta à base. Finalize agora com <b>horário</b> e <b>foto do fim da viagem</b>. O KM fica pendente no painel até você cobrar o fornecedor e gravar.
+                                </p>
+                            </div>
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex items-center gap-2">
+                                    <Gauge className="h-4 w-4 text-slate-600" />
+                                    <p className="text-[12px] font-bold text-slate-800">Print do hodômetro (opcional agora)</p>
+                                </div>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">Pode salvar se já tiver o KM. Se ainda não tiver, finalize sem isso — a pendência fica no seu nome.</p>
+                                <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); handleOdometerImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 bg-white p-3 text-center outline-none focus:border-emerald-500" data-testid="dropzone-odometer">
+                                    {odoPreview ? (<img src={odoPreview} alt="Hodômetro" className="max-h-44 rounded-md border border-slate-200" data-testid="img-odometer-preview" />) : (<p className="text-[11px] font-semibold text-slate-400">Clique aqui e tecle Ctrl+V se já tiver o print</p>)}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white" data-testid="button-odometer-attach"><Plus className="h-3.5 w-3.5" /> Anexar imagem<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleOdometerImage(f); e.currentTarget.value=''; }} /></label>
+                                </div>
+                                {(odoUploading || odoChecking) && (<div className="mt-2 flex items-center gap-2 text-[12px] font-semibold text-slate-600"><Loader2 className="h-4 w-4 animate-spin" /> Enviando evidência...</div>)}
+                                {odoErr && (<div className="mt-2 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] font-bold text-red-600"><AlertTriangle size={13} /> {odoErr}</div>)}
+                                {odoUrl && !odoUploading && (<div className="mt-2 rounded-md border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] font-bold text-emerald-800">Print do KM salvo.</div>)}
+                            </div>
+                            </>
+                            ) : odometerExempt ? (
                             <>
                             <div className="mt-3 flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50 p-3" data-testid="note-odometer-exempt">
                                 <Gauge className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
@@ -704,6 +835,22 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                                     <FinCheck label="Estou ciente da divergência e a tabela aplicada está correta" checked={chkTable} onToggle={() => setChkTable(v => !v)} testId="check-table" />
                                 </>
                             )}
+                            <div className="mt-3 rounded-lg border border-red-300 bg-red-50 p-3" data-testid="alert-photo-end-time">
+                                <p className="text-[12px] font-black uppercase text-red-700">Confira o horário na foto do fornecedor</p>
+                                <p className="mt-1 text-[12px] font-medium text-red-900">O horário do fim da missão tem que ser o que aparece na evidência do fornecedor. Sem essa confirmação a OS não salva.</p>
+                                <FinCheck label="Confirmo o horário do fim pela foto do fornecedor" checked={photoTimeConfirmed} onToggle={() => setPhotoTimeConfirmed(v => !v)} testId="check-photo-end-time" />
+                            </div>
+                            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-[12px] font-bold text-slate-800">Foto do fim da viagem</p>
+                                <p className="mt-1 text-[11px] font-medium text-slate-500">{veladaPassThrough ? 'Obrigatória para finalizar. O KM final pode ficar pendente.' : 'A foto precisa terminar de carregar antes de salvar.'}</p>
+                                <div tabIndex={0} onPaste={(e) => { const item = Array.from(e.clipboardData.items).find(it => it.type.startsWith('image/')); const file = item?.getAsFile(); if (file) { e.preventDefault(); void handleTripImage(file); } }} className="mt-2 flex min-h-[64px] cursor-text flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-red-300 bg-white p-3 text-center outline-none" data-testid="dropzone-trip-evidence">
+                                    {tripPreview ? <img src={tripPreview} alt="Fim da viagem" className="max-h-44 rounded-md border" /> : <p className="text-[11px] font-semibold text-slate-400">Cole ou anexe a foto do fim da viagem</p>}
+                                    <label className="mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-slate-700 px-2.5 py-1.5 text-[11px] font-semibold text-white">Anexar foto<input type="file" accept="image/*" className="hidden" data-testid="input-trip-evidence" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleTripImage(f); e.currentTarget.value = ''; }} /></label>
+                                </div>
+                                {tripUploading && <p className="mt-2 text-[12px] font-semibold text-slate-600">Carregando foto do fim da viagem...</p>}
+                                {tripErr && <p className="mt-2 text-[11px] font-bold text-red-600">{tripErr}</p>}
+                                {tripUrl && !tripUploading && <p className="mt-2 text-[11px] font-bold text-emerald-800">Foto do fim da viagem carregada.</p>}
+                            </div>
                             <div className="mt-2">
                                 <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Data e hora exata da finalização</label>
                                 <input type="datetime-local" step={1} value={dt} min={minDateTime} onChange={e => setDt(e.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-2.5 py-2 text-sm font-bold text-slate-800 outline-none focus:border-emerald-500" data-testid="input-confirm-real-time" />
@@ -746,6 +893,19 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
                         </FinSection>
                     )}
 
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3" data-testid="field-finalize-observacao">
+                        <label className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">Observação</label>
+                        <p className="mt-0.5 text-[11px] text-amber-900">Vai para a coluna Observação do Controle Diário. A atualização da OS fica no histórico.</p>
+                        <textarea
+                            value={observacao}
+                            onChange={e => setObservacao(e.target.value)}
+                            rows={3}
+                            placeholder="O que o Controle Diário precisa registrar nesta OS..."
+                            className="mt-2 w-full rounded-md border border-amber-300 bg-white px-2.5 py-2 text-sm text-slate-800 outline-none focus:border-amber-500"
+                            data-testid="input-finalize-observacao"
+                        />
+                    </div>
+
                     {err && (
                         <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600" data-testid="text-confirm-error">
                             <AlertTriangle size={14} /> {err}
@@ -755,11 +915,11 @@ Responda ESTRITAMENTE em JSON puro, sem markdown, no formato: {"concluido": bool
 
                 {/* Footer */}
                 <div className="flex items-center gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4">
-                    <p className="text-[11px] text-slate-500">{allDone ? 'Tudo verificado. Você já pode finalizar.' : 'Conclua todos os itens para liberar a finalização.'}</p>
-                    <button type="button" onClick={onCancel} className="ml-auto rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600" data-testid="button-confirm-finalize-cancel">
+                    <p className="text-[11px] text-slate-500">{allDone && photosReady ? 'Tudo verificado. Você já pode finalizar.' : 'Conclua os itens e espere as fotos carregarem.'}</p>
+                    <button type="button" onClick={() => onCancel({ leavePending: isCompleted && !photosReady })} className="ml-auto rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600" data-testid="button-confirm-finalize-cancel">
                         Voltar
                     </button>
-                    <button type="button" onClick={handleConfirm} disabled={!allDone || submitting} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${(allDone && !submitting) ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : isRefused ? 'bg-red-800 hover:bg-red-900' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
+                    <button type="button" onClick={handleConfirm} disabled={!allDone || !photosReady || submitting} className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold text-white transition-all active:scale-95 ${(allDone && photosReady && !submitting) ? (isCompleted ? 'bg-emerald-600 hover:bg-emerald-700' : isRefused ? 'bg-red-800 hover:bg-red-900' : 'bg-red-600 hover:bg-red-700') : 'cursor-not-allowed bg-slate-300 text-slate-500'}`} data-testid="button-confirm-finalize">
                         {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
                         {submitting
                             ? (isCompleted ? 'Finalizando...' : isRefused ? 'Registrando recusa...' : 'Cancelando...')
@@ -870,6 +1030,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const confirmedPrintUrlRef = useRef<string | null>(null);
     const confirmedPrintBlobRef = useRef<Blob | null>(null);
     const confirmedPrintBlobPromiseRef = useRef<Promise<Blob | null> | null>(null);
+    const confirmedObservacaoRef = useRef<string>('');
     // Relatório de fim de missão (dois botões: copiar texto / copiar foto).
     const [finalizeReport, setFinalizeReport] = useState<{ text: string; photoUrl: string | null } | null>(null);
     const [copiedReportText, setCopiedReportText] = useState(false);
@@ -887,6 +1048,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         confirmedPrintUrlRef.current = null;
         confirmedPrintBlobRef.current = null;
         confirmedPrintBlobPromiseRef.current = null;
+        confirmedObservacaoRef.current = '';
         setPendingFinalizeConfirm(null);
         // Print de atualização é estritamente da sessão: limpa ao abrir/trocar OS
         updatePrintBlobRef.current = null;
@@ -910,6 +1072,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     
     // Controle de Relógio em Tempo Real
     const [isEndTimeLocked, setIsEndTimeLocked] = useState(false);
+    // O checklist de recusa/finalização não pode ser atropelado por um reload da OS.
+    const checklistOpenRef = useRef(false);
+    checklistOpenRef.current = !!pendingFinalizeConfirm;
 
     // Permissões Administrativas
     const isCommercial = useMemo(() => {
@@ -923,21 +1088,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         [currentUser],
     );
 
-    // Apenas Barbara e Simone preenchem o pedágio do cliente ao finalizar.
-    // Plínio atua somente no lado fornecedor, após aprovação superior.
-    // Operadores (Michele, Beatriz, Lucas, Daniel, etc.) finalizam a OS
-    // sem o gate de pedágio — o valor é cobrado depois, no fluxo financeiro.
+    // O aviso de pedágio na finalização abre para o perfil Financeiro.
+    // Operação conclui sem esse passo. O controller edita e salva o fornecedor;
+    // quem aprova o valor final é o financeiro. Plínio não grava o pedágio do cliente.
+    const ocultaFinanceiro = useMemo(() => isPerfilAvancado(currentUser), [currentUser]);
+    const isPerfilFinanceiro = (currentUser?.role || '').toLowerCase() === 'financeiro';
+
     const isTollResponsibleUser = useMemo(() => {
-        if (!currentUser) return false;
-        const norm = (s: string) => (s || '')
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-            .toLowerCase().trim();
-        const name = norm(currentUser.name || currentUser.username || '');
-        if (!name) return false;
-        const allowedFirstNames = ['barbara', 'simone'];
-        const firstName = name.split(/\s+/)[0];
-        return allowedFirstNames.includes(firstName) || allowedFirstNames.some(n => name.includes(n));
-    }, [currentUser]);
+        if (!currentUser || ocultaFinanceiro) return false;
+        return isFinanceProfileRole(currentUser?.role);
+    }, [currentUser, ocultaFinanceiro]);
 
     // Supervisão financeira (Bárbara / Giovanna): pode editar OS concluída/aprovada —
     // inclusive KM final de missões veladas TM SEG/ATIVA enviadas depois da conclusão.
@@ -996,7 +1156,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (name.includes('thiago') && !name.includes('arruda')) return true;
         return false;
     }, [currentUser]);
-    const canEditApproved = hasPrivilegedOsEdit;
+    const negativeMarginHardLocked = isOsNegativeMarginLocked(mission);
+    const canBypassNegativeMarginLock = canEditNegativeMarginLockedOs(currentUser);
+    const negativeLockBlocks = negativeMarginHardLocked && !canBypassNegativeMarginLock;
+    const canEditApproved = hasPrivilegedOsEdit && !negativeLockBlocks;
+    const canOperatorRefuse = canOperatorRefuseOs(currentUser?.role, {
+        billingApproved: isBillingApproved,
+        negativeLocked: negativeLockBlocks,
+    });
     const canRevertStatus = hasPrivilegedOsEdit;
     const canEditTimes = hasPrivilegedOsEdit;
     const canEditEndTime = useMemo(() => {
@@ -1008,10 +1175,12 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
     // Listas de Dados
     const [providersList, setProvidersList] = useState<ProviderData[]>([]);
-    const [vehiclesList, setVehiclesList] = useState<Vehicle[]>([]); 
+    const [vehiclesList, setVehiclesList] = useState<Vehicle[]>([]);
+    const [vehiclesListTruncated, setVehiclesListTruncated] = useState(false);
     const [agentsList, setAgentsList] = useState<Agent[]>([]);
     const [allAgentsList, setAllAgentsList] = useState<Agent[]>([]);
     const [clientTables, setClientTables] = useState<ClientPriceTable[]>([]);
+    const [providerCostTables, setProviderCostTables] = useState<ProviderCostTable[]>([]);
     const [clientVehiclesList, setClientVehiclesList] = useState<ClientVehicleDB[]>([]);
     const [dbPastDrivers, setDbPastDrivers] = useState<{name: string, phone: string}[]>([]);
     const [clientId, setClientId] = useState<number | null>(null);
@@ -1038,6 +1207,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [deslocFile, setDeslocFile] = useState<File | null>(null);
     const [deslocSending, setDeslocSending] = useState(false);
     const [dhlOccurrenceReportOpen, setDhlOccurrenceReportOpen] = useState(false);
+    const [planoAcaoAberto, setPlanoAcaoAberto] = useState(false);
     const [deslocExistingUrl, setDeslocExistingUrl] = useState('');
     const [mirroringFile, setMirroringFile] = useState<File | null>(null);
     const [mirroringPreview, setMirroringPreview] = useState('');
@@ -1045,12 +1215,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const [mirroringExistingUrl, setMirroringExistingUrl] = useState('');
 
     // Print da atualização (temporário — NUNCA vai para o Supabase/bucket).
-    // Fica só em memória: blob PNG com a marca d'água da TM SEG, copiado
-    // junto com o texto do formulário na hora de salvar.
+    // Fica só em memória: blob PNG com o logotipo TM SEG (sem limpeza/edição de imagem),
+    // copiado junto com o texto do formulário na hora de salvar.
     const [updatePrintPreview, setUpdatePrintPreview] = useState('');
     const [updatePrintProcessing, setUpdatePrintProcessing] = useState(false);
-    const [updatePrintAiCleaned, setUpdatePrintAiCleaned] = useState(false);
-    const [updatePrintTimings, setUpdatePrintTimings] = useState<PrintPipelineTimings | null>(null);
     const updatePrintBlobRef = useRef<Blob | null>(null);
 
     /** Pré-processa a foto do hodômetro (checklist) em paralelo ao submit — evita
@@ -1072,115 +1240,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         })();
     };
 
-    const SUPPORTED_PRINT_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
-    const PRINT_PIPELINE_TIMEOUT_MS = 45_000;
-
-    const base64ToBlob = (base64: string, mimeType: string): Blob => {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      return new Blob([bytes], { type: mimeType });
-    };
-
-    const isPrintPipelineDebug = () =>
-      import.meta.env.DEV || localStorage.getItem('tmseg:print-pipeline-debug') === '1';
-
-    /** Envia print ao pipeline server-side (multipart) e retorna imagem limpa + timings. */
-    const processPrintOnServer = async (
-      file: File,
-    ): Promise<{ blob: Blob; cleaned: boolean; timings: PrintPipelineTimings } | null> => {
-      const mime = (file.type || 'image/jpeg').toLowerCase();
-      if (!SUPPORTED_PRINT_TYPES.has(mime)) {
-        showNotification('Formato inválido', 'Use JPEG, PNG ou WEBP.', 'error');
-        return null;
-      }
-      const uploadStart = performance.now();
-      try {
-        const token = localStorage.getItem('authToken') || '';
-        const form = new FormData();
-        form.append('image', file, file.name || 'print.jpg');
-        const resp = await withTimeout(
-          fetch('/api/gemini/clean-print', {
-            method: 'POST',
-            cache: 'no-store',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'X-Print-Response': 'binary',
-            },
-            body: form,
-          }),
-          PRINT_PIPELINE_TIMEOUT_MS,
-          'Timeout ao limpar print com IA',
-        );
-        const clientUploadMs = Math.round(performance.now() - uploadStart);
-        if (!resp.ok) {
-          const errBody = await resp.text().catch(() => '');
-          let errMsg = `Erro ${resp.status}`;
-          try {
-            const parsed = errBody ? JSON.parse(errBody) : null;
-            errMsg = parsed?.error || parsed?.message || errMsg;
-          } catch {
-            if (errBody) errMsg = errBody.slice(0, 120);
-          }
-          showNotification('Limpeza IA indisponível', `${errMsg}. Usando foto original.`, 'warning');
-          return null;
-        }
-
-        const contentType = (resp.headers.get('Content-Type') || '').toLowerCase();
-        if (contentType.startsWith('image/')) {
-          const blob = await resp.blob();
-          const cleaned = resp.headers.get('X-Print-Cleaned') === '1';
-          let timings: PrintPipelineTimings = {
-            uploadMs: clientUploadMs,
-            readMs: 0,
-            detectionMs: 0,
-            removalMs: 0,
-            logoMs: 0,
-            saveMs: 0,
-            totalMs: clientUploadMs,
-          };
-          try {
-            const headerTimings = JSON.parse(resp.headers.get('X-Print-Timings') || '{}');
-            timings = {
-              uploadMs: headerTimings.uploadMs ?? clientUploadMs,
-              readMs: headerTimings.readMs ?? 0,
-              detectionMs: headerTimings.detectionMs ?? 0,
-              removalMs: headerTimings.removalMs ?? 0,
-              logoMs: 0,
-              saveMs: headerTimings.saveMs ?? 0,
-              totalMs: (headerTimings.totalMs ?? 0) + clientUploadMs,
-            };
-          } catch {
-            // ignora parse
-          }
-          return { blob, cleaned, timings };
-        }
-
-        const j = await resp.json();
-        if (!j?.image) return null;
-        const blob = base64ToBlob(j.image, j.mimeType || 'image/png');
-        const timings: PrintPipelineTimings = {
-          uploadMs: j.timings?.uploadMs ?? clientUploadMs,
-          readMs: j.timings?.readMs ?? 0,
-          detectionMs: j.timings?.detectionMs ?? 0,
-          removalMs: j.timings?.removalMs ?? 0,
-          logoMs: 0,
-          saveMs: j.timings?.saveMs ?? 0,
-          totalMs: (j.timings?.totalMs ?? 0) + clientUploadMs,
-        };
-        return { blob, cleaned: !!j.cleaned, timings };
-      } catch (e) {
-        const msg = e instanceof TimeoutError
-          ? 'A IA demorou demais. Usando foto original.'
-          : 'Falha na limpeza. Usando foto original.';
-        console.warn('[UpdatePrint] Pipeline server falhou (segue com foto original):', e);
-        showNotification('Limpeza IA', msg, 'warning');
-        return null;
-      }
-    };
-
-    const applyBrandStampToBlob = async (source: Blob): Promise<{ blob: Blob; preview: string; logoMs: number }> => {
-      const logoStart = performance.now();
+    /** Aplica só o logotipo TM SEG (+ Instagram) — sem limpeza/edição de overlays. */
+    const applyBrandStampToBlob = async (source: Blob): Promise<{ blob: Blob; preview: string }> => {
       const photoUrl = URL.createObjectURL(source);
       try {
         const photo = await loadStampImage(photoUrl);
@@ -1205,44 +1266,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
           canvas.toBlob(b => b ? resolve(b) : reject(new Error('Falha ao gerar PNG')), 'image/png'),
         );
         const preview = canvas.toDataURL('image/png');
-        return { blob, preview, logoMs: Math.round(performance.now() - logoStart) };
+        return { blob, preview };
       } finally {
         URL.revokeObjectURL(photoUrl);
       }
     };
 
     const processUpdatePrint = async (file: File) => {
+      const mime = (file.type || 'image/jpeg').toLowerCase();
+      if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(mime)) {
+        showNotification('Formato inválido', 'Use JPEG, PNG ou WEBP.', 'error');
+        return;
+      }
       setUpdatePrintProcessing(true);
-      setUpdatePrintTimings(null);
-      const totalStart = performance.now();
       try {
-        const processed = await processPrintOnServer(file);
-        const sourceBlob = processed?.blob ?? file;
-        const stamped = await applyBrandStampToBlob(sourceBlob);
+        // Só carimba o logotipo — sem pipeline de remoção de overlays (era lento demais).
+        const stamped = await applyBrandStampToBlob(file);
         updatePrintBlobRef.current = stamped.blob;
         setUpdatePrintPreview(stamped.preview);
-        setUpdatePrintAiCleaned(!!processed?.cleaned);
-
-        if (!processed) {
-          setUpdatePrintAiCleaned(false);
-        }
-
-        if (processed?.timings) {
-          const timings: PrintPipelineTimings = {
-            ...processed.timings,
-            logoMs: stamped.logoMs,
-            totalMs: Math.round(performance.now() - totalStart),
-          };
-          setUpdatePrintTimings(timings);
-          if (isPrintPipelineDebug()) {
-            console.info('[print-pipeline:client]', timings);
-          }
-        }
       } catch (e) {
         console.warn('[UpdatePrint] Falha ao processar print:', e);
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
-        setUpdatePrintTimings(null);
         showNotification('Erro', 'Não foi possível processar o print colado. Tente novamente.', 'error');
       } finally {
         setUpdatePrintProcessing(false);
@@ -1252,8 +1297,6 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const clearUpdatePrint = () => {
         updatePrintBlobRef.current = null;
         setUpdatePrintPreview('');
-        setUpdatePrintAiCleaned(false);
-        setUpdatePrintTimings(null);
     };
 
     const [editData, setEditData] = useState({
@@ -1337,7 +1380,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     const isGoogleLinkRequired = isRequirementActive;
 
     useEffect(() => {
-        if (!isOpen || isEndTimeLocked) return;
+        if (!isOpen || isEndTimeLocked || pendingFinalizeConfirm) return;
         if (!canEditEndTime && mission && [MissionStatus.COMPLETED, MissionStatus.CANCELLED, MissionStatus.REFUSED, MissionStatus.PENDING].includes(mission.status as MissionStatus) && mission.endTime) return;
 
         // VERIFICAÇÃO DE AGENDAMENTO FUTURO
@@ -1361,7 +1404,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }, 1000);
 
         return () => clearInterval(interval);
-    }, [isOpen, isEndTimeLocked, mission, editData.startDate, editData.startTime, canEditEndTime]);
+    }, [isOpen, isEndTimeLocked, pendingFinalizeConfirm, mission, editData.startDate, editData.startTime, canEditEndTime]);
 
     // Função auxiliar para validar KM (Apenas Ponto)
     const handleKmInput = (field: 'startKm' | 'endKm', value: string) => {
@@ -1449,7 +1492,43 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const cTables = [...clientTables].sort((a, b) => a.franchise_km - b.franchise_km);
         const appliedTable = cTables.find(t => t.franchise_km >= missionTotals.plannedKm) || cTables[cTables.length - 1];
         const appliedTableName = appliedTable?.operation_type || '';
-        const franchiseKm = appliedTable?.franchise_km || 0;
+        let franchiseKm = appliedTable?.franchise_km || 0;
+        let clientTableLine = describeAppliedTable(appliedTableName, franchiseKm, isRaio);
+        let providerTableLine = describeAppliedTable('', 0, false);
+        let clientTableName = appliedTableName;
+        let providerTableName = '';
+        try {
+            if (mission && (clientTables.length > 0 || providerCostTables.length > 0)) {
+                const finPreview = calculateMissionFinancials(
+                    {
+                        ...mission,
+                        status: editData.status || mission.status,
+                        provider: editData.provider || mission.provider,
+                        origin: editData.origin || mission.origin,
+                        destination: destinationAddress,
+                        startKm: editData.startKm,
+                        endKm: editData.endKm,
+                    } as Mission,
+                    clientTables,
+                    providerCostTables,
+                    undefined,
+                    new Date(),
+                    undefined,
+                    providersList,
+                );
+                const cKm = Number(finPreview?.client?.franchiseKm) || franchiseKm;
+                const pKm = Number(finPreview?.provider?.franchiseKm) || 0;
+                const cName = finPreview?.client?.tableName || appliedTableName;
+                const pName = finPreview?.provider?.tableName || '';
+                clientTableName = cName;
+                providerTableName = pName;
+                if (cKm > 0) franchiseKm = cKm;
+                clientTableLine = describeAppliedTable(cName, cKm || franchiseKm, isRaio && (cKm || franchiseKm) > 0);
+                providerTableLine = describeAppliedTable(pName, pKm, isRaio && pKm > 0 && pKm === raioFranchiseKm);
+            }
+        } catch {
+            // Mantém o lembrete com a tabela do cliente já conhecida.
+        }
 
         // Sugestões (apenas GUIA): tabelas mais prováveis para a distância real.
         // A troca de tabela e o recálculo continuam no Modal Financeiro.
@@ -1468,14 +1547,36 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }));
         }
 
-        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, appliedTableName, franchiseKm, suggestions };
-    }, [editData, mission, clientTables, missionTotals]);
+        const originFull = editData.origin || mission?.origin || '';
+        const routeKm = missionTotals.plannedKm || missionTotals.traveled;
+        const clientRouteQuestion = clientTableName
+            ? questionTableAgainstRoute({
+                tableName: clientTableName,
+                origin: originFull,
+                destination: destinationAddress,
+                candidates: clientTables,
+                distanceKm: routeKm,
+            })
+            : undefined;
+        const providerRouteQuestion = providerTableName
+            ? questionTableAgainstRoute({
+                tableName: providerTableName,
+                origin: originFull,
+                destination: destinationAddress,
+                candidates: providerCostTables,
+                distanceKm: routeKm,
+            })
+            : undefined;
+
+        return { isDhl, destinationAddress, originCity, destCity, isRaio, raioFranchiseKm, clientTableLine, providerTableLine, franchiseKm, suggestions, clientRouteQuestion, providerRouteQuestion };
+    }, [editData, mission, clientTables, providerCostTables, providersList, missionTotals]);
 
     const loadMissionData = async () => {
         if (!mission) return;
         setIsLoadingData(true);
         try {
             const { data: m } = await supabase.from('missions').select('*').eq('id', mission.id).single();
+            if (!m || checklistOpenRef.current) return;
             const startDT = m.start_time ? {
                 date: formatIsoDateBR(new Date(m.start_time)),
                 time: formatTimeAuditBR(new Date(m.start_time))
@@ -1591,29 +1692,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             const isLocEmpty = !currentLoc || currentLoc === 'Solicitação Criada';
             const needsEnrichment = isLocEmpty || isLocUrl || isLocCoordsFallback;
 
-            if (needsEnrichment) {
-                let enrichCoords = extractCoordinates(locSegment) || coords;
-                if (!enrichCoords && isLocCoordsFallback) {
-                    const latM = locSegment.match(/LAT\s*(-?\d+\.\d+)/i);
-                    const lngM = locSegment.match(/LNG\s*(-?\d+\.\d+)/i);
-                    if (latM && lngM) enrichCoords = { lat: parseFloat(latM[1]), lng: parseFloat(lngM[1]) };
-                }
-                if (enrichCoords) {
-                    reverseGeocode(enrichCoords.lat, enrichCoords.lng).then(async (resolvedAddr) => {
-                        if (resolvedAddr && !/^LAT\s/i.test(resolvedAddr)) {
-                            console.log(`[LOCATION] Auto-enriquecimento OS ${m.id}: "${resolvedAddr}"`);
-                            const statusPart = locParts.length > 1 ? locParts[0] : '';
-                            const newLocation = statusPart 
-                                ? `${statusPart} | ${resolvedAddr.toUpperCase()}` 
-                                : resolvedAddr.toUpperCase();
-                            const { error } = await supabase.from('missions').update({ current_location: newLocation }).eq('id', m.id);
-                            if (!error) {
-                                console.log(`[LOCATION] OS ${m.id} enriquecida no banco: "${newLocation}"`);
-                            }
-                        }
-                    }).catch(() => {});
-                }
-            } else if (locSegment && !isLocEmpty) {
+            // Abertura não grava current_location. O endereço muda quando o operador salva.
+            if (!needsEnrichment && locSegment && !isLocEmpty) {
                 const cleanAddr = locSegment.replace(/\s*-?\s*BRASIL$/i, '').replace(/,\s*$/, '').trim();
                 if (cleanAddr) {
                     setEditData(prev => ({ ...prev, currentLocationName: cleanAddr }));
@@ -1639,9 +1719,19 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     };
 
     const refreshAuxData = async (clientName: string, providerName: string, vId?: string, cId?: number) => {
-        const [pRes, vRes, activeAgents, allAgents, ctRes, cvRows, dRes] = await Promise.all([
+        const [pRes, vehiclesPage, activeAgents, allAgents, ctRes, cvRows, dRes] = await Promise.all([
             supabase.from('providers').select('*').eq('status', 'Ativo').order('name'),
-            supabase.from('vehicles').select('*').eq('status', 'Ativo'),
+            // 1019+ viaturas ativas: consulta única corta em 1000 (PostgREST) e
+            // placas novas (ex.: TMG0B41 da Torres) somem do dropdown da OS.
+            fetchAllPages<Vehicle>(async (from, size) => {
+                const { data, error } = await supabase
+                    .from('vehicles')
+                    .select('*')
+                    .eq('status', 'Ativo')
+                    .order('id', { ascending: true })
+                    .range(from, from + size - 1);
+                return { data, error };
+            }, 1000, 50_000, { getRowKey: (row) => row.id }),
             fetchAllAgents('Ativo'),
             fetchAllAgents(),
             supabase.from('client_price_tables').select('*').or(clientFuzzyFilter(clientName)),
@@ -1660,7 +1750,8 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         ]);
         
         if (pRes.data) setProvidersList(pRes.data);
-        if (vRes.data) setVehiclesList(vRes.data);
+        setVehiclesList(vehiclesPage.rows);
+        setVehiclesListTruncated(vehiclesPage.truncated);
         setAgentsList(activeAgents);
         setAllAgentsList(allAgents);
         if (ctRes.data) setClientTables(ctRes.data);
@@ -1676,11 +1767,34 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
 
         const currentVId = vId || editData.vehicleId;
-        const currentV = vRes.data?.find(v => v.id.toString() === currentVId);
+        const currentV = vehiclesPage.rows.find(v => v.id.toString() === currentVId);
         if (currentV) setSearchVehicle(currentV.plate);
         else setSearchVehicle('');
-        return { vehicles: vRes.data || [], allAgents: allAgents || [] };
+        return { vehicles: vehiclesPage.rows, allAgents: allAgents || [] };
     };
+
+    // Tabelas de custo do fornecedor da OS — só para o lembrete e o recálculo no salvar.
+    useEffect(() => {
+        const raw = (editData.provider || '').trim();
+        if (!isOpen || !raw) {
+            setProviderCostTables([]);
+            return;
+        }
+        let cancelled = false;
+        const safe = raw.replace(/[%_]/g, '');
+        if (!safe) {
+            setProviderCostTables([]);
+            return;
+        }
+        void supabase
+            .from('provider_cost_tables')
+            .select('*')
+            .ilike('provider', `%${safe}%`)
+            .then(({ data }) => {
+                if (!cancelled) setProviderCostTables((data || []) as ProviderCostTable[]);
+            });
+        return () => { cancelled = true; };
+    }, [isOpen, editData.provider]);
 
     // Recupera automaticamente o que o fornecedor já salvou via link público DHL
     // (escoltistas, viatura e print do espelhamento). Preenche campos vazios da
@@ -2038,6 +2152,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         e.preventDefault();
         if (!mission || !currentUser) return;
 
+        if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs(currentUser)) {
+            showNotification('OS travada', `Prejuízo analisado por ${mission.negative_margin_locked_by || 'a equipe'}. Somente a Diretoria pode alterar.`, 'error');
+            return;
+        }
+
+        if (referenciaPedidosVsFaltando(mission.client, editData.reference_number)) {
+            showNotification(
+                'Referência de Pedidos',
+                'Para a VS TRANSPORTES, o operacional precisa informar a Referência de Pedidos antes de salvar. Ex.: 303185 / 303189',
+                'error',
+            );
+            return;
+        }
+
         const paidLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
         if (paidLocked) {
             const changingKmHours = kmHorasValoresSnapshotMudou(originalKmHoursRef.current, {
@@ -2064,6 +2192,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             // (cliente/fornecedor) — senão o Relatório mostra DESL e o faturamento não cobra.
             const deslocKmValue = editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null;
             const approvedPayload: Record<string, unknown> = { dhl_deslocamento_km: deslocKmValue };
+            // VS TRANSPORTES: a referência de pedidos entra depois da aprovação,
+            // sem liberar status, KM, valores ou snapshot.
+            if (isVsTransportesClient(mission.client)) {
+                approvedPayload.reference_number = String(editData.reference_number || '').trim() || null;
+            }
             const curDisp = Math.max(0, Number((mission as any).displacement_value) || 0);
             const curDispProv = Math.max(0, Number((mission as any).displacement_value_provider) || 0);
             if ((deslocKmValue || 0) > 0 && (curDisp <= 0 || (curDispProv <= 0 && !mission.is_same_os)) && !paidLocked) {
@@ -2104,19 +2237,28 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 showNotification('Erro', 'Falha ao salvar KM de deslocamento: ' + deslocErr.message, 'error');
                 return;
             }
+            const salvouRefPedidos = Object.prototype.hasOwnProperty.call(approvedPayload, 'reference_number');
+            const materializouDesloc = !ocultaFinanceiro && (approvedPayload.displacement_value || approvedPayload.displacement_value_provider);
             showNotification(
                 'Salvo',
-                approvedPayload.displacement_value || approvedPayload.displacement_value_provider
-                    ? 'KM e deslocamento (R$) atualizados. Demais campos permanecem travados pela aprovação.'
-                    : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.',
+                salvouRefPedidos
+                    ? (materializouDesloc
+                        ? 'Referência de Pedidos salva. KM e deslocamento (R$) também atualizados. Demais campos permanecem travados pela aprovação.'
+                        : 'Referência de Pedidos salva. Os demais campos permanecem travados pela aprovação.')
+                    : (materializouDesloc
+                        ? 'KM e deslocamento (R$) atualizados. Demais campos permanecem travados pela aprovação.'
+                        : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.'),
                 'success',
             );
             dispararSyncFaturaPorOS(mission.id, currentUser?.name);
             return;
         }
 
-        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus && !canEditApproved) {
-            showNotification('Sem Permissão', 'Apenas perfis Avançado, Administrador ou Diretoria podem reverter uma OS concluída.', 'error');
+        const operatorRefusingCompleted = isCompletedMission
+            && editData.status === MissionStatus.REFUSED
+            && canOperatorRefuse;
+        if (isCompletedMission && editData.status !== MissionStatus.COMPLETED && !canRevertStatus && !canEditApproved && !operatorRefusingCompleted) {
+            showNotification('Sem Permissão', 'Apenas perfis Avançado, Administrador ou Diretoria podem reverter uma OS concluída. O perfil Operador pode registrar Recusada, com evidência.', 'error');
             return;
         }
 
@@ -2165,7 +2307,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             return;
         }
 
-        if (isOccurrenceRequired && !editData.description.trim()) {
+        const refuseChecklistDone = finalizeConfirmedRef.current && (
+            editData.status === MissionStatus.REFUSED
+            || pendingFinalizeStatusRef.current === MissionStatus.REFUSED
+        );
+        if (isOccurrenceRequired && !editData.description.trim() && !refuseChecklistDone) {
             alert(`ERRO DE PROTOCOLO: Para o status "${editData.status}", o campo OCORRÊNCIA é obrigatório.`);
             return;
         }
@@ -2191,17 +2337,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         // operador pedindo e-mail do cliente DHL.
         if (mission?.client && !/DHL/i.test(mission.client)) {
             const clientName = mission.client;
-            let cliCheck: any = null;
-            const { data: byName } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('name', clientName);
-            cliCheck = byName?.find(c => c.status === 'Ativo') || byName?.[0] || null;
-            if (!cliCheck) {
-                const { data: byTrading } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('trading_name', clientName);
-                cliCheck = byTrading?.find(c => c.status === 'Ativo') || byTrading?.[0] || null;
-            }
-            if (!cliCheck) {
-                const { data: byIlike } = await supabase.from('clients').select('id, email, operational_email, trading_name, name, status').ilike('trading_name', clientName);
-                cliCheck = byIlike?.find(c => c.status === 'Ativo') || byIlike?.[0] || null;
-            }
+            const [byNameRes, byTradingRes, byIlikeRes] = await Promise.all([
+                supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('name', clientName),
+                supabase.from('clients').select('id, email, operational_email, trading_name, name, status').eq('trading_name', clientName),
+                supabase.from('clients').select('id, email, operational_email, trading_name, name, status').ilike('trading_name', clientName),
+            ]);
+            const pickActive = (rows: any[] | null | undefined) =>
+                rows?.find(c => c.status === 'Ativo') || rows?.[0] || null;
+            const cliCheck = pickActive(byNameRes.data) || pickActive(byTradingRes.data) || pickActive(byIlikeRes.data);
             if (cliCheck && !(cliCheck.operational_email?.trim()) && !(cliCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'client', name: mission.client, entityId: cliCheck.id });
                 setQuickEmailInput('');
@@ -2210,17 +2353,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         }
         if (editData.provider) {
             const provName = editData.provider;
-            let provCheck: any = null;
-            const { data: byName } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('name', provName);
-            provCheck = byName?.find(p => p.status === 'Ativo') || byName?.[0] || null;
-            if (!provCheck) {
-                const { data: byTrading } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('trading_name', provName);
-                provCheck = byTrading?.find(p => p.status === 'Ativo') || byTrading?.[0] || null;
-            }
-            if (!provCheck) {
-                const { data: byIlike } = await supabase.from('providers').select('id, email, os_email, trading_name, name, status').ilike('trading_name', provName);
-                provCheck = byIlike?.find(p => p.status === 'Ativo') || byIlike?.[0] || null;
-            }
+            const [byNameRes, byTradingRes, byIlikeRes] = await Promise.all([
+                supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('name', provName),
+                supabase.from('providers').select('id, email, os_email, trading_name, name, status').eq('trading_name', provName),
+                supabase.from('providers').select('id, email, os_email, trading_name, name, status').ilike('trading_name', provName),
+            ]);
+            const pickActive = (rows: any[] | null | undefined) =>
+                rows?.find(p => p.status === 'Ativo') || rows?.[0] || null;
+            const provCheck = pickActive(byNameRes.data) || pickActive(byTradingRes.data) || pickActive(byIlikeRes.data);
             if (provCheck && !(provCheck.os_email?.trim()) && !(provCheck.email?.trim())) {
                 setEmailMissingAlert({ type: 'provider', name: editData.provider, entityId: provCheck.id });
                 setQuickEmailInput('');
@@ -2513,6 +2653,15 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 dhl_deslocamento_km: editData.dhl_deslocamento_km !== '' ? (parseFloat(editData.dhl_deslocamento_km) || 0) : null
             };
 
+            const openingVeladaClosure = finalStatus === MissionStatus.COMPLETED
+                && isVeladaMission({ mission_type: editData.missionType || mission.mission_type })
+                && isOdometerExemptProvider(editData.provider)
+                && !(mission as any).velada_closure_opened_at;
+            if (openingVeladaClosure) {
+                updateData.velada_closure_operator = currentUser.name;
+                updateData.velada_closure_opened_at = new Date().toISOString();
+            }
+
             // Materializa DESL em R$ a partir do KM autorizado quando ainda zerado —
             // alinha faturamento/pagamento ao que o Relatório de OS já exibe.
             const deslocKmSave = updateData.dhl_deslocamento_km;
@@ -2562,6 +2711,81 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             }
 
+            // O motor oficial entra na mesma gravação quando km, hora, pedágio ou fornecedor mudam,
+            // e também na conclusão. OS aprovada, conferida ou com ajuste manual fica de fora.
+            const mudouOperacao = operacaoDoFormularioMudou(
+                originalKmHoursRef.current
+                    ? { ...originalKmHoursRef.current, provider: mission.provider || '' }
+                    : null,
+                {
+                    provider: editData.provider || '',
+                    startKm: editData.startKm || '',
+                    endKm: editData.endKm || '',
+                    startDate: editData.startDate || '',
+                    endDate: editData.endDate || '',
+                    startTime: editData.startTime || '',
+                    endTime: editData.endTime || '',
+                    tollValue: editData.tollValue || '',
+                },
+            );
+            const impedeSincronia = osImpedeSincronia(mission, { statusDestino: finalStatus });
+            if (!impedeSincronia && (mudouOperacao || (finalizeConfirmedRef.current && finalStatus === MissionStatus.COMPLETED))) {
+                try {
+                    let pctSaveTables = providerCostTables;
+                    if (!pctSaveTables.length) {
+                        const providerName = String(editData.provider || mission.provider || '').replace(/[%_]/g, '');
+                        if (providerName) {
+                            const { data: pctRows } = await supabase
+                                .from('provider_cost_tables')
+                                .select('*')
+                                .ilike('provider', `%${providerName}%`);
+                            pctSaveTables = (pctRows || []) as ProviderCostTable[];
+                        }
+                    }
+                    const finValidated = calculateMissionFinancials(
+                        {
+                            ...mission,
+                            status: MissionStatus.COMPLETED,
+                            provider: editData.provider || mission.provider,
+                            origin: editData.origin,
+                            destination: finalDestination,
+                            startKm: sKm,
+                            endKm: eKm,
+                            startTime: startIso,
+                            endTime: endIso,
+                            is_same_os: editData.isSameOs,
+                        } as Mission,
+                        clientTables,
+                        pctSaveTables,
+                        undefined,
+                        new Date(),
+                        undefined,
+                        providersList,
+                    );
+                    const r2fin = (n: number) => Math.round(Number(n || 0) * 100) / 100;
+                    const newRevenue = r2fin(finValidated?.client?.serviceTotal || 0);
+                    const newCost = editData.isSameOs ? 0 : r2fin(finValidated?.provider?.serviceTotal || 0);
+                    const oldRevenue = Number(mission.revenue_value || 0);
+                    const oldCost = Number(mission.cost_value || 0);
+                    if (finValidated?.client?.tableName && newRevenue > 0) {
+                        updateData.revenue_value = newRevenue;
+                    } else if (newRevenue <= 0 && oldRevenue > 0) {
+                        console.warn(`[UpdateMission] OS ${mission.id}: recálculo do cliente não gravado para não zerar a receita.`);
+                    }
+                    if (editData.isSameOs) {
+                        updateData.cost_value = 0;
+                        updateData.valor_zero_motivo = 'MESMA OS';
+                    } else if (finValidated?.provider?.tableName && newCost > 0) {
+                        updateData.cost_value = newCost;
+                        if (updateData.valor_zero_motivo === 'AGUARDANDO DEFINIÇÃO') updateData.valor_zero_motivo = '';
+                    } else if (newCost <= 0 && oldCost > 0) {
+                        console.warn(`[UpdateMission] OS ${mission.id}: recálculo do fornecedor não gravado para não zerar o custo.`);
+                    }
+                } catch (e) {
+                    console.warn('[UpdateMission] recálculo da tabela na validação:', e);
+                }
+            }
+
             // REGRA PRIORITÁRIA: OS Recusada SEMPRE zera valores de cliente,
             // fornecedor e pedágio — independente do que estiver salvo. Sem
             // exceções, sem snapshot, sem aprovação.
@@ -2579,6 +2803,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 updateData.cost_edit_reason = 'OS Recusada — zerado automaticamente';
             }
 
+            const revenueToStore = updateData.revenue_value != null ? Number(updateData.revenue_value) : Number(mission.revenue_value || 0);
+            const costToStore = updateData.cost_value != null ? Number(updateData.cost_value) : Number(mission.cost_value || 0);
+            Object.assign(updateData, zeroValueEditReasons({
+                revenue: revenueToStore,
+                cost: costToStore,
+                revenueReason: updateData.revenue_edit_reason ?? (mission as any).revenue_edit_reason,
+                costReason: updateData.cost_edit_reason ?? (mission as any).cost_edit_reason,
+                sameOs: !!editData.isSameOs,
+                fallbackReason: updateData.valor_zero_motivo,
+            }));
+
             console.log(`[LOCATION] Enviando localização para OS ${mission.id}:`, {
                 map_link: updateData.map_link,
                 current_location: updateData.current_location,
@@ -2589,8 +2824,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             let saveResult: any = null;
             let saveError: any = null;
             for (let attempt = 1; attempt <= 3; attempt++) {
-                const payload = attempt > 1 && saveError?.message?.includes('valor_zero_motivo') ? (() => { const d = { ...updateData }; delete d.valor_zero_motivo; return d; })() : updateData;
-                const { error, data: updatedRow } = await supabase.from('missions').update(payload).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
+                const { error, data: updatedRow } = await supabase.from('missions').update(updateData).eq('id', mission.id).select('id, last_update, current_location, map_link').single();
                 if (!error && updatedRow) {
                     saveResult = updatedRow;
                     saveError = null;
@@ -2640,6 +2874,40 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
             }
 
             dispararSyncFaturaPorOS(mission.id, currentUser?.name);
+
+            const observacaoControle = confirmedObservacaoRef.current;
+            confirmedObservacaoRef.current = '';
+            if (observacaoControle) {
+                try {
+                    const noteRes = await authFetch('/api/controle-diario-notas', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ mission_id: mission.id, note: observacaoControle }),
+                    });
+                    if (!noteRes.ok) {
+                        const noteErr = await noteRes.json().catch(() => ({} as { error?: string }));
+                        showNotification('Observação', noteErr?.error || 'A OS foi salva, mas a observação do Controle Diário não entrou.', 'warning');
+                    } else {
+                        const saved = await noteRes.json().catch(() => null);
+                        if (saved?.mission_id) void publishMissionLive('controle_diario_note', saved);
+                    }
+                } catch (noteFail) {
+                    console.warn('[ControleDiario] observação:', noteFail);
+                    showNotification('Observação', 'A OS foi salva, mas a observação do Controle Diário não entrou.', 'warning');
+                }
+            }
+
+            if (updateData.revenue_value != null || updateData.cost_value != null || observacaoControle) {
+                try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch { /* a tela local segue pelo realtime */ }
+            }
+
+            if (
+                finalStatus === MissionStatus.COMPLETED
+                && isVeladaMission({ mission_type: editData.missionType || mission.mission_type })
+                && isOdometerExemptProvider(editData.provider)
+            ) {
+                void authFetch(`/api/missions/${mission.id}/velada-closure-notify`, { method: 'POST' }).catch(() => {});
+            }
 
             // Comissão RH automática ao concluir OS (fire-and-forget).
             if (finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED) {
@@ -2784,6 +3052,20 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
 
             const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;
 
+            if (isNowCompleted) {
+                void garantirAlertaDhl(resolverAlertaDhl({
+                    missionId: mission.id,
+                    status: finalStatus,
+                    isSameOs: !!(editData.isSameOs || mission.is_same_os),
+                    provider: editData.provider || mission.provider,
+                    client: mission.client,
+                    currentLocation: finalLocationToSave,
+                    destination: finalDestination,
+                    endTime: endIso,
+                    lastUpdate: new Date().toISOString(),
+                }));
+            }
+
             // Quando a cópia combinada (texto+foto) dá certo, o pai NÃO pode
             // re-copiar só o texto (isso sobrescreveria a foto no clipboard).
             let combinedCopied = false;
@@ -2805,10 +3087,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (shouldSendGroup) {
                     const statusLabel = `${finalStatus.toUpperCase()}${finalDescription ? ' — ' + finalDescription.toUpperCase() : ''}`;
                     // Print colado tem prioridade; sem print (só mudança de status) usa foto TM SEG.
-                    const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
-                    if (!groupPhoto) {
-                        showNotification('WhatsApp', 'Não foi possível gerar a foto da atualização — grupo do cliente não recebeu a OS.', 'warning');
-                    } else {
+                    // WhatsApp em background — não prende o spinner do Salvamento (comentário do helper).
+                    void (async () => {
+                        const groupPhoto = await resolveGroupWhatsAppPhoto(statusLabel);
+                        if (!groupPhoto) {
+                            showNotification('WhatsApp', 'Não foi possível gerar a foto da atualização — grupo do cliente não recebeu a OS.', 'warning');
+                            return;
+                        }
                         const r = await sendUpdateToClientGroup(mission.client || '', report, groupPhoto, mission.id, true);
                         if (r.sent) {
                             showNotification('WhatsApp', 'Atualização (formulário + foto) enviada ao grupo do cliente.', 'success');
@@ -2817,7 +3102,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         } else if (r.error) {
                             showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
                         }
-                    }
+                    })();
                 } else if (isDHL && hasPrint && !shouldSendGroup) {
                     showNotification('WhatsApp', 'Atualização registrada no sistema — NÃO enviada ao grupo DHL (cliente só recebe marcos operacionais com print).', 'info');
                 }
@@ -2943,14 +3228,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         occurrence: finalDescription,
                         previousOccurrence: mission.currentLocation || '',
                     }) && completionPhotoForGroup) {
-                        const r = await sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true);
-                        if (r.sent) {
-                            showNotification('WhatsApp', 'Fim de missão (formulário + foto) enviado ao grupo do cliente.', 'success');
-                        } else if (r.skipped) {
-                            showNotification('WhatsApp', `Grupo do cliente não configurado: ${r.error || 'cadastre o WhatsApp do cliente'}.`, 'warning');
-                        } else if (r.error) {
-                            showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
-                        }
+                        // Envio ao grupo em background — OS já está gravada.
+                        void sendUpdateToClientGroup(mission.client || '', finalizeShareText, completionPhotoForGroup, mission.id, true)
+                            .then((r) => {
+                                if (r.sent) {
+                                    showNotification('WhatsApp', 'Fim de missão (formulário + foto) enviado ao grupo do cliente.', 'success');
+                                } else if (r.skipped) {
+                                    showNotification('WhatsApp', `Grupo do cliente não configurado: ${r.error || 'cadastre o WhatsApp do cliente'}.`, 'warning');
+                                } else if (r.error) {
+                                    showNotification('WhatsApp', `Envio automático ao grupo do cliente falhou: ${r.error}`, 'error');
+                                }
+                            });
                     }
 
                     if (photoBlob && showWhatsappCopyPopup(photoBlob, finalizeShareText)) {
@@ -3039,15 +3327,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 setEmailConfirmDialog({ type, clientPayload: pendingClientPayload, providerPayload: pendingProviderPayload });
             }
 
-            await supabase.channel(MISSION_UPDATES_BROADCAST_CHANNEL).send({
-                type: 'broadcast',
-                event: 'mission_updated',
-                payload: {
-                    missionId: mission.id,
-                    status: finalStatus,
-                    updatedBy: currentUser.name,
-                    changeType: finalDescription || 'Atualização de Status'
-                }
+            void publishMissionLive('mission_updated', {
+                missionId: mission.id,
+                status: finalStatus,
+                updatedBy: currentUser.name,
+                changeType: finalDescription || 'Atualização de Status',
             });
 
             const senderNameForChange = JSON.parse(localStorage.getItem('userData') || '{}').name || undefined;
@@ -3179,65 +3463,23 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
     // sincroniza o editData só para coerência visual. A SM segue para o
     // status final somente aqui, após a confirmação explícita do operador.
     const handleFinalizeConfirmed = async (payload: FinalizeConfirmPayload) => {
-        const { endKm: km, iso, endTravelIso, odometerPrintUrl } = payload;
+        const { endKm: km, iso, endTravelIso, odometerPrintUrl, tripEvidenceUrl } = payload;
         const kind = pendingFinalizeConfirm?.kind;
         confirmedEndKmRef.current = km;
         confirmedRealTimeRef.current = iso;
         confirmedEndTravelRef.current = endTravelIso;
         confirmedPrintUrlRef.current = odometerPrintUrl || null;
+        confirmedObservacaoRef.current = String(payload.observacao || '').trim();
         if (odometerPrintUrl) prefetchConfirmedPrintBlob(odometerPrintUrl);
-
-        // Recálculo automático de pedágio (estimativa por IA / Gemini) ao
-        // CONCLUIR. Não usamos a QualP aqui por custo; o endpoint
-        // /api/toll/gemini-estimate usa a integração Gemini já existente.
-        // Salva direto em toll_value (e toll_value_provider = 0 quando é a mesma
-        // OS) sem pedir confirmação manual. OS aprovada NUNCA é tocada. Em
-        // falha, mantém o gate manual de pedágio (tollConfirmedRef permanece false).
-        if (mission && kind === 'completed' && !mission.billing_approved && !isProviderOnlyUser) {
-            try {
-                const r = await withTimeout(
-                    authFetch('/api/toll/gemini-estimate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ origin: editData.origin, destination: editData.destination }),
-                    }),
-                    5000,
-                    'Estimativa de pedágio excedeu 5s',
-                );
-                const j = await r.json().catch(() => ({} as any));
-                if (j?.success && typeof j.tollValue === 'number') {
-                    const v = Number(j.tollValue.toFixed(2));
-                    const pair = tollPersistencePair(v, !!mission.is_same_os, mission.client);
-                    // Guarda no banco: nunca sobrescreve pedágio de OS aprovada
-                    // (fecha a janela de aprovação concorrente — o snapshot
-                    // financeiro congelado jamais é tocado).
-                    const { error: tollErr } = await supabase.from('missions')
-                        .update({ toll_value: pair.toll_value, toll_value_provider: pair.toll_value_provider })
-                        .eq('id', mission.id)
-                        .eq('billing_approved', false);
-                    if (!tollErr) {
-                        mission.toll_value = pair.toll_value;
-                        (mission as any).toll_value_provider = pair.toll_value_provider;
-                        tollConfirmedRef.current = true;
-                        const confLabel = j.confianca === 'alta' ? 'alta' : j.confianca === 'media' ? 'média' : 'baixa';
-                        showNotification(
-                            'Pedágio (Estimativa IA)',
-                            v === 0
-                                ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
-                                : `Real R$ ${v.toFixed(2)} · Cliente R$ ${pair.toll_value.toFixed(2)} (${j.tollCount || 0} praça${(j.tollCount || 0) > 1 ? 's' : ''}) — estimativa IA ao concluir. Confirme manualmente. Confiança: ${confLabel}.`,
-                            'info'
-                        );
-                        console.log(`[FIM MISSÃO] Pedágio (IA) recalculado e salvo: R$ ${v} (fornecedor R$ ${provToll})`);
-                    }
-                }
-            } catch (e) {
-                if (e instanceof TimeoutError) {
-                    console.warn('[FIM MISSÃO] Estimativa de pedágio (IA) expirou — segue sem bloquear a conclusão.');
-                } else {
-                    console.warn('[FIM MISSÃO] Falha ao recalcular pedágio (IA):', e);
-                }
-            }
+        if (mission && kind === 'completed' && tripEvidenceUrl && currentUser?.name) {
+            const { error: evidenceErr } = await supabase.from('missions')
+                .update(endEvidenceSavedPatch(currentUser.name, tripEvidenceUrl, odometerPrintUrl || null))
+                .eq('id', mission.id);
+            if (evidenceErr) console.warn('[EndEvidence] Falha ao gravar as fotos do fim:', evidenceErr.message);
         }
+
+        // A conclusão não estima nem grava pedágio. O valor da OS é o que foi
+        // digitado, com a faixa de porcentagem do cliente (DHL sem acréscimo).
 
         const d = new Date(iso);
         const endDate = formatIsoDateBR(d);
@@ -3259,11 +3501,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         if (resume) resume();
     };
 
-    const handleFinalizeCancelled = () => {
+    const handleFinalizeCancelled = (info?: { leavePending?: boolean }) => {
+        if (info?.leavePending && mission?.id && currentUser?.name) {
+            void supabase.from('missions').update(endEvidencePendingPatch(currentUser.name)).eq('id', mission.id);
+            try { window.dispatchEvent(new CustomEvent('refreshMissions')); } catch { /* segue o fechamento */ }
+        }
         setPendingFinalizeConfirm(null);
         resumeSubmitRef.current = null;
         finalizeConfirmedRef.current = false;
         pendingFinalizeStatusRef.current = null;
+        confirmedObservacaoRef.current = '';
         // Destrava o relógio ao vivo que foi congelado ao abrir o gate.
         setIsEndTimeLocked(false);
         if (mission) {
@@ -3282,10 +3529,13 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         const isCancel = s === MissionStatus.CANCELLED;
         const isRefuse = s === MissionStatus.REFUSED;
         const directOK = mission && !mission.billing_approved
-            && mission.status !== MissionStatus.COMPLETED
             && mission.status !== MissionStatus.CANCELLED
             && mission.status !== MissionStatus.REFUSED
-            && mission.status !== s;
+            && mission.status !== s
+            && (
+                mission.status !== MissionStatus.COMPLETED
+                || (isRefuse && canOperatorRefuse)
+            );
         if ((isConclude || isCancel || isRefuse) && directOK) {
             setEditData(prev => ({ ...prev, status: s }));
             pendingFinalizeStatusRef.current = s;
@@ -3649,6 +3899,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                             </div>
                         )}
+                        {negativeMarginHardLocked && (
+                            <div className="flex items-center gap-2 px-4 py-3 bg-slate-100 border border-slate-300 rounded-xl mb-3" data-testid="negative-margin-lock-banner">
+                                <Lock size={16} className="text-slate-700" />
+                                <span className="text-[10px] font-black text-slate-800 uppercase">
+                                  OS travada — prejuízo analisado por {mission?.negative_margin_locked_by || 'a equipe'}. Somente a Diretoria pode alterar.
+                                </span>
+                            </div>
+                        )}
                         {isCompletedMission && isBillingApproved && !canEditApproved && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl mb-3" data-testid="billing-approved-lock">
                                 <ShieldCheck size={16} className="text-blue-600" />
@@ -3670,7 +3928,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         {isCompletedMission && !isBillingApproved && !canRevertStatus && (
                             <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl mb-3" data-testid="no-revert-permission">
                                 <ShieldAlert size={16} className="text-gray-500" />
-                                <span className="text-[10px] font-black text-gray-500 uppercase">OS Concluída — seu perfil não permite alterar o status</span>
+                                <span className="text-[10px] font-black text-gray-500 uppercase">
+                                  {canOperatorRefuse
+                                    ? 'OS Concluída — o perfil Operador pode registrar Recusada, com hora e evidência'
+                                    : 'OS Concluída — seu perfil não permite alterar o status'}
+                                </span>
                             </div>
                         )}
                         <div className="flex flex-wrap gap-2 pb-4 border-b border-gray-100">
@@ -3688,7 +3950,11 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         <div className="mt-4 flex flex-wrap items-end gap-6">
                             <div className="flex gap-2">
                                 {restrictedStatuses.map(s => {
-                                    const isDisabled = canEditApproved ? false : isCompletedMission && (isBillingApproved || !canRevertStatus);
+                                    const isDisabled = canEditApproved
+                                        ? false
+                                        : s === MissionStatus.REFUSED && canOperatorRefuse
+                                            ? false
+                                            : isCompletedMission && (isBillingApproved || !canRevertStatus);
                                     return (
                                         <button key={s} type="button" onClick={() => !isDisabled && handleStatusButton(s)} disabled={isDisabled} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${editData.status === s ? 'bg-gray-900 text-white border-black shadow-md' : isDisabled ? 'bg-gray-100 text-gray-300 border-gray-100 cursor-not-allowed opacity-50' : 'bg-red-50 text-red-400 border-red-100 hover:bg-red-100'}`}>{s}</button>
                                     );
@@ -3783,11 +4049,16 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                             title={noMatchTyped ? `Cadastrar nova viatura "${typed.toUpperCase()}"` : 'Cadastrar nova viatura'}
                                             data-testid="btn-add-vehicle"
                                         >
-                                            <Plus size={18}/>{noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
+                                            <Plus size={18}/>                                            {noMatchTyped && <span className="text-[10px] uppercase tracking-wider">Cadastrar</span>}
                                         </button>
                                     );
                                 })()}
                             </div>
+                            {vehiclesListTruncated && (
+                                <div className="mt-1 flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-amber-800">
+                                    <AlertTriangle size={10} /> CONSULTA INCOMPLETA — lista de viaturas pode estar incompleta
+                                </div>
+                            )}
                         </div>
 
                         <div className="relative">
@@ -3894,7 +4165,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     </div>
 
                     {/* Cadastro operacional — link externo do fornecedor (todos os clientes) */}
-                    {!hideProviderInfo && mission?.id && (
+                    {!hideProviderInfo && mission?.id && !(isPerfilFinanceiro && (mission?.client || '').toUpperCase().includes('DHL')) && (
                         <div className="p-6 bg-white border border-gray-200 rounded-[2.5rem] shadow-sm">
                             <DhlIntakeTimeline
                                 missionId={mission.id}
@@ -3982,9 +4253,24 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {((mission?.client || '').toUpperCase().includes('CESLOG') || (mission?.client || '').toUpperCase().includes('CESARI')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-purple-600 font-black">Nº Referência</span></label><input type="text" className={`${INPUT_CLASS} border-purple-300 bg-purple-50/30`} placeholder="Nº Referência CESLOG/CESARI" value={editData.reference_number} onChange={e => setEditData({...editData, reference_number: e.target.value})} data-testid="input-edit-reference-number" /></div>
                             )}
+                            {isVsTransportesClient(mission?.client) && (
+                                <div className="md:col-span-2">
+                                    <label className={LABEL_CLASS}><span className="text-red-600">*</span> <span className="text-cyan-700 font-black">Referência de Pedidos</span></label>
+                                    <input type="text" required className={`${INPUT_CLASS} border-cyan-400 bg-cyan-50/40`} placeholder="Ex.: 303185 / 303189" value={editData.reference_number} onChange={e => setEditData({...editData, reference_number: e.target.value})} data-testid="input-edit-vs-pedido-ref" />
+                                    <p className="text-[9px] text-cyan-800 font-bold mt-1">Obrigatório para o operacional da VS TRANSPORTES. Ex.: 303185 / 303189. Entra na coluna REF. PEDIDOS do boletim.</p>
+                                </div>
+                            )}
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
                                 <div><label className={LABEL_CLASS}><span className="text-red-600 font-black">Nº S.E. (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-red-300 bg-yellow-50/40`} placeholder="Ex: SE-123456 / 4912345" value={editData.dhl_se_number} onChange={e => setEditData({...editData, dhl_se_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-se-number" /></div>
                             )}
+                            <div className="md:col-span-2">
+                                <BotaoRelatorioMissao
+                                    missionId={String(mission?.id || '')}
+                                    onClick={() => { if (mission?.id) setPlanoAcaoAberto(true); }}
+                                    className="inline-flex items-center gap-2 rounded-xl border-2 border-slate-700 bg-white px-4 py-2.5 text-[11px] font-black uppercase tracking-wide text-slate-800 hover:bg-slate-50 transition-colors text-left"
+                                    testId="button-open-os-action-plan"
+                                />
+                            </div>
                             {isDiretoria && String(editData.dhl_se_number || mission?.dhl_se_number || '').trim() && (
                                 <div className="md:col-span-2">
                                     <button
@@ -4000,9 +4286,17 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                 </div>
                             )}
                             {((mission?.client || '').toUpperCase().includes('DHL')) && (
-                                <div><label className={LABEL_CLASS}><span className="text-amber-700 font-black">Nº SM (DHL)</span></label><input type="text" className={`${INPUT_CLASS} border-amber-300 bg-amber-50/40`} placeholder="Ex: SM-789012 (opcional)" value={editData.dhl_sm_number} onChange={e => setEditData({...editData, dhl_sm_number: e.target.value.toUpperCase()})} data-testid="input-edit-dhl-sm-number" /></div>
+                                <div>
+                                    <label className={LABEL_CLASS}>
+                                        <span className="text-amber-700 font-black inline-flex items-center gap-1">
+                                            Nº SM (DHL)
+                                            {negativeMarginHardLocked && <Lock size={12} className="text-slate-700" />}
+                                        </span>
+                                    </label>
+                                    <input type="text" className={`${INPUT_CLASS} border-amber-300 bg-amber-50/40 ${negativeLockBlocks ? 'opacity-60 cursor-not-allowed' : ''}`} placeholder="Ex: SM-789012 (opcional)" value={editData.dhl_sm_number} onChange={e => { if (!negativeLockBlocks) setEditData({...editData, dhl_sm_number: e.target.value.toUpperCase()}); }} disabled={negativeLockBlocks} data-testid="input-edit-dhl-sm-number" />
+                                </div>
                             )}
-                            {((mission?.client || '').toUpperCase().includes('DHL')) && (
+                            {((mission?.client || '').toUpperCase().includes('DHL')) && !ocultaFinanceiro && (
                                 <div className="md:col-span-2 p-3 rounded-xl border border-red-200 bg-red-50/30">
                                     <label className={LABEL_CLASS}><span className="text-red-600 font-black">KM Deslocamento cobrado pra DHL</span></label>
                                     <input type="number" min="0" step="1" className={`${INPUT_CLASS} border-red-300 bg-white`} placeholder="Ex: 170 (deixe vazio se não houver)" value={editData.dhl_deslocamento_km} onChange={e => setEditData({...editData, dhl_deslocamento_km: e.target.value})} data-testid="input-edit-dhl-deslocamento-km" />
@@ -4026,7 +4320,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                                     </div>
                                 </div>
                             )}
-                            {((mission?.client || '').toUpperCase().includes('CEVA')) && (
+                            {((mission?.client || '').toUpperCase().includes('CEVA')) && !ocultaFinanceiro && (
                                 <div><label className={LABEL_CLASS}><span className="text-teal-600 font-black">Liberação de Faturamento</span></label><input type="text" className={`${INPUT_CLASS} border-teal-300 bg-teal-50/30`} placeholder="Ex: A001, B002..." value={editData.billing_release} onChange={e => setEditData({...editData, billing_release: e.target.value.toUpperCase()})} data-testid="input-edit-billing-release" /></div>
                             )}
                         </div>
@@ -4439,7 +4733,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             >
                                 {updatePrintProcessing ? (
                                     <div className="flex items-center gap-2 text-[11px] font-bold text-slate-300" data-testid="status-update-print-processing">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Detectando overlays, removendo marcas e aplicando logotipo TM SEG...
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Aplicando logotipo TM SEG...
                                     </div>
                                 ) : updatePrintPreview ? (
                                     <>
@@ -4468,17 +4762,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                             {updatePrintPreview && !updatePrintProcessing && (
                                 <div className="mt-2 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2" data-testid="text-update-print-ready">
                                     <CheckCircle2 size={14} className="shrink-0 text-emerald-400" />
-                                    <p className="text-[10px] font-bold text-emerald-300">{updatePrintAiCleaned
-                                        ? 'Foto tratada: overlays removidos e logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.'
-                                        : 'Logotipo TM SEG aplicado (nenhum overlay detectado ou limpeza indisponível). Não é salva no sistema — só vai na área de transferência ao salvar.'}</p>
-                                    {(isPrintPipelineDebug() && updatePrintTimings) && (
-                                        <div className="mt-2 rounded-lg border border-white/10 bg-slate-900/80 p-2 text-left font-mono text-[9px] text-slate-400" data-testid="print-pipeline-timings">
-                                            <p className="font-bold text-amber-300/90 mb-1">Pipeline debug (ms)</p>
-                                            <p>upload: {updatePrintTimings.uploadMs} · leitura: {updatePrintTimings.readMs} · detecção: {updatePrintTimings.detectionMs}</p>
-                                            <p>remoção: {updatePrintTimings.removalMs} · logo: {updatePrintTimings.logoMs} · salvamento: {updatePrintTimings.saveMs}</p>
-                                            <p className="text-emerald-400 font-bold">total: {updatePrintTimings.totalMs} ms</p>
-                                        </div>
-                                    )}
+                                    <p className="text-[10px] font-bold text-emerald-300">Logotipo TM SEG aplicado. Não é salva no sistema — só vai na área de transferência ao salvar.</p>
                                 </div>
                             )}
                         </div>
@@ -4510,9 +4794,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                     {/* RODAPÉ DE AÇÕES */}
                     <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white pb-4 px-2 shrink-0">
                         <button type="button" onClick={onClose} className="px-8 py-3 border border-gray-200 rounded-xl text-[10px] font-black text-gray-500 uppercase hover:bg-gray-50 transition-all">Cancelar</button>
-                        <button type="submit" disabled={isUpdating || (isGoogleLinkRequired && !editData.mapLink)} className={`px-10 py-3 rounded-xl text-[10px] font-black shadow-lg uppercase flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 ${isGoogleLinkRequired && !editData.mapLink ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700 shadow-red-200'}`}>
-                            {isUpdating ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} 
-                            {isGoogleLinkRequired && !editData.mapLink ? 'Link Google Obrigatório' : 'Salvar Alterações'}
+                        <button type="submit" disabled={isUpdating || negativeLockBlocks || (isGoogleLinkRequired && !editData.mapLink)} className={`px-10 py-3 rounded-xl text-[10px] font-black shadow-lg uppercase flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 ${negativeLockBlocks || (isGoogleLinkRequired && !editData.mapLink) ? 'bg-gray-400 text-white cursor-not-allowed' : 'bg-red-600 text-white hover:bg-red-700 shadow-red-200'}`}>
+                            {isUpdating ? <Loader2 size={16} className="animate-spin" /> : negativeLockBlocks ? <Lock size={16} /> : <Save size={16} />} 
+                            {negativeLockBlocks ? 'OS travada' : isGoogleLinkRequired && !editData.mapLink ? 'Link Google Obrigatório' : 'Salvar Alterações'}
                         </button>
                     </div>
                 </form>
@@ -4537,7 +4821,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               mapLink={editData.mapLink || ''}
               originCity={finalizeData.originCity}
               destCity={finalizeData.destCity}
-              appliedTableName={finalizeData.appliedTableName}
+              clientTableLine={finalizeData.clientTableLine}
+              providerTableLine={finalizeData.providerTableLine}
+              clientRouteQuestion={finalizeData.clientRouteQuestion}
+              providerRouteQuestion={finalizeData.providerRouteQuestion}
               isRaio={finalizeData.isRaio}
               raioFranchiseKm={finalizeData.raioFranchiseKm}
               franchiseKm={finalizeData.franchiseKm}
@@ -4555,6 +4842,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                   : undefined
               }
               missionId={mission?.id ? String(mission.id) : ''}
+              isVelada={isVeladaMission({ missionType: editData.missionType, mission_type: mission?.mission_type })}
               onConfirm={handleFinalizeConfirmed}
               onCancel={handleFinalizeCancelled}
             />
@@ -4619,6 +4907,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
               isOpen={dhlOccurrenceReportOpen}
               onClose={() => setDhlOccurrenceReportOpen(false)}
             />
+          )}
+          {mission && planoAcaoAberto && (
+            <OsActionPlanModal missionId={mission.id} onClose={() => setPlanoAcaoAberto(false)} />
           )}
         </div>
     );

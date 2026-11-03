@@ -76,6 +76,16 @@ execSync(
 );
 console.log('Recalculate-open core bundle: api/_recalculate-open-core.cjs');
 
+// Bundle do portal CEVA para api/ceva-portal.ts (login/relatório).
+// Import ESM de lib/cevaPortal/httpHandler + financialUtils quebrava na Vercel
+// (supabasePaging / extensionless → ERR_MODULE_NOT_FOUND; catch com instanceof
+// de classe importada só no try → BillingDatasetIncompleteError is not defined).
+execSync(
+  'npx esbuild lib/cevaPortal/httpHandler.ts --bundle --platform=node --format=cjs --outfile=api/_ceva-portal-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('CEVA portal core bundle: api/_ceva-portal-core.cjs');
+
 // Bundle do worker de reemissão NF para api/nf-control.ts (retry-now).
 // Import ESM de server/nfRetryWorker quebra na Vercel (MODULE_NOT_FOUND) e o
 // Express (api/index) está com cold-start lento demais para o botão Reemitir.
@@ -103,6 +113,26 @@ execSync(
   { stdio: 'inherit' },
 );
 console.log('Gestão Investimento core bundle: api/_gestao-investimento-core.cjs');
+
+// Login e leitura das tabelas protegidas. Import TS sem extensão vira
+// ERR_MODULE_NOT_FOUND na Vercel. O prefixo _ evita função extra.
+execSync(
+  'npx esbuild lib/sessao/vercel.ts --bundle --platform=node --format=cjs --outfile=api/ponte-auth/_sessao.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+execSync(
+  'npx esbuild lib/dadosProtegidos/proxy.ts --bundle --platform=node --format=cjs --outfile=api/_dados-protegidos-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Sessão e dados protegidos empacotados.');
+
+// Redefinição de senha. Import ESM de lib/passwordReset.ts (gravarSenha sem
+// extensão) derruba a função na Vercel com FUNCTION_INVOCATION_FAILED.
+execSync(
+  'npx esbuild lib/passwordReset.ts --bundle --platform=node --format=cjs --outfile=api/_password-reset-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Password reset core bundle: api/_password-reset-core.cjs');
 
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(

@@ -12,6 +12,14 @@ import {
 } from './sincronizarComissoesFaturas.js';
 import { extractFaturaNumeroFromNotes, type ComissaoDbClient } from './comissaoCore.js';
 
+export type RotaDetalheQuadro = {
+  osId: string;
+  osNumero: string;
+  origem: string | null;
+  destino: string | null;
+  dataMissao: string | null;
+};
+
 export type DetalheFaturaQuadro = {
   id: string;
   numero: string | null;
@@ -21,6 +29,7 @@ export type DetalheFaturaQuadro = {
   valorAPagar: number;
   pago: boolean;
   osIds: string[];
+  rotas?: RotaDetalheQuadro[];
 };
 
 export type LinhaQuadroCliente = {
@@ -49,6 +58,7 @@ export type FaturaQuadro = {
   asaasStatus?: string | null;
   comercialId?: string | null;
   osIds?: string[];
+  rotas?: RotaDetalheQuadro[];
   receivableStatus?: string | null;
   paymentDate?: string | null;
 };
@@ -176,6 +186,7 @@ export function montarQuadroClientes(
         paymentDate: fat.paymentDate,
       }),
       osIds: unirOsIds(fat.osIds),
+      rotas: fat.rotas || [],
     });
     map.set(key, prev);
   }
@@ -208,6 +219,35 @@ export function chaveLinhaQuadro(linha: Pick<LinhaQuadroCliente, 'empresa' | 'cl
   return `${linha.empresa}|${normalizeClienteNome(linha.cliente)}`;
 }
 
+/** A leitura ao vivo prefixa inv:. O espelho em comissoes grava o id cru. */
+export function normalizarIdOrigemQuadro(id: string | null | undefined): string {
+  return String(id || '').replace(/^inv:/i, '').trim();
+}
+
+function detalhesSemOrigemRepetida(detalhes: DetalheFaturaQuadro[]): DetalheFaturaQuadro[] {
+  const ids = new Set<string>();
+  const out: DetalheFaturaQuadro[] = [];
+  for (const detalhe of detalhes) {
+    const chave = normalizarIdOrigemQuadro(detalhe.id);
+    if (ids.has(chave)) continue;
+    ids.add(chave);
+    out.push(detalhe);
+  }
+  return out;
+}
+
+function linhaComDetalhes(linha: LinhaQuadroCliente, detalhes: DetalheFaturaQuadro[]): LinhaQuadroCliente {
+  return {
+    ...linha,
+    detalhes,
+    faturas: detalhes.length,
+    faturamento: detalhes.reduce((soma, detalhe) => soma + detalhe.faturamento, 0),
+    imposto: detalhes.reduce((soma, detalhe) => soma + detalhe.imposto, 0),
+    baseLiquida: detalhes.reduce((soma, detalhe) => soma + (detalhe.faturamento - detalhe.imposto), 0),
+    comissao: detalhes.reduce((soma, detalhe) => soma + detalhe.valorAPagar, 0),
+  };
+}
+
 /** Une API + ingest sem duplicar a mesma fatura/OS. */
 export function mesclarLinhasQuadro(
   preferencial: LinhaQuadroCliente[],
@@ -218,26 +258,33 @@ export function mesclarLinhasQuadro(
     for (const linha of origem) {
       const key = chaveLinhaQuadro(linha);
       const prev = map.get(key);
+      const detalhesNovos = detalhesSemOrigemRepetida(linha.detalhes || []);
       if (!prev) {
-        map.set(key, {
-          ...linha,
-          detalhes: [...(linha.detalhes || [])],
-        });
+        const repetiuDentro = detalhesNovos.length !== (linha.detalhes || []).length;
+        map.set(key, repetiuDentro ? linhaComDetalhes(linha, detalhesNovos) : { ...linha, detalhes: detalhesNovos });
         continue;
       }
-      const ids = new Set(prev.detalhes.map((d) => d.id));
-      for (const detalhe of linha.detalhes || []) {
-        if (ids.has(detalhe.id)) continue;
-        ids.add(detalhe.id);
-        prev.detalhes.push(detalhe);
-        prev.faturas += 1;
-        prev.faturamento += detalhe.faturamento;
-        prev.imposto += detalhe.imposto;
-        prev.baseLiquida += detalhe.faturamento - detalhe.imposto;
-        prev.comissao += detalhe.valorAPagar;
+      const ids = new Set(prev.detalhes.map((d) => normalizarIdOrigemQuadro(d.id)));
+      const acrescentados = [...prev.detalhes];
+      for (const detalhe of detalhesNovos) {
+        const chave = normalizarIdOrigemQuadro(detalhe.id);
+        if (ids.has(chave)) continue;
+        ids.add(chave);
+        acrescentados.push(detalhe);
       }
-      if (!prev.comercialId) prev.comercialId = linha.comercialId;
-      if (!prev.comercialNome) prev.comercialNome = linha.comercialNome;
+      if (acrescentados.length === prev.detalhes.length) {
+        if (!prev.comercialId) prev.comercialId = linha.comercialId;
+        if (!prev.comercialNome) prev.comercialNome = linha.comercialNome;
+        continue;
+      }
+      map.set(key, linhaComDetalhes(
+        {
+          ...prev,
+          comercialId: prev.comercialId || linha.comercialId,
+          comercialNome: prev.comercialNome || linha.comercialNome,
+        },
+        acrescentados,
+      ));
     }
   }
   for (const linha of map.values()) {
@@ -355,6 +402,34 @@ export async function carregarQuadroTmSeg(
     meses: mesesComFatura(invoices),
     error: cliRes.error || vinculosRes.error || recRes.error,
   };
+}
+
+/**
+ * Soma a OS sem NF no bruto já montado.
+ * A mesma OS não entra duas vezes. Cobertura incompleta não inventa valor: quem chama é que decide se usa.
+ */
+export function mesclarOsSemFaturaNoQuadro(
+  linhas: LinhaQuadroCliente[],
+  os: Array<{
+    id: string;
+    cliente: string;
+    comercialId: string | null;
+    receita: number;
+    faturada: boolean;
+    date?: string | null;
+  }>,
+  comerciais: Array<{ id: string; nome?: string | null }>,
+  periodStart: string,
+  periodEnd: string,
+): LinhaQuadroCliente[] {
+  const extras = montarQuadroClientes(
+    faturasDeOsParaQuadro(os),
+    [],
+    comerciais,
+    periodStart,
+    periodEnd,
+  );
+  return mesclarLinhasQuadro(linhas, extras);
 }
 
 /** OS concluída/faturada sem NF, com comercial. Entra no bruto após o cadastro. */

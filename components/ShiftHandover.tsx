@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { RefreshCw, MessageSquare, MessageSquarePlus, X, Save, ClipboardList } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { publishMissionLive, MISSION_LIVE_WINDOW_EVENT } from '../lib/missionLiveBroadcast';
 import { authFetch } from '../lib/authFetch';
 import { MissionStatus } from '../types';
+import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 
 // ==========================================================================
 // PASSAGEM DE PLANTÃO
@@ -29,15 +32,18 @@ const spDateStr = (iso?: string | null): string => {
 };
 const fmtDate = (iso?: string | null): string => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleDateString('pt-BR', { timeZone: TZ }); } catch { return ''; }
+  const texto = formatDateBR(iso);
+  return texto === '—' ? '' : texto;
 };
 const fmtTime = (iso?: string | null): string => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: TZ }); } catch { return ''; }
+  const texto = formatTimeBR(iso, '');
+  return texto === '—' ? '' : texto;
 };
 const fmtDateTimeFull = (iso?: string | null): string => {
   if (!iso) return '';
-  try { return new Date(iso).toLocaleString('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+  const texto = formatDateTimeBR(iso);
+  return texto === '—' ? '' : texto;
 };
 
 // Extrai SÓ a cidade de um endereço completo BR ("..., CIDADE - UF, CEP").
@@ -126,8 +132,8 @@ const ShiftHandover = () => {
     }
   }, []);
 
-  const loadMissions = useCallback(async () => {
-    setIsLoading(true);
+  const loadMissions = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
     setError(null);
     setStatsError(false);
     try {
@@ -244,7 +250,7 @@ const ShiftHandover = () => {
     } catch (e: any) {
       setError(e?.message || 'Falha ao carregar as missões.');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [todayKey, tomorrowKey]);
 
@@ -252,6 +258,18 @@ const ShiftHandover = () => {
     loadMissions();
     loadNotes();
   }, [loadMissions, loadNotes]);
+
+  useRealtimeRefresh('missions', () => { void loadMissions(true); });
+
+  useEffect(() => {
+    const onLive = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.event !== 'handover_note' || !detail.payload?.mission_id) return;
+      setNotes(prev => ({ ...prev, [String(detail.payload.mission_id)]: detail.payload }));
+    };
+    window.addEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
+    return () => window.removeEventListener(MISSION_LIVE_WINDOW_EVENT, onLive);
+  }, []);
 
   const visibleRows = useMemo(() => {
     const key = activeTab === 'hoje' ? todayKey : tomorrowKey;
@@ -298,6 +316,7 @@ const ShiftHandover = () => {
       }
       const saved: HandoverNote = await res.json();
       setNotes(prev => ({ ...prev, [editing.id]: saved }));
+      void publishMissionLive('handover_note', saved as unknown as Record<string, unknown>);
       setEditing(null);
     } catch (e: any) {
       alert(e?.message || 'Não foi possível salvar a observação.');
@@ -323,7 +342,7 @@ const ShiftHandover = () => {
           <p className="text-xs text-gray-500 mt-1">
             Espelho somente leitura do controle diário — missões em aberto de hoje e amanhã.
             {lastUpdated && (
-              <span className="ml-2 text-gray-400">Atualizado às {lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: TZ })}</span>
+              <span className="ml-2 text-gray-400">Atualizado às {formatTimeBR(lastUpdated)}</span>
             )}
           </p>
         </div>

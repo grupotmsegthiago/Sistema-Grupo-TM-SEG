@@ -195,6 +195,15 @@ describe('P4-NB07-CRIT — rotas Asaas críticas fora do catch-all', () => {
       nfUpdated: 0,
       errors: 0,
       paidIds: ['inv-1'],
+      checkedIds: ['inv-1', 'inv-2'],
+      retroactivePaid: false,
+      backfilledPaid: 0,
+      offset: 0,
+      nextOffset: 2,
+      hasMore: false,
+      totalMatched: 2,
+      cursor: null,
+      nextCursor: null,
     };
 
     it('A — consulta NF sem limit adicional (paridade getInvoiceByPayment)', () => {

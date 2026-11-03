@@ -1,4 +1,4 @@
-import { formatNowDateTimeBR, formatIsoDateBR } from '../lib/dateUtils';
+import { formatNowDateTimeBR, formatIsoDateBR, formatDateBR, formatTimeBR, formatCivilDateBR } from '../lib/dateUtils';
 // BUILD v048 - 2026-04-07 17:40 BRT
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { authFetch } from '../lib/authFetch';
@@ -7,8 +7,12 @@ import { Mission, Client, ClientPriceTable, ProviderCostTable } from '../types';
 import { FileText, Search, Printer, Loader2, FileSpreadsheet, BarChart3, Users, Building2, ChevronDown, ChevronRight, List, ExternalLink, Receipt, Camera, Sparkles, X, AlertCircle, CheckCircle2, ScanLine, Image as ImageIcon, DollarSign, Plus, Trash2, GitBranch, Calendar, Lock, Pencil, ArrowRight, ArrowLeftRight, Check, RefreshCw, Send } from 'lucide-react';
 import { calculateMissionFinancials, extractCityFromAddress, extractUF, clientFuzzyFilter, resolveCancelledWindow } from '../lib/financialUtils';
 import { resolveMissionDisplacement } from '../lib/billing/resolveMissionDisplacement';
+import { fecharSubitensNoValorGravado, resolveBoletimClientLineTotal } from '../lib/billing/boletimLineTotal';
+import { resolveDhlCancelledSheetWindow, type DhlEndTimeHistory } from '../lib/billing/dhlCancelledSheetWindow';
+import { fetchAllPages } from '../lib/supabasePaging';
 import { resolveStoredClientToll, resolveStoredProviderToll } from '../lib/toll/clientTollBilling';
-import { computeDhlBand, findDhlAutoClient, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
+import { carimboAprovacaoHumana, carimboRecalculoAutomatico, devePreservarDetalhamentoRegistrado, estadoDetalhamentoSnapshot, origemSnapshotFinanceiro, primeiroLogDepoisDoAutomatico, ressincronizadoPorHumano, textoLeituraSnapshot, DIVERGENCIA_DETALHAMENTO_INCOMPLETO, DIVERGENCIA_DETALHAMENTO_ZERADO, DIVERGENCIA_SNAPSHOT_INVALIDO } from '../lib/missionSnapshot';
+import { computeDhlBand, findDhlAutoClient, franquiaKmBoletimAprovado, selectDhlClientTable, DHL_CLIENT_NAME } from '../lib/dhlAutoTableSelector';
 import MissionFinancialModal from './MissionFinancialModal';
 
 import { generateContent } from '../lib/gemini';
@@ -16,12 +20,14 @@ import {
     isBankTransferBillingClient,
     transferBillingDueDays,
 } from '../lib/billing/transferBillingClients';
+import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { addCalendarDaysIso } from '../lib/billing/medicaoDueDate';
 import {
     amazonClientNfFields,
     findMunicipalServiceOption,
     isAmazonBillingClient,
     MUNICIPAL_SERVICE_OPTIONS,
+    resolveAsaasNationalMonitoring,
     resolveMunicipalServiceForClient,
 } from '../lib/billing/municipalServiceOptions';
 import {
@@ -33,6 +39,7 @@ import {
     fetchBillingMissionUniverse,
 } from '../lib/billing/fetchBillingMissionUniverse';
 import {
+    canFillDhlSheetRole,
     formatDhlPeriodApprovalBlockMessage,
     listSystemSesMissingFromSheet,
     listUnapprovedDhlPeriodMissions,
@@ -499,7 +506,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 }
                 const updated = enrichedMissions.map((m: any) => {
                     const snap = snapMap[m.id];
-                    if (snap && !m.snapshot_approved_by) {
+                    if (snap && !m.snapshot_approved_by && !carimboRecalculoAutomatico(snap.approved_by)) {
                         return { ...m, snapshot_data: snap, snapshot_approved_by: snap.approved_by || 'Sistema', snapshot_approved_at: snap.approved_at };
                     }
                     return m;
@@ -664,17 +671,18 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const clientObj = clients.find(c => c.name === clientName);
             const displayClient = clientObj?.trading_name || clientName;
 
-            const hasStoredRevenue = m.revenue_value != null && m.revenue_value > 0;
-            const hasStoredCost = m.cost_value != null && m.cost_value > 0;
+            const hasStoredRevenue = m.revenue_value != null;
+            const hasStoredCost = m.cost_value != null;
 
             let revenue: number;
             let cost: number;
 
-            // DESL: persistido ou derivado do KM autorizado (igual Relatório de OS)
+            // DESL: persistido (inclusive 0) ou derivado só quando a coluna está NULL.
             let clientUnitKm = 0;
             let providerUnitKm = 0;
+            let finChart: ReturnType<typeof calculateMissionFinancials> | null = null;
             try {
-                const finChart = calculateMissionFinancials(m, allClientTables, allProviderTables, clientObj, new Date());
+                finChart = calculateMissionFinancials(m, allClientTables, allProviderTables, clientObj, new Date());
                 clientUnitKm = finChart.client.unitPriceKm || 0;
                 providerUnitKm = finChart.provider.unitCostKm || 0;
             } catch { /* fallback DHL por UF no resolver */ }
@@ -684,10 +692,12 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             });
             const dispVal = dispChart.client;
             const dispProv = dispChart.provider;
-            revenue = (m.revenue_value || 0) + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client) + dispVal;
+            const podeEstimar = !(m.billing_approved || m.billing_verified_by);
+            const receitaBase = hasStoredRevenue ? Number(m.revenue_value) : (podeEstimar ? Number(finChart?.client.serviceTotal || 0) : 0);
+            revenue = receitaBase + resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client) + dispVal;
             const isSameOsChild = !!(m as { is_same_os?: boolean }).is_same_os;
             const tollProv = resolveStoredProviderToll(m.toll_value || 0, m.toll_value_provider, isSameOsChild);
-            const costBase = isSameOsChild ? 0 : (m.cost_value || 0);
+            const costBase = isSameOsChild ? 0 : (m.cost_value != null ? Number(m.cost_value) : (podeEstimar ? Number(finChart?.provider.serviceTotal || 0) : 0));
             cost = costBase + tollProv + dispProv;
             const mLucro = revenue - cost;
             const mPct = revenue > 0 ? Math.round((mLucro / revenue) * 100) : 0;
@@ -703,7 +713,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 cost: Math.round(cost * 100) / 100,
                 lucro: Math.round(mLucro * 100) / 100,
                 pct: mPct,
-                date: m.created_at ? new Date(m.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-',
+                date: m.created_at ? formatDateBR(m.created_at) : '-',
                 provider: providerName,
                 client: displayClient,
                 km: m.total_distance || m.traveled_distance || 0,
@@ -965,9 +975,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     };
     const fmtNum = (val: number | null | undefined, dec = 0) => (val ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-    const fmtDate = (iso?: string) => iso ? new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
-    const fmtTime = (iso?: string) => iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '-';
-    const fmtDateDisp = (s: string) => { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; };
+    const fmtDate = (iso?: string) => {
+        if (!iso) return '-';
+        const texto = formatDateBR(iso);
+        return texto === '—' ? '-' : texto;
+    };
+    const fmtTime = (iso?: string) => iso ? formatTimeBR(iso, '-') : '-';
+    const fmtDateDisp = (s: string) => (s ? formatCivilDateBR(s) : '');
     const fmtHHMM = (h: number) => {
         if (isNaN(h) || h <= 0) return '00:00';
         const hrs = Math.floor(h);
@@ -1016,14 +1030,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         invoiceClientObj?.trading_name || clientData?.trading_name,
     );
     const isIntermodalBilling = (clientData?.name || '').toUpperCase().includes('INTERMODAL') || (clientData?.trading_name || '').toUpperCase().includes('INTERMODAL');
+    const isVsTransportesBilling = reportMode === 'cliente' && isVsTransportesClient(clientData?.name, clientData?.trading_name);
+    const extraClientCols = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0) + (isVsTransportesBilling ? 1 : 0);
     const providerObj = providers.find(p => p.id.toString() === selectedProvider);
     const selectedProviderName = providerObj ? (providerObj.trading_name || providerObj.name) : '';
     const displayName = reportMode === 'fornecedor' ? selectedProviderName : displayClientName;
 
     const canFillDhlSheet = (() => {
         try {
-            const role = (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase();
-            return role === 'administrador' || role === 'diretoria';
+            const role = JSON.parse(localStorage.getItem('userData') || '{}').role;
+            return canFillDhlSheetRole(role);
         } catch {
             return false;
         }
@@ -1045,7 +1061,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         return `GERAL - ${month} /${year} - ${fmtDateDisp(startDate)} A ${fmtDateDisp(endDate)}`;
     };
 
-    const hasFrozenMissions = useMemo(() => missions.some(m => m.snapshot_approved_by), [missions]);
+    const hasFrozenMissions = useMemo(() => missions.some(m => !!carimboAprovacaoHumana(m.snapshot_approved_by)), [missions]);
 
     const rowsData = useMemo(() => {
         return missions.map(m => {
@@ -1060,11 +1076,20 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const finP = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date(), overridesP);
                 const prov = finP.provider;
                 const tollProv = Math.max(0, ((m.toll_value_provider != null ? m.toll_value_provider : m.toll_value)) || 0);
-                const dispProvP = resolveMissionDisplacement(m as any, {
+                const dispProvDerivado = resolveMissionDisplacement(m as any, {
                     clientUnitPriceKm: finP.client.unitPriceKm,
                     providerUnitPriceKm: prov.unitCostKm,
                 }).provider;
-                const savedCost = m.cost_value || 0;
+                const dispProvP = m.is_same_os ? 0 : (m.displacement_value_provider != null ? Number(m.displacement_value_provider) || 0 : dispProvDerivado);
+                const custoGravado = m.is_same_os && m.cost_value == null
+                    ? 0
+                    : (m.cost_value == null ? null : Number(m.cost_value));
+                const partesP = fecharSubitensNoValorGravado({
+                    valorGravado: custoGravado,
+                    ativacao: prov.base ?? 0,
+                    kmExtra: prov.extraKmVal ?? 0,
+                    horaExtra: prov.extraHrVal ?? 0,
+                });
 
                 const isCancelledP = (m.status || '').toString().toLowerCase().includes('cancel');
                 const cancelWindowP = isCancelledP ? resolveCancelledWindow(m.start_time, m._cancelStatusAt) : null;
@@ -1083,7 +1108,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     id: (m.id || '').replace('GTM-', ''),
                     route: refCidadesP,
                     client: selectedProviderName,
-                    activationFee: prov.base ?? 0,
+                    activationFee: partesP.ativacao,
                     franchiseHours: prov.franchiseHours ?? 0,
                     franchiseKm: prov.franchiseKm ?? 0,
                     unitHr: prov.unitCostHour ?? 0,
@@ -1104,16 +1129,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     timeStart: fmtTime(effStartP),
                     timeEnd: fmtTime(effEndP),
                     timeTotal: cancelledBeforeP ? fmtHHMM(0) : fmtHHMM(finP.durationHours),
-                    kmExtraQtd: prov.excessKm ?? 0,
+                    kmExtraQtd: partesP.colapsou ? 0 : (prov.excessKm ?? 0),
                     kmExtraUnit: prov.unitCostKm ?? 0,
-                    kmExtraTotal: prov.extraKmVal ?? 0,
-                    hrExtraQtd: prov.excessHours ?? 0,
+                    kmExtraTotal: partesP.kmExtra,
+                    hrExtraQtd: partesP.colapsou ? 0 : (prov.excessHours ?? 0),
                     hrExtraUnit: prov.unitCostHour ?? 0,
-                    hrExtraTotal: prov.extraHrVal ?? 0,
-                    escoltaVal: prov.base ?? 0,
+                    hrExtraTotal: partesP.horaExtra,
+                    escoltaVal: partesP.ativacao,
                     tollVal: tollProv,
                     displacementVal: dispProvP,
-                    totalGeral: savedCost + tollProv + dispProvP,
+                    totalGeral: partesP.ativacao + partesP.kmExtra + partesP.horaExtra + tollProv + dispProvP,
                     franchiseHoursFmt: fmtFranchiseHr(prov.franchiseHours ?? 0),
                     frozen: false,
                     frozenBy: null as string | null,
@@ -1133,9 +1158,17 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 };
             }
             const snap = m.snapshot_data;
-            const hasValidSnapshot = !!(m.snapshot_approved_by && snap);
+            const aprovadorHumano = carimboAprovacaoHumana(m.snapshot_approved_by);
+            const estadoDetalhe = estadoDetalhamentoSnapshot(snap);
+            const origemDetalhe = origemSnapshotFinanceiro(m.snapshot_approved_by, snap);
+            const preservarDetalhamento = devePreservarDetalhamentoRegistrado({
+                billingApproved: m.billing_approved === true,
+                carimbo: m.snapshot_approved_by,
+                snapshot: snap,
+            });
+            const exibirRegistrado = !!(preservarDetalhamento && snap && (estadoDetalhe === 'valido' || estadoDetalhe === 'zerado'));
 
-            if (hasValidSnapshot && snap) {
+            if (exibirRegistrado && snap) {
                 const useBase = snap.activationFee ?? 0;
                 const useKmEx = snap.kmExtraTotal ?? 0;
                 const useHrEx = snap.hrExtraTotal ?? 0;
@@ -1150,7 +1183,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 } catch { /* fallback UF */ }
                 const useDisp = resolveMissionDisplacement({
                     dhl_deslocamento_km: (m as any).dhl_deslocamento_km,
-                    displacement_value: m.displacement_value ?? snap.displacementVal ?? 0,
+                    displacement_value: m.displacement_value != null ? m.displacement_value : (snap.displacementVal != null ? snap.displacementVal : null),
                     displacement_value_provider: m.displacement_value_provider,
                     origin: m.origin,
                     is_same_os: (m as any).is_same_os,
@@ -1167,33 +1200,30 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const snapTotalWithDisp = snapTotal > 0 && snapDispStored <= 0 && useDisp > 0
                     ? snapTotal + useDisp
                     : snapTotal;
-                const useTotal = wasManuallyEdited ? dbTotal : (snapTotalWithDisp > 0 ? snapTotalWithDisp : (useBase + useKmEx + useHrEx + useToll + useDisp));
+                // Linha acompanha o rodapé quando receita/pedágio mudaram depois do congelamento.
+                const useTotal = resolveBoletimClientLineTotal({
+                    dbTotal,
+                    snapTotalWithDisp,
+                    componentTotal: useBase + useKmEx + useHrEx + useToll + useDisp,
+                    wasManuallyEdited,
+                });
+                const partesSnap = fecharSubitensNoValorGravado({
+                    valorGravado: m.revenue_value,
+                    ativacao: useBase,
+                    kmExtra: useKmEx,
+                    horaExtra: useHrEx,
+                });
+                const totalFechado = partesSnap.ativacao + partesSnap.kmExtra + partesSnap.horaExtra + useToll + useDisp;
+                const totalDaLinha = m.revenue_value != null ? totalFechado : useTotal;
 
-                // FALLBACK p/ snapshots legados: se franquia zerada mas há cálculo possível,
-                // busca os dados da tabela real para exibição (totais financeiros permanecem congelados)
-                let snapFranchiseHours = snap.franchiseHours ?? 0;
+                // Franquia zerada permanece a gravada. A tabela viva não completa o snapshot.
+                const snapFranchiseHours = snap.franchiseHours ?? 0;
                 let snapFranchiseKm = snap.franchiseKm ?? 0;
-                let snapUnitHr = snap.unitHr ?? 0;
-                let snapUnitKm = snap.unitKm ?? 0;
-                let snapHrExtraQtd = snap.hrExtraQtd ?? 0;
-                let snapKmExtraQtd = snap.kmExtraQtd ?? 0;
-                let snapDurationHours = snap.durationHours ?? 0;
-
-                if (snapFranchiseHours === 0 && snapFranchiseKm === 0 && snapUnitHr === 0 && snapUnitKm === 0) {
-                    try {
-                        const finFallback = calculateMissionFinancials(m, priceTables, providerTables, clientData, new Date());
-                        const tblFallback = priceTables.find(t => t.id.toString() === finFallback.client.tableId);
-                        if (tblFallback) {
-                            snapFranchiseHours = tblFallback.franchise_hours ?? 0;
-                            snapFranchiseKm = tblFallback.franchise_km ?? 0;
-                            snapUnitHr = tblFallback.price_per_extra_hour ?? 0;
-                            snapUnitKm = tblFallback.price_per_extra_km ?? 0;
-                            snapHrExtraQtd = finFallback.client.excessHours ?? 0;
-                            snapKmExtraQtd = finFallback.client.excessKm ?? 0;
-                            snapDurationHours = finFallback.durationHours ?? 0;
-                        }
-                    } catch (e) { /* mantém zeros se falhar */ }
-                }
+                const snapUnitHr = snap.unitHr ?? 0;
+                const snapUnitKm = snap.unitKm ?? 0;
+                const snapHrExtraQtd = snap.hrExtraQtd ?? 0;
+                const snapKmExtraQtd = snap.kmExtraQtd ?? 0;
+                const snapDurationHours = snap.durationHours ?? 0;
 
                 const isCancelledSnap = (m.status || '').toString().toLowerCase().includes('cancel');
                 // OS executada e cancelada depois (hora de fim real) mostra KM real; só cancelada antes zera.
@@ -1202,10 +1232,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const kmTotalRawSnap = (snap.kmTotal ?? 0) > 0 ? (snap.kmTotal ?? 0)
                     : ((m.start_km > 0 && m.end_km > 0 && m.end_km >= m.start_km) ? (m.end_km - m.start_km) : (m.total_distance || m.traveled_distance || 0));
                 const kmTotal = cancelledBeforeSnap ? 0 : kmTotalRawSnap;
-                // Sincroniza KM FRAN com a banda DHL do KM real, mesmo em snapshots congelados.
-                if (isDhlBilling && kmTotal > 0) {
-                    snapFranchiseKm = computeDhlBand(kmTotal);
-                }
+                // OS aprovada conserva a franquia gravada. A banda DHL só aparece no aviso.
+                snapFranchiseKm = franquiaKmBoletimAprovado({
+                    billingApproved: m.billing_approved === true,
+                    isDhl: isDhlBilling,
+                    kmTotal,
+                    franquiaGravada: snapFranchiseKm,
+                });
 
                 const refCidades2 = snap.route || (() => {
                     const co = extractCityFromAddress(m.origin || '');
@@ -1217,7 +1250,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     id: (m.id || '').replace('GTM-', ''),
                     route: refCidades2,
                     client: displayClientName,
-                    activationFee: useBase,
+                    activationFee: partesSnap.ativacao,
                     franchiseHours: snapFranchiseHours,
                     franchiseKm: snapFranchiseKm,
                     unitHr: snapUnitHr,
@@ -1241,19 +1274,29 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     timeStart: fmtTime(m.start_time),
                     timeEnd: fmtTime(m.end_time),
                     timeTotal: fmtHHMM(snapDurationHours),
-                    kmExtraQtd: snapKmExtraQtd,
+                    kmExtraQtd: partesSnap.colapsou ? 0 : snapKmExtraQtd,
                     kmExtraUnit: snapUnitKm,
-                    kmExtraTotal: useKmEx,
-                    hrExtraQtd: snapHrExtraQtd,
+                    kmExtraTotal: partesSnap.kmExtra,
+                    hrExtraQtd: partesSnap.colapsou ? 0 : snapHrExtraQtd,
                     hrExtraUnit: snapUnitHr,
-                    hrExtraTotal: useHrEx,
-                    escoltaVal: useBase,
+                    hrExtraTotal: partesSnap.horaExtra,
+                    escoltaVal: partesSnap.ativacao,
                     tollVal: useToll,
                     displacementVal: useDisp,
-                    totalGeral: useTotal,
+                    totalGeral: totalDaLinha,
                     franchiseHoursFmt: fmtFranchiseHr(snapFranchiseHours),
                     frozen: true,
-                    frozenBy: m.snapshot_approved_by,
+                    frozenBy: aprovadorHumano,
+                    origemSnapshot: origemDetalhe,
+                    homologadoPorPessoa: origemDetalhe === 'humana',
+                    semDetalhamento: false,
+                    divergenciaDetalhamento: estadoDetalhe === 'zerado' ? DIVERGENCIA_DETALHAMENTO_ZERADO : null,
+                    textoLeitura: textoLeituraSnapshot({
+                        origem: origemDetalhe,
+                        aprovador: aprovadorHumano,
+                        ressincronizadoPor: ressincronizadoPorHumano(snap),
+                        divergencia: estadoDetalhe === 'zerado' ? DIVERGENCIA_DETALHAMENTO_ZERADO : null,
+                    }),
                     referenceNumber: m.reference_number || '',
                     seNumber: (m as any).dhl_se_number || '',
                     smNumber: (m as any).dhl_sm_number || '',
@@ -1271,8 +1314,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             }
 
             const tollVal = resolveStoredClientToll(m.toll_value || 0, m.toll_value_provider, m.client);
-            const savedRevenue = m.revenue_value || 0;
-            const hasSavedRevenue = savedRevenue > 0;
+            const receitaGravada = m.revenue_value == null ? null : Number(m.revenue_value);
 
             const adj = billingAdjustments[m.id];
             const overrides = adj ? {
@@ -1320,8 +1362,19 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const hrExtraQtd = fin.client.excessHours;
             const hrExtraTotal = fin.client.extraHrVal;
             const durationHours = fin.durationHours;
+            const partesCliente = fecharSubitensNoValorGravado({
+                valorGravado: receitaGravada,
+                ativacao: activationFee,
+                kmExtra: kmExtraTotal,
+                horaExtra: hrExtraTotal,
+            });
+            const dispCliente = m.displacement_value != null ? Number(m.displacement_value) || 0 : dispValN;
 
-            const totalGeral = savedRevenue + tollVal + dispValN;
+            const totalGeral = partesCliente.ativacao + partesCliente.kmExtra + partesCliente.horaExtra + tollVal + dispCliente;
+            const semDetalhamento = m.billing_approved === true || origemDetalhe === 'humana';
+            const divergenciaSemDetalhe = estadoDetalhe === 'incompleto'
+                ? DIVERGENCIA_DETALHAMENTO_INCOMPLETO
+                : DIVERGENCIA_SNAPSHOT_INVALIDO;
 
             const cargoPlate = m._clientVehicle?.plate || '-';
 
@@ -1335,11 +1388,11 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 id: (m.id || '').replace('GTM-', ''),
                 route: refCidades,
                 client: displayClientName,
-                activationFee,
-                franchiseHours,
-                franchiseKm,
-                unitHr,
-                unitKm,
+                activationFee: semDetalhamento ? null : partesCliente.ativacao,
+                franchiseHours: semDetalhamento ? null : franchiseHours,
+                franchiseKm: semDetalhamento ? null : franchiseKm,
+                unitHr: semDetalhamento ? null : unitHr,
+                unitKm: semDetalhamento ? null : unitKm,
                 tollLabel: 'À PARTE',
                 status: 'CONCLUÍDO',
                 missionStatus: m.status || 'Concluída',
@@ -1355,20 +1408,25 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 kmTotal,
                 timeStart: fmtTime(effStartTime),
                 timeEnd: fmtTime(effEndTime),
-                timeTotal: cancelledBefore ? fmtHHMM(0) : fmtHHMM(durationHours),
-                kmExtraQtd,
-                kmExtraUnit: unitKm,
-                kmExtraTotal,
-                hrExtraQtd,
-                hrExtraUnit: unitHr,
-                hrExtraTotal,
-                escoltaVal: activationFee,
+                timeTotal: semDetalhamento ? '—' : (cancelledBefore ? fmtHHMM(0) : fmtHHMM(durationHours)),
+                kmExtraQtd: semDetalhamento || partesCliente.colapsou ? 0 : kmExtraQtd,
+                kmExtraUnit: semDetalhamento ? null : unitKm,
+                kmExtraTotal: semDetalhamento ? 0 : partesCliente.kmExtra,
+                hrExtraQtd: semDetalhamento || partesCliente.colapsou ? 0 : hrExtraQtd,
+                hrExtraUnit: semDetalhamento ? null : unitHr,
+                hrExtraTotal: semDetalhamento ? 0 : partesCliente.horaExtra,
+                escoltaVal: semDetalhamento ? null : partesCliente.ativacao,
                 tollVal,
-                displacementVal: dispValN,
+                displacementVal: dispCliente,
                 totalGeral,
-                franchiseHoursFmt: fmtFranchiseHr(franchiseHours),
+                franchiseHoursFmt: semDetalhamento ? '—' : fmtFranchiseHr(franchiseHours),
                 frozen: false,
                 frozenBy: null as string | null,
+                origemSnapshot: origemDetalhe,
+                homologadoPorPessoa: false,
+                semDetalhamento,
+                divergenciaDetalhamento: semDetalhamento ? divergenciaSemDetalhe : null,
+                textoLeitura: semDetalhamento ? divergenciaSemDetalhe : null,
                 referenceNumber: m.reference_number || '',
                 seNumber: (m as any).dhl_se_number || '',
                 smNumber: (m as any).dhl_sm_number || '',
@@ -1638,7 +1696,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
 
         const { exportFormattedExcel } = await import('../exports/excel-export-template');
 
-        const extraColOffset = (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0);
+        const extraColOffset = extraClientCols;
 
         // Medição oficial / Excel: somente OS aprovadas (Salvar/rascunho fora do consolidado).
         const exportRows = rowsData.filter(r => r.isApproved);
@@ -1651,6 +1709,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             if (isDhlBilling) row.push(r.smNumber || '-');
             if (isCevaBilling) row.push(r.tipo || '-');
             if (isIntermodalBilling) row.push(r.destinationUf || '-');
+            if (isVsTransportesBilling) row.push(r.referenceNumber || '-');
             row.push((r.missionStatus || '-').toUpperCase());
             row.push(
                 r.route,
@@ -1697,6 +1756,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
         if (isDhlBilling) headers.push('SM');
         if (isCevaBilling) headers.push('TIPO');
         if (isIntermodalBilling) headers.push('UF');
+        if (isVsTransportesBilling) headers.push('REF. PEDIDOS');
         headers.push('STATUS');
         headers.push(
             'ROTA', 'VALOR', 'HR FRANQ', 'KM FRANQ', 'HR EXTRA', 'KM EXTRA',
@@ -1752,7 +1812,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             footerRight: reportMode === 'fornecedor' ? 'ASSINATURA / CARIMBO FORNECEDOR' : 'ASSINATURA / CARIMBO CLIENTE',
             autoDownload,
         });
-    }, [billingDatasetComplete, rowsData, grandTotal, displayName, reportMode, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling]);
+    }, [billingDatasetComplete, rowsData, grandTotal, displayName, reportMode, startDate, endDate, isCeslogBilling, isCevaBilling, isDhlBilling, isIntermodalBilling, isVsTransportesBilling, extraClientCols]);
 
     const handleExportExcel = useCallback(async () => {
         if (!assertBillingDatasetComplete()) return;
@@ -1832,7 +1892,8 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
             const excelBlob = await buildMedicaoExcelBlob(false);
             if (!excelBlob) throw new Error('Falha ao gerar Excel da medição');
 
-            const { generateMedicaoPdfBlob, blobToBase64 } = await import('../lib/billing/medicaoPdfExport');
+            const { generateMedicaoPdfBlob } = await import('../lib/billing/medicaoPdfExport');
+            const { subirAnexoMedicao } = await import('../lib/billing/subirAnexosMedicao');
             setAiStatus('Gerando PDF da medição...');
             const pdfBlob = await generateMedicaoPdfBlob('print-area');
 
@@ -1907,9 +1968,16 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 setAiStatus('Reenvio: título já existe — só o e-mail será enviado...');
             }
 
+            setAiStatus('Guardando Excel e PDF para o envio...');
+            const pastaAnexo = (globalThis.crypto?.randomUUID?.() || `${Date.now()}`).replace(/-/g, '');
+            const excelGuardado = await subirAnexoMedicao(
+                excelBlob,
+                excelName,
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                pastaAnexo,
+            );
+            const pdfGuardado = await subirAnexoMedicao(pdfBlob, pdfName, 'application/pdf', pastaAnexo);
             setAiStatus('Enviando e-mail com anexos...');
-            const excelB64 = await blobToBase64(excelBlob);
-            const pdfB64 = await blobToBase64(pdfBlob);
             const res = await authFetch('/api/billing-send-medicao', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1925,13 +1993,13 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     attachments: [
                         {
                             filename: excelName,
-                            contentBase64: excelB64,
-                            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            storagePath: excelGuardado.storagePath,
+                            contentType: excelGuardado.contentType,
                         },
                         {
                             filename: pdfName,
-                            contentBase64: pdfB64,
-                            contentType: 'application/pdf',
+                            storagePath: pdfGuardado.storagePath,
+                            contentType: pdfGuardado.contentType,
                         },
                     ],
                 }),
@@ -2248,18 +2316,32 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                 const fillEmViagemMap: Record<string, string> = {};
                 const fillFinalMap: Record<string, string> = {};
                 const fillCancelTimeMap: Record<string, string> = {};
+                const fillEndTimeHistoryMap: Record<string, DhlEndTimeHistory[]> = {};
                 if (fillAllIds.length > 0) {
                     try {
                         for (const ids of chunk(fillAllIds, 100)) {
-                            const { data: histRows } = await supabase
-                                .from('mission_history')
-                                .select('mission_id, changed_at, new_value')
-                                .in('mission_id', ids)
-                                .eq('field_name', 'status')
-                                .order('changed_at', { ascending: true });
-                            if (!histRows) continue;
-                            for (const h of histRows as any[]) {
+                            const histResult = await fetchAllPages<any>(
+                                (from, size) => supabase
+                                    .from('mission_history')
+                                    .select('id, mission_id, field_name, changed_at, new_value', { count: 'exact' })
+                                    .in('mission_id', ids)
+                                    .in('field_name', ['status', 'end_time'])
+                                    .order('changed_at', { ascending: true })
+                                    .order('id', { ascending: true })
+                                    .range(from, from + size - 1),
+                                500,
+                                50_000,
+                                { getRowKey: h => h.id },
+                            );
+                            for (const h of histResult.rows) {
                                 const id = h.mission_id;
+                                if (h.field_name === 'end_time') {
+                                    (fillEndTimeHistoryMap[id] ||= []).push({
+                                        changedAt: h.changed_at,
+                                        newValue: h.new_value,
+                                    });
+                                    continue;
+                                }
                                 const v = (h.new_value || '').toString().toLowerCase()
                                     .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                                 if (v.includes('viagem') && !fillEmViagemMap[id]) {
@@ -2273,7 +2355,10 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                 }
                             }
                         }
-                    } catch {}
+                    } catch (historyError) {
+                        console.error('[DHL] Falha ao carregar histórico de horários da planilha', historyError);
+                        throw new Error('Não foi possível carregar o histórico completo de horários das OS. A planilha não foi gerada para evitar divergências.');
+                    }
                 }
 
                 // Tabelas de preco/custo do cliente DHL para o motor financeiro.
@@ -2320,6 +2405,7 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                                 if (fillSnapInfo[row.entity_id]) continue;
                                 try {
                                     const d = JSON.parse(row.details);
+                                    if (!primeiroLogDepoisDoAutomatico([d])) continue;
                                     fillSnapInfo[row.entity_id] = {
                                         id: d.clientTableId ? String(d.clientTableId) : undefined,
                                         name: d.tableName || undefined,
@@ -2452,34 +2538,26 @@ const ClientBillingReport: React.FC<ClientBillingReportProps> = ({ onNavigate, o
                     // HORÁRIOS REAIS: início = "Em Viagem"; fim = status terminal.
                     const emViagemIso = fillEmViagemMap[m.id] || '';
                     const finalIso = fillFinalMap[m.id] || '';
-                    if (isCancel) {
-                        const cancelAt = fillCancelTimeMap[m.id] || finalIso || '';
-                        if (emViagemIso) {
-                            // Saiu em viagem e foi cancelada depois -> soma horas reais.
-                            rowStart = emViagemIso;
-                            rowEnd = cancelAt || emViagemIso;
-                            cancelledBeforeFill = false;
-                        } else {
-                            // Cancelada antes de sair -> sem horas (início = fim).
-                            rowStart = cancelAt || m.start_time || '';
-                            rowEnd = cancelAt || m.start_time || '';
-                            cancelledBeforeFill = true;
-                        }
-                    } else {
+                    if (!isCancelledRow) {
                         rowStart = emViagemIso || m.start_time || '';
                         rowEnd = finalIso || m.end_time || m.start_time || '';
+                        // Coluna U (HORA INÍCIO) SEMPRE = horário do AGENDAMENTO.
+                        rowStart = m.start_time || rowStart;
+                    } else {
+                        // Desde setembro/2026, cancelada executada conserva as horas
+                        // reconhecidas na Auditoria de Faturamento. O end_time gravado
+                        // no mesmo evento do cancelamento é importante quando a OS foi
+                        // reaberta depois (GTM-7788), pois o end_time atual já mudou.
+                        const cancelWindow = resolveDhlCancelledSheetWindow({
+                            scheduledIso: m.start_time,
+                            currentEndIso: m.end_time,
+                            cancelStatusAt: fillCancelTimeMap[m.id] || finalIso || '',
+                            endTimeHistory: fillEndTimeHistoryMap[m.id] || [],
+                        });
+                        rowStart = cancelWindow.start;
+                        rowEnd = cancelWindow.end;
+                        cancelledBeforeFill = cancelWindow.cancelledBefore;
                     }
-
-                    // Coluna U (HORA INÍCIO) SEMPRE = horário do AGENDAMENTO
-                    // (start_time), independente do horário real de saída. Cancelada
-                    // ANTES do agendamento mantém início = fim = agendamento (0h).
-                    const agendamentoIso = m.start_time || rowStart;
-                    rowStart = agendamentoIso;
-                    if (cancelledBeforeFill) rowEnd = agendamentoIso;
-                    // OS cancelada cobra o MINIMO da tabela 100km: zera a duração
-                    // (fim = início) para que a HORA EXCEDENTE (AB) seja sempre 0 e o
-                    // TOTAL FORNECEDOR (AG) recaia apenas sobre a FRANQUIA TABELA (AE).
-                    if (isCancelledRow) rowEnd = rowStart;
 
                     // TABELA REGIONAL CORRETA: usa o motor de seleção DHL (região da
                     // origem + faixa de KM + rota exata/inversa) para TODAS as OS,
@@ -3182,6 +3260,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     category_name: CLIENT_RECEIVABLE_CATEGORY,
                                     notes: rxPayload.notes,
                                     payment_method: rxPayload.payment_method,
+                                    ...(chValue > 0 ? { amount: chValue } : {}),
                                 }).eq('id', rxExisting[0].id);
                                 rxError = up.error;
                             } else {
@@ -3529,6 +3608,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                         skipBoleto,
                         municipalServiceCode: municipalOpt.code,
                         municipalServiceName: municipalOpt.name,
+                        municipalServiceOptionId: municipalOpt.id,
                         missionIds: bulletinMissionIds,
                         periodStart: startDate || undefined,
                         periodEnd: endDate || undefined,
@@ -3672,6 +3752,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                     skipBoleto,
                     municipalServiceCode: municipalOpt.code,
                     municipalServiceName: municipalOpt.name,
+                    municipalServiceOptionId: municipalOpt.id,
                     missionIds: bulletinMissionIds,
                     periodStart: startDate || undefined,
                     periodEnd: endDate || undefined,
@@ -4138,7 +4219,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 </div>
                                 <div className="flex items-end">
                                     <div className="w-full p-2.5 bg-gray-50 rounded-lg border text-[10px] text-gray-400 font-bold">
-                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : 'Defina o vencimento para gerar a cobrança'}
+                                        {invoiceForm.boleto_due_date ? `Contas a Receber: venc. ${formatDateBR(invoiceForm.boleto_due_date)}` : 'Defina o vencimento para gerar a cobrança'}
                                     </div>
                                 </div>
                             </div>
@@ -4190,6 +4271,14 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     </div>
                                     {(() => {
                                         const municipalOpt = findMunicipalServiceOption(invoiceMunicipalOptionId);
+                                        const selectedClient = clients.find(c => c.id.toString() === invoiceForm.client);
+                                        const national = resolveAsaasNationalMonitoring({
+                                            optionId: municipalOpt.id,
+                                            municipalCode: municipalOpt.code,
+                                            serviceDescription: municipalOpt.descriptionBase,
+                                            clientName: selectedClient?.name,
+                                            tradingName: selectedClient?.trading_name,
+                                        });
                                         return (
                                             <div className="bg-green-50 border border-green-200 rounded-lg px-2.5 py-2 space-y-2" data-testid="section-invoice-cnae">
                                                 <div className="flex items-start justify-between gap-2">
@@ -4223,6 +4312,17 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                         </select>
                                                     </div>
                                                 )}
+                                                <div className="bg-white border border-green-300 rounded-lg px-2.5 py-2 space-y-1" data-testid="section-nf-conferencia">
+                                                    <p className="text-[8px] font-black text-green-800 uppercase">Conferência da NF Asaas</p>
+                                                    <p className="text-[10px] text-gray-800"><span className="font-black">ISS:</span> 2% sem retenção. PIS, COFINS, CSLL, IR e INSS sem destaque.</p>
+                                                    {national && (
+                                                        <div data-testid="section-nf-nacional-monitoramento">
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">Código nacional:</span> {national.federalServiceTaxCode}</p>
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">NBS:</span> {national.nbsCode}</p>
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">Municipal:</span> {municipalOpt.code}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })()}
@@ -4445,7 +4545,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             </p>
                                             <p className="text-[11px] font-semibold text-sky-800 mt-1">
                                                 Vencimento {invoiceForm.boleto_due_date
-                                                    ? new Date(invoiceForm.boleto_due_date + 'T12:00:00').toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+                                                    ? formatDateBR(invoiceForm.boleto_due_date)
                                                     : '—'}
                                                 {' · '}Valor R$ {Number(invoiceForm.amount || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                                 {asaasResult.payment?.id ? ` · Asaas ${asaasResult.payment.id}` : ''}
@@ -5162,6 +5262,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 <col style={{ minWidth: '45px' }} />
                                 {(isCeslogBilling || isDhlBilling) && <col style={{ minWidth: '70px' }} />}
                                 {isIntermodalBilling && <col style={{ minWidth: '50px' }} />}
+                                {isVsTransportesBilling && <col style={{ minWidth: '120px' }} />}
                                 <col style={{ minWidth: '80px' }} />
                                 <col style={{ minWidth: '250px' }} />
                                 <col style={{ minWidth: '70px' }} />
@@ -5192,7 +5293,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             </colgroup>
                             <thead>
                                 <tr className="group-hdr">
-                                    <th style={groupHeaderStyle} colSpan={9 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0)}>TABELA ACORDADA</th>
+                                    <th style={groupHeaderStyle} colSpan={9 + extraClientCols}>TABELA ACORDADA</th>
                                     <th style={groupHeaderStyle} colSpan={6}>INFORMAÇÕES DA VIAGEM</th>
                                     <th style={grpKm} colSpan={3}>KILOMETRAGEM</th>
                                     <th style={grpHr} colSpan={3}>HORÁRIOS</th>
@@ -5208,6 +5309,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                     {isDhlBilling && <th style={{ ...headerStyle, backgroundColor: '#7f1d1d', color: '#FFCC00', fontSize: '17px', letterSpacing: '0.5px' }}>SM</th>}
                                     {isCevaBilling && <th style={{ ...headerStyle, backgroundColor: '#0f766e', color: '#fff' }}>TIPO</th>}
                                     {isIntermodalBilling && <th style={{ ...headerStyle, backgroundColor: '#1d4ed8', color: '#fff' }}>UF</th>}
+                                    {isVsTransportesBilling && <th style={{ ...headerStyle, backgroundColor: '#0e7490', color: '#fff' }}>REF. PEDIDOS</th>}
                                     <th style={headerStyle}>STATUS</th>
                                     <th style={{ ...headerStyle, textAlign: 'left' }}>ROTA</th>
                                     <th style={headerStyle}>VALOR</th>
@@ -5241,10 +5343,10 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                 {(() => {
                                     const filtered = boletimFilter === 'aprovadas' ? rowsData.filter(r => r.isApproved) : boletimFilter === 'pendentes' ? rowsData.filter(r => !r.isApproved) : rowsData;
                                     return filtered.length === 0 ? (
-                                    <tr><td colSpan={29 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0)} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
+                                    <tr><td colSpan={29 + extraClientCols} style={{ ...cellStyle, padding: '20px', fontSize: '14px', fontWeight: 700, color: '#9ca3af' }}>{boletimFilter !== 'todas' ? `NENHUMA MISSÃO ${boletimFilter === 'aprovadas' ? 'APROVADA' : 'PENDENTE'} NO PERÍODO.` : 'NENHUMA MISSÃO NO PERÍODO.'}</td></tr>
                                 ) : (
                                     filtered.map((r, i) => (
-                                        <tr key={i} title={r.frozen ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : ''} style={(() => {
+                                        <tr key={i} title={r.textoLeitura || (r.frozen && r.homologadoPorPessoa ? `Dados Congelados - Aprovado por ${r.frozenBy}` : !r.isApproved ? `Status: ${r.missionStatus} (não aprovada)` : '')} style={(() => {
                                             const s = (r.missionStatus || '').toLowerCase();
                                             if (s.includes('cancel')) return { backgroundColor: '#fee2e2' };
                                             if (r.isApproved || s.includes('conclu')) return { backgroundColor: '#dcfce7' };
@@ -5272,18 +5374,19 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             {isDhlBilling && <td style={{ ...cellStyle, fontWeight: 900, color: '#7f1d1d', fontSize: '18px', backgroundColor: '#fff7ed', letterSpacing: '0.8px', padding: '10px 12px' }} data-testid={`cell-sm-${r.id}`}>{r.smNumber || '-'}</td>}
                                             {isCevaBilling && <td style={{ ...cellStyle, fontWeight: 800, color: r.tipo === 'PRONTA RESPOSTA' ? '#9a3412' : '#0f766e', fontSize: '11px', backgroundColor: r.tipo === 'PRONTA RESPOSTA' ? '#fff7ed' : '#f0fdfa', letterSpacing: '0.3px' }} data-testid={`cell-tipo-${r.id}`}>{r.tipo}</td>}
                                             {isIntermodalBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#1d4ed8', fontSize: '13px' }} data-testid={`cell-uf-${r.id}`}>{r.destinationUf || '-'}</td>}
+                                            {isVsTransportesBilling && <td style={{ ...cellStyle, fontWeight: 800, color: '#0e7490', fontSize: '13px', letterSpacing: '0.2px' }} data-testid={`cell-vs-pedido-${r.id}`}>{r.referenceNumber || '-'}</td>}
                                             <td style={{ ...cellStyle, fontWeight: 800, fontSize: '13px', textTransform: 'uppercase', color: r.isApproved ? '#065f46' : '#991b1b', backgroundColor: r.isApproved ? '#ecfdf5' : '#fee2e2' }} data-testid={`cell-status-${r.id}`}>{r.missionStatus}</td>
                                             <td className="route-cell" style={{ ...cellStyle, textAlign: 'left', whiteSpace: 'normal', wordWrap: 'break-word', wordBreak: 'break-word', overflowWrap: 'break-word', lineHeight: '1.3', fontSize: '15px', maxWidth: '340px' }} title={r.route}>{r.route}</td>
-                                            <td style={cellStyle}>{fmtBRL(r.activationFee)}</td>
-                                            <td style={cellStyle}>{r.franchiseHoursFmt}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : fmtBRL(r.activationFee)}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : r.franchiseHoursFmt}</td>
                                             <td style={isDhlBilling && dhlWarningsById.has(r.id) ? { ...cellStyle, background: '#fff7ed', color: '#9a3412', fontWeight: 900, border: '1.5px solid #ea580c' } : cellStyle} title={isDhlBilling && dhlWarningsById.has(r.id) ? `Divergente: KM real ${dhlWarningsById.get(r.id)!.kmTotal} → tabela esperada ${dhlWarningsById.get(r.id)!.expected}KM (aplicada ${dhlWarningsById.get(r.id)!.actual}KM)` : undefined}>
-                                                {fmtNum(r.franchiseKm)}
+                                                {r.semDetalhamento ? '—' : fmtNum(r.franchiseKm)}
                                                 {isDhlBilling && dhlWarningsById.has(r.id) && (
                                                     <span className="no-print" style={{ display: 'inline-block', marginLeft: '4px', fontSize: '8px', fontWeight: 900, color: '#fff', backgroundColor: '#ea580c', borderRadius: '3px', padding: '0 3px', verticalAlign: 'middle' }}>!{dhlWarningsById.get(r.id)!.expected}</span>
                                                 )}
                                             </td>
-                                            <td style={cellStyle}>{fmtBRL(r.unitHr)}</td>
-                                            <td style={cellStyle}>{fmtBRL(r.unitKm)}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : fmtBRL(r.unitHr)}</td>
+                                            <td style={cellStyle}>{r.semDetalhamento ? '—' : fmtBRL(r.unitKm)}</td>
                                             <td style={cellStyle}>{r.startDate}</td>
                                             <td style={cellStyle}>{r.startTime}</td>
                                             <td style={{ ...cellMono }}>{r.viatura}</td>
@@ -5296,12 +5399,12 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                             <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.timeStart}</td>
                                             <td style={{ ...cellMono, backgroundColor: bgHr }}>{r.timeEnd}</td>
                                             <td style={{ ...cellMonoBold, backgroundColor: bgHr }}>{r.timeTotal}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-'}</td>
-                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00'}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.semDetalhamento ? '—' : (r.kmExtraQtd > 0 ? fmtNum(r.kmExtraQtd) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.semDetalhamento ? '—' : (r.kmExtraQtd > 0 ? fmtBRL(r.kmExtraUnit) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgKmExc }}>{r.semDetalhamento ? '—' : (r.kmExtraTotal > 0 ? fmtBRL(r.kmExtraTotal) : 'R$ 0,00')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.semDetalhamento ? '—' : (r.hrExtraQtd > 0 ? fmtHHMM(r.hrExtraQtd) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.semDetalhamento ? '—' : (r.hrExtraQtd > 0 ? fmtBRL(r.hrExtraUnit) : '-')}</td>
+                                            <td style={{ ...cellMono, backgroundColor: bgHrExc }}>{r.semDetalhamento ? '—' : (r.hrExtraTotal > 0 ? fmtBRL(r.hrExtraTotal) : 'R$ 0,00')}</td>
                                             <td style={{ ...cellMono, backgroundColor: bgVal }}>{r.tollVal > 0 ? fmtBRL(r.tollVal) : 'R$ 0,00'}</td>
                                             <td style={{ ...cellMonoBold, backgroundColor: bgVal }}>{fmtBRL(r.totalGeral)}</td>
                                         </tr>
@@ -5312,7 +5415,7 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                             {rowsData.length > 0 && (
                                 <tfoot>
                                     <tr style={{ backgroundColor: '#7f1d1d', color: '#fff' }}>
-                                        <td colSpan={28 + (isCeslogBilling ? 1 : 0) + (isDhlBilling ? 2 : 0) + (isCevaBilling ? 1 : 0) + (isIntermodalBilling ? 1 : 0)} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '17px', color: '#fff', border: '1px solid #991b1b', padding: '10px 12px' }}>TOTAL</td>
+                                        <td colSpan={28 + extraClientCols} style={{ ...cellStyle, textAlign: 'right', fontWeight: 900, fontSize: '17px', color: '#fff', border: '1px solid #991b1b', padding: '10px 12px' }}>TOTAL</td>
                                         <td style={{ ...cellStyle, fontWeight: 900, fontSize: '18px', color: '#fff', border: '1px solid #991b1b', padding: '10px 12px' }}>{fmtBRL(grandTotal)}</td>
                                     </tr>
                                 </tfoot>

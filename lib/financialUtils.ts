@@ -9,6 +9,7 @@ import {
 } from './providerAutoPricing';
 import { findDhlAutoClient, selectDhlClientTable } from './dhlAutoTableSelector';
 import { resolveStoredClientToll, resolveStoredProviderToll } from './toll/clientTollBilling';
+import { carimboAprovacaoHumana } from './missionSnapshot';
 
 const STOP_WORDS = ['LTDA','LTDA.','S.A.','S.A','SA','S/A','S/A.','DO','DE','DA','E','DAS','DOS'];
 // PostgREST trata ( ) , . : como reservados dentro de .or(); envolvemos
@@ -66,16 +67,55 @@ export function isSameClientName(a: string, b: string): boolean {
     return true;
 }
 
-/** KM excedente padrão DHL por UF de origem (espelha planilha de medição — coluna AA). */
+export type OrigemTarifaKm = 'tabela' | 'zero_contratual' | 'ausente' | 'excepcional';
+
+/**
+ * A tarifa vem da tabela vinculada.
+ * Zero gravado é zero contratual. Nulo é parâmetro ausente.
+ * A tarifa regional DHL não entra no lugar de nenhum dos dois.
+ */
+export function classificarTarifaKm(
+  valor: number | null | undefined,
+  excepcional?: number | null,
+): { origem: OrigemTarifaKm; tarifa: number } {
+  if (excepcional != null && Number.isFinite(Number(excepcional)) && Number(excepcional) > 0) {
+    return { origem: 'excepcional', tarifa: Math.round(Number(excepcional) * 100) / 100 };
+  }
+  if (valor == null || !Number.isFinite(Number(valor))) return { origem: 'ausente', tarifa: 0 };
+  if (Number(valor) < 0) return { origem: 'ausente', tarifa: 0 };
+  if (Number(valor) === 0) return { origem: 'zero_contratual', tarifa: 0 };
+  return { origem: 'tabela', tarifa: Math.round(Number(valor) * 100) / 100 };
+}
+
+/** KM excedente padrão DHL por UF de origem (espelha planilha de medição — coluna AA). Só vale com confirmação explícita. */
 export function dhlDefaultUnitKmExcess(originUF: string): number {
     const uf = String(originUF || '').toUpperCase().trim();
     return (uf === 'SC' || uf === 'RS') ? 7.35 : 6.90;
 }
 
 /**
+ * Destino ainda não definido na criação da OS (ex.: "RAIO 200 KM — DESTINO A DEFINIR").
+ * Não é produto 200KM de acompanhamento — não pode capar KM nem forçar tabela 200KM.
+ */
+export function isUndefinedDestinationPlaceholder(dest: string | undefined | null): boolean {
+    const n = String(dest || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    return n.includes('DESTINO A DEFINIR');
+}
+
+/**
+ * Detecta faixa 100KM / 200KM no nome, sem casar 1000KM, 1100KM, 1200KM, 2200KM.
+ * "1200KM".includes("200KM") era verdadeiro e zerava extra de tabela 1200.
+ */
+export function mentionsFixedKmBand(text: string | undefined | null, band: 100 | 200): boolean {
+    const n = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+    const re = band === 200 ? /(^|[^0-9])200\s*KM/ : /(^|[^0-9])100\s*KM/;
+    return re.test(n);
+}
+
+/**
  * Materializa R$ de deslocamento a partir do KM autorizado (`dhl_deslocamento_km`).
- * Se já houver `displacement_value` / `_provider` salvo (> 0), preserva.
- * Cliente: km × taxa (tabela ou fallback DHL por UF).
+ * Se `displacement_value` / `_provider` não for NULL, preserva, inclusive 0. NULL deriva.
+ * Cliente: km × taxa da tabela vinculada. Zero ou ausência não viram tarifa regional.
  * Fornecedor: km × taxa da tabela de custo (0 se MESMA OS ou taxa 0).
  */
 export function resolveDisplacementFromAuthorizedKm(opts: {
@@ -84,18 +124,18 @@ export function resolveDisplacementFromAuthorizedKm(opts: {
   displacementValueProvider?: number | null;
   clientUnitPriceKm?: number | null;
   providerUnitPriceKm?: number | null;
+  tarifaExcepcionalCliente?: number | null;
   origin?: string | null;
   isSameOs?: boolean | null;
-}): { client: number; provider: number; km: number; clientRate: number; providerRate: number } {
+}): { client: number; provider: number; km: number; clientRate: number; providerRate: number; origemTarifaCliente: OrigemTarifaKm } {
   const km = Math.max(0, Number(opts.dhlDeslocamentoKm) || 0);
-  const storedClient = Math.max(0, Number(opts.displacementValue) || 0);
-  const storedProvider = Math.max(0, Number(opts.displacementValueProvider) || 0);
+  const clienteInformado = opts.displacementValue != null;
+  const fornecedorInformado = opts.displacementValueProvider != null;
+  const storedClient = clienteInformado ? Math.max(0, Number(opts.displacementValue) || 0) : 0;
+  const storedProvider = fornecedorInformado ? Math.max(0, Number(opts.displacementValueProvider) || 0) : 0;
 
-  let clientRate = Math.max(0, Number(opts.clientUnitPriceKm) || 0);
-  if (km > 0 && clientRate <= 0) {
-    // Tabelas DHL fixas frequentemente têm price_per_extra_km = 0.
-    clientRate = dhlDefaultUnitKmExcess(extractUF(opts.origin || ''));
-  }
+  const tarifaCliente = classificarTarifaKm(opts.clientUnitPriceKm, opts.tarifaExcepcionalCliente);
+  const clientRate = tarifaCliente.tarifa;
   const providerRate = opts.isSameOs ? 0 : Math.max(0, Number(opts.providerUnitPriceKm) || 0);
 
   const derivedClient = km > 0 && clientRate > 0 ? Math.round(km * clientRate * 100) / 100 : 0;
@@ -105,8 +145,9 @@ export function resolveDisplacementFromAuthorizedKm(opts: {
     km,
     clientRate,
     providerRate,
-    client: storedClient > 0 ? Math.round(storedClient * 100) / 100 : derivedClient,
-    provider: opts.isSameOs ? 0 : (storedProvider > 0 ? Math.round(storedProvider * 100) / 100 : derivedProvider),
+    origemTarifaCliente: tarifaCliente.origem,
+    client: clienteInformado ? Math.round(storedClient * 100) / 100 : derivedClient,
+    provider: opts.isSameOs ? 0 : (fornecedorInformado ? Math.round(storedProvider * 100) / 100 : derivedProvider),
   };
 }
 
@@ -150,6 +191,29 @@ export function isIntentionalBillingOverride(editReason: string | null | undefin
     if (blockAutoResync.some((p) => r.includes(p))) return true;
     // Texto livre digitado pelo usuário (qualquer outro motivo não vazio)
     return true;
+}
+
+/**
+ * A regra check_valor_zero_motivo só aceita valor zero com motivo em
+ * revenue_edit_reason / cost_edit_reason. Não altera o valor, só o texto.
+ */
+export function zeroValueEditReasons(input: {
+    revenue: number;
+    cost: number;
+    revenueReason?: string | null;
+    costReason?: string | null;
+    sameOs?: boolean;
+    fallbackReason?: string | null;
+}): { revenue_edit_reason?: string; cost_edit_reason?: string } {
+    const out: { revenue_edit_reason?: string; cost_edit_reason?: string } = {};
+    const fallback = String(input.fallbackReason || '').trim() || 'AGUARDANDO DEFINIÇÃO';
+    if (!(Number(input.revenue) > 0) && !String(input.revenueReason || '').trim()) {
+        out.revenue_edit_reason = fallback === 'MESMA OS' ? 'AGUARDANDO DEFINIÇÃO' : fallback;
+    }
+    if (!(Number(input.cost) > 0) && !String(input.costReason || '').trim()) {
+        out.cost_edit_reason = input.sameOs ? 'MESMA OS' : fallback;
+    }
+    return out;
 }
 
 /** Custo do fornecedor já persistido na auditoria — inclusive R$ 0,00 com motivo. */
@@ -278,6 +342,7 @@ export interface CalculatedFinancials {
       excessHours: number;
       excessHoursReal: number;
       unitPriceKm: number;
+      tarifaKmOrigem?: OrigemTarifaKm;
       unitPriceHour: number;
       franchiseKm: number;
       franchiseHours: number;
@@ -516,8 +581,36 @@ export type RegionalTableConstraint = {
 };
 
 /**
+ * Duas cidades coladas por hífen ou por "X" são uma rota nomeada
+ * (GUARULHOS-GOIANIA, GUARULHOS/SP X GOIANIA/GO). Barra ou "OU" continuam
+ * alternativas de origem (PALHOÇA / FLORIANÓPOLIS), não uma rota.
+ */
+function isNamedCityRoute(tableOp: string, cities: string[]): boolean {
+    if (cities.length < 2) return false;
+    const positions = cities
+        .map((city) => ({ city, index: tableOp.indexOf(city) }))
+        .filter((hit) => hit.index >= 0)
+        .sort((a, b) => a.index - b.index);
+    const distinct: { city: string; index: number }[] = [];
+    for (const hit of positions) {
+        const insideLonger = distinct.some((kept) =>
+            hit.index >= kept.index && hit.index + hit.city.length <= kept.index + kept.city.length
+        );
+        if (!insideLonger) distinct.push(hit);
+    }
+    if (distinct.length < 2) return false;
+    for (let i = 0; i < distinct.length - 1; i++) {
+        const start = distinct[i].index + distinct[i].city.length;
+        const between = tableOp.slice(start, distinct[i + 1].index);
+        if (/\bX\b/.test(between) || /^[\s\-–—]+$/.test(between)) return true;
+    }
+    return false;
+}
+
+/**
  * Fail-closed: tabela com cidade/região específica só vale se a origem da OS
- * corresponder. Tabelas genéricas (só faixa KM / sem cidade-região) passam.
+ * corresponder. Tabela de rota nomeada só vale se origem e destino baterem.
+ * Tabelas genéricas (só faixa KM / sem cidade-região) passam.
  */
 export function evaluateRegionalTableConstraint(
     operationType: string,
@@ -540,6 +633,19 @@ export function evaluateRegionalTableConstraint(
 
     const citiesInTable = TABLE_SPECIFIC_CITY_KEYWORDS.filter((c) => tableOp.includes(c));
     if (citiesInTable.length > 0) {
+        if (isNamedCityRoute(tableOp, citiesInTable)) {
+            const originText = `${originCity} ${originAddr}`;
+            const onOrigin = citiesInTable.filter((city) => originText.includes(city));
+            const onDest = citiesInTable.filter((city) => destCity.includes(city));
+            const leftover = citiesInTable.filter((city) => !originText.includes(city) && !destCity.includes(city));
+            if (leftover.length > 0 || onOrigin.length === 0 || onDest.length === 0) {
+                const missing = leftover[0]
+                    || citiesInTable.find((city) => !onDest.includes(city))
+                    || citiesInTable[0];
+                return { blocked: true, reason: `BLOQUEIO ROTA (${missing})` };
+            }
+            return { blocked: false, reason: '', matchedCity: onOrigin[0] };
+        }
         const matchedCity = citiesInTable.find((c) => missionText.includes(c));
         if (!matchedCity) {
             return { blocked: true, reason: `BLOQUEIO CIDADE (${citiesInTable[0]})` };
@@ -614,6 +720,7 @@ export const calculateMissionFinancials = (
         providerTableId?: string; 
         forceIblFee?: boolean;
         customClientUnitKm?: number;
+        tarifaExcepcionalKm?: number;
         customClientUnitHour?: number;
         customProviderUnitKm?: number;
         customProviderUnitHour?: number;
@@ -830,7 +937,10 @@ export const calculateMissionFinancials = (
     let providerMultiplier = 1;
 
     const selectStrictTable = (candidateTables: any[], dist: number, region: string, city: string, typeKeyword: string, destCity: string, routeCode?: string, agentAware?: { count: number, isSpecial: boolean }, originUFCode?: string, originAddress?: string) => {
-        if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Sem tabelas cadastradas' };
+        candidateTables = (candidateTables || []).filter(
+            (t) => !String(t?.operation_type || '').toUpperCase().includes('__AUTO_MASTER__'),
+        );
+        if (!candidateTables || candidateTables.length === 0) return { table: null, log: 'Tabela não encontrada' };
 
         const normalizedRegion = normalize(region);
         const normalizedCity = normalize(city);
@@ -1047,6 +1157,9 @@ export const calculateMissionFinancials = (
             clientTablesFiltered = macorTables;
         }
     }
+    clientTablesFiltered = clientTablesFiltered.filter(
+        (t) => !String(t.operation_type || '').toUpperCase().includes('__AUTO_MASTER__'),
+    );
 
     let isManualOverride = false;
     if (manualTableOverrides?.clientTableId) {
@@ -1055,7 +1168,8 @@ export const calculateMissionFinancials = (
         // Seleção explícita do auditor (dropdown / BillingAdjustment) sempre vence.
         // O filtro de região vale só para memória evolutiva de OUTRAS OS, não aqui —
         // senão a GTM-7714 (PA) ficava "sem tabela" mesmo com NÍVEL BRASIL escolhida.
-        if (manualTable) {
+        // A linha __AUTO_MASTER__ não é tabela contratual: um id salvo dela não substitui a tabela da OS.
+        if (manualTable && !String(manualTable.operation_type || '').toUpperCase().includes('__AUTO_MASTER__')) {
             appliedClientTable = manualTable;
             clientLog = 'Seleção Manual / Memória';
             isManualOverride = true;
@@ -1170,7 +1284,9 @@ export const calculateMissionFinancials = (
     const normalizedOrigin = normalize(mission.origin || '');
     const normalizedDest = normalize(mission.destination || '');
     const isJundiai = normalizedOrigin.includes('JUNDIAI');
-    const destHas200km = normalizedDest.includes('200KM') || normalizedDest.includes('200 KM') || normalizedDest.includes('ACOMPANHAMENTO');
+    const destHas200km = !isUndefinedDestinationPlaceholder(mission.destination) && (
+        mentionsFixedKmBand(normalizedDest, 200) || normalizedDest.includes('ACOMPANHAMENTO')
+    );
     const referenceDistance = getTableSelectionDistance();
     let is200kmAccompaniment = destHas200km && !isZeroValueMission;
 
@@ -1205,6 +1321,13 @@ export const calculateMissionFinancials = (
         if (cubSantosTable) {
             appliedClientTable = cubSantosTable;
             clientLog = `CESLOG Rota Fixa → ${cubSantosTable.operation_type}`;
+        }
+    }
+
+    if (!appliedClientTable) {
+        console.warn(`Nenhuma tabela encontrada para o cliente ${missionClientRaw}. A tabela mestre genérica não é aplicada.`);
+        if (!clientLog || clientLog === 'Manual' || clientLog === 'Sem tabelas cadastradas') {
+            clientLog = 'Tabela não encontrada';
         }
     }
 
@@ -1243,12 +1366,24 @@ export const calculateMissionFinancials = (
     // manual salvo, então continuam usando o motor (ou o valor já salvo) sem regressão.
     // Normaliza o override de tabela do fornecedor UMA vez: um id sintético do
     // motor ("auto-...") nunca conta como seleção manual, em nenhum ramo abaixo.
-    const effectiveProviderTableId = (manualTableOverrides?.providerTableId
-        && !String(manualTableOverrides.providerTableId).startsWith('auto-'))
+    let effectiveProviderTableId = (manualTableOverrides?.providerTableId
+        && !String(manualTableOverrides.providerTableId).startsWith('auto-')
+        && !String(manualTableOverrides.providerTableId).startsWith('__auto_master__'))
         ? manualTableOverrides.providerTableId
         : undefined;
+    if (effectiveProviderTableId) {
+        const linhaSalva = providerTables.find((t) => String(t.id) === String(effectiveProviderTableId));
+        if (linhaSalva && isAutoMasterRow(linhaSalva)) {
+            effectiveProviderTableId = undefined;
+        }
+    }
     const hasManualProviderOverride = !!effectiveProviderTableId;
-    const autoEngineActive = !!autoMasterConfig && !mission.is_same_os && !isZeroValueMission && !isCancelled && autoRegionMatches && !hasManualProviderOverride;
+    // __AUTO_MASTER__ não entra no preço da OS. Tabela já vinculada permanece.
+    // Sem correspondência, o custo fica sem tabela (zero para precificação manual).
+    const autoEngineActive = false;
+    void autoMasterConfig;
+    void autoRegionMatches;
+    void hasManualProviderOverride;
 
     // Quando o motor está ativo, esvazia a lista de tabelas regulares para que
     // a lógica de score abaixo não selecione nada — o `appliedProviderTable`
@@ -1388,7 +1523,7 @@ export const calculateMissionFinancials = (
     if (is200kmAccompaniment && !cancelledBeforeExecution && !effectiveProviderTableId && filteredProviderTables.length > 0) {
         const provider200 = filteredProviderTables.find(t => {
             const op = normalize(t.operation_type || '');
-            return (op.includes('ATE 200') || op.includes('200 KM') || op.includes('200KM')) && t.franchise_km >= 200 && t.franchise_km <= 200;
+            return (op.includes('ATE 200') || mentionsFixedKmBand(op, 200)) && t.franchise_km >= 200 && t.franchise_km <= 200;
         });
         if (provider200) {
             appliedProviderTable = provider200;
@@ -1418,7 +1553,7 @@ export const calculateMissionFinancials = (
         const region = String(detectedRegion || '').toUpperCase();
         const is200Km = (t: any) => {
             const op = normalize(t.operation_type || '');
-            return op.includes('200KM') || op.includes('200 KM') || op.includes('ATE 200') ||
+            return mentionsFixedKmBand(op, 200) || op.includes('ATE 200') ||
                    (Number(t.franchise_km) >= 200 && Number(t.franchise_km) <= 200);
         };
         // 1ª tentativa: 200KM + região detectada batendo no operation_type
@@ -1476,6 +1611,13 @@ export const calculateMissionFinancials = (
         providerLog = `Motor Auto → Faixa ${autoBreakdown.bandKm}KM (${autoBreakdown.bandHours}h)`;
     }
 
+    if (!appliedProviderTable) {
+        console.warn(`Nenhuma tabela de fornecedor encontrada para ${mission.provider || 'a OS'}. A tabela mestre genérica não é aplicada.`);
+        if (!providerLog || providerLog === 'Manual') {
+            providerLog = 'Tabela não encontrada';
+        }
+    }
+
     const cBase = isRefused ? 0 : (manualTableOverrides?.customClientBase !== undefined 
         ? manualTableOverrides.customClientBase 
         : Math.max(0, (appliedClientTable?.activation_fee || 0) * clientMultiplier));
@@ -1486,14 +1628,13 @@ export const calculateMissionFinancials = (
     let cExcessKm = Math.max(0, distanceForCalculation - cFranchiseKm);
     let cExcessHr = Math.max(0, durationHours - cFranchiseHr);
     
-    let cUnitPriceKm = manualTableOverrides?.customClientUnitKm !== undefined
-        ? manualTableOverrides.customClientUnitKm
-        : (appliedClientTable?.price_per_extra_km || 0);
-    // Tabelas DHL de rota nomeada têm price_per_extra_km = 0 no cadastro; o valor
-    // oficial por UF (6,90 / 7,35) vem da planilha de medição — aplicamos aqui.
-    if (cUnitPriceKm <= 0 && findDhlAutoClient(missionClientRaw) && manualTableOverrides?.customClientUnitKm === undefined) {
-        cUnitPriceKm = dhlDefaultUnitKmExcess(originUF);
-    }
+    const tarifaKmTabela = classificarTarifaKm(
+        manualTableOverrides?.customClientUnitKm !== undefined
+            ? manualTableOverrides.customClientUnitKm
+            : appliedClientTable?.price_per_extra_km,
+        manualTableOverrides?.tarifaExcepcionalKm,
+    );
+    let cUnitPriceKm = tarifaKmTabela.tarifa;
 
     const cUnitPriceHour = manualTableOverrides?.customClientUnitHour !== undefined
         ? manualTableOverrides.customClientUnitHour
@@ -1506,8 +1647,9 @@ export const calculateMissionFinancials = (
     const clientHasExtraKmPrice = (appliedClientTable?.price_per_extra_km || 0) > 0
         || (manualTableOverrides?.customClientUnitKm || 0) > 0
         || (findDhlAutoClient(missionClientRaw) && cUnitPriceKm > 0);
-    const clientTableIs200km = appliedTableName.includes('200KM') || appliedTableName.includes('200 KM') || appliedTableName.includes('LOGITECH') || missionDest.includes('200KM');
-    const clientTableIs100km = appliedTableName.includes('100KM') || appliedTableName.includes('100 KM');
+    const destLooks200 = mentionsFixedKmBand(missionDest, 200) && !isUndefinedDestinationPlaceholder(mission.destination);
+    const clientTableIs200km = mentionsFixedKmBand(appliedTableName, 200) || appliedTableName.includes('LOGITECH') || destLooks200;
+    const clientTableIs100km = mentionsFixedKmBand(appliedTableName, 100);
     const isFixedDistanceClientRule = (clientTableIs200km || clientTableIs100km) && !isFranchiseTable(appliedTableName) && !clientHasExtraKmPrice;
 
     const clientHasExtraHrPrice = (appliedClientTable?.price_per_extra_hour || 0) > 0
@@ -1521,7 +1663,9 @@ export const calculateMissionFinancials = (
     const originalDistanceForCalc = distanceForCalculation;
     const originalDurationHours = durationHours;
 
-    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
+    // Teto 200 km só no produto acompanhamento (franquia ≤ 200). Rota nomeada
+    // (ex.: 1135KM) com destino placeholder "RAIO 200 KM" não pode zerar o extra.
+    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule && cFranchiseKm <= 200) {
         distanceForCalculation = Math.min(distanceForCalculation, 200);
     }
     if (isFixedDistanceClientRule && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
@@ -1537,8 +1681,8 @@ export const calculateMissionFinancials = (
     const providerTableName = (appliedProviderTable?.operation_type || '').toUpperCase();
     const providerHasExtraKmCost = (appliedProviderTable?.cost_per_extra_km || 0) > 0
         || (manualTableOverrides?.customProviderUnitKm || 0) > 0;
-    const providerTableIs200km = providerTableName.includes('200KM') || providerTableName.includes('200 KM') || providerTableName.includes('LOGITECH');
-    const providerTableIs100km = providerTableName.includes('100KM') || providerTableName.includes('100 KM');
+    const providerTableIs200km = mentionsFixedKmBand(providerTableName, 200) || providerTableName.includes('LOGITECH');
+    const providerTableIs100km = mentionsFixedKmBand(providerTableName, 100);
     const isFixedDistanceProviderRule = (providerTableIs200km || providerTableIs100km) && !isFranchiseTable(providerTableName) && !providerHasExtraKmCost;
 
     const providerHasExtraHrCost = (appliedProviderTable?.cost_per_extra_hour || 0) > 0
@@ -1554,7 +1698,8 @@ export const calculateMissionFinancials = (
         ? manualTableOverrides.providerOpsOverride.durationHours 
         : originalDurationHours;
 
-    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule) {
+    const pFranchiseKmForCap = Number(appliedProviderTable?.franchise_km || 0);
+    if (is200kmAccompaniment && !isZeroValueMission && !manualTableOverrides?.disableFixedKmRule && pFranchiseKmForCap <= 200) {
         providerDistForCalc = Math.min(providerDistForCalc, 200);
     }
 
@@ -1721,6 +1866,7 @@ export const calculateMissionFinancials = (
             excessHours: cExcessHr,
             excessHoursReal: cExcessHrReal,
             unitPriceKm: cUnitPriceKm,
+            tarifaKmOrigem: tarifaKmTabela.origem,
             unitPriceHour: cUnitPriceHour,
             franchiseKm: cFranchiseKm,
             franchiseHours: cFranchiseHr,
@@ -1772,7 +1918,7 @@ export const auditMissionFinancials = (
     const m = mission as any;
     const dispVal = safeNumber(m.displacement_value);
     const dispProvVal = safeNumber(m.displacement_value_provider);
-    const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!(m.snapshot_approved_by);
+    const hasManualOverride = !!(m.revenue_edit_reason) || !!(m.cost_edit_reason) || !!carimboAprovacaoHumana(m.snapshot_approved_by);
     if (hasManualOverride) {
         const storedRev = safeNumber(mission.revenue_value) + resolveStoredClientToll(mission.toll_value, (mission as any).toll_value_provider, mission.client) + dispVal;
         const storedCst = safeNumber(mission.cost_value) + resolveStoredProviderToll(mission.toll_value, (mission as any).toll_value_provider, !!(mission as any).is_same_os) + dispProvVal;

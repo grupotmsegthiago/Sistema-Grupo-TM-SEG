@@ -5,6 +5,7 @@ import { useNotification } from '../lib/NotificationContext';
 import { supabase } from '../lib/supabase';
 import type { OsAnalysisRecipient } from '../lib/osAnalysisTypes';
 import { OS_ANALYSIS_BROADCAST_CHANNEL } from '../lib/osAnalysisTypes';
+import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
 
 export type RequestOsAnalysisPayload = {
   missionId: string;
@@ -26,11 +27,7 @@ interface Props {
 type InternalUser = { id: string; name: string; email: string };
 
 function isDefaultRecipient(name: string): boolean {
-  const n = name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-  return n.includes('barbara') || n.includes('giovanna');
+  return isFinanceSupervisorName(name);
 }
 
 const RequestOsAnalysisModal: React.FC<Props> = ({ open, onClose, payload, onSent }) => {

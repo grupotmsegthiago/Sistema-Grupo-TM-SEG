@@ -2,26 +2,27 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-let handler: any = null;
+let app: any = null;
 let bootError: Error | null = null;
 
 async function proxyToExpress(req: any, res: any) {
   try {
-    if (!handler) {
+    if (!app) {
       if (bootError) {
         res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
         return;
       }
-      const serverless = require("serverless-http");
       const { getApp } = require("../../dist/vercelApp.cjs");
-      const app = await getApp();
-      handler = serverless(app, { binary: true });
+      app = await getApp();
     }
-    return handler(req, res);
+    return app(req, res);
   } catch (e: any) {
     bootError = e instanceof Error ? e : new Error(String(e));
+    app = null;
     console.error("[Vercel] Falha ao iniciar cron email-queue:", bootError);
-    res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+    if (!res.headersSent) {
+      res.status(503).json({ error: "Backend indisponivel", detail: bootError.message });
+    }
   }
 }
 

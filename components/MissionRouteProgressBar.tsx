@@ -110,7 +110,7 @@ const MissionRouteProgressBar: React.FC<Props> = ({
     pct <= 0 ? '0%' : pct >= 100 ? '100%' : `calc(${pct}% - ${carHalfWidthPx}px)`;
 
   return (
-    <div className="mt-3 pt-2 border-t border-gray-100" data-testid={`route-progress-${missionId}`}>
+    <div className="os-rota mt-3 pt-2 border-t border-slate-100" data-testid={`route-progress-${missionId}`}>
       <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-[11px] font-black text-gray-500 uppercase tracking-wide shrink-0">
@@ -140,13 +140,13 @@ const MissionRouteProgressBar: React.FC<Props> = ({
 
       <div className="relative w-full pt-2 pb-1">
         <div
-          className="relative w-full h-5 rounded-full shadow-[inset_0_1px_3px_rgba(0,0,0,0.25)] overflow-visible"
+          className="os-rota-trilho relative w-full h-5 rounded-full shadow-[inset_0_1px_3px_rgba(0,0,0,0.25)] overflow-visible"
           style={{
             background: 'linear-gradient(90deg, #e85d4c 0%, #8b2f5b 38%, #3d2d6b 68%, #1e3a8a 100%)',
           }}
         >
           <div
-            className="absolute top-1/2 z-20 flex items-center justify-center transition-all duration-700 ease-out pointer-events-none"
+            className="os-rota-veiculo absolute top-1/2 z-20 flex items-center justify-center transition-all duration-700 ease-out pointer-events-none"
             style={{
               left: carLeft,
               transform: pct >= 100 ? 'translate(-100%, calc(-50% - 4px))' : 'translateY(calc(-50% - 4px))',

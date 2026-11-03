@@ -77,19 +77,23 @@ function parseInvoiceNfMeta(inv: PendingInvoice): {
   observations?: string;
   municipalServiceCode?: string;
   municipalServiceName?: string;
+  municipalServiceOptionId?: string;
 } {
   const notes = String(inv.notes || inv.description || '').trim();
   if (!notes) return {};
   const lines = notes.split('\n').map((l) => l.trim()).filter(Boolean);
-  const main = lines.find((l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l));
+  const main = lines.find((l) => !/^Ref\.\s*rastreio:/i.test(l) && !/^CNAE\//i.test(l) && !/^Opção serviço NF:/i.test(l));
   const cnaeLine = lines.find((l) => /^CNAE\//i.test(l)) || '';
+  const optionLine = lines.find((l) => /^Opção serviço NF:/i.test(l)) || '';
   const codeMatch = cnaeLine.match(/(\d{4,6})/);
   const nameMatch = cnaeLine.match(/—\s*(.+)$/);
+  const optionId = optionLine.split(':').slice(1).join(':').trim().toLowerCase();
   return {
     serviceDescription: main || undefined,
     observations: notes.slice(0, 500),
     municipalServiceCode: codeMatch?.[1],
     municipalServiceName: nameMatch?.[1]?.trim(),
+    municipalServiceOptionId: optionId || undefined,
   };
 }
 
@@ -433,6 +437,7 @@ export async function retryOne(
     observations: nfMeta.observations,
     municipalServiceCode: nfMeta.municipalServiceCode,
     municipalServiceName: nfMeta.municipalServiceName,
+    municipalServiceOptionId: nfMeta.municipalServiceOptionId,
   };
   // IMPORTANTE: nf_retry_count conta APENAS tentativas reais de reemissão
   // (scheduleInvoice ou cancel+reschedule). Polling passivo (SYNCHRONIZED em
@@ -688,6 +693,14 @@ export async function runRetryCycle(opts?: { limit?: number }): Promise<{ proces
   let ok = 0, paused = 0, errors = 0, stuck = 0;
   for (const inv of batch) {
     const res = await retryOne(inv);
+    if (res.ok && 'action' in res && res.action === 'authorized') {
+      try {
+        const { sendInvoiceBillingEmail } = await import('./invoiceBillingEmail');
+        await sendInvoiceBillingEmail({ invoiceId: inv.id });
+      } catch (emailErr: any) {
+        console.log(`[Fatura Email] após NF ${inv.id}: ${emailErr?.message || emailErr}`);
+      }
+    }
     if (res.ok) ok++;
     else if (res.action === 'stuck-alert') stuck++;
     else if (res.paused) paused++;

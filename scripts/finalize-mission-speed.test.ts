@@ -15,14 +15,25 @@ test('finalização pré-carimba evidência do checklist em paralelo', () => {
   assert.match(src, /stampBrandOnImageBlob/);
 });
 
-test('estimativa de pedágio na conclusão tem timeout de 5s', () => {
+test('conclusão não grava pedágio estimado por IA', () => {
   const src = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
-  assert.match(src, /withTimeout\([\s\S]*\/api\/toll\/gemini-estimate/);
-  assert.match(src, /5000/);
+  const form = fs.readFileSync('components/MissionForm.tsx', 'utf8');
+  assert.doesNotMatch(src, /\/api\/toll\/gemini-estimate/);
+  assert.doesNotMatch(src, /Estimativa IA/);
+  assert.doesNotMatch(form, /\/api\/toll\/gemini-estimate/);
+  assert.match(form, /tollPersistencePair/);
 });
 
 test('Salvar em fase inicial não prende operador em finalização acidental', () => {
   const src = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
   assert.match(src, /resolveStatusForSaveSubmit/);
   assert.match(src, /statusToRestoreOnFinalizeCancel/);
+});
+
+test('Colar Print aplica só o logotipo — sem limpeza IA de overlays', () => {
+  const src = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
+  assert.doesNotMatch(src, /\/api\/gemini\/clean-print/);
+  assert.doesNotMatch(src, /Detectando overlays/);
+  assert.match(src, /stampBrandOverlays/);
+  assert.match(src, /Aplicando logotipo TM SEG/);
 });

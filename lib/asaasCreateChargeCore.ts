@@ -12,6 +12,7 @@ import { createSupabaseAdminClient } from './supabaseAdmin.js';
 import {
   findRecentDuplicateOpenCharge,
   persistAsaasChargeInvoice,
+  valorPersistidoDoSplit,
 } from './persistAsaasChargeInvoice.js';
 import { parseMissionIdsFromBody } from './billing/vincularOSFatura.js';
 import {
@@ -161,6 +162,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
     const observations = body.observations;
     const municipalServiceCode = body.municipalServiceCode as string | undefined;
     const municipalServiceName = body.municipalServiceName as string | undefined;
+    const municipalServiceOptionId = String(body.municipalServiceOptionId || '').trim().toLowerCase();
 
     const noBoleto = skipBoleto === true || String(skipBoleto || '').toLowerCase() === 'true';
     const nfObservations = String(observations || '').trim();
@@ -240,10 +242,17 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
           const trackingBase = String(invoiceNumber || '').trim() || `TMSEG-${Date.now()}`;
           const externalRef = `${trackingBase}-S${i + 1}-${cleanCnpj.slice(-4)}`;
           const descText = description || `Ref. aos Serviços de Intermediação de Escolta Armada`;
+          const valorFracionado = valorPersistidoDoSplit(charge.value);
+          if (valorFracionado == null) {
+            return {
+              status: 400,
+              body: { error: `Subconta ${i + 1} sem valor próprio. O total da fatura pai não é copiado.` },
+            };
+          }
 
           const payment = await createPayment({
             customerId: customer.id,
-            value: parseFloat(charge.value),
+            value: valorFracionado,
             dueDate,
             description: noBoleto
               ? `${descText} | Pagamento via transferência bancária (sem boleto)`
@@ -258,7 +267,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
           const persistSplit = await persistAsaasChargeInvoice({
             paymentId: payment.id,
             clientName: charge.name || clientName || 'Cliente',
-            amount: parseFloat(charge.value),
+            amount: valorFracionado,
             dueDate,
             trackingNumber: externalRef,
             serviceDescription: nfServiceText,
@@ -267,6 +276,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
               nfServiceText,
               `Ref. rastreio: ${externalRef}`,
               nfMunicipalCode ? `CNAE/Serviço municipal: ${nfMunicipalCode}` : '',
+              municipalServiceOptionId ? `Opção serviço NF: ${municipalServiceOptionId}` : '',
             ]
               .filter(Boolean)
               .join('\n'),
@@ -527,6 +537,7 @@ export async function runAsaasCreateCharge(input: CreateChargeInput): Promise<Cr
               nfMunicipalCode
                 ? `CNAE/Serviço municipal: ${nfMunicipalCode}${nfMunicipalName ? ` — ${nfMunicipalName}` : ''}`
                 : '',
+              municipalServiceOptionId ? `Opção serviço NF: ${municipalServiceOptionId}` : '',
             ]
               .filter(Boolean)
               .join('\n'),

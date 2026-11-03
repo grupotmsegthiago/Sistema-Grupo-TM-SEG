@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { calcularComissao } from '../lib/comissao/comissaoCalc';
+import { calcularComissao, roundMoney } from '../lib/comissao/comissaoCalc';
 import { extractFaturaNumeroFromNotes } from '../lib/comissao/comissaoCore';
 import { canAccessComissoesComerciais, comissaoSomentePropria } from '../lib/diretoriaAccess';
 
@@ -12,6 +12,12 @@ describe('comissao comercial — cálculo', () => {
     assert.equal(c.valorBaseLiquida, 8400);
     assert.equal(c.valorComissao, 252);
     assert.match(c.formatado.comissao, /252/);
+  });
+
+  it('arredonda 1,005 para 1,01 e mantém o centavo já exato', () => {
+    assert.equal(roundMoney(1.005), 1.01);
+    assert.equal(roundMoney(252), 252);
+    assert.equal(roundMoney(Number.NaN), 0);
   });
 
   it('aceita regra específica do comercial', () => {
@@ -36,7 +42,8 @@ describe('comissao comercial — baixa e acesso', () => {
     assert.equal(canAccessComissoesComerciais({ name: 'Thiago Moreira' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'Bárbara Silva', role: 'Administrador' }), false);
     assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'comercial' }), true);
-    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), false);
+    assert.equal(canAccessComissoesComerciais({ name: 'João', role: 'Financeiro' }), true);
+    assert.equal(comissaoSomentePropria({ name: 'João', role: 'Financeiro' }), false);
     assert.equal(comissaoSomentePropria({ name: 'Miguel Mota', role: 'Comercial' }), true);
     assert.equal(comissaoSomentePropria({ name: 'Daniel Pinto', role: 'Diretoria' }), false);
   });
@@ -60,6 +67,7 @@ describe('comissao comercial — integração preservada', () => {
   it('cadastro de cliente e tela da Diretoria existem', () => {
     const form = fs.readFileSync('components/ClientForm.tsx', 'utf8');
     const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const pagamento = fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8');
     const app = fs.readFileSync('App.tsx', 'utf8');
     const nav = fs.readFileSync('lib/navItems.ts', 'utf8');
     assert.match(form, /select-responsavel-comercial/);
@@ -70,7 +78,14 @@ describe('comissao comercial — integração preservada', () => {
     assert.match(page, /apuracao-escala-comercial/);
     assert.match(page, /btn-sync-usuarios-comercial/);
     assert.match(page, /btn-sync-comissoes-faturas/);
-    assert.match(page, /comissao-pendencias-banner/);
+    assert.match(page, /comissoes-liberadas/);
+    assert.match(page, /comissoes-pendentes/);
+    assert.match(page, /comissoes-pagas/);
+    assert.match(page, /comissao-pagamento-historico/);
+    assert.match(pagamento, /pago_em: agora.toISOString\(\)/);
+    assert.match(pagamento, /Anexe o comprovante/);
+    assert.doesNotMatch(page, /comissao-pendencias-banner/);
+    assert.doesNotMatch(page, /Faturamento sem comissão/);
     assert.match(page, /quadro-tm-seg/);
     assert.match(page, /quadro-torres/);
     assert.match(page, /meses-com-fatura/);
@@ -202,6 +217,26 @@ describe('comissao comercial — escala da planilha', () => {
     const liberada = valorComissaoLinhaAposPiso({ valorComissao: 83.15, brutoComercialNoPeriodo: 50_000 });
     assert.equal(liberada.abaixoDoPiso, false);
     assert.equal(liberada.valor, 83.15);
+    const { ordenarComissoesLiberadasPrimeiro, valorColunaPagamentoComissao } = await import('../lib/comissao/tabelaComissaoPadrao');
+    const ordem = ordenarComissoesLiberadasPrimeiro([
+      { id: 'a', status: 'AGUARDANDO_PAGAMENTO_CLIENTE' },
+      { id: 'b', status: 'LIBERADO_PARA_PAGAMENTO' },
+      { id: 'c', status: 'PAGO' },
+      { id: 'd', status: 'LIBERADO_PARA_PAGAMENTO' },
+    ]);
+    assert.deepEqual(ordem.map((r) => r.id), ['b', 'd', 'a', 'c']);
+    assert.equal(valorColunaPagamentoComissao('LIBERADO_PARA_PAGAMENTO', 144.04, false), 144.04);
+    assert.equal(valorColunaPagamentoComissao('AGUARDANDO_PAGAMENTO_CLIENTE', 144.04, false), null);
+    assert.equal(valorColunaPagamentoComissao('LIBERADO_PARA_PAGAMENTO', 0, true), null);
+    assert.equal(valorColunaPagamentoComissao('PAGO', 144.04, false), 144.04);
+    assert.equal(valorColunaPagamentoComissao('PAGO', 0, true), null);
+    const { somarListaComissao } = await import('../lib/comissao/tabelaComissaoPadrao');
+    const soma = somarListaComissao([
+      { valorComissao: 288.07, aPagar: 288.07 },
+      { valorComissao: 25.25, aPagar: null },
+    ]);
+    assert.equal(soma.comissao, 313.32);
+    assert.equal(soma.aPagar, 288.07);
     assert.equal(liberada.percentual, 3);
 
     const p500 = calcularApuracaoComissao({ valorBruto: 500_000, valorFixo: 0 });
@@ -229,7 +264,7 @@ describe('comissao comercial — escala da planilha', () => {
 
 describe('comissao comercial — faturas históricas', () => {
   it('casa fatura pelo nome, não por client_id (coluna inexistente)', async () => {
-    const { casarClienteDaFatura, montarPendenciasComissao } = await import('../lib/comissao/sincronizarComissoesFaturas');
+    const { casarClienteDaFatura, divergenciaTemComercialSelecionado, montarPendenciasComissao } = await import('../lib/comissao/sincronizarComissoesFaturas');
     const clients = [
       { id: 1, name: 'CEVA LOGISTICS LTDA', trading_name: 'CEVA', responsavel_comercial_id: null },
       { id: 37, name: 'TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', trading_name: 'TECHTRANS TRANSPORTES', responsavel_comercial_id: 'abc' },
@@ -245,6 +280,10 @@ describe('comissao comercial — faturas históricas', () => {
     );
     assert.equal(casarClienteDaFatura('TECHTRANS TRANSPORTES ESPECIALIZADOS LTDA', clients).client?.id, 37);
     assert.equal(casarClienteDaFatura('LUFT LOGISTICS LTDA', clients).status, 'ambiguous');
+    assert.equal(divergenciaTemComercialSelecionado('TECHTRANS TRANSPORTES', clients), true);
+    assert.equal(divergenciaTemComercialSelecionado('CEVA', clients), false);
+    assert.equal(divergenciaTemComercialSelecionado('LUFT LOGISTICS LTDA', clients), false);
+    assert.equal(divergenciaTemComercialSelecionado('DESCONHECIDO', clients), false);
     const pend = montarPendenciasComissao(
       [
         { id: '1', client: 'CEVA', amount: 100, status: 'EMITIDA' },
@@ -376,6 +415,16 @@ describe('comissao comercial — quadro por cliente', () => {
     const mesclado = mesclarLinhasQuadro(live, linhas);
     assert.equal(mesclado.length, 1);
     assert.equal(mesclado[0].detalhes.length, 1);
+    assert.equal(mesclado[0].faturamento, 3299.67);
+    const aoVivo = [{
+      ...live[0],
+      faturamento: 3299.67,
+      detalhes: [{ ...live[0].detalhes[0], id: 'inv:1ba27c7a-8451-45c0-b274-7df40bc3495d' }],
+    }];
+    const semPrefixo = mesclarLinhasQuadro(aoVivo, linhas);
+    assert.equal(semPrefixo[0].detalhes.length, 1);
+    assert.equal(semPrefixo[0].faturas, 1);
+    assert.equal(semPrefixo[0].faturamento, 3299.67);
     assert.equal(faturaClienteEstaPaga({ status: 'RECEIVED', paymentDate: null }), true);
     assert.equal(faturaClienteEstaPaga({ status: 'PENDING' }), false);
   });
@@ -525,6 +574,214 @@ describe('comissao comercial — quadro TORRES ao vivo', () => {
     assert.ok(quadro.linhas.some((l) => l.cliente.includes('TVM')));
     assert.ok(quadro.linhas.some((l) => l.cliente.includes('TECHTRANS')));
     assert.equal(quadro.linhas[0].comercialNome, 'MIGUEL MOTA');
+  });
+
+  it('missão cancelada entra na comissão e missão recusada fica de fora', async () => {
+    const { carregarFaturasQuadroTorresLive } = await import('../lib/comissao/quadroTorres');
+    const tables: Record<string, any[]> = {
+      clients: [{ id: 1, name: 'NOVA MINAS LOGISTICA', responsavel_comercial_id: 'abc' }],
+      invoices: [],
+      financial_transactions: [],
+      service_orders: [
+        { id: 10, os_number: 'TOR-0010', status: 'cancelada', mission_status: 'cancelada', origin: 'GRU', destination: 'Betim', scheduled_date: '2026-09-08' },
+        { id: 11, os_number: 'TOR-0011', status: 'recusada', mission_status: 'recusada', origin: 'GRU', destination: 'Cajamar', scheduled_date: '2026-09-09' },
+      ],
+      escort_billings: [
+        { service_order_id: 10, client_id: 1, client_name: 'NOVA MINAS LOGISTICA', fat_total: 800, status: 'CANCELADO', data_missao: '2026-09-08', origem: 'GRU', destino: 'Betim' },
+        { service_order_id: 11, client_id: 1, client_name: 'NOVA MINAS LOGISTICA', fat_total: 900, status: 'RECUSADA', data_missao: '2026-09-09', origem: 'GRU', destino: 'Cajamar' },
+      ],
+    };
+    const sb = {
+      from(table: string) {
+        const chain: any = {
+          select() { return chain; },
+          eq() { return chain; },
+          range() { return Promise.resolve({ data: tables[table] || [], error: null }); },
+        };
+        return chain;
+      },
+    };
+    const live = await carregarFaturasQuadroTorresLive(sb as any, '2026-09-01', '2026-09-30');
+    assert.equal(live.faturas.length, 1);
+    assert.equal(live.faturas[0].number, 'TOR-0010');
+    assert.equal(live.faturas[0].rotas?.[0].destino, 'Betim');
+    assert.equal(live.rotas.some((rota) => rota.osNumero === 'TOR-0011'), true);
+  });
+});
+
+describe('comissao comercial — rota e quinzena da missão TORRES', () => {
+  it('fatura antiga cancelada mostra a OS concluída na 1ª quinzena', async () => {
+    const {
+      decorarComissaoTorres,
+      linhaNaQuinzenaComissao,
+      comissaoDuplicadaNoPeriodo,
+    } = await import('../lib/comissao/rotaMissaoComissao');
+    const rotas = [
+      {
+        osId: '1186', osNumero: 'TOR-0792', origem: 'Aeroporto Internacional de Guarulhos (GRU)', destino: 'Betim',
+        dataMissao: '2026-09-08', statusOs: 'concluida', statusMissao: 'finalizada', invoiceId: '201',
+        cliente: 'NOVA MINAS LOGISTICA', valor: 3371.27,
+      },
+      {
+        osId: '1197', osNumero: 'TOR-0803', origem: 'Aeroporto de Guarulhos (GRU)', destino: 'Betim',
+        dataMissao: '2026-09-09', statusOs: 'concluida', statusMissao: 'finalizada', invoiceId: '201',
+        cliente: 'NOVA MINAS LOGISTICA', valor: 3245.6,
+      },
+      {
+        osId: '1198', osNumero: 'TOR-0804', origem: 'Palmar Modular', destino: 'Cajamar',
+        dataMissao: '2026-09-10', statusOs: 'concluida', statusMissao: 'finalizada', invoiceId: '200',
+        cliente: 'NIMBUS EXPRESS TRANSPORTES LTDA', valor: 550,
+      },
+    ];
+    const antiga = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'CANCELADO', origem_fatura_id: '184', fatura_numero: '184',
+      cliente_nome: 'NOVA MINAS LOGISTICA', valor_faturamento: 6616.87,
+    }, rotas);
+    assert.equal(antiga.substituida, true);
+    assert.equal(antiga.faturaViva, '201');
+    assert.equal(antiga.concluida, true);
+    assert.deepEqual(antiga.os.map((os) => os.osNumero), ['TOR-0792', 'TOR-0803']);
+    assert.equal(linhaNaQuinzenaComissao(antiga.datasMissao, '2026-09-18', 'q1'), true);
+    assert.equal(linhaNaQuinzenaComissao(antiga.datasMissao, '2026-09-18', 'q2'), false);
+    const nimbus = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'CANCELADO', origem_fatura_id: '185', fatura_numero: '185',
+      cliente_nome: 'NIMBUS EXPRESS TRANSPORTES LTDA', valor_faturamento: 550,
+    }, rotas);
+    assert.equal(nimbus.os[0].osNumero, 'TOR-0804');
+    assert.equal(nimbus.os[0].destino, 'Cajamar');
+    const osSolta = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'AGUARDANDO_PAGAMENTO_CLIENTE', origem_fatura_id: 'os:1186', fatura_numero: '1186',
+      cliente_nome: 'NOVA MINAS LOGISTICA', valor_faturamento: 3371.27,
+    }, rotas);
+    assert.equal(osSolta.jaNaFatura, '201');
+    const faturaViva = decorarComissaoTorres({
+      empresa_origem: 'TORRES', status: 'AGUARDANDO_PAGAMENTO_CLIENTE', origem_fatura_id: '201', fatura_numero: '201',
+      cliente_nome: 'NOVA MINAS LOGISTICA', valor_faturamento: 6616.87,
+    }, rotas);
+    assert.equal(faturaViva.substituida, false);
+    assert.equal(faturaViva.jaNaFatura, null);
+    assert.equal(comissaoDuplicadaNoPeriodo(antiga, new Set(['201'])), true);
+    assert.equal(comissaoDuplicadaNoPeriodo(osSolta, new Set(['201'])), true);
+    assert.equal(comissaoDuplicadaNoPeriodo(faturaViva, new Set(['201'])), false);
+    assert.equal(comissaoDuplicadaNoPeriodo(osSolta, new Set()), false);
+  });
+});
+
+describe('comissao comercial — trocar NF e puxar da TORRES', () => {
+  it('recalcula a mesma regra, usa a data da missão e não duplica', async () => {
+    const { montarPatchReligarFatura, normalizarNumeroFatura, executarReligarFaturaTorres } = await import('../lib/comissao/religarFaturaTorres');
+    assert.equal(normalizarNumeroFatura('NF 331'), '331');
+    assert.equal(normalizarNumeroFatura('torres-inv-205'), '205');
+    const aberto = montarPatchReligarFatura({
+      statusAtual: 'CANCELADO',
+      percentualImposto: 16,
+      percentualComissao: 3,
+      dataAtual: '2026-09-18',
+      fatura: { id: '201', nfseNumero: '332', cliente: 'NOVA MINAS LOGISTICA', valor: 6616.87, status: 'OVERDUE', paymentDate: null, dueDate: '2026-10-02' },
+      missoes: [
+        { osId: '1186', osNumero: 'TOR-0792', dataMissao: '2026-09-08' },
+        { osId: '1197', osNumero: 'TOR-0803', dataMissao: '2026-09-09' },
+      ],
+    });
+    assert.equal(aberto.ok, true);
+    if (!aberto.ok) return;
+    assert.equal(aberto.patch.origem_fatura_id, '201');
+    assert.equal(aberto.patch.valor_comissao, 166.75);
+    assert.equal(aberto.patch.data_faturamento, '2026-09-08');
+    assert.equal(aberto.patch.status, 'AGUARDANDO_PAGAMENTO_CLIENTE');
+    assert.equal(aberto.patch.ordem_servico_id, '1186');
+    assert.equal(aberto.liberouAgora, false);
+    const paga = montarPatchReligarFatura({
+      statusAtual: 'CANCELADO',
+      percentualImposto: 16,
+      percentualComissao: 3,
+      fatura: { id: '200', nfseNumero: '331', cliente: 'NIMBUS', valor: 550, status: 'CONFIRMED', paymentDate: '2026-10-05', dueDate: '2026-10-05' },
+      missoes: [{ osId: '1198', osNumero: 'TOR-0804', dataMissao: '2026-09-10' }],
+    });
+    assert.equal(paga.ok && paga.patch.status, 'LIBERADO_PARA_PAGAMENTO');
+    assert.equal(paga.ok && paga.liberouAgora, true);
+    assert.equal(montarPatchReligarFatura({
+      statusAtual: 'PAGO', percentualImposto: 16, percentualComissao: 3,
+      fatura: { id: '201', nfseNumero: null, cliente: 'A', valor: 10, status: 'PENDING', paymentDate: null, dueDate: '2026-09-10' },
+      missoes: [],
+    }).ok, false);
+    const lancada = montarPatchReligarFatura({
+      statusAtual: 'AGUARDANDO_PAGAMENTO_CLIENTE', contaPagarId: 'x', percentualImposto: 16, percentualComissao: 3,
+      fatura: { id: '201', nfseNumero: null, cliente: 'A', valor: 10, status: 'PENDING', paymentDate: null, dueDate: '2026-09-10' },
+      missoes: [],
+    });
+    assert.equal(lancada.ok, false);
+    if (!lancada.ok) assert.match(lancada.error, /lançada/);
+    assert.equal(montarPatchReligarFatura({
+      statusAtual: 'CANCELADO', percentualImposto: 16, percentualComissao: 3, outraComissaoId: 'outra',
+      fatura: { id: '201', nfseNumero: null, cliente: 'A', valor: 10, status: 'PENDING', paymentDate: null, dueDate: '2026-09-10' },
+      missoes: [],
+    }).ok, false);
+
+    const tm = {
+      comissoes: [{
+        id: 'c-184', status: 'CANCELADO', empresa_origem: 'TORRES', conta_pagar_id: null,
+        percentual_imposto_aplicado: 16, percentual_comissao_aplicado: 3,
+        data_faturamento: '2026-09-18', data_recebimento_cliente: null, cliente_nome: 'NOVA MINAS LOGISTICA',
+        origem_fatura_id: '184',
+      }],
+    };
+    const torres = {
+      invoices: [{ id: 201, client_name: 'NOVA MINAS LOGISTICA', value: 6616.87, status: 'OVERDUE', due_date: '2026-10-02', payment_date: null, nfse_number: '332' }],
+      escort_billings: [
+        { invoice_id: 201, service_order_id: 1186, data_missao: '2026-09-08', os_number: null },
+      ],
+      service_orders: [{ id: 1186, os_number: 'TOR-0792' }],
+    };
+    const cliente = (tabelas: Record<string, any[]>) => ({
+      from(table: string) {
+        const filtros: Array<[string, string, unknown]> = [];
+        const casa = (row: any) => filtros.every(([op, col, val]) => {
+          if (op === 'eq') return String(row[col]) === String(val);
+          if (op === 'neq') return String(row[col]) !== String(val);
+          if (op === 'in') return (val as unknown[]).map(String).includes(String(row[col]));
+          return true;
+        });
+        const chain: any = {
+          select() { return chain; },
+          eq(col: string, val: unknown) { filtros.push(['eq', col, val]); return chain; },
+          neq(col: string, val: unknown) { filtros.push(['neq', col, val]); return chain; },
+          in(col: string, val: unknown) { filtros.push(['in', col, val]); return chain; },
+          limit() { return chain; },
+          maybeSingle() {
+            const linha = (tabelas[table] || []).find(casa) || null;
+            return Promise.resolve({ data: linha, error: null });
+          },
+          update(patch: Record<string, unknown>) {
+            return {
+              eq(col: string, val: unknown) {
+                filtros.push(['eq', col, val]);
+                const linha = (tabelas[table] || []).find(casa);
+                if (linha) Object.assign(linha, patch);
+                return { select: () => Promise.resolve({ data: linha ? [linha] : [], error: null }) };
+              },
+            };
+          },
+          then(resolve: (v: unknown) => void) {
+            resolve({ data: (tabelas[table] || []).filter(casa), error: null });
+          },
+        };
+        return chain;
+      },
+    });
+    const res = await executarReligarFaturaTorres(cliente(tm) as any, cliente(torres) as any, { comissaoId: 'c-184', faturaNumero: 'NF 332' });
+    assert.equal(res.ok, true);
+    assert.equal(tm.comissoes[0].origem_fatura_id, '201');
+    assert.equal(tm.comissoes[0].data_faturamento, '2026-09-08');
+    assert.match(res.mensagem || '', /TOR-0792/);
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const vercel = fs.readFileSync('vercel.json', 'utf8');
+    const ingest = fs.readFileSync('api/comissoes-ingest.ts', 'utf8');
+    assert.match(page, /btn-trocar-fatura-/);
+    assert.match(page, /\/api\/comissoes\/religar-fatura-torres/);
+    assert.match(vercel, /religar-fatura-torres/);
+    assert.match(ingest, /op === 'religar-fatura-torres'/);
+    assert.equal(Object.keys(JSON.parse(vercel).functions || {}).length, 50);
   });
 });
 
@@ -862,6 +1119,27 @@ describe('comissao comercial — cobertura OS e dashboard', () => {
     assert.equal(pacheco.detalhes.some((d) => d.osIds.includes('GTM-7764')), false);
     assert.ok(pacheco.detalhes.some((d) => d.numero === 'NF-P'));
     assert.equal(linhas.some((l) => /SANKYU/.test(l.cliente)), false);
+    const { mesclarOsSemFaturaNoQuadro } = await import('../lib/comissao/quadroFaturamentoComissao');
+    const umaVez = mesclarOsSemFaturaNoQuadro(
+      nf,
+      cob.itens,
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const deNovo = mesclarOsSemFaturaNoQuadro(
+      umaVez,
+      cob.itens,
+      [{ id: 'abc', nome: 'MIGUEL MOTA' }],
+      '2026-09-01',
+      '2026-09-30',
+    );
+    const tech2 = deNovo.find((l) => /TECHTRANS/.test(l.cliente));
+    assert.equal(tech2?.faturamento, umaVez.find((l) => /TECHTRANS/.test(l.cliente))?.faturamento);
+    assert.match(
+      fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8'),
+      /carregarCoberturaOsPeriodo/,
+    );
   });
 
   it('linha do tempo: OS sem NF para em Faturado; fluxo fecha no pagamento da comissão', async () => {
@@ -1040,7 +1318,7 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
     const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
     const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, {
       sbTorres: null,
-      env: { COMISSAO_INGEST_TOKEN: 'tok' },
+      env: { COMISSAO_INGEST_TOKEN: 'tok', TORRES_SUPABASE_SERVICE_ROLE_KEY: 'presente' },
       fetchFn: (async () =>
         new Response(JSON.stringify({
           ok: true,
@@ -1057,9 +1335,21 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
 
   it('não inventa faturamento se o envio da TORRES não estiver autorizado', async () => {
     const { sincronizarComissoesTorres } = await import('../lib/comissao/sincronizarComissoesTorres');
-    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, { sbTorres: null, env: {} });
-    assert.equal(r.ok, false);
+    let chamou = false;
+    const r = await sincronizarComissoesTorres({ from() { return {}; } } as any, {
+      sbTorres: null,
+      env: {},
+      fetchFn: (async () => {
+        chamou = true;
+        return new Response('{}', { status: 500 });
+      }) as typeof fetch,
+    });
+    assert.equal(chamou, false);
+    assert.equal(r.ok, true);
+    assert.equal(r.pushed, false);
+    assert.equal(r.generated, 0);
     assert.equal(r.liveDisponivel, false);
+    assert.match(String(r.error || ''), /já está gravado/);
     assert.doesNotMatch(String(r.error || ''), /TORRES_SUPABASE_SERVICE_ROLE_KEY/);
   });
 
@@ -1079,5 +1369,427 @@ describe('comissao comercial — sincronismo TM SEG + TORRES', () => {
     assert.match(cron, /sincronizarComissoesTmETorres/);
     assert.match(sync, /dispararPushTorres/);
     assert.doesNotMatch(sync, /trading_name, responsavel_comercial_id/);
+  });
+});
+
+describe('comissao comercial — e-mail ao financeiro na liberação', () => {
+  it('monta o aviso com cliente, fatura e comercial', async () => {
+    const { montarEmailComissaoLiberada, EMAIL_FINANCEIRO_COMISSAO, EMAILS_PAGAMENTO_CLIENTE_TORRES } = await import('../lib/comissao/avisoComissaoLiberada');
+    const email = montarEmailComissaoLiberada([{
+      id: '1',
+      cliente: 'ACME <script>',
+      fatura: 'NF-9',
+      comercial: 'Ana',
+      valorComissao: 90,
+      valorFaturamento: 3000,
+      dataRecebimento: '2026-10-13',
+      empresa: 'TM_SEG',
+    }]);
+    assert.deepEqual(email.to, [EMAIL_FINANCEIRO_COMISSAO]);
+    assert.deepEqual(email.to, ['financeiro@grupotmseg.com.br']);
+    const torres = montarEmailComissaoLiberada([{
+      id: '2',
+      cliente: 'TECHTRANS',
+      fatura: 'torres-inv-207',
+      comercial: 'Miguel',
+      valorComissao: 288.07,
+      valorFaturamento: 11431.31,
+      dataRecebimento: '2026-09-29',
+      empresa: 'TORRES',
+    }]);
+    assert.deepEqual([...torres.to], [...EMAILS_PAGAMENTO_CLIENTE_TORRES]);
+    assert.deepEqual(torres.to, [
+      'financeiro@torresseguranca.com.br',
+      'adm@torresseguranca.com.br',
+      'thiago@grupotmseg.com.br',
+    ]);
+    assert.match(torres.subject, /Cliente TORRES pagou/);
+    assert.match(torres.subject, /verificar comissão/);
+    assert.match(torres.html, /pagamento está confirmado/);
+    assert.match(torres.html, /Verifiquem a comissão/);
+    assert.doesNotMatch(torres.to.join(','), /financeiro@grupotmseg.com.br/);
+    assert.match(email.subject, /ACME/);
+    assert.match(email.html, /pagou/);
+    assert.match(email.html, /está liberado/);
+    assert.match(email.html, /Ana/);
+    assert.match(email.html, /NF-9/);
+    assert.match(email.html, /13\/10\/2026/);
+    assert.doesNotMatch(email.html, /<script>/);
+  });
+
+  it('avisa só quando a baixa realmente libera a comissão', async () => {
+    const { atualizarStatusAposBaixaCliente } = await import('../lib/comissao/comissaoCore');
+    const g = globalThis as { __tmsegEnviarAvisoComissaoLiberada?: (avisos: Array<{ cliente: string; comercial: string }>) => Promise<void> };
+    const anterior = g.__tmsegEnviarAvisoComissaoLiberada;
+    const recebidos: Array<{ cliente: string; comercial: string }> = [];
+    g.__tmsegEnviarAvisoComissaoLiberada = async (avisos) => {
+      recebidos.push(...avisos);
+    };
+    const sb = {
+      from(table: string) {
+        if (table === 'comerciais') {
+          return {
+            select() {
+              return { in: async () => ({ data: [{ id: 'c1', nome: 'Ana Comercial' }], error: null }) };
+            },
+          };
+        }
+        const chain: {
+          update: () => typeof chain;
+          eq: () => typeof chain;
+          select: () => Promise<{ data: unknown; error: { message: string } | null }>;
+        } = {
+          update: () => chain,
+          eq: () => chain,
+          select: async () => ({
+            data: [{
+              id: 'row-1',
+              cliente_nome: 'Cliente Pago',
+              fatura_numero: 'NF-9',
+              valor_comissao: 90,
+              valor_faturamento: 3000,
+              data_recebimento_cliente: '2026-10-13',
+              empresa_origem: 'TM_SEG',
+              comercial_id: 'c1',
+            }],
+            error: null,
+          }),
+        };
+        return chain;
+      },
+    };
+    try {
+      const ok = await atualizarStatusAposBaixaCliente(sb as never, 'fatura-1', '2026-10-13');
+      assert.equal(ok.ok, true);
+      assert.equal(ok.updated, 1);
+      assert.equal(recebidos.length, 1);
+      assert.equal(recebidos[0].cliente, 'Cliente Pago');
+      assert.equal(recebidos[0].comercial, 'Ana Comercial');
+
+      const vazio = {
+        from() {
+          const chain: { update: () => typeof chain; eq: () => typeof chain; select: () => Promise<{ data: unknown[]; error: null }> } = {
+            update: () => chain,
+            eq: () => chain,
+            select: async () => ({ data: [], error: null }),
+          };
+          return chain;
+        },
+      };
+      const semLinha = await atualizarStatusAposBaixaCliente(vazio as never, 'fatura-2');
+      assert.equal(semLinha.updated, 0);
+      assert.equal(recebidos.length, 1);
+
+      g.__tmsegEnviarAvisoComissaoLiberada = async () => {
+        throw new Error('smtp fora');
+      };
+      const mesmoAssim = await atualizarStatusAposBaixaCliente(sb as never, 'fatura-1', '2026-10-13');
+      assert.equal(mesmoAssim.ok, true);
+      assert.equal(mesmoAssim.updated, 1);
+    } finally {
+      g.__tmsegEnviarAvisoComissaoLiberada = anterior;
+    }
+  });
+
+  it('a tela e o cálculo não importam o envio de e-mail', () => {
+    const core = fs.readFileSync('lib/comissao/comissaoCore.ts', 'utf8');
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const service = fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8');
+    const webhook = fs.readFileSync('api/asaas-webhook.ts', 'utf8');
+    const sync = fs.readFileSync('api/asaas-sync-open-payments.ts', 'utf8');
+    const nf = fs.readFileSync('api/nf-control.ts', 'utf8');
+    const ingest = fs.readFileSync('api/comissoes-ingest.ts', 'utf8');
+    const quadro = fs.readFileSync('server/comissaoQuadroRoutes.ts', 'utf8');
+    const vercel = fs.readFileSync('vercel.json', 'utf8');
+    assert.equal((core.match(/await notificarComissaoLiberada\(/g) || []).length, 3);
+    assert.match(core, /SELECT_COMISSAO_LIBERADA/);
+    assert.doesNotMatch(core, /nodemailer|email\/smtp/);
+    assert.doesNotMatch(page, /enviarAvisoComissaoLiberada|nodemailer/);
+    assert.doesNotMatch(service, /enviarAvisoComissaoLiberada|nodemailer/);
+    assert.match(webhook, /instalarAvisoComissaoLiberada/);
+    assert.match(sync, /instalarAvisoComissaoLiberada/);
+    assert.match(nf, /instalarAvisoComissaoLiberada/);
+    assert.match(ingest, /op === 'liberada-email'/);
+    assert.match(quadro, /\/api\/comissoes\/liberada-email/);
+    assert.match(vercel, /\/api\/comissoes\/liberada-email/);
+    assert.match(fs.readFileSync('lib/comissao/avisoComissaoLiberada.ts', 'utf8'), /financeiro@grupotmseg.com.br/);
+  });
+});
+
+describe('comissao comercial — lançar no Contas a Pagar', () => {
+  it('monta uma despesa pendente por comissão, com cliente, NF, comercial e fechamento', async () => {
+    const { tituloContaPagarComissao, montarContaPagarComissao, fechamentoComissao } = await import('../lib/comissao/contaPagarComissao');
+    assert.equal(fechamentoComissao('2026-10-01'), '1º QUINZENA DE OUTUBRO');
+    assert.equal(fechamentoComissao('2026-10-16'), '2º QUINZENA DE OUTUBRO');
+    const titulo = tituloContaPagarComissao({
+      cliente: 'Techtrans',
+      fatura: 'NF-9',
+      comercial: 'Ana',
+      dataFaturamento: '2026-10-01',
+    });
+    assert.equal(titulo, 'Comissão Comercial - TECHTRANS / NF-9 / ANA / 1º QUINZENA DE OUTUBRO');
+    const payload = montarContaPagarComissao({
+      id: 'row-1',
+      cliente: 'Techtrans',
+      fatura: 'NF-9',
+      comercial: 'Ana',
+      dataFaturamento: '2026-10-01',
+      valor: 90.126,
+      dueDate: '2026-10-13',
+      categoryId: 'cat-1',
+      createdBy: 'Financeiro',
+    });
+    assert.equal(payload.type, 'EXPENSE');
+    assert.equal(payload.status, 'PENDING');
+    assert.equal(payload.category_name, 'COMISSÃO');
+    assert.equal(payload.amount, 90.13);
+    assert.equal(payload.entity_name, 'Ana');
+    assert.equal(payload.notes, 'comissao_id:row-1');
+    assert.equal(payload.payment_method, 'PIX');
+    assert.equal(payload.description, titulo);
+    const { vencimentoPagamentoComissao } = await import('../lib/comissao/contaPagarComissao');
+    assert.equal(vencimentoPagamentoComissao('2026-10-05'), '2026-10-15');
+    assert.equal(vencimentoPagamentoComissao('2026-10-15'), '2026-10-15');
+    assert.equal(vencimentoPagamentoComissao('2026-10-16'), '2026-11-15');
+    assert.equal(vencimentoPagamentoComissao('2026-10-20'), '2026-11-15');
+    assert.equal(vencimentoPagamentoComissao('2026-12-31'), '2027-01-15');
+  });
+
+  it('o botão de pagar só aparece depois do lançamento', () => {
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    const service = fs.readFileSync('lib/comissao/comissaoService.ts', 'utf8');
+    assert.match(service, /vencimentoPagamentoComissao/);
+    assert.match(fs.readFileSync('lib/comissao/contaPagarTorres.ts', 'utf8'), /vencimentoPagamentoComissao/);
+    const lancar = page.indexOf('btn-lancar-pagamento-');
+    const pagar = page.indexOf('btn-pagar-');
+    assert.ok(lancar >= 0 && pagar > lancar);
+    assert.match(page, /!r\.conta_pagar_id/);
+    assert.match(page, /!!r\.conta_pagar_id/);
+    assert.match(page, /\/logo-torres\.jpeg/);
+    assert.match(page, /\/logo-tm\.svg/);
+    assert.doesNotMatch(page, /logo-tm\.svg[\s\S]{0,240}bg-black/);
+    assert.match(page, /<LogoEmpresa empresa=\{r\.empresa_origem\} \/>/);
+    assert.match(page, /from 'react'/);
+    const payload = fs.readFileSync('lib/comissao/contaPagarComissao.ts', 'utf8');
+    assert.match(payload, /type: 'EXPENSE'/);
+    assert.match(payload, /status: 'PENDING'/);
+    assert.match(payload, /category_name: 'COMISSÃO'/);
+    assert.match(service, /financial_transactions/);
+    assert.match(service, /payment_method = 'PIX'/);
+    assert.match(service, /doc_comprovante_url: comprovanteUrl/);
+    assert.match(page, /comprovanteUrl: comprovantePorComissao\[r\.id\]/);
+    assert.match(service, /Comissão TORRES não entra no Contas a Pagar da TM SEG/);
+    assert.match(service, /status: 'PAID'/);
+    assert.match(service, /pago_em: agora.toISOString\(\)/);
+    assert.match(page, /\/api\/comissoes\/conta-pagar-torres/);
+    assert.match(page, /Lançar pagamento/);
+    assert.doesNotMatch(page, /autoTorresRef/);
+  });
+
+  it('comissão TORRES vai para o contas a pagar da TORRES e leva o comprovante da fatura', async () => {
+    const { executarLancamentoTorres, montarContaPagarTorres, valorAceitoNoContasPagarTorres } = await import('../lib/comissao/contaPagarTorres');
+    assert.equal(valorAceitoNoContasPagarTorres(13.86, 13.86), true);
+    assert.equal(valorAceitoNoContasPagarTorres(20, 13.86), false);
+    const payload = montarContaPagarTorres({
+      id: 'c-200',
+      cliente: 'Nimbus',
+      fatura: '200',
+      comercial: 'Miguel',
+      dataFaturamento: '2026-09-24',
+      valor: 13.86,
+      dueDate: '2026-10-13',
+      categoryId: 'cat-torres',
+      createdBy: 'Financeiro',
+      comprovantePath: 'invoices/200/recibo.pdf',
+    });
+    assert.equal(payload.category_name, 'Comissões');
+    assert.equal(payload.origin_type, 'comissao_comercial');
+    assert.equal(payload.origin_id, 'c-200');
+    assert.equal(payload.comprovante_path, 'invoices/200/recibo.pdf');
+    assert.equal(payload.payment_method, 'PIX');
+    assert.equal(payload.doc_comprovante_url, undefined);
+    assert.equal(payload.notes, 'comissao_id:c-200');
+    const inserts: Array<Record<string, unknown>> = [];
+    const resultado = await executarLancamentoTorres({
+      comissao: {
+        id: 'c-200',
+        status: 'LIBERADO_PARA_PAGAMENTO',
+        empresa_origem: 'TORRES',
+        valor_comissao: 13.86,
+        cliente_nome: 'NIMBUS',
+        fatura_numero: '200',
+        comercial_nome: 'Miguel',
+        data_faturamento: '2026-09-24',
+      },
+      valor: 13.86,
+      dueDate: '2026-10-13',
+      comprovantePath: 'invoices/200/recibo.pdf',
+    }, {
+      buscarExistente: async () => null,
+      buscarCategoriaId: async () => 'cat-torres',
+      inserir: async (row) => {
+        inserts.push(row);
+        return 'tx-torres';
+      },
+      ligar: async () => true,
+    });
+    assert.equal(resultado.ok, true);
+    assert.equal(resultado.transactionId, 'tx-torres');
+    assert.equal(inserts[0].category_name, 'Comissões');
+    const tm = await executarLancamentoTorres({
+      comissao: {
+        id: 'c-tm',
+        status: 'LIBERADO_PARA_PAGAMENTO',
+        empresa_origem: 'TM_SEG',
+        valor_comissao: 10,
+      },
+      valor: 10,
+      dueDate: '2026-10-13',
+    }, {
+      buscarExistente: async () => { throw new Error('não consulta a TORRES'); },
+      buscarCategoriaId: async () => null,
+      inserir: async () => { throw new Error('não grava na TORRES'); },
+      ligar: async () => false,
+    });
+    assert.equal(tm.ok, false);
+  });
+
+  it('setembro só lança no clique, não duplica e não confirma sem vínculo', async () => {
+    const { executarLancamentoTorres } = await import('../lib/comissao/contaPagarTorres');
+    const page = fs.readFileSync('components/ComissoesComerciaisPage.tsx', 'utf8');
+    assert.doesNotMatch(page, /autoTorresRef/);
+    assert.match(page, /Lançar pagamento/);
+
+    const setembro = [
+      { id: '91beddd8-4a85-4e23-aae5-7f13af639555', fatura: '200', cliente: 'NIMBUS', valor: 13.86 },
+      { id: '6b004af2-7cd1-4b61-9b2c-d7c0d0decc87', fatura: 'torres-inv-199', cliente: 'R J C', valor: 41.53 },
+      { id: '28bd0a56-57c6-4915-8d0f-e595be1ef21d', fatura: 'torres-inv-207', cliente: 'TECHTRANS', valor: 288.07 },
+    ];
+    const titulos = new Map<string, string>();
+    const vinculos = new Map<string, string>();
+    let seq = 0;
+    const depsDe = (falhaInserir = false) => ({
+      buscarExistente: async (comissaoId: string) => titulos.get(comissaoId) || null,
+      buscarCategoriaId: async () => 'cat',
+      inserir: async (row: Record<string, unknown>) => {
+        if (falhaInserir) throw new Error('TORRES indisponível');
+        const id = `tx-${++seq}`;
+        titulos.set(String(row.origin_id), id);
+        return id;
+      },
+      ligar: async (comissaoId: string, transactionId: string) => {
+        if (vinculos.has(comissaoId)) return vinculos.get(comissaoId) === transactionId;
+        vinculos.set(comissaoId, transactionId);
+        return true;
+      },
+      lerVinculo: async (comissaoId: string) => vinculos.get(comissaoId) || null,
+      descartarOrfao: async (transactionId: string) => {
+        for (const [comissaoId, tituloId] of titulos) {
+          if (tituloId === transactionId && vinculos.get(comissaoId) !== transactionId) titulos.delete(comissaoId);
+        }
+      },
+    });
+
+    for (const linha of setembro) {
+      const primeiro = await executarLancamentoTorres({
+        comissao: {
+          id: linha.id,
+          status: 'LIBERADO_PARA_PAGAMENTO',
+          empresa_origem: 'TORRES',
+          valor_comissao: linha.valor,
+          cliente_nome: linha.cliente,
+          fatura_numero: linha.fatura,
+        },
+        valor: linha.valor,
+        dueDate: '2026-10-15',
+      }, depsDe());
+      assert.equal(primeiro.ok, true);
+      assert.equal(vinculos.get(linha.id), primeiro.transactionId);
+      const repetido = await executarLancamentoTorres({
+        comissao: {
+          id: linha.id,
+          status: 'LIBERADO_PARA_PAGAMENTO',
+          empresa_origem: 'TORRES',
+          conta_pagar_id: primeiro.transactionId,
+          valor_comissao: linha.valor,
+        },
+        valor: linha.valor,
+        dueDate: '2026-10-15',
+      }, depsDe());
+      assert.equal(repetido.ok, true);
+      assert.equal(repetido.transactionId, primeiro.transactionId);
+    }
+    assert.equal(titulos.size, 3);
+
+    const aberta = await executarLancamentoTorres({
+      comissao: { id: 'aberta', status: 'AGUARDANDO_PAGAMENTO_CLIENTE', empresa_origem: 'TORRES', valor_comissao: 10 },
+      valor: 10,
+      dueDate: '2026-10-15',
+    }, depsDe());
+    assert.equal(aberta.ok, false);
+    assert.equal(titulos.size, 3);
+
+    await assert.rejects(() => executarLancamentoTorres({
+      comissao: { id: 'sem-rede', status: 'LIBERADO_PARA_PAGAMENTO', empresa_origem: 'TORRES', valor_comissao: 10 },
+      valor: 10,
+      dueDate: '2026-10-15',
+    }, depsDe(true)), /TORRES indisponível/);
+
+    const orfaos: string[] = [];
+    const corrida = await executarLancamentoTorres({
+      comissao: { id: 'corrida', status: 'LIBERADO_PARA_PAGAMENTO', empresa_origem: 'TORRES', valor_comissao: 10 },
+      valor: 10,
+      dueDate: '2026-10-15',
+    }, {
+      buscarExistente: async () => null,
+      buscarCategoriaId: async () => null,
+      inserir: async () => 'tx-perdedor',
+      ligar: async () => false,
+      lerVinculo: async () => 'tx-vencedor',
+      descartarOrfao: async (id) => { orfaos.push(id); },
+    });
+    assert.equal(corrida.ok, true);
+    assert.equal(corrida.transactionId, 'tx-vencedor');
+    assert.deepEqual(orfaos, ['tx-perdedor']);
+  });
+});
+
+describe('comissao comercial — chave do servidor da TORRES', () => {
+  function jwt(payload: Record<string, string>): string {
+    const corpo = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    return `eyJhbGciOiJIUzI1NiJ9.${corpo}.assinatura`;
+  }
+
+  it('aceita a secret atual e a service_role antiga, e recusa publishable e a chave da TM SEG', async () => {
+    const { isTorresServiceRoleKey, mensagemChaveTorresRecusada, motivoChaveTorres } = await import('../lib/comissao/torresSupabase');
+    const secret = `sb_secret_${'a'.repeat(22)}_${'b'.repeat(8)}`;
+    const serviceRole = jwt({ role: 'service_role', ref: 'erjhxwbutjyylxdthuuz' });
+    const publishable = `sb_publishable_${'c'.repeat(22)}_${'d'.repeat(8)}`;
+    const daTm = jwt({ role: 'service_role', ref: 'ajhmmjuewdsukecaimik' });
+    const anon = jwt({ role: 'anon', ref: 'erjhxwbutjyylxdthuuz' });
+
+    assert.equal(isTorresServiceRoleKey(secret), true);
+    assert.equal(isTorresServiceRoleKey(serviceRole), true);
+    assert.equal(motivoChaveTorres(secret), 'ok');
+    assert.equal(motivoChaveTorres(''), 'ausente');
+    assert.equal(motivoChaveTorres(publishable), 'publishable');
+    assert.equal(motivoChaveTorres(daTm), 'projeto_tmseg');
+    assert.equal(motivoChaveTorres(anon), 'nao_service_role');
+    assert.match(mensagemChaveTorresRecusada({}), /não está no servidor que respondeu/);
+    assert.match(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: publishable }), /publishable/);
+    assert.match(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: daTm }), /TM SEG/);
+    assert.equal(mensagemChaveTorresRecusada({ TORRES_SUPABASE_SERVICE_ROLE_KEY: secret }), '');
+    assert.doesNotMatch(mensagemChaveTorresRecusada({}), /computador/);
+  });
+
+  it('falha de lançamento não responde HTTP 200', async () => {
+    const { respostaFalhaContaPagar } = await import('../lib/comissao/contaPagarTorres');
+    assert.deepEqual(respostaFalhaContaPagar('A chave da TORRES não está no servidor que respondeu.'), { status: 503, codigo: 'CREDENCIAL' });
+    assert.deepEqual(respostaFalhaContaPagar('Permissão negada'), { status: 403, codigo: 'SEM_PERMISSAO' });
+    assert.deepEqual(respostaFalhaContaPagar('fetch failed'), { status: 502, codigo: 'CONEXAO' });
+    assert.deepEqual(respostaFalhaContaPagar('A comissão não está liberada para pagamento'), { status: 409, codigo: 'NAO_LIBERADA' });
+    assert.deepEqual(respostaFalhaContaPagar('Comissão não encontrada'), { status: 404, codigo: 'NAO_ENCONTRADA' });
+    assert.deepEqual(respostaFalhaContaPagar('duplicate key value'), { status: 500, codigo: 'BANCO' });
+    assert.notEqual(respostaFalhaContaPagar('A chave da TORRES não está no servidor que respondeu.').status, 200);
   });
 });

@@ -13,9 +13,15 @@ import {
   parseComissaoIngestPayload,
   processarComissaoIngest,
 } from '../lib/comissao/comissaoIngest.js';
-import { assertComissoesQuadroAccess } from '../lib/comissao/comissaoQuadroAuth.js';
-import { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } from '../lib/comissao/comissaoQuadroApi.js';
-import { sincronizarComissoesTmETorres } from '../lib/comissao/sincronizarComissoesTorres.js';
+
+/**
+ * O aviso de e-mail puxa o nodemailer. Carregar isso no topo derrubava a função
+ * inteira na Vercel (quadro, comprovante e lançamento da TORRES) antes de responder.
+ */
+async function instalarAvisoSobDemanda(): Promise<void> {
+  const { instalarAvisoComissaoLiberada } = await import('../lib/comissao/enviarAvisoComissaoLiberada.js');
+  instalarAvisoComissaoLiberada();
+}
 
 function extractToken(req: { headers?: Record<string, unknown> }): string {
   const headers = req.headers || {};
@@ -36,6 +42,9 @@ function queryOp(req: { query?: Record<string, unknown>; url?: string }): string
   if (url.includes('/comissoes/quadro')) return 'quadro';
   if (url.includes('/comissoes/sync-tm-torres')) return 'sync-tm-torres';
   if (url.includes('/comissoes/sync-faturas')) return 'sync-faturas';
+  if (url.includes('/comissoes/comprovantes')) return 'comprovantes';
+  if (url.includes('/comissoes/conta-pagar-torres')) return 'conta-pagar-torres';
+  if (url.includes('/comissoes/religar-fatura-torres')) return 'religar-fatura-torres';
   return '';
 }
 
@@ -54,6 +63,10 @@ function queryDate(req: { query?: Record<string, unknown>; url?: string }, key: 
 }
 
 async function handleQuadroOps(req: any, res: any, op: string) {
+  const { assertComissoesQuadroAccess } = await import('../lib/comissao/comissaoQuadroAuth.js');
+  const { montarQuadroComissoesApi, sincronizarComissoesViaAdmin } = await import('../lib/comissao/comissaoQuadroApi.js');
+  const { sincronizarComissoesTmETorres } = await import('../lib/comissao/sincronizarComissoesTorres.js');
+  await instalarAvisoSobDemanda();
   const access = await assertComissoesQuadroAccess(req);
   if (!access.ok) {
     res.status(access.status).json({ ok: false, error: access.error });
@@ -103,6 +116,51 @@ export async function handleComissoesIngest(req: any, res: any) {
   }
 
   const op = queryOp(req);
+  if (op === 'religar-fatura-torres') {
+    try {
+      const { tratarPedidoReligarFaturaTorres } = await import('../lib/comissao/religarFaturaTorres.js');
+      await tratarPedidoReligarFaturaTorres(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] religar fatura TORRES:', message);
+      res.status(200).json({ ok: false, error: message });
+    }
+    return;
+  }
+  if (op === 'conta-pagar-torres') {
+    try {
+      const { tratarPedidoContaPagarTorres } = await import('../lib/comissao/contaPagarTorres.js');
+      await tratarPedidoContaPagarTorres(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] contas a pagar TORRES:', message);
+      res.status(500).json({ ok: false, error: message, codigo: 'BANCO' });
+    }
+    return;
+  }
+  if (op === 'comprovantes') {
+    try {
+      const { tratarPedidoComprovantesComissao } = await import('../lib/comissao/comprovantesComissao.js');
+      await tratarPedidoComprovantesComissao(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] comprovante:', message);
+      res.status(200).json({ ok: false, urls: {}, completo: false });
+    }
+    return;
+  }
+  if (op === 'liberada-email') {
+    try {
+      await instalarAvisoSobDemanda();
+      const { tratarPedidoAvisoLiberacao } = await import('../lib/comissao/avisoLiberacaoHttp.js');
+      await tratarPedidoAvisoLiberacao(req, res);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn('[comissao] aviso de liberação:', message);
+      res.status(200).json({ ok: false, enviados: 0, error: message });
+    }
+    return;
+  }
   if (op === 'quadro' || op === 'sync-faturas' || op === 'sync-tm-torres') {
     if (op === 'quadro' && req.method !== 'GET') {
       res.status(405).json({ error: 'method_not_allowed' });

@@ -187,6 +187,10 @@
       "destination": "/api/geocode-address"
     },
     {
+      "source": "/api/viaturas-disponiveis",
+      "destination": "/api/viaturas-disponiveis"
+    },
+    {
       "source": "/api/reverse-geocode",
       "destination": "/api/reverse-geocode"
     },
@@ -535,6 +539,22 @@
       "destination": "/api/comissoes-ingest?op=sync-tm-torres"
     },
     {
+      "source": "/api/comissoes/liberada-email",
+      "destination": "/api/comissoes-ingest?op=liberada-email"
+    },
+    {
+      "source": "/api/comissoes/comprovantes",
+      "destination": "/api/comissoes-ingest?op=comprovantes"
+    },
+    {
+      "source": "/api/comissoes/conta-pagar-torres",
+      "destination": "/api/comissoes-ingest?op=conta-pagar-torres"
+    },
+    {
+      "source": "/api/comissoes/religar-fatura-torres",
+      "destination": "/api/comissoes-ingest?op=religar-fatura-torres"
+    },
+    {
       "source": "/api/asaas/sync-open-payments",
       "destination": "/api/asaas-sync-open-payments"
     },
@@ -553,6 +573,14 @@
     {
       "source": "/api/nf/invoices",
       "destination": "/api/nf-control?op=list"
+    },
+    {
+      "source": "/api/nf/manual-payment",
+      "destination": "/api/nf-control?op=manual-payment"
+    },
+    {
+      "source": "/api/nf/sync-receivables",
+      "destination": "/api/nf-control?op=sync-receivables"
     },
     {
       "source": "/api/nf/provider-preferences",
@@ -651,6 +679,10 @@
       "destination": "/api/admin/system-settings-daily-reports"
     },
     {
+      "source": "/api/admin/force-logout-all",
+      "destination": "/api/admin/force-logout-all"
+    },
+    {
       "source": "/api/migration/add-mission-columns",
       "destination": "/api/migration-add-mission-columns"
     },
@@ -735,11 +767,239 @@
       "destination": "/api/live-track"
     },
     {
+      "source": "/api/ibl-portal/pessoas/:id",
+      "destination": "/api/ibl-portal?op=pessoas-item&id=:id"
+    },
+    {
+      "source": "/api/ibl-portal/pgr/:os",
+      "destination": "/api/ibl-portal?op=pgr&os=:os"
+    },
+    {
+      "source": "/api/ibl-portal/acesso",
+      "destination": "/api/ibl-portal?op=acesso"
+    },
+    {
+      "source": "/api/ibl-portal/login",
+      "destination": "/api/ibl-portal?op=login"
+    },
+    {
+      "source": "/api/ibl-portal/primeiro-acesso",
+      "destination": "/api/ibl-portal?op=primeiro-acesso"
+    },
+    {
+      "source": "/api/ibl-portal/me",
+      "destination": "/api/ibl-portal?op=me"
+    },
+    {
+      "source": "/api/ibl-portal/trocar-senha",
+      "destination": "/api/ibl-portal?op=trocar-senha"
+    },
+    {
+      "source": "/api/ibl-portal/pessoas",
+      "destination": "/api/ibl-portal?op=pessoas"
+    },
+    {
+      "source": "/api/ibl-portal/ao-vivo",
+      "destination": "/api/ibl-portal?op=ao-vivo"
+    },
+    {
+      "source": "/api/ibl-portal/relatorio",
+      "destination": "/api/ibl-portal?op=relatorio"
+    },
+    {
+      "source": "/api/ibl-portal/campos",
+      "destination": "/api/ibl-portal?op=campos"
+    },
+    {
+      "source": "/api/ibl-portal/catalogo",
+      "destination": "/api/ibl-portal?op=catalogo"
+    },
+    {
+      "source": "/api/ibl-portal/frota",
+      "destination": "/api/ibl-portal?op=frota"
+    },
+    {
+      "source": "/api/ibl-portal/status",
+      "destination": "/api/ibl-portal?op=status"
+    },
+    {
+      "source": "/api/ibl-portal/solicitacoes",
+      "destination": "/api/ibl-portal?op=solicitacoes"
+    },
+    {
+      "source": "/api/ibl-portal/medicao",
+      "destination": "/api/ibl-portal?op=medicao"
+    },
+    {
+      "source": "/api/ibl-portal/cotacao",
+      "destination": "/api/ibl-portal?op=cotacao"
+    },
+    {
+      "source": "/api/ibl-portal/fotos/:os",
+      "destination": "/api/ibl-portal?op=fotos&os=:os"
+    },
+    {
+      "source": "/api/ceva-portal/pessoas/:id",
+      "destination": "/api/ceva-portal?op=pessoas-item&id=:id"
+    },
+    {
+      "source": "/api/ceva-portal/pgr/:os",
+      "destination": "/api/ceva-portal?op=pgr&os=:os"
+    },
+    {
+      "source": "/api/ceva-portal/acesso",
+      "destination": "/api/ceva-portal?op=acesso"
+    },
+    {
+      "source": "/api/ceva-portal/login",
+      "destination": "/api/ceva-portal?op=login"
+    },
+    {
+      "source": "/api/ceva-portal/primeiro-acesso",
+      "destination": "/api/ceva-portal?op=primeiro-acesso"
+    },
+    {
+      "source": "/api/ceva-portal/me",
+      "destination": "/api/ceva-portal?op=me"
+    },
+    {
+      "source": "/api/ceva-portal/trocar-senha",
+      "destination": "/api/ceva-portal?op=trocar-senha"
+    },
+    {
+      "source": "/api/ceva-portal/pessoas",
+      "destination": "/api/ceva-portal?op=pessoas"
+    },
+    {
+      "source": "/api/ceva-portal/ao-vivo",
+      "destination": "/api/ceva-portal?op=ao-vivo"
+    },
+    {
+      "source": "/api/ceva-portal/relatorio",
+      "destination": "/api/ceva-portal?op=relatorio"
+    },
+    {
+      "source": "/api/ceva-portal/campos",
+      "destination": "/api/ceva-portal?op=campos"
+    },
+    {
+      "source": "/api/ceva-portal/catalogo",
+      "destination": "/api/ceva-portal?op=catalogo"
+    },
+    {
+      "source": "/api/ceva-portal/frota",
+      "destination": "/api/ceva-portal?op=frota"
+    },
+    {
+      "source": "/api/ceva-portal/status",
+      "destination": "/api/ceva-portal?op=status"
+    },
+    {
+      "source": "/api/ceva-portal/solicitacoes",
+      "destination": "/api/ceva-portal?op=solicitacoes"
+    },
+    {
+      "source": "/api/ceva-portal/medicao",
+      "destination": "/api/ceva-portal?op=medicao"
+    },
+    {
+      "source": "/api/ceva-portal/cotacao",
+      "destination": "/api/ceva-portal?op=cotacao"
+    },
+    {
+      "source": "/api/ceva-portal/fotos/:os",
+      "destination": "/api/ceva-portal?op=fotos&os=:os"
+    },
+    {
+      "source": "/api/cliente-portal/pessoas/:id",
+      "destination": "/api/ibl-portal?op=pessoas-item&id=:id"
+    },
+    {
+      "source": "/api/cliente-portal/pgr/:os",
+      "destination": "/api/ibl-portal?op=pgr&os=:os"
+    },
+    {
+      "source": "/api/cliente-portal/marca",
+      "destination": "/api/ibl-portal?op=marca"
+    },
+    {
+      "source": "/api/cliente-portal/marca-site",
+      "destination": "/api/ibl-portal?op=marca-site"
+    },
+    {
+      "source": "/api/cliente-portal/provisionar",
+      "destination": "/api/ibl-portal?op=provisionar"
+    },
+    {
+      "source": "/api/cliente-portal/acesso",
+      "destination": "/api/ibl-portal?op=acesso"
+    },
+    {
+      "source": "/api/cliente-portal/login",
+      "destination": "/api/ibl-portal?op=login"
+    },
+    {
+      "source": "/api/cliente-portal/primeiro-acesso",
+      "destination": "/api/ibl-portal?op=primeiro-acesso"
+    },
+    {
+      "source": "/api/cliente-portal/me",
+      "destination": "/api/ibl-portal?op=me"
+    },
+    {
+      "source": "/api/cliente-portal/trocar-senha",
+      "destination": "/api/ibl-portal?op=trocar-senha"
+    },
+    {
+      "source": "/api/cliente-portal/pessoas",
+      "destination": "/api/ibl-portal?op=pessoas"
+    },
+    {
+      "source": "/api/cliente-portal/ao-vivo",
+      "destination": "/api/ibl-portal?op=ao-vivo"
+    },
+    {
+      "source": "/api/cliente-portal/relatorio",
+      "destination": "/api/ibl-portal?op=relatorio"
+    },
+    {
+      "source": "/api/cliente-portal/campos",
+      "destination": "/api/ibl-portal?op=campos"
+    },
+    {
+      "source": "/api/cliente-portal/catalogo",
+      "destination": "/api/ibl-portal?op=catalogo"
+    },
+    {
+      "source": "/api/cliente-portal/frota",
+      "destination": "/api/ibl-portal?op=frota"
+    },
+    {
+      "source": "/api/cliente-portal/status",
+      "destination": "/api/ibl-portal?op=status"
+    },
+    {
+      "source": "/api/cliente-portal/solicitacoes",
+      "destination": "/api/ibl-portal?op=solicitacoes"
+    },
+    {
+      "source": "/api/cliente-portal/medicao",
+      "destination": "/api/ibl-portal?op=medicao"
+    },
+    {
+      "source": "/api/cliente-portal/cotacao",
+      "destination": "/api/ibl-portal?op=cotacao"
+    },
+    {
+      "source": "/api/cliente-portal/fotos/:os",
+      "destination": "/api/ibl-portal?op=fotos&os=:os"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index"
     },
     {
-      "source": "/((?!docs/|assets/|manifest\\.json|icon-|sw\\.js|build-meta\\.json).*)",
+      "source": "/((?!docs/|assets/|manifest\\.json|icon-|sw\\.js|build-meta\\.json|instalador-grupo-tmseg\\.zip).*)",
       "destination": "/index.html"
     }
   ],

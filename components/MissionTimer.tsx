@@ -7,9 +7,10 @@ interface MissionTimerProps {
     status: string;
     startTime?: string;
     createdAt: string;
+    apresentacao?: 'padrao' | 'ficha';
 }
 
-const MissionTimer: React.FC<MissionTimerProps> = ({ status, startTime, createdAt }) => {
+const MissionTimer: React.FC<MissionTimerProps> = ({ status, startTime, createdAt, apresentacao = 'padrao' }) => {
     const [display, setDisplay] = useState<{ label: string, time: string, style: string, icon: any } | null>(null);
 
     useEffect(() => {
@@ -89,7 +90,7 @@ const MissionTimer: React.FC<MissionTimerProps> = ({ status, startTime, createdA
         calculate();
         const interval = setInterval(calculate, 1000);
         return () => clearInterval(interval);
-    }, [status, startTime, createdAt]);
+    }, [status, startTime, createdAt, apresentacao]);
 
     if (!display) return null;
 
@@ -98,7 +99,7 @@ const MissionTimer: React.FC<MissionTimerProps> = ({ status, startTime, createdA
     return (
         <div className={`mt-2 flex items-center gap-1.5 text-xs ${display.style}`}>
             <Icon size={12} strokeWidth={2.5} />
-            <span className="font-bold uppercase opacity-80 text-[10px]">{display.label}:</span>
+            <span className="font-bold uppercase opacity-80 text-[10px]">{display.label}{apresentacao === 'ficha' ? '' : ':'}</span>
             <span className="font-mono font-bold tracking-tight tabular-nums uppercase">{display.time}</span>
         </div>
     );

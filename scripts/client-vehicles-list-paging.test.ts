@@ -32,4 +32,19 @@ describe('ClientVehicleList — paginação completa', () => {
     assert.match(modalSrc, /import \{ fetchAllPages \} from ['"]\.\.\/lib\/supabasePaging['"]/);
     assert.match(modalSrc, /client_vehicles[\s\S]*fetchAllPages|\.from\('client_vehicles'\)[\s\S]*\.range\(from/);
   });
+
+  it('UpdateMissionModal pagina viaturas ativas via fetchAllPages (não consulta única sem range)', () => {
+    const modalSrc = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
+    assert.match(modalSrc, /\.from\('vehicles'\)[\s\S]*\.range\(from,\s*from \+ size - 1\)/);
+    assert.doesNotMatch(
+      modalSrc,
+      /supabase\.from\('vehicles'\)\.select\('\*'\)\.eq\('status',\s*'Ativo'\)\s*,/,
+    );
+  });
+
+  it('UpdateMissionModal sinaliza CONSULTA INCOMPLETA quando a lista de viaturas trunca', () => {
+    const modalSrc = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
+    assert.match(modalSrc, /vehiclesListTruncated/);
+    assert.match(modalSrc, /CONSULTA INCOMPLETA/);
+  });
 });

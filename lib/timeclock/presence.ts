@@ -206,6 +206,32 @@ export function formatPresenceStatusLine(
   return base;
 }
 
+function presenceInstantMs(iso: string | undefined): number | null {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  return ms;
+}
+
+/** Minutos desta conexão e hora da última interação (clique, tecla ou troca de tela). */
+export function formatPresenceLiveLine(
+  user: PresenceUserState,
+  now: Date = new Date(),
+): string {
+  const started = presenceInstantMs(user.onlineAt);
+  const parts: string[] = [];
+  if (started != null) {
+    const mins = Math.max(0, Math.floor((now.getTime() - started) / 60_000));
+    parts.push(mins < 1 ? 'online agora' : `${mins} min online`);
+  }
+  const lastMs = presenceInstantMs(user.lastActivityAt);
+  if (lastMs != null) {
+    const clock = formatTimeBR(user.lastActivityAt, '');
+    if (clock) parts.push(`interação ${clock}`);
+  }
+  return parts.join(' · ');
+}
+
 /** Nome curto com inicial do sobrenome (evita confundir Beatriz/Beatriz, Thiago/Thiago). */
 export function formatPresenceShortName(name: string): string {
   const parts = (name || 'Usuário').trim().split(/\s+/).filter(Boolean);
@@ -229,11 +255,8 @@ export function buildPresenceTooltip(user: PresenceUserState): string {
     const since = getServiceTimeFromMarks(user);
     lines.push(since ? `Em serviço desde: ${since}` : `Tempo em serviço: ${user.minutesOnDuty} min`);
   }
-  if (user.lastActivityAt) {
-    lines.push(`Último acesso: ${formatTimeBR(user.lastActivityAt)}`);
-  } else if (user.onlineAt && user.onlineAt !== new Date(0).toISOString()) {
-    lines.push(`Conectado desde: ${formatTimeBR(user.onlineAt)}`);
-  }
+  const live = formatPresenceLiveLine(user);
+  if (live) lines.push(live);
   if (user.activityStatus === 'idle' && user.lastActivityAt) {
     lines.push(`Sem uso desde: ${formatTimeBR(user.lastActivityAt)}`);
   }

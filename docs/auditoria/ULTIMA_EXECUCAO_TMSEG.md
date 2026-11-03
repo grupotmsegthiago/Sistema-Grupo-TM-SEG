@@ -1,5 +1,360 @@
 # ULTIMA EXECUÇÃO — Sistema Grupo TM SEG
 
+## VALIDAÇÃO — INTEGRAÇÃO PUBLICADA TM SEG × TORRES
+
+**Data:** 2026-10-13
+**Pedido:** publicar a correção já testada, provar a leitura do Supabase da TORRES pelo sistema publicado e tirar o diagnóstico em seguida. Sem gravar as faturas 200, 199 e 207 e sem lançar pagamento.
+
+**Publicado:** `sistema.grupotmseg.com.br` está no commit `d46cbd9a` (`buildId` `d46cbd9a24f75d1d3fbea104d440c1e6ca296ef8`, `builtAt` `2026-10-14T00:23:03.252Z`). `/api/health` ok. A rota própria do diagnóstico saiu desse commit. `TORRES_SUPABASE_SERVICE_ROLE_KEY` existe na Vercel, ambiente Production, tipo Secret, valor oculto. Não foi lido.
+
+**Conexão pelo sistema publicado: não validada.** O diagnóstico temporário, só Diretoria e só leitura, rodou no commit `731a57eb` e foi removido no `d46cbd9a`. HTTP 503, código `CREDENCIAL`. A variável está presente. A chave salva é do projeto da TM SEG, não da TORRES. Nenhuma linha financeira foi devolvida e nenhum título foi criado. Depois da remoção, as três comissões de setembro continuam `LIBERADO_PARA_PAGAMENTO` sem `conta_pagar_id`. A TORRES segue com zero títulos `comissao_comercial` dessas origens.
+
+**Publicado junto:** falha de lançamento deixa de voltar HTTP 200. Credencial 503, permissão 403, conexão 502, comissão não liberada 409, comissão ausente 404, banco 500. Título já ligado continua HTTP 200 com `ok: true` e `jaExistia: true`. A tela segue lendo `ok` e `error`.
+
+## AUDITORIA — FRASE “NESTE COMPUTADOR” NA PORTA 5000
+
+**Data:** 2026-10-13
+**Pedido:** o aviso antigo apareceu em `http://127.0.0.1:5000/?page=comissoes-comerciais`. Investigar o fluxo real, sem gravar título e sem publicar.
+
+**Causa comprovada:** o processo da porta 5000 tinha subido às 17:07 com `npx tsx server/index.ts` e não recarrega o código da API. Nesse horário a frase ainda estava em `lib/comissao/contaPagarTorres.ts` (commit `e5443e65`, linha 175). O disco, a `dev`, a `main` e a Vercel já estavam em `c3451494`, sem essa frase. O Vite servia a tela nova; a API em memória continuava a antiga.
+
+**Reprodução, sem título:** `POST /api/comissoes/conta-pagar-torres` com um id inexistente, sessão da Diretoria já aberta. HTTP 200, `ok: false`, erro exatamente `A TORRES não está ligada neste computador.` Não houve insert. As faturas 200, 199 e 207 seguem sem `conta_pagar_id`. A TORRES segue com zero títulos dessas origens.
+
+**Ambiente:** não existe arquivo `.env` nesta máquina. `TORRES_SUPABASE_SERVICE_ROLE_KEY` está ausente no processo local. A variável foi cadastrada na Vercel; o valor não foi lido. No publicado, o mesmo POST sem login responde 401 antes de chegar na chave. Service worker em `127.0.0.1` está ativo e com cache vazio; não foi ele que devolveu a frase.
+
+**Depois de reiniciar a porta 5000 com o código atual:** o mesmo POST de id inexistente respondeu HTTP 200 e `A chave da TORRES não está no servidor que respondeu. O nome esperado é TORRES_SUPABASE_SERVICE_ROLE_KEY.` A frase do computador saiu. O lançamento local continua impossível até essa variável existir no processo. Não publicado. O aviso novo está só na pasta local, em `lib/comissao/torresSupabase.ts`.
+
+## LANÇAMENTO SÓ NO CLIQUE — TM SEG × TORRES
+
+**Data:** 2026-10-13
+**Pedido:** tirar o lançamento automático ao escolher o mês. O botão Lançar pagamento grava no banco da empresa. Publicado em 13/10/2026, sem criar as contas das faturas 200, 199 e 207.
+
+**O que mudou:**
+- `components/ComissoesComerciaisPage.tsx`: removido o `useEffect` que lançava comissão TORRES ao carregar o mês. O botão passou a se chamar Lançar pagamento nos dois casos. TM SEG segue no Supabase dela; TORRES segue em `POST /api/comissoes/conta-pagar-torres`.
+- `lib/comissao/contaPagarTorres.ts`: o `conta_pagar_id` só entra depois do título. Clique repetido reaproveita o vínculo. Se outro clique já vinculou, o título órfão desta tentativa é descartado e o título já ligado permanece. Sem vínculo confirmado, a resposta é erro.
+- Status continua `LIBERADO_PARA_PAGAMENTO` até Pagar comissão. Cálculo, vencimento e pagamento efetivo não mudaram.
+
+**Publicado:** commit `f4834f59` na `dev` e na `main`. Deploy Production Ready `sistema-grupo-tm-5zsbadklf-grupotmsegs-projects.vercel.app`. Domínio `sistema.grupotmseg.com.br` em 13/10/2026 19:41 (`buildId` `f4834f598f55410a406902e9e51dccc66bf3f615`, `builtAt` `2026-10-13T22:41:16.211Z`). `/api/health` ok. O bundle `index-BkIq_1mt.js` não contém `autoTorresRef` e o botão publicado é Lançar pagamento.
+
+**Depois do deploy:** trocar agosto e setembro na tela local, já com o código novo, fez só GET do quadro e GET de títulos. Não houve POST de conta a pagar. As três comissões continuam `LIBERADO_PARA_PAGAMENTO` sem `conta_pagar_id`. A TORRES segue com zero títulos `comissao_comercial` dessas origens.
+
+**Conexão da TORRES no servidor publicado:** não validada. O site no ar está na tela de login. A sessão local, ao chamar o domínio, recebeu `Failed to fetch` (o navegador bloqueou a origem cruzada). A função da chave não chegou a responder, então não há erro técnico da chave nesta rodada. O quadro local respondeu 200 com 9 linhas TORRES e sem campo `rotasTorres`, portanto esse processo local não prova o servidor publicado.
+
+**Teste:** `npx tsx --test scripts/comissao-comercial.test.ts` — 44 passaram antes do commit. Nenhum título real foi criado. Os dois efeitos antigos (sincronismo de faturas na primeira abertura e PIX/comprovante de título da TM SEG já lançado) permanecem.
+
+**Leitura da tela:** o único `acao: 'lancar'` está dentro de `lancarNoContasAPagar`, chamado pelo botão. A TORRES exige login e `podeEscrever` (comercial só o próprio recebe 403). Ao trocar o mês, a lista não cria conta a pagar. Permanecem dois efeitos antigos, fora deste pedido: na primeira abertura da página, `POST /api/comissoes/sync-faturas` gera comissões de faturas já existentes; e, para título da TM SEG que já tem `conta_pagar_id`, `garantirFormaPixEComprovante` pode preencher PIX e comprovante. A TORRES não entra nesse preenchimento.
+
+## AUDITORIA — LANÇAR PAGAMENTO TM SEG × TORRES
+
+**Data:** 2026-10-13
+**Pedido:** comparar o botão de lançar da TM SEG com o da TORRES e planejar a padronização. Sem alterar regra financeira e sem publicar.
+
+**Achado:** os dois usam o mesmo payload (`montarContaPagarComissao`): despesa pendente, PIX, vencimento no dia 15, beneficiário no nome do comercial, histórico `comissao_id:`, e a comissão só fica ligada se o `conta_pagar_id` gravar. A TM SEG grava no Supabase dela pelo clique. A TORRES grava no Supabase dela por `POST /api/comissoes/conta-pagar-torres`. A divergência operacional é o `useEffect` em `ComissoesComerciaisPage.tsx`: ao carregar o mês, ele lança sozinho toda comissão TORRES liberada sem conta a pagar. Setembro dispara isso. Não há estorno de lançamento nos dois fluxos. O status da comissão continua `LIBERADO_PARA_PAGAMENTO` depois do lançamento; `PAGO` só vem no botão Pagar comissão.
+
+**Plano, ainda sem código:** tirar o lançamento automático e deixar só o clique. Reaproveitar a corrida da TM SEG (se outro clique ganhar, não deixar título duplicado). Não criar as três contas de setembro nesta auditoria.
+
+## COMISSÕES SETEMBRO — AVISO “TORRES NÃO ESTÁ LIGADA NESTE COMPUTADOR”
+
+**Data:** 2026-10-13
+**Pedido:** achar a causa real do aviso ao selecionar setembro, sem gravar financeiro e sem publicar.
+
+**Causa:** ao escolher setembro, a tela dispara `POST /api/comissoes/conta-pagar-torres` para cada comissão TORRES liberada sem conta a pagar. `tratarPedidoContaPagarTorres` chama `createTorresAdminClient()`. Se `isTorresServiceRoleKey` recusa a variável, a função responde HTTP 200 com a frase do computador e não consulta o Supabase da TORRES. Não há computador, localhost nem falha de RLS nesse caminho.
+
+**Evidência no ar:** em 13/10/2026 19:11 (UTC 22:11) três POST dessa rota no deploy `dpl_D3xwJep3Jz8JU9nnDu7wrg3xGpk6` responderam 200. As faturas 200 (NIMBUS), 199 (R J C) e 207 (TECHTRANS) continuam `LIBERADO_PARA_PAGAMENTO` com `conta_pagar_id` nulo. O `financial_transactions` da TORRES não tem essas origens. A variável está sensível na Vercel; o valor não foi lido.
+
+**Código:** `lib/comissao/torresSupabase.ts` aceita `sb_secret_` e a `service_role` antiga `eyJ` do projeto `erjhxwbutjyylxdthuuz`. Publishable, chave da TM SEG e anon continuam recusados, com mensagem específica. Teste `scripts/comissao-comercial.test.ts`: 43 passaram.
+
+**Publicado:** commit `dec5cf52` na `dev` e na `main`. Domínio `sistema.grupotmseg.com.br` em 13/10/2026 19:24 (`buildId` `dec5cf5276955c05017e18481f55827d61be5f6f`). `/api/health` ok. `POST /api/comissoes/conta-pagar-torres` sem login responde 401. A leitura autenticada do quadro não rodou daqui: o site publicado está na tela de login e o navegador local bloqueia a chamada cruzada. Nenhuma das três contas a pagar foi criada. Esse commit ainda lançava ao abrir setembro. O commit seguinte `f4834f59` tirou esse disparo.
+
+## TM0810 — BOLETIM CESLOG, 2ª QUINZENA DE SETEMBRO/2026
+
+**Data:** 2026-10-08
+**Pedido:** explicar por que a soma das linhas do Excel fica R$ 83,66 abaixo do total R$ 107.853,60.
+
+**Achado:** o total do rodapé está certo. A diferença inteira é a OS **GTM-8231**. A linha mostra o snapshot congelado de R$ 699,84. O total soma a receita atual R$ 769,82 mais o pedágio R$ 13,68 = R$ 783,50. 783,50 − 699,84 = 83,66 (KM extra R$ 69,98 + pedágio R$ 13,68). As outras 70 OS fecham. Não é arredondamento.
+
+**O que mudou:** a linha do boletim de cliente passa a usar receita + pedágio + deslocamento atuais quando o snapshot congelado divergiu dessa base. Snapshot que ainda coincide, e snapshot com base atual zerada, permanecem. Edição manual continua mandando na linha.
+
+**Não alterado:** gravação da OS, snapshot no banco, Asaas, eNotas, rodapé do boletim.
+
+## PAINEL DHL NA LISTA DE OS
+
+**Data:** 2026-10-07
+**Pedido:** a tela de viaturas DHL no painel de OS fica só para Operador, Avançado e Administrador.
+
+**O que mudou:** Diretoria, Financeiro, Comercial e Controller deixam de ver esse painel e os avisos ligados a ele. Quem abre a tela continua sendo Operador, Avançado e Administrador.
+
+**Não publicado.**
+
+## PONTO CLT — FACIAL DE VOLTA, SEM TRAVA DE HORÁRIO
+
+**Data:** 2026-10-07
+**Pedido:** funcionário CLT em RH / Funcionários volta a bater ponto com identificação facial. O horário do turno não bloqueia o uso do sistema.
+
+**O que mudou:** CLT ativo (ou em experiência), mesmo no perfil Avançado, passa de novo pela cobrança de entrada com facial. A batida continua liberada a qualquer hora. Diretoria, Administrador e o auditor Daniel seguem sem essa trava.
+
+**Não alterado:** sequência das quatro batidas, cálculo de OS, financeiro.
+
+## VS TRANSPORTES — REFERÊNCIA DE PEDIDOS NO BOLETIM
+
+**Data:** 2026-10-07
+**Pedido:** só para a VS TRANSPORTES, o time informa a Referência de Pedidos na OS (ex.: 303185 / 303189) e essa coluna aparece no boletim de medição. OS já concluídas e aprovadas também recebem o campo, para preencher e reenviar o boletim.
+
+**O que mudou:**
+- Cliente: `VS TRANSPORTES LTDA` (fantasia VS OPERADOR LOGISTICO, id 80).
+- Campo na criação da OS (`MissionForm`), na edição (`UpdateMissionModal`) e na Auditoria de Faturamento (`MissionFinancialModal`), gravado em `missions.reference_number` (coluna que já existia).
+- OS concluída e aprovada: na auditoria, o botão **Salvar referência** grava só esse número, mesmo com o faturamento travado. Quem não pode alterar o restante da OS ainda consegue salvar só essa referência.
+- Boletim de medição do cliente (tela, Excel e PDF) ganha a coluna **REF. PEDIDOS**. O PDF sai do mesmo HTML.
+
+**Não alterado:** cálculo da OS, aprovação, snapshot financeiro, Asaas, eNotas, colunas de CESLOG/DHL/CEVA/INTERMODAL, boletim de fornecedor.
+
+**Testes:** `npx tsx --test scripts/vs-transportes-pedido.test.ts`
+
+**Pendência:** as OS já aprovadas com a referência vazia são preenchidas na Auditoria de Faturamento (campo ciano no topo) e o boletim é gerado de novo.
+
+## GTM-6482: 100% SEM MAPA E SEM FOTO
+
+**Data:** 2026-10-06
+**O que apareceu:** o aviso “O mapa com as ruas não foi gerado” e “As fotos não entraram”, mesmo com a barra em 100%.
+**Causa no site publicado:** o servidor tentava o OpenStreetMap primeiro. De lá a conexão não encerra, a função fica presa e a cópia das fotos não chega a rodar.
+**O que mudou:** mapa geral e miniaturas saem num único pedido, pela Esri, com a conexão encerrada em 2,5s. Se o mapa ou as fotos existentes não entrarem, a barra para em 90% e o texto diz que faltou. 100% só quando os dois estão no documento.
+**Ainda não publicado.** O site no ar continua com o comportamento antigo até a próxima publicação.
+
+## MAPA CINZA “API KEY REQUIRED” E FOTO QUE NÃO ABRE
+
+**Data:** 2026-10-06
+**O que aparecia:** o mapa e os quadrados das atualizações vinham quase brancos, com a frase API KEY REQUIRED. O clique em Abrir foto não saía do relatório.
+**Causa:** o servidor de tiles do Carto responde HTTP 200 com essa marca d’água, e o sistema aceitava o arquivo como se fosse a rua.
+**O que mudou:** o arruamento passa a vir do OpenStreetMap e, se ele não responder, do mapa de ruas da Esri. O clique em Abrir foto abre o arquivo original numa aba nova.
+**Não publicado.** Atualizar `http://127.0.0.1:5000` e gerar o relatório de novo. O HTML já gravado continua com o mapa antigo.
+
+## BARRA DE PORCENTAGEM NA GERAÇÃO DO RELATÓRIO
+
+**Data:** 2026-10-05
+**O que faltava:** o formulário ficava parado em um texto fixo. Não dava para saber se a geração andava ou tinha travado.
+**O que mudou:** a barra mostra a etapa e a porcentagem real (endereços, texto, mapa, fotos, análise, gravação) e um contador de segundos. A porcentagem não volta para trás. Se o número para e os segundos continuam, aquele passo está esperando resposta.
+**Teste:** `npx tsx --test scripts/os-action-plan.test.ts` — 40 passaram. O modal compilou no esbuild.
+**Não publicado.** Atualizar `http://127.0.0.1:5000` e gerar de novo. O site no ar só mostra a barra depois de publicar.
+
+## A TELA PARAVA EM “REDIGINDO A ANÁLISE”
+
+**Data:** 2026-10-05
+**O que acontecia:** o formulário ficava em “Localizando os pontos” até o mapa, as fotos e a IA terminarem. Uma consulta lenta segurava o relatório inteiro.
+**O que mudou:** o documento abre assim que os pontos da OS são lidos. Mapa e fotos entram depois. Cada geocodificação espera no máximo 8 segundos, e a análise automática no máximo 12.
+**Não publicado.**
+
+## CROQUI, TEXTO CORRIDO E BANDEIRAS
+
+**Data:** 2026-10-05
+**O que faltava:** o croqui existia, mas só entrava no PDF depois de um segundo botão. A seção Ocorrência apurada repetia a frase crua do foco.
+**O que mudou:** o croqui entra no documento assim que a sequência existe. A frase crua saiu. Resumo, análise, barreira e conclusão vão em texto corrido. Origem leva 🚩 e destino leva 🏁.
+**Não publicado.** Gerar o relatório de novo. O HTML já gravado não muda sozinho.
+
+## RESUMO PARA O CLIENTE SEM O TEXTO INTERNO
+
+**Data:** 2026-10-05
+**O que aparecia:** a Análise da ocorrência colava o relatório interno inteiro, com nomes, CNPJ, velocidade e texto que expõe a empresa.
+**O que mudou:** esse texto é lido como contexto. O cliente recebe dois parágrafos: perda momentânea da identificação visual e retomada do veículo da OS, sem culpa e sem copiar o material interno. Se a IA responder um texto seguro e curto, ele entra. Se a chave continuar bloqueada, entra o resumo institucional.
+**Não publicado.** Gerar o relatório de novo.
+
+## ANÁLISE 403, MAPA LARGO E FOTOS DO STORAGE — GTM-8335
+
+**Data:** 2026-10-05
+**IA:** a chamada saía sem Referer (`<empty>`). O cliente agora envia o endereço autorizado. Com esse endereço, as chaves locais ainda respondem `API_KEY_SERVICE_BLOCKED` — a API de geração está bloqueada na chave. Não é falha do texto do relatório.
+**Mapa da atualização:** coluna de 198px e 112px de altura, ao lado do texto. O HTML já gerado guarda o CSS antigo; é preciso gerar de novo.
+**Storage conferido em GTM-8335:** só a foto da solicitação, o hodômetro final e a foto de fim de viagem. O print colado em cada atualização não vai para o bucket. A atualização 05 não tem arquivo.
+**Não publicado.**
+
+## FOTOS NÃO ABRIAM — GTM-8335
+
+**Data:** 2026-10-05
+**O que estava na tela:** o relatório salvo às 21:07, mapa cinza e atualizações 02 e 03 sem foto. A geração das 21:46 geocodificou e parou ao baixar as imagens; o mapa com rua não chegou a ser pedido e nada foi gravado.
+**O que mudou:** a foto é copiada pelo servidor para dentro do HTML (`/api/evidencia-imagem`) e o mapa das ruas é pedido ao mesmo tempo. O link "Abrir foto" continua no arquivo original. Atualização sem foto no intervalo de 20 minutos segue escrita como sem registro.
+**Não publicado.** Atualizar a página em `http://127.0.0.1:5000` e gerar de novo.
+
+## PDF SEM FOTO E SEM ARRUAMENTO — teste.pdf
+
+**Data:** 2026-10-05
+**O que o PDF mostrava:** o mapa era um retângulo cinza com bolinhas. A foto da atualização 01 ocupava uma área em branco porque a imagem do armazenamento não entrou na impressão.
+
+**O que mudou:** a foto passa a ir dentro do HTML, então a impressão não depende de baixar o arquivo na hora. O mapa e o mini mapa passam a ser imagem com o arruamento do lugar (ruas e cidades), com os mesmos números A, atualizações e B. A legenda de que não é telemetria continua.
+
+**Teste:** a rota local `/api/mapa-estatico` devolveu PNG de 67 KB com a rua da origem. Os testes do relatório: 37 passaram.
+
+**Não publicado.** Gerar o relatório de novo. O `teste.pdf` já salvo não muda sozinho.
+
+## MAPA, FOTOS E ANÁLISE DA OCORRÊNCIA
+
+**Data:** 2026-10-05
+**Pedido:** o mapa e as fotos não apareciam, e a Análise da ocorrência não resumia o ocorrido com IA. O restante do documento continua.
+
+**Causa:** no relatório com ocorrência o quadro ficava só nas atualizações cuja frase continha uma palavra do problema. As fotos desta OS estão na abertura e na entrega, e essas frases não entram nesse filtro, então as imagens sumiam. O mapa usava a mesma lista. A geração também não chamava a IA: a análise saía em tópicos internos.
+
+**O que mudou:** ao gerar, o sistema geocodifica de novo os endereços que ainda não têm ponto. O quadro mantém a atualização ligada ao problema e também toda atualização que tenha foto ou posição. A seção Análise da ocorrência passa a ser o texto da IA, em parágrafos, a partir do foco e dos registros. Mapa, mini mapas, fotos, croqui e plano continuam no mesmo documento. Se a IA falhar, o relatório sai mesmo assim e o aviso fica na tela.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 37 passaram.
+
+**Não publicado.** É preciso gerar o relatório de novo.
+
+## MAPA DA MISSÃO E RETIRADA DAS EVIDÊNCIAS — GTM-8335
+
+**Data:** 2026-10-05
+**Pedido:** tirar o bloco Evidências do PDF do cliente e descobrir por que o mapa dizia que não havia posição. Não publicar.
+
+**Onde a coordenada se perdia:** nas atualizações. A OS GTM-8335 tem 14 registros de localização no histórico e nenhum log em `mission_logs`. Não existe coluna de latitude/longitude na atualização. Nenhuma atualização guarda link. O único link do banco é `missions.map_link`, com a última posição (`?q=-25.4953379,-49.150897`). O parser já lia esse formato. O relatório não chamava a geocodificação que já existe e o desenho só nascia se a coordenada já viesse pronta. Por isso o PDF dizia "Não há posição válida para desenhar o mapa". Não era falha só da exportação.
+
+**Contagem desta OS:** 14 atualizações; 12 com endereço; 0 links na atualização e 1 link na OS; 0 coordenadas gravadas na atualização; 1 coordenada extraída do link da OS; 11 endereços geocodificados; 2 registros sem localização (criação da solicitação e um registro vazio). Origem e destino saíram do endereço da OS.
+
+**O que mudou:** cada atualização usa coordenada já gravada, senão a coordenada do link, senão o geocódigo do endereço. O link da OS entra na última atualização que não tem ponto. Origem é A, atualizações numeradas, destino é B. Ponto igual fica no mesmo marcador, com os números juntos. Não há linha de trajeto. O aviso de que não é telemetria continua. O card com posição mostra o mini mapa ao lado da foto. Se nada resolver, o cliente vê só "Mapa da missão indisponível para esta operação." O motivo técnico fica oculto. O bloco Evidências / Histórico da OS saiu do PDF. No localhost, a rota `/api/geocode-address` passa a executar a função que a Vercel já usava; antes o Vite devolvia o arquivo e a geocodificação não rodava.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 36 passaram. A OS real foi geocodificada pelo endpoint local. O HTML e o PDF impresso pelo Chrome (11 páginas) trazem origem, destino, atualizações 3 a 14, mini mapas, o aviso de telemetria, e não trazem "Não há posição válida", "Trajeto realizado" nem Evidências. Nenhuma coordenada foi inventada: as 11 vieram do geocódigo e a última, do link gravado.
+
+**Não publicado.** A versão já salva nesta OS continua o documento antigo até gerar de novo.
+
+## CORREÇÃO DO LAYOUT DO PDF — DOC(2) COMO BASE
+
+**Data:** 2026-10-05
+**Pedido:** o DOC(2) volta a ser o visual. O doc1 não pode continuar com a cronologia espremida. Manter croqui, atualizações, fotos, mapas e os dois tipos de relatório. Não publicar.
+
+**Causa:** o card da cronologia foi feito para duas colunas, avatar de 44px e texto no restante. No relatório com foco, o texto entrou sozinho na coluna de 44px. A frase quebrou em uma faixa estreita e o `break-inside: avoid` empurrou cada card para uma página quase vazia. O relatório sem ocorrência também estava com um HTML visual diferente do DOC(2).
+
+**O que mudou:** o card agora é faixa inteira (`width: 100%`), com o avatar ao lado do texto, como no DOC(2). Grades de foto, mapa, croqui e indicadores usam `minmax(0, 1fr)` para não encolherem na impressão. O relatório padrão da missão usa o mesmo cabeçalho, cards e rodapé. A impressão espera as imagens carregarem. Atualizações, fotos, mapa SVG e croqui continuam.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 35 passaram, 0 falharam. Chrome imprimiu o HTML novo: o PDF com ocorrência ficou com 10 páginas e 158 trechos de texto largos contra 1 estreito. O PDF padrão ficou com 8 páginas e 106 trechos largos. O doc1.pdf e o DOC(2).pdf não têm texto selecionável, então a comparação deles foi visual, não por medida de caractere.
+
+**Não publicado.**
+
+## RELATÓRIO OPERACIONAL DA MISSÃO
+
+**Data:** 2026-10-05
+**Pedido:** toda OS pode gerar o relatório da missão, com ou sem ocorrência. O quadro traz as atualizações reais, as fotos reais e o ponto de posição já gravado. Não publicar.
+
+**O que mudou:** ao abrir o relatório, a tela pergunta se é o padrão da missão ou o relatório com ocorrência. O padrão não pede problema, causa, croqui nem plano. Os dois tipos levam o mapa dos pontos e o diário. O mapa é um desenho SVG com a coordenada que já está no link da atualização. Não chama Google Static Maps e não coloca chave no PDF. A frase do documento deixa claro que ponto de atualização não é telemetria contínua. No modo ocorrência, o padrão do quadro é só o que conversa com o problema; dá para pedir todas. A versão anterior fica neste navegador antes de gravar a nova. O banco continua com um HTML por OS. Na tela da OS, o botão passou a ser Relatório da Missão e mostra se já existe versão.
+
+**Banco:** nenhum. Não houve migration. O histórico de versões ainda não tem tabela própria.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 33 passaram, 0 falharam.
+
+**Não publicado.**
+
+**Próximo passo:** se o mapa precisar da imagem de rua do Google, autorizar o custo do Static Maps antes de ligar. A chave não pode ir para o HTML.
+
+## RELATÓRIO EXECUTIVO E CROQUI DA OCORRÊNCIA
+
+**Data:** 2026-10-05
+**Pedido:** o PDF do cliente fica executivo. O croqui ilustra a sequência, só depois de aprovação humana, sem placa ou horário inventados. A falha não é transferida ao fornecedor.
+
+**O que mudou:** com o problema informado, o HTML do cliente traz ocorrência apurada, cronologia ligada ao foco, evidências numeradas, barreira, antes/depois e plano curto. O croqui é diagrama (SVG/HTML), não foto. Entra no PDF somente com `croqui.aprovado`. O texto final troca nome de fornecedor e frases de culpa por linguagem da equipe de escolta e da TM SEG.
+
+**Banco:** nenhum.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 27 passaram naquela etapa. A reabertura da versão compatível continua. O fluxo novo está na seção de cima.
+
+**Não publicado.**
+
+## RELATÓRIO DE OCORRÊNCIA — CONTEXTO DA APURAÇÃO
+
+**Data:** 2026-10-05
+**Pedido:** antes de gerar o PDF da OS, a Diretoria informa o problema. Esse texto define o foco. Não vira fato sozinho. O relatório do cliente fica curto e não mistura rascunho com visto aprovado.
+
+**O que mudou:** o modal abre o formulário "Contexto da apuração" (problema, relato, anexos com evidência principal). O HTML só nasce depois de "Analisar e gerar relatório". Com foco informado, velocidade alta e parada para descanso não viram o problema. O plano de perda de identificação fica em 1 corretiva e 3 preventivas, com procedimento institucional de nova identificação da placa. O título do PDF é "Relatório de Ocorrência e Plano de Ação". A tabela de visto fica em branco até o botão Aprovar. Frases internas de telemetria, contagem de rotina e hipótese ficam fora do corpo visível.
+
+**Banco:** nenhum. Quem aprovou e a versão enviada ao cliente ainda não têm tabela própria.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 23 passaram, 0 falharam.
+
+**Não publicado.**
+
+## PLANO DE AÇÃO DA OS — ANÁLISE POR CATEGORIA
+
+**Data:** 2026-10-05
+**Pedido:** o plano corretivo e o preventivo saem do problema identificado nos registros da OS, com prazo sugerido, sem inventar causa e sem publicar.
+
+**O que mudou:** `lib/osActionPlan/analisarOcorrencia.ts` classifica fato, relato, hipótese, divergência e ausência. Perda de contato ou divergência de veículo gera plano de identificação positiva: apuração em 48 horas, regra de não seguir veículo semelhante sem placa, checklist, alerta de sistema, Central, reciclagem e auditoria. Indicadores com meta e resultado Não medido. A coleta de histórico, ocorrências, logs e evidências pagina o conjunto. O relatório DHL da diretoria não foi alterado.
+
+**Banco:** nenhum. Aprovação com versão enviada ao cliente continua fora, porque `os_action_plans` só guarda um HTML.
+
+**Testes:** `npx tsx --test scripts/os-action-plan.test.ts` — 22 passaram. GTM-8335 lida no banco: categoria perda de contato; o texto não fala em veículo incorreto, então isso não foi inventado. Descanso de condutor não vira ação corretiva.
+
+**Não publicado.**
+
+## VELADA — BOTÃO DE PEDÁGIO E RECUSA TRAVADA
+
+**Data:** 2026-10-05 (UTC)
+**Pedido:** o botão de pedágio sumiu no aviso da velada; a recusa apaga a foto e fica pedindo o horário.
+
+**Causa:**
+- O aviso de velada escondia pedágio para o perfil Avançado. O print do grupo mostra exatamente esse texto, sem Sem pedágio / Com pedágio.
+- O checklist de recusa zerava foto e horário sempre que o relógio da OS mudava a hora padrão. O campo de hora da recusa também recusava horário anterior ao início agendado.
+
+**Correção:** o aviso volta a exigir KM, hora e pedágio para qualquer perfil. O checklist só reinicia ao abrir. A recusa aceita o horário da evidência.
+
+**Não alterado:** Asaas, eNotas, motor financeiro, telas de dinheiro do perfil Avançado.
+
+**Testes:** `npx tsx --test scripts/velada-closure-alert.test.ts scripts/end-evidence-gate.test.ts scripts/avancado-finance-block.test.ts`
+
+## PORTAL CEVA — CONTROLE DE ESCOLTA
+
+**Data:** 2026-09-29 (UTC-3)
+**Pedido:** tirar a coluna Contrato; editar TSP; administrador inclui Operação e TSP novas; exportar Excel e PDF; status acompanha o operador sem F5.
+
+**O que mudou:**
+- Coluna e filtro Contrato saem da tela. O valor já gravado continua no banco.
+- TSP vira campo do cliente, na mesma tabela `ceva_portal_os_campos`.
+- Operação e TSP novas só o administrador inclui (na linha ou pelos botões Nova operação / Nova TSP).
+- Excel e PDF exportam o recorte filtrado, sem Contrato.
+- A cada 5 segundos o portal lê o status gravado na OS e troca o selo. Não recarrega o relatório inteiro.
+
+**Banco:** migration `2026_09_29_ceva_portal_tsp` no projeto Grupo TMSEG (`ajhmmjuewdsukecaimik`): coluna `tsp` e catálogo aceita `tsp`.
+
+**Testes:** `npx tsx --test scripts/ceva-portal-campos.test.ts scripts/ceva-portal-ajustes.test.ts scripts/ceva-portal-aovivo.test.ts`
+
+**Não alterado:** boletim, Asaas, eNotas, motor financeiro.
+
+**Pendência:** status novo chega em até 5 segundos, não no mesmo instante do clique do operador.
+
+## OS — VIATURA CADASTRADA NÃO APARECIA NO DROPDOWN
+
+**Data:** 2026-09-21 (UTC-3)
+**Pedido:** placa TMG0B411/TMG0B41 da Torres já cadastrada, mas não
+aparecia para incluir na OS.
+
+**Causa:** `UpdateMissionModal.refreshAuxData` lia `vehicles` com
+consulta única (limite PostgREST 1000). Havia 1019 viaturas ativas;
+a TMG0B41 era a 1019ª e ficava de fora.
+
+**Correção:** `fetchAllPages` nas viaturas ativas + aviso
+`CONSULTA INCOMPLETA` se truncar. Mesmo padrão já usado em
+`client_vehicles`.
+
+**Não alterado:** placa no banco (continua `TMG0B41`, 7 caracteres);
+Asaas; eNotas; motor financeiro da OS.
+
+**Testes:** `npx tsx --test scripts/client-vehicles-list-paging.test.ts`
+
+---
+
+## PEDÁGIO — FAIXAS + CONTROLLER NA AUDITORIA
+
+**Data:** 2026-09-21 (UTC-3)
+**Pedido:** botão laranja Confirmar Pedágio — liberar edição/salvar para
+controller; DHL sem acréscimo; demais com faixas 20% / 10% / 5%.
+
+**Regra (fonte `lib/toll/clientTollBilling.ts`):**
+- DHL: valor da operação, sem acréscimo.
+- Demais, base > R$ 10: até R$ 100 → +20%; R$ 100,01 a R$ 150 → +10%;
+  acima de R$ 150 → +5%. Até R$ 10 permanece sem acréscimo.
+- Controller/Plínio: edita e salva pedágio do cliente na auditoria
+  (botão laranja + Salvar). Aprovar, receita e deslocamento cliente
+  continuam bloqueados.
+
+**Não alterado:** Asaas, eNotas, motor de tabela DHL, gate de pedágio
+no UpdateMissionModal (conclusão da OS).
+
+**Testes:** `npx tsx --test scripts/toll-client-billing.test.ts scripts/controller-provider-scope.test.ts scripts/plinio-email-restrictions.test.ts`
+
+---
+
 ## VELADA — BOTÃO GERAR LINK (TIMEOUT DA API)
 
 **Data:** 2026-09-15 (UTC-3)

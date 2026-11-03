@@ -7,6 +7,8 @@ import {
   isEmployeeEligibleForTimeClock,
 } from '../lib/timeclock/cltEmployee.ts';
 import {
+  isAdministradorRole,
+  isAvancadoRole,
   isOperationalRole,
   requiresTimeclockUser,
 } from '../lib/timeclock/eligibility.ts';
@@ -38,9 +40,34 @@ test('isCltUser reconhece flag isClt e contractType', () => {
 
 test('requiresTimeclockUser inclui perfis operacionais', () => {
   assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador' }), true);
-  assert.equal(requiresTimeclockUser({ id: '2', name: 'Adv', role: 'AVANÇADO' }), true);
+  assert.equal(requiresTimeclockUser({ id: '2', name: 'Adv', role: 'AVANÇADO' }), false);
   assert.equal(requiresTimeclockUser({ id: '3', name: 'Dir', role: 'Diretoria' }), false);
   assert.equal(isOperationalRole('operacional'), true);
+});
+
+test('administrador não passa pela facial nem pelo ponto', () => {
+  assert.equal(isAdministradorRole('Administrador'), true);
+  assert.equal(isAdministradorRole('admin'), true);
+  assert.equal(
+    requiresTimeclockUser({ id: '3', name: 'Barbara', role: 'Administrador', isClt: true, requiresTimeclock: true }),
+    false,
+  );
+  assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);
+});
+
+test('avançado sem CLT não passa pela facial; CLT do RH volta ao ponto', () => {
+  assert.equal(isAvancadoRole('Avançado'), true);
+  assert.equal(isAvancadoRole('AVANÇADO'), true);
+  assert.equal(isAvancadoRole('avancado'), true);
+  assert.equal(
+    requiresTimeclockUser({ id: '4', name: 'Michelle', role: 'Avançado', isClt: true, requiresTimeclock: true }),
+    true,
+  );
+  assert.equal(
+    requiresTimeclockUser({ id: '9', name: 'SemVinculo', role: 'Avançado', isClt: false }),
+    false,
+  );
+  assert.equal(requiresTimeclockUser({ id: '1', name: 'Op', role: 'Operador', isClt: true }), true);
 });
 
 test('namesLikelyMatch vincula Daniel Pinto ao cadastro RH', async () => {
@@ -158,13 +185,13 @@ test('history usa contract_type case-insensitive', async () => {
   assert.match(src, /ilike\('contract_type', 'clt'\)/);
 });
 
-test('extractUserIdFromToken aceita ID numérico e UUID', () => {
-  assert.equal(extractUserIdFromToken('tmseg-token-5-1783516873131'), '5');
-  assert.equal(
-    extractUserIdFromToken('tmseg-token-550e8400-e29b-41d4-a716-446655440000-99'),
-    '550e8400-e29b-41d4-a716-446655440000',
-  );
-  assert.equal(extractUserIdFromToken('impersonation-token-23-1000'), '23');
+test('extractUserIdFromToken só aceita sessão assinada', async () => {
+  process.env.SESSION_SECRET = 'segredo-de-teste-clt';
+  const { emitirSessao } = await import('../lib/sessao/token');
+  const emitido = emitirSessao('segredo-de-teste-clt', '550e8400-e29b-41d4-a716-446655440000');
+  assert.equal(extractUserIdFromToken(emitido.token), '550e8400-e29b-41d4-a716-446655440000');
+  assert.equal(extractUserIdFromToken('tmseg-token-5-1783516873131'), null);
+  assert.equal(extractUserIdFromToken('impersonation-token-23-1000'), null);
   assert.equal(extractUserIdFromToken('invalid'), null);
 });
 

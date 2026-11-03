@@ -7,8 +7,18 @@ import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import { useNotification } from '../lib/NotificationContext';
+import { isPerfilOperador } from '../lib/training/operadorAcademy';
 import { perfilEhComercial } from '../lib/comissao/tabelaComissaoPadrao';
 import { upsertComercialDoUsuario } from '../lib/comissao/comissaoUsuarios';
+import {
+  mensagemAcessoPortal,
+  perfilPortalDasPermissoes,
+  permissoesDoPortal,
+  usuarioSoPortal,
+  type PerfilCeva,
+} from '../lib/cevaPortal/regrasAcesso';
+import { portalDaFicha } from '../lib/cevaPortal/portalServidor';
+import { generateTemporaryPassword, mensagemAcessoSistema } from '../lib/senhaTemporaria';
 
 interface EquipmentItem {
   id: string;
@@ -63,6 +73,25 @@ const INPUT_CLASS = "w-full pl-10 pr-4 py-3 bg-white border border-gray-300 roun
 const SELECT_CLASS = `${INPUT_CLASS} appearance-none bg-[url('https://api.iconify.design/lucide/chevron-down.svg?color=%239ca3af')] bg-[length:1.25em] bg-no-repeat bg-[position:right_1rem_center]`;
 const LABEL_CLASS = "text-xs font-bold text-gray-500 uppercase mb-1.5 block tracking-wider";
 
+function textoDaMensagem(credenciais: { name: string; email: string; password: string; link?: string; rotulo?: string; manteveSenha?: boolean }): string {
+  if (credenciais.link && credenciais.rotulo) {
+    return mensagemAcessoPortal({
+      nome: credenciais.name,
+      email: credenciais.email,
+      senha: credenciais.password,
+      rotulo: credenciais.rotulo,
+      link: credenciais.link,
+      manteveSenha: credenciais.manteveSenha === true,
+    });
+  }
+  return mensagemAcessoSistema({
+    name: credenciais.name,
+    email: credenciais.email,
+    password: credenciais.password,
+    origem: window.location.origin,
+  });
+}
+
 const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const { showNotification } = useNotification();
   const [formData, setFormData] = useState({
@@ -85,7 +114,13 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const [emailError, setEmailError] = useState('');
   const [generatedPass, setGeneratedPass] = useState('');
   const [isSendingReset, setIsSendingReset] = useState(false);
-  const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string } | null>(null);
+  const [isSendingWhatsapp, setIsSendingWhatsapp] = useState(false);
+  const [isRedefinindoSenha, setIsRedefinindoSenha] = useState(false);
+  const [senhaRedefinidaNaFicha, setSenhaRedefinidaNaFicha] = useState(false);
+  const [whatsappDestino, setWhatsappDestino] = useState('');
+  const [createdCredentials, setCreatedCredentials] = useState<{ name: string; email: string; password: string; type: string; link?: string; rotulo?: string; manteveSenha?: boolean } | null>(null);
+  const [acessoPortal, setAcessoPortal] = useState(false);
+  const [perfilPortal, setPerfilPortal] = useState<PerfilCeva>('analista');
   const [credentialsCopied, setCredentialsCopied] = useState(false);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
     CLIENT_PERMISSION_OPTIONS.filter(p => p.default).map(p => p.id)
@@ -195,13 +230,15 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
   const fetchAuxData = async () => {
     try {
-        const clientQuery = isClientUser
-            ? supabase.from('clients').select('id, name').eq('id', currentUserClientId)
-            : supabase.from('clients').select('id, name').eq('status', 'Ativo').order('name');
+        const selectPortal = 'id, name, trading_name, portal_ativo, portal_slug';
+        const clientQuery = (colunas: string) => isClientUser
+            ? supabase.from('clients').select(colunas).eq('id', currentUserClientId)
+            : supabase.from('clients').select(colunas).eq('status', 'Ativo').order('name');
+        let cliRes = await clientQuery(selectPortal);
+        if (cliRes.error) cliRes = await clientQuery('id, name');
 
-        const [profRes, cliRes, provRes] = await Promise.all([
+        const [profRes, provRes] = await Promise.all([
             supabase.from('profiles').select('*').order('name'),
-            clientQuery,
             supabase.from('providers').select('id, name').eq('status', 'Ativo').order('name')
         ]);
 
@@ -217,13 +254,13 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
 
   const loadUser = async () => {
       try {
-          const { data, error } = await supabase.from('system_users').select('*').eq('id', id).single();
+          const { data, error } = await supabase.from('system_users').select('id, name, email, status, profile_id, client_id, provider_id, permissions, user_type').eq('id', id).single();
           if (error) throw error;
           if (data) {
               setFormData({
                   name: data.name,
                   email: data.email,
-                  password: data.password,
+                  password: '',
                   profileId: data.profile_id || '',
                   clientId: data.client_id || '',
                   providerId: data.provider_id || '',
@@ -231,6 +268,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               });
               if (data.permissions && Array.isArray(data.permissions) && data.permissions.length > 0) {
                   setSelectedPermissions(data.permissions);
+                  setAcessoPortal(usuarioSoPortal(data.permissions));
+                  setPerfilPortal(perfilPortalDasPermissoes(data.permissions) || 'analista');
               }
           }
       } catch (e) {
@@ -242,11 +281,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   };
 
   const generateRandomPassword = () => {
-      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%";
-      let pass = "";
-      for (let i = 0; i < 10; i++) {
-          pass += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
+      const pass = generateTemporaryPassword(10);
       setGeneratedPass(pass);
       setFormData(prev => ({ ...prev, password: pass }));
   };
@@ -266,7 +301,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (emailError) return;
-      if (!formData.name || !formData.email || !formData.password) {
+      if (!formData.name || !formData.email || (!id && !formData.password)) {
           showNotification('Erro', 'Preencha todos os campos obrigatórios.', 'error');
           return;
       }
@@ -274,12 +309,18 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
       if (userType === 'client' && !formData.clientId) return showNotification('Erro', 'Selecione o Cliente vinculado.', 'error');
       if (userType === 'provider' && !formData.providerId) return showNotification('Erro', 'Selecione o Fornecedor vinculado.', 'error');
 
+      const clienteId = userType === 'client' ? (isClientUser ? currentUserClientId : formData.clientId) : '';
+      const clientePortal = clients.find((item) => String(item.id) === String(clienteId));
+      const portalCliente = userType === 'client' ? portalDaFicha(clientePortal) : null;
+      const liberarPortal = Boolean(portalCliente && acessoPortal);
+      if (liberarPortal && !perfilPortal) return showNotification('Erro', 'Selecione se a pessoa é administradora do portal.', 'error');
+
       setIsSaving(true);
       try {
+          const senhaInformada = String(formData.password || '').trim();
           const payload: any = {
               name: formData.name,
               email: formData.email,
-              password: formData.password,
               profile_id: formData.profileId || null,
               client_id: userType === 'client' ? (isClientUser ? currentUserClientId : formData.clientId) : null,
               provider_id: userType === 'provider' ? formData.providerId : null,
@@ -287,8 +328,16 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               status: formData.status,
               force_password_change: !id
           };
-          if (userType === 'client' && isClientUser) {
-              payload.permissions = selectedPermissions;
+          if (!id && userType === 'internal') {
+              const profile = profiles.find((p) => String(p.id) === String(formData.profileId));
+              if (isPerfilOperador(profile?.name)) payload.training_required = true;
+          }
+          if (userType === 'client' && isClientUser && !liberarPortal) {
+              payload.permissions = selectedPermissions.filter((item) => item !== 'portal-only' && !String(item).startsWith('portal:') && !String(item).startsWith('portal-perfil:'));
+          }
+          if (liberarPortal && portalCliente) {
+              payload.permissions = permissoesDoPortal(portalCliente.caminho, perfilPortal);
+              payload.force_password_change = false;
           }
           const vincularComercial = async (userId: string | number) => {
               if (userType !== 'internal') return;
@@ -303,32 +352,87 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   showNotification('Comissão', res.error || 'Usuário salvo, mas o vínculo da tabela de comissão falhou.', 'warning');
               }
           };
+          let usuarioId = id ? String(id) : '';
           if (id) {
               const { error: updErr } = await supabase.from('system_users').update(payload).eq('id', id);
               if (updErr) throw new Error('Erro ao salvar usuário: ' + updErr.message);
               if (userType === 'internal') await saveEquipmentData(id);
               await vincularComercial(id);
               await logAction('UPDATE', 'User', id, `Usuário atualizado: ${payload.name}`);
-              showNotification('Sucesso', 'Usuário atualizado.', 'success');
           } else {
-              const { data, error } = await supabase.from('system_users').insert([payload]).select();
+              const { data, error } = await supabase.from('system_users').insert([payload]).select('id');
               if (error) throw error;
               if (data && data[0]) {
+                  usuarioId = String(data[0].id);
                   await logAction('CREATE', 'User', data[0].id, `Novo usuário: ${payload.name}`);
                   if (userType === 'internal' && (equipments.length > 0 || chips.length > 0)) {
                     await saveEquipmentData(data[0].id);
                   }
                   await vincularComercial(data[0].id);
               }
+          }
+          if (formData.password && usuarioId) {
+              const tokenSessao = localStorage.getItem('authToken') || '';
+              const respostaSenha = await fetch('/api/ponte-auth/senha', {
+                  method: 'POST',
+                  credentials: 'include',
+                  headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenSessao}` },
+                  body: JSON.stringify({ usuarioId, senhaNova: formData.password }),
+              });
+              if (!respostaSenha.ok) {
+                  throw new Error('Usuário salvo, mas a senha não foi gravada no servidor.');
+              }
+          }
+          if (portalCliente && usuarioId) {
+              const resposta = await authFetch('/api/portal-cliente/acesso', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                      clientId: payload.client_id,
+                      nome: payload.name,
+                      email: payload.email,
+                      senha: formData.password,
+                      perfil: perfilPortal,
+                      ativo: payload.status === 'Ativo',
+                      systemUserId: usuarioId,
+                      acesso: liberarPortal,
+                  }),
+              });
+              let corpo: { error?: string; manteveSenha?: boolean } = {};
+              try {
+                  corpo = await parseJsonResponse(resposta);
+              } catch (erroPortal) {
+                  if (!id) await supabase.from('system_users').delete().eq('id', usuarioId);
+                  throw erroPortal;
+              }
+              if (!resposta.ok) {
+                  if (!id) await supabase.from('system_users').delete().eq('id', usuarioId);
+                  throw new Error(corpo?.error || 'Não foi possível liberar o acesso ao portal.');
+              }
+              if (!id) {
+                  const link = `${window.location.origin}${portalCliente.caminho}`;
+                  setCreatedCredentials({
+                      name: payload.name,
+                      email: payload.email,
+                      password: senhaInformada,
+                      type: 'Portal do cliente',
+                      link,
+                      rotulo: portalCliente.rotulo,
+                      manteveSenha: corpo?.manteveSenha === true,
+                  });
+                  setCredentialsCopied(false);
+                  showNotification('Sucesso', 'Usuário do portal criado.', 'success');
+                  return;
+              }
+          }
+          if (!id) {
               showNotification('Sucesso', 'Usuário criado com sucesso.', 'success');
               setCreatedCredentials({
                   name: payload.name,
                   email: payload.email,
-                  password: payload.password,
+                  password: senhaInformada,
                   type: userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno'
               });
               setCredentialsCopied(false);
-
               try {
                   const verCode = Math.floor(100000 + Math.random() * 900000).toString();
                   await authFetch('/api/email/welcome', {
@@ -337,7 +441,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                       body: JSON.stringify({
                           name: payload.name,
                           email: payload.email,
-                          password: payload.password,
+                          password: senhaInformada,
                           userType: userType,
                           profileName: profiles.find(p => String(p.id) === String(formData.profileId))?.name || '',
                           verificationCode: verCode,
@@ -348,6 +452,7 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
               }
               return;
           }
+          showNotification('Sucesso', 'Usuário atualizado.', 'success');
           onBack();
       } catch (e: any) {
           showNotification('Erro', e.message, 'error');
@@ -536,6 +641,35 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           )}
                       </div>
                       <p className="text-[10px] text-blue-700 mt-2 flex items-center gap-1"><Info size={12}/> {isClientUser ? 'Novo usuário será vinculado automaticamente à sua empresa.' : 'Este usuário verá apenas dados deste cliente.'}</p>
+                      {portalDaFicha(isClientUser ? clients.find(c => c.id === currentUserClientId) : clients.find(c => String(c.id) === String(formData.clientId))) && (
+                          <div className="mt-4 rounded-lg border border-blue-200 bg-white p-3 space-y-3">
+                              <label className="flex items-center gap-2 text-sm font-bold text-blue-900">
+                                  <input
+                                      type="checkbox"
+                                      checked={acessoPortal}
+                                      onChange={(event) => setAcessoPortal(event.target.checked)}
+                                      data-testid="checkbox-acesso-portal"
+                                  />
+                                  Acesso ao portal
+                              </label>
+                              <p className="text-[10px] text-blue-700">O link abre só o controle deste cliente. A senha troca no primeiro acesso e a cada 30 dias. Quem já tem senha no portal, como a Lara na CEVA, mantém a senha atual.</p>
+                              {acessoPortal && (
+                                  <div>
+                                      <label className={LABEL_CLASS}>Perfil no portal</label>
+                                      <select
+                                          className={`${SELECT_CLASS} bg-white`}
+                                          value={perfilPortal}
+                                          onChange={(event) => setPerfilPortal(event.target.value === 'administrador' ? 'administrador' : 'analista')}
+                                          data-testid="select-perfil-portal"
+                                      >
+                                          <option value="analista">Não administrador</option>
+                                          <option value="administrador">Administrador</option>
+                                      </select>
+                                      <p className="text-[10px] text-blue-700 mt-2">O administrador cria novos usuários do mesmo cliente, com a mesma regra de senha.</p>
+                                  </div>
+                              )}
+                          </div>
+                      )}
                   </div>
               )}
 
@@ -728,7 +862,66 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                   {id && formData.email && (
                       <button
                         type="button"
-                        disabled={isSendingReset}
+                        disabled={isRedefinindoSenha || isSendingReset || isSendingWhatsapp}
+                        data-testid="button-reset-password-copy"
+                        onClick={async () => {
+                          if (!confirm(`Gerar uma senha nova para ${formData.name || 'este usuário'}? A mensagem fica igual à de um usuário recém-criado, para você copiar e enviar.`)) return;
+                          setIsRedefinindoSenha(true);
+                          try {
+                            const res = await authFetch('/api/password-reset/request', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ userId: id, canal: 'texto' }),
+                            });
+                            const data = await parseJsonResponse(res);
+                            const senha = String(data.senha || '');
+                            if (!res.ok || !data.success || !senha) {
+                              showNotification('Senha', data.error || 'Falha ao redefinir a senha', 'error');
+                              return;
+                            }
+                            setFormData((prev) => ({ ...prev, password: '' }));
+                            setGeneratedPass('');
+                            setShowPassword(false);
+                            const tipo = userType === 'client' ? 'Cliente' : userType === 'provider' ? 'Fornecedor' : 'Interno';
+                            if (data.portal && data.rotulo && data.caminho) {
+                              setCreatedCredentials({
+                                name: formData.name,
+                                email: formData.email,
+                                password: senha,
+                                type: 'Portal do cliente',
+                                link: `${window.location.origin}${data.caminho}`,
+                                rotulo: String(data.rotulo),
+                              });
+                            } else {
+                              setCreatedCredentials({
+                                name: formData.name,
+                                email: formData.email,
+                                password: senha,
+                                type: tipo,
+                              });
+                            }
+                            setSenhaRedefinidaNaFicha(true);
+                            setCredentialsCopied(false);
+                            showNotification('Senha', 'Senha nova gerada. Copie a mensagem e envie ao usuário.', 'success');
+                          } catch (err: any) {
+                            showNotification('Senha', 'Erro ao redefinir a senha: ' + err.message, 'error');
+                          } finally {
+                            setIsRedefinindoSenha(false);
+                          }
+                        }}
+                        className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-xs font-bold text-gray-800 hover:bg-gray-50 transition-colors uppercase tracking-wider disabled:opacity-50"
+                      >
+                        {isRedefinindoSenha ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
+                        Redefinir senha
+                      </button>
+                  )}
+                  {id && formData.email && (
+                      <p className="mt-1.5 text-[10px] text-gray-500">Gera uma senha nova e abre a mesma mensagem de quando o usuário é criado, para copiar e enviar.</p>
+                  )}
+                  {id && formData.email && (
+                      <button
+                        type="button"
+                        disabled={isSendingReset || isSendingWhatsapp || isRedefinindoSenha}
                         onClick={async () => {
                           if (!confirm(`Enviar e-mail de redefinição de senha para ${formData.email}?`)) return;
                           setIsSendingReset(true);
@@ -741,12 +934,12 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                             });
                             const data = await parseJsonResponse(res);
                             if (res.ok && data.success) {
-                              showNotification('success', 'E-mail de redefinição enviado com sucesso!');
+                              showNotification('E-mail', 'E-mail de redefinição enviado com sucesso!', 'success');
                             } else {
-                              showNotification('error', data.error || 'Falha ao enviar e-mail');
+                              showNotification('E-mail', data.error || 'Falha ao enviar e-mail', 'error');
                             }
                           } catch (err: any) {
-                            showNotification('error', 'Erro ao enviar e-mail: ' + err.message);
+                            showNotification('E-mail', 'Erro ao enviar e-mail: ' + err.message, 'error');
                           } finally {
                             setIsSendingReset(false);
                           }
@@ -757,6 +950,58 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                         {isSendingReset ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
                         Enviar nova senha por e-mail
                       </button>
+                  )}
+                  {id && userType === 'client' && (
+                      <div className="mt-3 space-y-2">
+                          <label className={LABEL_CLASS}>WhatsApp da pessoa</label>
+                          <div className="relative">
+                              <input
+                                  type="tel"
+                                  className={INPUT_CLASS}
+                                  placeholder="(11) 99999-9999"
+                                  value={whatsappDestino}
+                                  onChange={(e) => setWhatsappDestino(e.target.value)}
+                                  data-testid="input-whatsapp-senha"
+                              />
+                              <MessageCircle size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                          </div>
+                          <button
+                              type="button"
+                              disabled={isSendingWhatsapp || isSendingReset || isRedefinindoSenha}
+                              data-testid="button-reset-password-whatsapp"
+                              onClick={async () => {
+                                  const digitos = whatsappDestino.replace(/\D/g, '');
+                                  if (digitos.length < 10) {
+                                      showNotification('WhatsApp', 'Informe o WhatsApp com DDD.', 'error');
+                                      return;
+                                  }
+                                  if (!confirm(`Redefinir a senha de ${formData.name || 'este usuário'} e enviar a nova senha no WhatsApp ${whatsappDestino}? No próximo acesso a troca será obrigatória.`)) return;
+                                  setIsSendingWhatsapp(true);
+                                  try {
+                                      const res = await authFetch('/api/password-reset/request', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ userId: id, canal: 'whatsapp', telefone: whatsappDestino }),
+                                      });
+                                      const data = await parseJsonResponse(res);
+                                      if (res.ok && data.success) {
+                                          showNotification('WhatsApp', data.message || 'Nova senha enviada no WhatsApp.', 'success');
+                                      } else {
+                                          showNotification('WhatsApp', data.error || 'Falha ao enviar a senha no WhatsApp', 'error');
+                                      }
+                                  } catch (err: any) {
+                                      showNotification('WhatsApp', 'Erro ao enviar no WhatsApp: ' + err.message, 'error');
+                                  } finally {
+                                      setIsSendingWhatsapp(false);
+                                  }
+                              }}
+                              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors uppercase tracking-wider disabled:opacity-50"
+                          >
+                              {isSendingWhatsapp ? <Loader2 size={14} className="animate-spin" /> : <MessageCircle size={14} />}
+                              Redefinir senha e enviar no WhatsApp
+                          </button>
+                          <p className="text-[10px] text-gray-500">Gera uma senha nova, manda neste WhatsApp e pede a troca assim que a pessoa acessar de novo.</p>
+                      </div>
                   )}
               </div>
           </div>
@@ -777,8 +1022,8 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                       <div className="flex items-center gap-3">
                           <div className="p-2 bg-white/20 rounded-xl"><CheckCircle2 size={24} /></div>
                           <div>
-                              <h3 className="text-lg font-black uppercase tracking-tight">Usuário Criado com Sucesso</h3>
-                              <p className="text-emerald-100 text-xs font-medium mt-0.5">Copie as credenciais abaixo para enviar ao usuário</p>
+                              <h3 className="text-lg font-black uppercase tracking-tight">{senhaRedefinidaNaFicha ? 'Senha redefinida' : 'Usuário Criado com Sucesso'}</h3>
+                              <p className="text-emerald-100 text-xs font-medium mt-0.5">{senhaRedefinidaNaFicha ? 'A mensagem é a mesma de um acesso novo. Copie e envie ao usuário.' : 'Copie as credenciais abaixo para enviar ao usuário'}</p>
                           </div>
                       </div>
                   </div>
@@ -788,40 +1033,27 @@ const UserForm: React.FC<UserFormProps> = ({ onBack, userType, id }) => {
                           <div className="space-y-2">
                               <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Nome:</span><span className="text-sm font-black text-gray-900">{createdCredentials.name}</span></div>
                               <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">E-mail:</span><span className="text-sm font-bold text-gray-900 font-mono">{createdCredentials.email}</span></div>
-                              <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Senha:</span><span className="text-sm font-black text-gray-900 font-mono tracking-wider">{createdCredentials.password}</span></div>
+                              {!createdCredentials.manteveSenha && (
+                                  <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Senha:</span><span className="text-sm font-black text-gray-900 font-mono tracking-wider">{createdCredentials.password}</span></div>
+                              )}
                               <div className="flex justify-between items-center"><span className="text-xs font-bold text-gray-500">Tipo:</span><span className="text-sm font-bold text-gray-900">{createdCredentials.type}</span></div>
                           </div>
                       </div>
 
                       <div className="bg-amber-50 rounded-xl p-3 border border-amber-200 flex items-start gap-2">
                           <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
-                          <p className="text-[11px] font-medium text-amber-800">No primeiro acesso, o sistema solicitará a troca de senha por segurança.</p>
+                          <p className="text-[11px] font-medium text-amber-800">{createdCredentials.manteveSenha ? 'A senha que esta pessoa já usa no portal foi mantida. A troca continua obrigatória a cada 30 dias.' : createdCredentials.link ? 'No primeiro acesso a senha será trocada. Depois, a troca é obrigatória a cada 30 dias. O portal mostra só este cliente.' : 'No primeiro acesso, o sistema solicitará a troca de senha por segurança.'}</p>
                       </div>
 
                       <div className="bg-gray-900 rounded-xl p-4 text-white font-mono text-xs leading-relaxed whitespace-pre-wrap select-all" data-testid="text-credentials-message">
-{`🔐 *GRUPO TMSEG — Acesso ao Sistema*
-
-Olá *${createdCredentials.name}*,
-
-Seu acesso ao sistema foi criado com sucesso.
-
-📧 *Login:* ${createdCredentials.email}
-🔑 *Senha:* ${createdCredentials.password}
-🌐 *Link:* ${window.location.origin}
-
-⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.
-
-Em caso de dúvidas, entre em contato com o suporte.
-
-_Grupo TMSEG — Gestão Operacional_`}
+{textoDaMensagem(createdCredentials)}
                       </div>
 
                       <div className="flex gap-3">
                           <button
                               data-testid="button-copy-credentials"
                               onClick={() => {
-                                  const msg = `🔐 *GRUPO TMSEG — Acesso ao Sistema*\n\nOlá *${createdCredentials.name}*,\n\nSeu acesso ao sistema foi criado com sucesso.\n\n📧 *Login:* ${createdCredentials.email}\n🔑 *Senha:* ${createdCredentials.password}\n🌐 *Link:* ${window.location.origin}\n\n⚠️ No primeiro acesso, você deverá trocar sua senha por segurança.\n\nEm caso de dúvidas, entre em contato com o suporte.\n\n_Grupo TMSEG — Gestão Operacional_`;
-                                  navigator.clipboard.writeText(msg);
+                                  navigator.clipboard.writeText(textoDaMensagem(createdCredentials));
                                   setCredentialsCopied(true);
                                   setTimeout(() => setCredentialsCopied(false), 3000);
                               }}
@@ -831,7 +1063,7 @@ _Grupo TMSEG — Gestão Operacional_`}
                           </button>
                           <button
                               data-testid="button-close-credentials"
-                              onClick={() => { setCreatedCredentials(null); onBack(); }}
+                              onClick={() => { setCreatedCredentials(null); if (senhaRedefinidaNaFicha) { setSenhaRedefinidaNaFicha(false); return; } onBack(); }}
                               className="px-6 py-3 border border-gray-300 rounded-xl text-sm font-bold text-gray-600 uppercase hover:bg-gray-50 transition-all"
                           >
                               Fechar

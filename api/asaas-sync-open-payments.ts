@@ -3,6 +3,9 @@
  */
 import { runAsaasSyncOpenPayments } from '../lib/asaasSyncOpenPaymentsCore.js';
 import { authorizeSupabaseAdminRequest } from '../lib/supabaseAdminApiAuth.js';
+import { instalarAvisoComissaoLiberada } from '../lib/comissao/enviarAvisoComissaoLiberada.js';
+
+instalarAvisoComissaoLiberada();
 
 const ASAAS_FINANCE_ROLES = ['administrador', 'diretoria', 'financeiro'] as const;
 
@@ -54,6 +57,12 @@ export async function handleAsaasSyncOpenPaymentsRequest(
     const result = await runSync({
       queryLimit: req.query?.limit,
       bodyLimit: body.limit,
+      queryOffset: req.query?.offset,
+      bodyOffset: body.offset,
+      queryRetroactivePaid: req.query?.retroactivePaid,
+      bodyRetroactivePaid: body.retroactivePaid,
+      queryCursor: req.query?.cursor,
+      bodyCursor: body.cursor,
     });
     res.status(200).json(result);
   } catch (err: unknown) {

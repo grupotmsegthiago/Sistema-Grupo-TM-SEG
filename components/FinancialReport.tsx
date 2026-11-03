@@ -5,6 +5,8 @@ import { FinancialTransaction, FinancialCategory } from '../types';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { formatIsoDateBR, formatDateBR } from '../lib/dateUtils';
 import { isInternalGroupTransfer } from '../lib/financialInternalTransfer';
+import { getGrossReceivedAmount } from '../lib/financial/transactionAmounts';
+import { getCashMovementDate } from '../lib/dashboardDiretoria/periodUtils';
 import { 
     FileText, Calendar, DollarSign, Download, Printer, Filter, 
     ArrowUpCircle, ArrowDownCircle, ShieldAlert, Loader2, Search, TrendingUp, User,
@@ -171,7 +173,9 @@ const FinancialReport: React.FC = () => {
         };
         const [rangeStart, rangeEnd] = getRange();
         return nonInvestTx.filter(t => {
-            const d = t.due_date.split('T')[0];
+            const d = t.status === 'PAID' && t.payment_date
+                ? getCashMovementDate(t)
+                : t.due_date.split('T')[0];
             return d >= rangeStart && d <= rangeEnd;
         });
     }, [nonInvestTx, viewPeriod, today, todayStr]);
@@ -260,7 +264,7 @@ const FinancialReport: React.FC = () => {
     const paidIncome = useMemo(() => periodFilteredTx.filter(t => t.type === 'INCOME' && t.status === 'PAID'), [periodFilteredTx]);
     const paidExpense = useMemo(() => periodFilteredTx.filter(t => t.type === 'EXPENSE' && t.status === 'PAID'), [periodFilteredTx]);
 
-    const totalRecebido = useMemo(() => paidIncome.reduce((a, t) => a + t.amount, 0), [paidIncome]);
+    const totalRecebido = useMemo(() => paidIncome.reduce((a, t) => a + getGrossReceivedAmount(t), 0), [paidIncome]);
     const totalPago = useMemo(() => paidExpense.reduce((a, t) => a + t.amount, 0), [paidExpense]);
     const totalAReceber = useMemo(() => aReceberFuture.reduce((a, t) => a + t.amount, 0), [aReceberFuture]);
     const totalAPagar = useMemo(() => aPagarFuture.reduce((a, t) => a + t.amount, 0), [aPagarFuture]);
@@ -491,7 +495,7 @@ const FinancialReport: React.FC = () => {
                                                     const diffDays = Math.floor((today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24));
                                                     return (
                                                         <tr key={ii} className="border-t border-gray-100 hover:bg-red-50/30">
-                                                            <td className="px-5 py-2 pl-10 text-xs font-mono text-gray-600">{dueDate.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                            <td className="px-5 py-2 pl-10 text-xs font-mono text-gray-600">{formatDateBR(dueDateStr)}</td>
                                                             <td className="px-4 py-2 text-xs font-bold text-gray-700 uppercase max-w-[300px] truncate">{item.description}</td>
                                                             <td className="px-4 py-2 text-[10px]"><span className="bg-gray-100 px-1.5 py-0.5 rounded border border-gray-200 text-gray-500">{item.category_name || '-'}</span></td>
                                                             <td className="px-4 py-2 text-xs font-black text-red-600 text-right">{diffDays}</td>
@@ -562,7 +566,7 @@ const FinancialReport: React.FC = () => {
                                             const isOverdue = item.status === 'PENDING' && item.due_date.split('T')[0] < todayStr;
                                             return (
                                                 <tr key={item.id} className={`hover:bg-gray-50 ${isOverdue ? 'bg-red-50/50' : ''}`}>
-                                                    <td className="px-4 py-2 text-xs font-mono text-gray-600">{new Date(item.due_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</td>
+                                                    <td className="px-4 py-2 text-xs font-mono text-gray-600">{formatDateBR(item.due_date)}</td>
                                                     <td className="px-4 py-2 text-xs font-bold text-gray-800 uppercase max-w-[250px] truncate">{item.description}</td>
                                                     <td className="px-4 py-2 text-[10px] text-gray-500 uppercase">{item.updated_by || item.created_by || 'SISTEMA'}</td>
                                                     <td className="px-4 py-2 text-[10px]"><span className="bg-gray-100 px-2 py-0.5 rounded border border-gray-200">{item.category_name || '-'}</span></td>
@@ -573,7 +577,7 @@ const FinancialReport: React.FC = () => {
                                                         </span>
                                                     </td>
                                                     <td className={`px-4 py-2 text-right font-mono font-bold text-xs ${item.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
-                                                        {item.type === 'INCOME' ? '+' : '-'} {formatCurrency(item.amount)}
+                                                        {item.type === 'INCOME' ? '+' : '-'} {formatCurrency(item.type === 'INCOME' && item.status === 'PAID' ? getGrossReceivedAmount(item) : item.amount)}
                                                     </td>
                                                 </tr>
                                             );

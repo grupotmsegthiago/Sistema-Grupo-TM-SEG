@@ -2,11 +2,14 @@
 import React, { memo, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { authFetch } from '../lib/authFetch';
 import { formatDateBR, formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import { pickLiveMissionUpdate } from '../lib/missionLiveUpdate';
+import { buildChargeUpdateMessage } from '../lib/chargeUpdateMessage';
+import { copyTextAsync } from '../lib/clipboard';
 import { Mission, MissionStatus, MissionLog, ClientPriceTable, ProviderCostTable, Client } from '../types';
 import { supabase } from '../lib/supabase';
 import { 
-  Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, CarFront, 
-  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Building2, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, TrendingUp, TrendingDown, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, MessageCircle, ImageOff, Image, X, Upload, Loader2, Camera, Link2
+  Truck, User, Phone, EyeOff, ShieldCheck, UserCheck, 
+  Map, Pencil, Eye, Check, Trash2, FileText, Clock, Calendar, Navigation, Hourglass, History, Mail, MapPin, AlertOctagon, AlertTriangle, Printer, FileSearch, DollarSign, Layers, Calculator, Flag, Activity, Briefcase, Shield, ImageOff, Image, X, Upload, Loader2, Camera, Link2, Lock, ClipboardList, Copy, MoreHorizontal, ChevronRight, Play, Coins, BarChart3, Database
 } from 'lucide-react';
 
 const WhatsAppIcon = ({ size = 14 }: { size?: number }) => (
@@ -22,6 +25,18 @@ import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
 import LiveTrackPanel from './LiveTrackPanel';
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { isVeladaFinalKmPending } from '../lib/veladaClosureAlert';
+import { isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
+import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrence';
+import { PANEL_LAYER_META, type MissionPanelLayer } from '../lib/missionPanelLayers';
+import MissionOccurrenceDialog from './MissionOccurrenceDialog';
+import MissionHandoverNoteButton, { type HandoverNote } from './MissionHandoverNoteButton';
+import Vehicle3DCard from './os/Vehicle3DCard';
+import PainelSuspensoOs, { FichaOs } from './os/FichaSuspensaOs';
+import { resolverLogoCliente } from '../lib/os/visualCaminhao';
+import EscortCinematic3DCard from './os/EscortCinematic3DCard';
+import MapaNoturnoOs from './os/MapaNoturnoOs';
+import './os/cardOsPremium.css';
 
 const geocodeCache: Record<string, string> = {};
 const geocodePending: Record<string, Promise<string>> = {};
@@ -55,9 +70,12 @@ interface MissionCardProps {
     mission: Mission;
     canEditMission: boolean;
     isDirector: boolean;
+    canSeeBillingSummary?: boolean;
+    hideFinancialInfo?: boolean;
     isRedLight: boolean;
     isImminent: boolean;
     minutesSinceUpdate: number;
+    panelLayer?: MissionPanelLayer;
     copiedId: string | null;
     isSendingEmail?: string;
     hideProviderInfo?: boolean;
@@ -72,6 +90,7 @@ interface MissionCardProps {
     onViewHistory?: (m: Mission) => void;
     onFullReport?: (m: Mission) => void;
     onOperationalReport?: (m: Mission) => void;
+    onActionPlan?: (m: Mission) => void;
     lastLog?: MissionLog;
     onEvidenceUploaded?: () => void;
     clientTables: ClientPriceTable[];
@@ -83,6 +102,8 @@ interface MissionCardProps {
     evidenceList?: { url: string; uploadedBy: string; uploadedAt: string }[];
     dhlIntake?: { status: string; providerFilledAt: string | null; intakeId: string; progressAgent1?: boolean; progressAgent2?: boolean; progressVehicle?: boolean; progressMirror?: boolean };
     tollConfirmation?: { user: string; date: string; hasToll: boolean; value: number; source?: string };
+    handoverNote?: HandoverNote | null;
+    onHandoverNoteSaved?: (note: HandoverNote) => void;
 }
 
 const formatCurrency = (val: number | null | undefined) => {
@@ -95,48 +116,30 @@ const AgingTimelineBar: React.FC<{ minutes: number; status: string }> = ({ minut
     
     if (isFuture && minutes === 0) return null;
 
-    let colorClass = 'bg-gray-300'; 
-    let textColor = 'text-gray-500';
-    let borderColor = 'border-gray-200';
-    let bgBase = 'bg-gray-50';
     let label = 'Atualizado';
 
-    if (minutes >= 60) { 
-        colorClass = 'bg-red-600';
-        textColor = 'text-red-700';
-        borderColor = 'border-red-200';
-        bgBase = 'bg-red-50';
+    if (minutes >= 120) {
         label = 'Ocioso';
     } else if (minutes >= 30) {
-        colorClass = 'bg-amber-500';
-        textColor = 'text-amber-700';
-        borderColor = 'border-red-200';
-        bgBase = 'bg-amber-50';
         label = 'Atenção';
     }
 
-    const widthPercentage = Math.min(100, Math.max(5, (minutes / 240) * 100));
     const hours = Math.floor(minutes / 60);
     const mins = Math.floor(minutes % 60);
-    const timeDisplay = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
+    const timeDisplay = hours > 0 ? `${hours}h ${mins}min` : `${mins} min`;
 
+    const tom = minutes >= 120 ? 'os-id-atencao--ocioso' : minutes >= 30 ? 'os-id-atencao--alerta' : 'os-id-atencao--ok';
+    const selo = minutes >= 120 ? 'OCIOSO' : minutes >= 30 ? 'ATRASO' : 'EM DIA';
     return (
-        <div className={`flex flex-col w-full rounded-lg border ${borderColor} ${bgBase} p-2 shadow-sm`} title="Tempo sem atualização (Ociosidade)">
-            <div className="flex justify-between items-center mb-1.5">
-                <span className={`text-[11px] font-bold uppercase ${textColor} flex items-center gap-1`}>
-                    <History size={10} /> {label}
-                </span>
-                <span className={`text-[11px] font-mono font-bold uppercase ${textColor}`}>
-                    {timeDisplay}
-                </span>
-            </div>
-            
-            <div className="w-full h-2 bg-white/50 rounded-full overflow-hidden border border-black/5 relative">
-                <div 
-                    className={`h-full rounded-full transition-all duration-500 ease-out ${colorClass} ${minutes >= 30 ? 'animate-pulse' : ''}`}
-                    style={{ width: `${widthPercentage}%` }}
-                ></div>
-            </div>
+        <div className={`os-id-atencao ${tom}`} title="Tempo sem atualização (Ociosidade)">
+            <span className="os-id-icone">{minutes >= 30 ? <AlertTriangle size={14} /> : <History size={14} />}</span>
+            <span className="os-id-texto">
+                <small>{label}</small>
+                <strong>{timeDisplay} sem atualização</strong>
+            </span>
+            <span className={`os-id-selo ${minutes >= 30 ? 'os-id-selo--atraso' : 'os-id-selo--ok'}`}>
+                {minutes >= 30 ? <AlertTriangle size={11} /> : <Check size={11} />} {selo}
+            </span>
         </div>
     );
 };
@@ -199,17 +202,21 @@ const compressImage = (file: File, maxWidth = 1200, quality = 0.7): Promise<Blob
 };
 
 const MissionCardComponent: React.FC<MissionCardProps> = ({ 
-    mission, canEditMission, isDirector, isRedLight, isImminent, minutesSinceUpdate, copiedId, isSendingEmail, hideProviderInfo,
-    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, lastLog, onEvidenceUploaded,
-    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation
+    mission, canEditMission, isDirector, canSeeBillingSummary = false, hideFinancialInfo = false, isRedLight, isImminent, minutesSinceUpdate, panelLayer, copiedId, isSendingEmail, hideProviderInfo,
+    onViewMap, onUpdate, onOpenFinancials, onCopy, onCopyEmail, onDelete, onPrint, onViewHistory, onFullReport, onOperationalReport, onActionPlan, lastLog, onEvidenceUploaded,
+    clientTables, providerTables, clientsData, agentPhonesMap, currentTime, approvalStages, evidenceList, dhlIntake, tollConfirmation,
+    handoverNote, onHandoverNoteSaved
 }) => {
     
     const { showNotification } = useNotification();
+    const [chargeCopied, setChargeCopied] = useState(false);
     const [showEvidenceModal, setShowEvidenceModal] = useState(false);
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
     const [pendingFiles, setPendingFiles] = useState<{ file: File; preview: string }[]>([]);
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+    const [occurrenceOpen, setOccurrenceOpen] = useState(false);
+    const [occurrenceCount, setOccurrenceCount] = useState<number | null>(null);
     const uploadFileInputRef = useRef<HTMLInputElement>(null);
     const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
     
@@ -330,14 +337,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     }, [mission.status]);
     
     const financials = useMemo(() => {
-        if (!isDirector && !hideProviderInfo) return null;
+        if (!isDirector && !canSeeBillingSummary && !hideProviderInfo) return null;
         const clientName = ((mission as any).originalClientName || mission.client || '').trim();
         const client = clientsData.find(c => c.name === clientName);
         return calculateMissionFinancials(mission, clientTables, providerTables, client, currentTime);
-    }, [mission, clientTables, providerTables, clientsData, isDirector, hideProviderInfo, currentTime]);
+    }, [mission, clientTables, providerTables, clientsData, isDirector, canSeeBillingSummary, hideProviderInfo, currentTime]);
 
     const isExtraHourActive = useMemo(() => {
-        if (!hideProviderInfo && !isDirector) return false;
+        if (!hideProviderInfo && !isDirector && !canSeeBillingSummary) return false;
         if (!financials) return false;
         if (isTerminal) return false;
         if (![MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus)) return false;
@@ -346,7 +353,7 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
         const clientExcess = financials.client.excessHours > 0;
         const providerExcess = financials.provider?.excessHours > 0;
         return hideProviderInfo ? clientExcess : (clientExcess || providerExcess);
-    }, [financials, isTerminal, mission.status, hideProviderInfo, isDirector]);
+    }, [financials, isTerminal, mission.status, hideProviderInfo, isDirector, canSeeBillingSummary]);
 
     const formatExcessTime = (hours: number) => {
         const totalSeconds = Math.round(hours * 3600);
@@ -359,14 +366,14 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const hasBeenVerified = !!(mission as any).billing_verified_by;
 
     const auditResult = useMemo(() => {
-        if (!isDirector || !isTerminal) return null;
+        if ((!isDirector && !canSeeBillingSummary) || !isTerminal) return null;
         const storedRev = (mission.revenue_value || 0);
         const storedCost = (mission.cost_value || 0);
         if (storedRev === 0 && storedCost === 0) return null;
         const clientName = ((mission as any).originalClientName || mission.client || '').trim();
         const client = clientsData.find(c => c.name === clientName);
         return auditMissionFinancials(mission, clientTables, providerTables, client);
-    }, [mission, clientTables, providerTables, clientsData, isDirector, isTerminal]);
+    }, [mission, clientTables, providerTables, clientsData, isDirector, canSeeBillingSummary, isTerminal]);
 
     const displayRevenue = useMemo(() => {
         const dbToll = Math.max(0, mission.toll_value || 0);
@@ -403,7 +410,10 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
     const profitMargin = useMemo(() => {
         return displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
     }, [displayRevenue, displayCost]);
-    const isNegativeProfit = profitMargin < 0;
+    const isNegativeProfit = !hideFinancialInfo && profitMargin < 0;
+    const mostraColunaFinanceira =
+        (!hideFinancialInfo && (isDirector || canSeeBillingSummary) && !hideProviderInfo) ||
+        (!hideFinancialInfo && hideProviderInfo && !!financials);
 
     const isActive = !isTerminal;
 
@@ -417,6 +427,8 @@ const MissionCardComponent: React.FC<MissionCardProps> = ({
             return false;
         }
     }, [mission]);
+
+    const showVeladaKmPending = useMemo(() => isVeladaFinalKmPending(mission), [mission]);
 
     const missingInfo = useMemo(() => {
         const missing: string[] = [];
@@ -470,6 +482,28 @@ Qualquer dúvida, estamos a disposição.
             console.error("Erro ao copiar texto", err);
         }
         if (onPrint) onPrint(mission);
+    };
+
+    const handleCopyChargeUpdate = () => {
+        const text = buildChargeUpdateMessage({
+            osId: mission.id,
+            origin: mission.origin,
+            destination: mission.destination,
+            plate: mission.clientVehicle?.plate,
+            agent1: mission.agent1,
+            agent2: mission.agent2,
+            agent1Phone: mission.agent1 ? agentPhonesMap?.[mission.agent1] : undefined,
+            agent2Phone: mission.agent2 ? agentPhonesMap?.[mission.agent2] : undefined,
+        });
+        void copyTextAsync(text).then(ok => {
+            if (!ok) {
+                showNotification('Erro', 'Não foi possível copiar. Tente novamente.', 'error');
+                return;
+            }
+            setChargeCopied(true);
+            showNotification('Copiado', 'Cobrança de atualização pronta para colar no WhatsApp.', 'success');
+            window.setTimeout(() => setChargeCopied(false), 2000);
+        });
     };
 
     const handleWhatsAppContact = (phone?: string, name?: string) => {
@@ -650,12 +684,15 @@ Qualquer dúvida, estamos a disposição.
 
     return (<>
         <div 
-          className={`group relative rounded-xl border transition-all duration-300 hover:-translate-y-1 shadow-sm ${
-              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_20px_50px_rgba(220,38,38,0.15)]' : 'bg-white hover:shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)]'
+          className={`os-card group relative overflow-visible rounded-[14px] border transition-all duration-300 hover:-translate-y-0.5 ${
+              isNegativeProfit ? 'bg-red-50 border-red-400 ring-2 ring-red-300 shadow-red-200 shadow-md hover:shadow-[0_18px_40px_rgba(220,38,38,0.16)]' : 'bg-white border-slate-200/80 shadow-[0_16px_36px_rgba(15,23,42,0.08)] hover:shadow-[0_22px_48px_rgba(15,23,42,0.14)]'
           } ${
-              !isNegativeProfit && (isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-gray-200 hover:border-blue-200')
+              !isNegativeProfit && (isRedLight ? 'border-red-200 ring-1 ring-red-100' : isImminent ? 'border-amber-200 ring-1 ring-amber-100' : 'border-slate-200 hover:border-slate-300')
           }`}
         >
+            {panelLayer && (
+                <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${PANEL_LAYER_META[panelLayer].rail}`} />
+            )}
             {isNegativeProfit && (
                 <div className="relative overflow-hidden rounded-t-xl" style={{ background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 50%, #991b1b 100%)', boxShadow: 'inset 0 2px 4px rgba(255,255,255,0.2), 0 4px 12px rgba(220,38,38,0.3)' }}>
                     <div className="flex items-center justify-center gap-2 py-1.5 px-3 relative z-10">
@@ -732,14 +769,65 @@ Qualquer dúvida, estamos a disposição.
                     </div>
                 );
             })()}
+            {!hideProviderInfo && missionHasOccurrence(occurrenceCount ?? mission.occurrence_count) && (
+                <button
+                    type="button"
+                    onClick={() => setOccurrenceOpen(true)}
+                    className="w-full bg-orange-600 text-white text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2"
+                    data-testid={`banner-occurrence-${mission.id}`}
+                >
+                    <AlertTriangle size={12} strokeWidth={3} /> {OCCURRENCE_BANNER}
+                </button>
+            )}
+            {!hideProviderInfo && showVeladaKmPending && (
+                <div
+                    className="w-full bg-amber-500 text-amber-950 text-[12px] font-black uppercase py-1.5 px-3 flex items-center justify-center gap-2 animate-pulse"
+                    data-testid={`banner-velada-km-pending-${mission.id}`}
+                    title="Missão velada finalizada. Falta o KM final para cobrar o fornecedor."
+                >
+                    <AlertTriangle size={12} strokeWidth={3} /> Falta KM final — cobrar o fornecedor
+                </div>
+            )}
             <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl transition-colors ${isRedLight ? 'bg-red-500' : isImminent ? 'bg-amber-500' : 'bg-transparent'}`}></div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-[120px] divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch">
-                <div className="sm:col-span-1 xl:col-span-2 p-2.5 xl:p-3 flex flex-col justify-center gap-2 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xl font-black text-gray-900 tracking-tighter leading-none">{mission.id}</span>
-                        {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_se_number ? (
-                            <span className="px-1.5 py-0.5 rounded text-[11px] font-black uppercase bg-yellow-100 text-red-700 border border-yellow-400 shadow-sm flex items-center gap-1" title="Número da SE DHL" data-testid={`badge-se-${mission.id}`}>
-                                SE: {String((mission as any).dhl_se_number).toUpperCase()}
+            <div className={`os-miolo${mostraColunaFinanceira ? '' : ' os-miolo--sem-fin'} grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-12 min-h-0 divide-y sm:divide-y xl:divide-y-0 xl:divide-x divide-gray-100 items-stretch`}>
+                <div className="os-col-id sm:col-span-1 xl:col-span-2 flex flex-col justify-between items-stretch gap-2 min-w-0">
+                    <div className="os-id-cabeca">
+                        <div className="os-id-nome">
+                            <span className="os-id-gtm">{mission.id}</span>
+                            {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_se_number ? (
+                                <span className="os-id-se" title="Número da SE DHL" data-testid={`badge-se-${mission.id}`}>
+                                    SE: {String((mission as any).dhl_se_number).toUpperCase()}
+                                </span>
+                            ) : null}
+                        </div>
+                        <div className="os-id-atalhos">
+                            <button type="button" className="os-id-atalho os-id-atalho--link" title="Abrir localização salva nesta OS" onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }}>
+                                <Link2 size={16} />
+                            </button>
+                            <button type="button" className={`os-id-atalho ${copiedId === mission.id ? 'os-id-atalho--ok' : 'os-id-atalho--copiar'}`} title="Copiar relatório WhatsApp" onClick={(e) => { e.stopPropagation(); onCopy(mission); }}>
+                                {copiedId === mission.id ? <Check size={16} /> : <Copy size={16} />}
+                            </button>
+                            <details className="os-id-mais">
+                                <summary className="os-id-atalho" title="Mais ações"><MoreHorizontal size={16} /></summary>
+                                <div className="os-id-mais-lista">
+                                    <button type="button" onClick={() => onUpdate(mission)}>Atualizar</button>
+                                    <button type="button" onClick={() => onViewMap(mission)}>Mapa</button>
+                                    <button type="button" onClick={() => onCopyEmail(mission)}>E-mail ao cliente</button>
+                                    {onViewHistory && isDirector ? <button type="button" onClick={() => onViewHistory(mission)}>Histórico</button> : null}
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                    <div className="os-id-pills">
+                        {isOsNegativeMarginLocked(mission) && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase bg-slate-800 text-white border border-slate-900 shadow-sm flex items-center gap-1" title={`Prejuízo analisado por ${mission.negative_margin_locked_by || 'a equipe'}. Somente a Diretoria pode alterar.`} data-testid={`badge-negative-lock-${mission.id}`}>
+                                <Lock size={10} /> TRAVADA
+                            </span>
+                        )}
+                        {(/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && (mission as any).dhl_sm_number ? (
+                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-black uppercase border shadow-sm flex items-center gap-1 ${isOsNegativeMarginLocked(mission) ? 'bg-slate-800 text-white border-slate-900' : 'bg-amber-100 text-amber-800 border-amber-400'}`} title={isOsNegativeMarginLocked(mission) ? 'SM travada — somente a Diretoria altera' : 'Número da SM DHL'} data-testid={`badge-sm-${mission.id}`}>
+                                {isOsNegativeMarginLocked(mission) && <Lock size={10} />}
+                                SM: {String((mission as any).dhl_sm_number).toUpperCase()}
                             </span>
                         ) : null}
                         {mission.is_same_os && !hideProviderInfo && (
@@ -752,10 +840,12 @@ Qualquer dúvida, estamos a disposição.
                                 <Link2 size={10} /> MÃE: {mission.parent_mission_id}
                             </span>
                         )}
-                        <span className={`px-1.5 py-0.5 rounded text-[11px] font-extrabold uppercase border tracking-wider ${showOpsPendingAlert ? 'bg-amber-100 text-amber-800 border-amber-300' : getStatusBadgeClass(mission.status)}`}>
+                        <span className={`os-id-status ${showOpsPendingAlert ? 'bg-amber-100 text-amber-800' : getStatusBadgeClass(mission.status)}`}>
+                            <Truck size={14} />
                             {showOpsPendingAlert ? 'PENDENTE DADOS' : mission.status}
+                            <i className="os-id-ponto" />
                         </span>
-                        {(() => {
+                        {!hideFinancialInfo && (() => {
                             if (tollConfirmation) {
                                 const dt = tollConfirmation.date ? new Date(tollConfirmation.date) : null;
                                 const dtStr = dt && !isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '—';
@@ -776,237 +866,216 @@ Qualquer dúvida, estamos a disposição.
                             return null;
                         })()}
                         {hasEvidence ? (
-                            <button onClick={() => setShowEvidenceModal(true)} className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase border bg-emerald-50 text-emerald-700 border-emerald-300 flex items-center gap-1 hover:bg-emerald-100 transition-all cursor-pointer shadow-sm" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
-                                <Image size={10} /> EVIDÊNCIA
+                            <button onClick={() => setShowEvidenceModal(true)} className="os-id-evidencia flex items-center gap-1" data-testid={`badge-evidence-${mission.id}`} title="Evidência anexada - clique para ver">
+                                <Image size={14} /> EVIDÊNCIA
                             </button>
                         ) : requiresEvidence ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-red-100 text-red-700 border border-red-300 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse" title="Sem evidência de solicitação">
-                                <ImageOff size={10} /> SEM EVIDÊNCIA
+                            <span className="os-id-evidencia os-id-evidencia--falta flex items-center gap-1" title="Sem evidência de solicitação">
+                                <ImageOff size={14} /> SEM EVIDÊNCIA
                             </span>
                         ) : null}
-                        {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && !dhlIntake ? (
-                            <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-gray-100 text-gray-600 border border-gray-300"
-                                title="Link do fornecedor ainda não foi gerado para esta OS — gere o link de Intake DHL."
-                                data-testid={`badge-intake-sem-link-${mission.id}`}
-                            >
-                                <AlertTriangle size={10} strokeWidth={3} /> DOC: AGUARDANDO LINK
-                            </span>
-                        ) : null}
-                        {!hideProviderInfo && dhlIntake ? (() => {
-                            const a1 = !!dhlIntake.progressAgent1;
-                            const a2 = !!dhlIntake.progressAgent2;
-                            const vh = !!dhlIntake.progressVehicle;
-                            const mr = !!dhlIntake.progressMirror;
-                            const done = [a1, a2, vh, mr].filter(Boolean).length;
-                            const allGreen = done === 4 || dhlIntake.status === 'preenchido' || !!dhlIntake.providerFilledAt;
-                            if (allGreen) {
-                                return (
-                                    <span
-                                        className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 bg-emerald-600 text-white border border-emerald-700 shadow-[0_2px_8px_rgba(16,185,129,0.35)]"
-                                        title="Documentação do fornecedor completa — Escoltista 1, Escoltista 2, Veículo e Espelhamento enviados."
-                                        data-testid={`badge-intake-apto-${mission.id}`}
-                                    >
-                                        <Check size={10} strokeWidth={3} /> DOC OK
-                                    </span>
-                                );
-                            }
-                            const missing: string[] = [];
-                            if (!a1) missing.push('Escoltista 1');
-                            if (!a2) missing.push('Escoltista 2');
-                            if (!vh) missing.push('Veículo');
-                            if (!mr) missing.push('Espelhamento');
-                            const isEmpty = done === 0;
+                    </div>
+                    {!hideProviderInfo && (/DHL/i.test(((mission as any).originalClientName || mission.client || ''))) && !dhlIntake ? (
+                        <span
+                            className="os-id-doc os-id-doc--espera"
+                            title="Link do fornecedor ainda não foi gerado para esta OS — gere o link de Intake DHL."
+                            data-testid={`badge-intake-sem-link-${mission.id}`}
+                        >
+                            <AlertTriangle size={16} /> Documento aguardando link <ChevronRight size={16} className="os-id-doc-seta" />
+                        </span>
+                    ) : null}
+                    {!hideProviderInfo && dhlIntake ? (() => {
+                        const a1 = !!dhlIntake.progressAgent1;
+                        const a2 = !!dhlIntake.progressAgent2;
+                        const vh = !!dhlIntake.progressVehicle;
+                        const mr = !!dhlIntake.progressMirror;
+                        const done = [a1, a2, vh, mr].filter(Boolean).length;
+                        const allGreen = done === 4 || dhlIntake.status === 'preenchido' || !!dhlIntake.providerFilledAt;
+                        if (allGreen) {
                             return (
                                 <span
-                                    className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 ${
-                                        isEmpty
-                                            ? 'bg-red-100 text-red-700 border border-red-400 shadow-[0_2px_8px_rgba(239,68,68,0.25)] animate-pulse'
-                                            : 'bg-amber-100 text-amber-800 border border-amber-400'
-                                    }`}
-                                    title={`Documentação faltando (${done}/4 preenchidos pelo fornecedor). Falta: ${missing.join(', ')}.`}
-                                    data-testid={`badge-intake-pendente-${mission.id}`}
+                                    className="os-id-doc os-id-doc--ok"
+                                    title="Documentação do fornecedor completa — Escoltista 1, Escoltista 2, Veículo e Espelhamento enviados."
+                                    data-testid={`badge-intake-apto-${mission.id}`}
                                 >
-                                    <AlertTriangle size={10} strokeWidth={3} /> DOC FALTANDO {done}/4
+                                    <Check size={16} /> Documento completo <ChevronRight size={16} className="os-id-doc-seta" />
                                 </span>
                             );
-                        })() : null}
-                        {false ? (
-                            <span></span>
-                        ) : null}
+                        }
+                        const missing: string[] = [];
+                        if (!a1) missing.push('Escoltista 1');
+                        if (!a2) missing.push('Escoltista 2');
+                        if (!vh) missing.push('Veículo');
+                        if (!mr) missing.push('Espelhamento');
+                        const isEmpty = done === 0;
+                        return (
+                            <span
+                                className={`os-id-doc ${isEmpty ? 'os-id-doc--falta' : 'os-id-doc--espera'}`}
+                                title={`Documentação faltando (${done}/4 preenchidos pelo fornecedor). Falta: ${missing.join(', ')}.`}
+                                data-testid={`badge-intake-pendente-${mission.id}`}
+                            >
+                                <AlertTriangle size={16} /> Documento faltando {done}/4 <ChevronRight size={16} className="os-id-doc-seta" />
+                            </span>
+                        );
+                    })() : null}
+                    <div className="os-id-datas">
+                        <div className="os-id-linha">
+                            <span className="os-id-icone os-id-icone--azul"><Calendar size={16} /></span>
+                            <span className="os-id-texto"><small>Criação</small><strong className="os-id-quando">{formatDateTime(mission.createdAt).replace(" - ", " · ")}</strong></span>
+                            <Clock size={16} className="os-id-relogio" />
+                        </div>
+                        <div className="os-id-linha">
+                            <span className="os-id-icone os-id-icone--azul"><Calendar size={16} /></span>
+                            <span className="os-id-texto"><small>Agendamento</small><strong className="os-id-quando">{mission.startTime ? formatDateTime(mission.startTime).replace(" - ", " · ") : "Imediato"}</strong></span>
+                            <Clock size={16} className="os-id-relogio" />
+                        </div>
                     </div>
-                    <div className="flex flex-col gap-1.5 mt-1">
-                        <div className="flex items-center gap-2"><div className="p-0.5 bg-blue-50 rounded text-blue-600 shrink-0"><FileText size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Criação</span><span className="text-[12px] font-bold text-gray-800">{formatDateTime(mission.createdAt)}</span></div></div>
-                        <div className="flex items-center gap-2"><div className="p-0.5 bg-orange-50 rounded text-orange-600 shrink-0"><Clock size={10} /></div><div className="flex items-center gap-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Agendamento</span><span className="text-[12px] font-bold text-gray-800">{mission.startTime ? formatDateTime(mission.startTime) : 'Imediato'}</span></div></div>
-                    </div>
-                    <MissionTimer status={showOpsPendingAlert ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
+                    {(!showOpsPendingAlert && ([MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus) || ([MissionStatus.SOLICITED, MissionStatus.SCHEDULED, MissionStatus.DOCUMENTATION].includes(mission.status as MissionStatus) && !!mission.startTime))) ? (
+                        <div className={`os-id-operacao ${[MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus) ? 'os-id-operacao--ativa' : ''}`}>
+                            <MissionTimer apresentacao="ficha" status={showOpsPendingAlert ? MissionStatus.PENDING : mission.status} startTime={mission.startTime} createdAt={mission.createdAt} />
+                            {[MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus) ? (
+                                <span className="os-id-selo os-id-selo--ok"><Play size={10} /> ATIVO</span>
+                            ) : null}
+                        </div>
+                    ) : null}
                     <div className="w-full">{isActive && !showOpsPendingAlert ? (<AgingTimelineBar minutes={minutesSinceUpdate} status={mission.status} />) : (<div className="h-6 w-full text-center text-[12px] text-gray-400 font-bold uppercase tracking-wider opacity-50">{showOpsPendingAlert ? 'DADOS PENDENTES' : '-'}</div>)}</div>
+                    
                 </div>
                 
-                <div className="sm:col-span-1 xl:col-span-3 p-2.5 xl:p-3 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100 min-w-0">
-                    <div className="flex flex-col gap-3">
-                        <div className="flex flex-wrap gap-2">
-                            <span className="text-[12px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
-                                <Building2 size={10} className="inline mr-1 text-red-600" /> {mission.client}
-                            </span>
-                        </div>
-                        
-                        <div className="space-y-2.5 pl-1">
-                            <div className="flex items-center gap-2.5">
-                                <div className="p-1.5 bg-white rounded-lg text-blue-600 border border-gray-100 shadow-sm"><Truck size={12}/></div>
-                                <div className="min-w-0">
-                                    <span className="text-[13px] font-black text-gray-900 uppercase block leading-none">{mission.clientVehicle?.plate || '---'}</span>
-                                    <span className="text-[11px] text-gray-500 font-bold uppercase truncate block mt-1">{mission.clientVehicle?.model || 'MODELO N/D'}</span>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2.5">
-                                <div className="p-1.5 bg-white rounded-lg text-green-600 border border-gray-100 shadow-sm"><User size={12}/></div>
-                                <div className="flex-1 min-w-0 flex items-center gap-2">
-                                    <div className="min-w-0 flex-1">
-                                        <span className="text-[12px] font-bold text-gray-800 uppercase block leading-none truncate" title={mission.driver_name}>{getAgentDisplayName(mission.driver_name) || '---'}</span>
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <Phone size={8} className="text-gray-400" />
-                                            <span className="text-[11px] font-mono text-gray-400 font-medium">{mission.driver_phone || ''}</span>
-                                        </div>
-                                    </div>
-                                    {mission.driver_phone && (
-                                        <button 
-                                            onClick={() => handleWhatsAppContact(mission.driver_phone, mission.driver_name)}
-                                            className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-                                            title={`Chamar motorista no WhatsApp`}
-                                        >
-                                            <MessageCircle size={10} />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 bg-blue-50/50 rounded-lg px-2 py-1 border border-blue-100 mt-2" title={mission.currentLocation || lastLog?.description || ''} data-testid={`last-log-${mission.id}`}>
-                                <Clock size={10} className="text-blue-500 shrink-0" />
-                                <p className="text-[11px] font-bold text-blue-800 truncate min-w-0">
-                                    <span className="font-black text-blue-400 uppercase tracking-wider">Última Atualização: </span>
-                                    {(() => {
-                                        const dt = lastLog ? new Date(lastLog.created_at) : mission.lastUpdate ? new Date(mission.lastUpdate) : null;
-                                        const dateStr = dt ? formatDateTimeBR(dt) : '---';
-                                        const rawOccurrence = lastLog?.description || mission.currentLocation || '';
-                                        const occurrence = rawOccurrence.includes('|') ? rawOccurrence.split('|')[0].trim() : rawOccurrence;
-                                        return occurrence ? dateStr + ' - ' + occurrence : dateStr;
-                                    })()}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="sm:col-span-1 xl:col-span-2 p-2.5 xl:p-3 flex flex-col justify-center bg-white min-w-0">
-                    <div className="flex flex-col gap-2">
-                        {!hideProviderInfo && (
-                        <div className="flex flex-wrap gap-2 mb-1">
-                            <span className="text-[12px] font-black text-slate-800 bg-white px-2 py-1 rounded border border-slate-200 uppercase tracking-widest shadow-sm">
-                                <Briefcase size={10} className="inline mr-1 text-blue-600" /> 
-                                {formatProviderName(mission.provider) || 'PENDENTE'}
-                            </span>
-                        </div>
-                        )}
-
-                        <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-white rounded-lg text-red-600 border border-gray-100 shadow-sm"><CarFront size={12}/></div>
-                            <div className="min-w-0 flex items-center gap-2">
-                                <span className="text-[13px] font-black text-gray-900 uppercase block leading-none">
-                                    {mission.vehicleId || '---'}
-                                </span>
-                                <span className="text-gray-300 font-black">-</span>
-                                <span className={`text-[12px] font-black uppercase px-2 py-0.5 rounded-md border shadow-sm ${
-                                    mission.mission_type?.toUpperCase().includes('VELADA') 
-                                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200' 
-                                    : 'bg-red-50 text-red-700 border-red-200'
-                                }`}>
-                                    {(mission.mission_type || 'CARACTERIZADA').toUpperCase()}
-                                </span>
-                            </div>
-                        </div>
-
-
-                        <div className="flex items-center gap-2.5">
-                            <div className="p-1.5 bg-white rounded-lg text-blue-600 border border-gray-100 shadow-sm"><ShieldCheck size={12}/></div>
-                            <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                                <div className="flex items-center justify-between">
-                                    <span className="text-[12px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent1}>
-                                        {getAgentDisplayName(mission.agent1)}
-                                    </span>
-                                    {mission.agent1 && (
-                                        <button 
-                                            onClick={() => handleWhatsAppContact(agentPhonesMap?.[mission.agent1], mission.agent1)}
-                                            className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-                                            title={`Chamar ${mission.agent1} no WhatsApp`}
-                                        >
-                                            <MessageCircle size={10} />
-                                        </button>
-                                    )}
-                                </div>
-                                {mission.agent2 && mission.agent2 !== '---' && (
-                                    <div className="flex items-center justify-between border-t border-gray-50 pt-1">
-                                        <span className="text-[12px] font-bold text-gray-800 uppercase block leading-tight" title={mission.agent2}>
-                                            {getAgentDisplayName(mission.agent2)}
-                                        </span>
-                                        <button 
-                                            onClick={() => handleWhatsAppContact(agentPhonesMap?.[mission.agent2], mission.agent2)}
-                                            className="p-1 bg-emerald-50 text-emerald-600 rounded-md hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
-                                            title={`Chamar ${mission.agent2} no WhatsApp`}
-                                        >
-                                            <MessageCircle size={10} />
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div className="sm:col-span-2 xl:col-span-3 p-2.5 xl:p-3 flex flex-col justify-center relative bg-gray-50/20 min-w-0">
-                    <div className="flex flex-col h-full justify-between relative pl-2 gap-2">
-                        <div className="absolute left-[9px] top-[14px] bottom-[14px] w-0.5 border-l-2 border-dashed border-gray-200 z-0 hidden sm:block"></div>
-                        
-                        <div className="relative flex items-start gap-3 z-10 min-w-0">
-                            <div className="w-4 h-4 rounded-full bg-green-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0 mt-0.5">
-                                <MapPin size={8} className="text-white" />
-                            </div>
-                            <div className="text-[11px] min-w-0 flex-1">
-                                <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Ponto A (Origem)</span>
-                                <span className="font-black text-gray-900 uppercase block break-words leading-snug" title={mission.origin}>{mission.origin || '---'}</span>
-                            </div>
-                        </div>
-
-                        {(() => {
-                            const finalAddress = locationInfo.needsGeocode ? resolvedAddress : locationInfo.displayText;
-                            const isLoading = locationInfo.needsGeocode && !resolvedAddress;
-                            const isCoordOnly = finalAddress && /^LAT\s/i.test(finalAddress);
-                            return (finalAddress || isLoading) ? (
-                                <div className="relative flex items-start gap-3 z-10 min-w-0">
-                                    <div className="w-4 h-4 rounded-full bg-yellow-500 shadow-md flex items-center justify-center ring-4 ring-white shrink-0 mt-0.5">
-                                        <Truck size={8} className="text-white" />
-                                    </div>
-                                    <div className="text-[11px] min-w-0 flex-1">
-                                        <span className="font-black text-yellow-500 uppercase tracking-widest block leading-none mb-1">Ponto B (Última Localização)</span>
-                                        {isLoading ? (
-                                            <span className="font-bold text-yellow-400 italic block" data-testid="text-last-location-city">Resolvendo endereço...</span>
-                                        ) : (
-                                            <span className={`font-black uppercase block break-words leading-snug ${isCoordOnly ? 'text-yellow-600 italic text-[10px]' : 'text-yellow-700'}`} data-testid="text-last-location-city" title={finalAddress || ''}>{finalAddress}</span>
-                                        )}
-                                    </div>
-                                </div>
-                            ) : null;
+                <div className="os-col-cliente sm:col-span-1 xl:col-span-3 p-2 flex flex-col justify-center bg-gray-50/20 border-r border-gray-100 min-w-0 h-full">
+                    <PainelSuspensoOs painel={(() => {
+                        const nomeOficial = String((mission as any).originalClientName || mission.client || "").trim();
+                        const cadastro = clientsData.find((c) => c.name === nomeOficial || c.name === mission.client || (!!c.trading_name && c.trading_name === mission.client));
+                        const live = pickLiveMissionUpdate(lastLog, mission);
+                        const dt = live.at ? new Date(live.at) : null;
+                        const quando = dt && !Number.isNaN(dt.getTime()) ? formatDateTimeBR(dt) : "";
+                        const atualizacao = [quando, live.text, mission.updatedBy && mission.updatedBy !== "---" ? mission.updatedBy : ""].filter(Boolean).join(" · ");
+                        const local = locationInfo.needsGeocode ? (resolvedAddress || (locationInfo.coords ? "Resolvendo endereço..." : "")) : (locationInfo.displayText || "");
+                        const carga = [mission.clientVehicle?.brand, mission.clientVehicle?.model].map((parte) => String(parte || "").trim()).filter((parte) => parte && parte !== "---").join(" ");
+                        const endereco = cadastro ? ([cadastro.street, cadastro.number, cadastro.neighborhood, [cadastro.city, cadastro.state].filter(Boolean).join(" - ")].filter(Boolean).join(", ") || cadastro.address) : "";
+                        return (
+                            <FichaOs
+                                titulo="Cliente"
+                                nome={mission.client || nomeOficial || "Cliente"}
+                                complemento={nomeOficial}
+                                logo={resolverLogoCliente(mission.client || "") || resolverLogoCliente(nomeOficial)}
+                                atualizacao={atualizacao}
+                                localizacao={local || "Sem posição"}
+                                mapa={{ origem: mission.origin || "", destino: mission.destination || "", local, horario: quando, km: fallbackProgress.traveledKm }}
+                                itens={[
+                                    { rotulo: "CNPJ", valor: cadastro?.cnpj },
+                                    { rotulo: "Contato", valor: cadastro?.contactName },
+                                    { rotulo: "E-mail", valor: cadastro?.email },
+                                    { rotulo: "Telefone", valor: cadastro?.phone },
+                                    { rotulo: "Endereço", valor: endereco, largo: true },
+                                    { rotulo: "Placa", valor: mission.clientVehicle?.plate },
+                                    { rotulo: "Veículo", valor: carga },
+                                    { rotulo: "Ano", valor: mission.clientVehicle?.year },
+                                    { rotulo: "Cor", valor: mission.clientVehicle?.color },
+                                    { rotulo: "Motorista", valor: getAgentDisplayName(mission.driver_name) },
+                                    { rotulo: "Telefone do motorista", valor: mission.driver_phone },
+                                    { rotulo: "Motorista 2", valor: getAgentDisplayName(mission.driver_name_2) },
+                                    { rotulo: "Telefone 2", valor: mission.driver_phone_2 },
+                                    { rotulo: "Origem", valor: mission.origin, largo: true },
+                                    { rotulo: "Destino", valor: mission.destination, largo: true },
+                                ]}
+                            />
+                        );
+                    })()}>
+                    <Vehicle3DCard
+                        cliente={String((mission as any).originalClientName || mission.client || '')}
+                        nome={mission.client}
+                        placa={mission.clientVehicle?.plate}
+                        modelo={mission.clientVehicle?.model}
+                        motorista={getAgentDisplayName(mission.driver_name)}
+                        telefone={mission.driver_phone}
+                        atualizacao={(() => {
+                            const live = pickLiveMissionUpdate(lastLog, mission);
+                            const dt = live.at ? new Date(live.at) : null;
+                            const dateStr = dt && !Number.isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '';
+                            if (!dateStr && !live.text) return '';
+                            return live.text ? dateStr + ' · ' + live.text : dateStr;
                         })()}
+                        onChamar={mission.driver_phone ? () => handleWhatsAppContact(mission.driver_phone, mission.driver_name) : undefined}
+                    />
+                    </PainelSuspensoOs>
+                </div>
 
-                        <div className="relative flex items-start gap-3 z-10 min-w-0">
-                            <div className="w-4 h-4 rounded-full bg-red-600 shadow-md flex items-center justify-center ring-4 ring-white shrink-0 mt-0.5">
-                                <Flag size={8} className="text-white" />
-                            </div>
-                            <div className="text-[11px] min-w-0 flex-1">
-                                <span className="font-black text-gray-400 uppercase tracking-widest block leading-none mb-1">Ponto C (Destino)</span>
-                                <span className="font-black text-gray-900 uppercase block break-words leading-snug" title={mission.destination}>{mission.destination?.toUpperCase() || '---'}</span>
-                            </div>
-                        </div>
-
+                <div className="os-escolta sm:col-span-1 xl:col-span-2 min-w-0">
+                    <PainelSuspensoOs painel={(() => {
+                        const veiculo = mission.vehicle || mission.vehicleData;
+                        const modelo = [veiculo?.brand, veiculo?.model].map((parte) => String(parte || "").trim()).filter((parte) => parte && parte !== "---").join(" ");
+                        const nomes = [mission.agent1, mission.agent2].filter((nome): nome is string => !!nome && nome !== "---" && getAgentDisplayName(nome) !== "-");
+                        const itens: { rotulo: string; valor?: string | null; largo?: boolean }[] = [
+                            { rotulo: "Tipo", valor: mission.mission_type ? String(mission.mission_type) : "" },
+                            { rotulo: "Placa", valor: mission.vehicleId },
+                            { rotulo: "Viatura", valor: modelo },
+                            { rotulo: "OS do fornecedor", valor: hideProviderInfo ? "" : mission.vendor_os_number },
+                        ];
+                        nomes.forEach((nome, indice) => {
+                            itens.push({ rotulo: "Agente " + (indice + 1), valor: nome.trim() });
+                            itens.push({ rotulo: "Telefone " + (indice + 1), valor: agentPhonesMap?.[nome] });
+                        });
+                        if (!hideProviderInfo && [MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus)) {
+                            itens.push({ rotulo: "Situação", valor: "Em operação" });
+                        }
+                        return (
+                            <FichaOs
+                                titulo={hideProviderInfo ? "Escolta" : "Fornecedor"}
+                                nome={hideProviderInfo ? "Escolta" : (formatProviderName(mission.provider) || "Pendente")}
+                                itens={itens}
+                            />
+                        );
+                    })()}>
+                    <EscortCinematic3DCard
+                        fornecedor={hideProviderInfo ? "" : (formatProviderName(mission.provider) || "PENDENTE")}
+                        tipo={mission.mission_type ? String(mission.mission_type).toUpperCase() : ""}
+                        velada={!!mission.mission_type && String(mission.mission_type).toUpperCase().includes("VELADA")}
+                        placa={mission.vehicleId && mission.vehicleId !== "---" ? mission.vehicleId : ""}
+                        modelo={(() => {
+                            const veiculo = mission.vehicle || mission.vehicleData;
+                            return [veiculo?.brand, veiculo?.model]
+                                .map((parte) => String(parte || "").trim())
+                                .filter((parte) => parte && parte !== "---")
+                                .join(" ");
+                        })()}
+                        agentes={[mission.agent1, mission.agent2]
+                            .filter((nome): nome is string => !!nome && nome !== "---" && getAgentDisplayName(nome) !== "-")
+                            .map((nome) => ({
+                                nome: nome.trim(),
+                                temTelefone: !!(agentPhonesMap?.[nome] && agentPhonesMap[nome] !== "---"),
+                                onChamar: () => handleWhatsAppContact(agentPhonesMap?.[nome], nome),
+                            }))}
+                        emOperacao={[MissionStatus.ORIGIN, MissionStatus.IN_TRANSIT].includes(mission.status as MissionStatus)}
+                        onCobrar={!hideProviderInfo ? handleCopyChargeUpdate : undefined}
+                        cobrado={chargeCopied}
+                        testId={`button-cobrar-atualizacao-${mission.id}`}
+                    />
+                    </PainelSuspensoOs>
+                </div>
+                
+                <div className="os-rota sm:col-span-2 xl:col-span-3 p-2 flex flex-col justify-center relative bg-gray-50/20 min-w-0">
+                    <MapaNoturnoOs
+                        origem={mission.origin || ''}
+                        destino={mission.destination || ''}
+                        ultimaLocal={(() => {
+                            const finalAddress = locationInfo.needsGeocode ? resolvedAddress : locationInfo.displayText;
+                            if (locationInfo.needsGeocode && !resolvedAddress) return 'Resolvendo endereço...';
+                            return finalAddress || '';
+                        })()}
+                        horario={(() => {
+                            const live = pickLiveMissionUpdate(lastLog, mission);
+                            const dt = live.at ? new Date(live.at) : null;
+                            return dt && !Number.isNaN(dt.getTime()) ? formatDateTimeBR(dt) : '';
+                        })()}
+                        kmPercorrido={fallbackProgress.traveledKm}
+                        kmTotal={fallbackProgress.plannedKm}
+                        atual={locationInfo.coords}
+                        aoAmpliar={() => {
+                            const url = 'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=' + encodeURIComponent(mission.origin || '') + '&destination=' + encodeURIComponent(mission.destination || '');
+                            window.open(url, '_blank', 'noopener,noreferrer');
+                        }}
+                    />
                         <MissionRouteProgressBar
                             missionId={mission.id}
                             origin={mission.origin}
@@ -1016,75 +1085,66 @@ Qualquer dúvida, estamos a disposição.
                             fallback={fallbackProgress}
                             plannedKmLabel={displayPlannedKm}
                         />
-                    </div>
                 </div>
 
-                <div className="sm:col-span-1 xl:col-span-1 p-2 xl:p-1.5 flex flex-col justify-center text-center border-l border-r border-gray-100 bg-gray-50/30 gap-2 min-w-[108px] shrink-0">
-                    {isDirector && !hideProviderInfo && (
-                        <div className="flex flex-col gap-1">
-                           <div className="bg-white border border-green-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[9px] font-black text-green-500 uppercase tracking-tighter leading-none mb-0.5">Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</p>
-                               <p className="text-[12px] font-black text-green-700 font-mono leading-none tracking-tighter">{formatCurrency(displayRevenue)}</p>
-                           </div>
-
-                           <div className="bg-white border border-red-200 rounded-lg p-1 shadow-sm">
-                               <p className="text-[9px] font-black text-red-400 uppercase tracking-tighter leading-none mb-0.5">Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</p>
-                               {(mission as any).is_same_os && displayCost === 0 ? (
-                                   <p className="text-[10px] font-black uppercase tracking-wider text-amber-600 leading-none" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">MESMA OS</p>
-                               ) : (
-                                   <p className="text-[12px] font-black text-red-600 font-mono leading-none tracking-tighter">{formatCurrency(displayCost)}</p>
-                               )}
-                           </div>
-
-                           {(() => {
-                               const margin = displayRevenue > 0 ? ((displayRevenue - displayCost) / displayRevenue) * 100 : 0;
-                               const isNegative = margin < 0;
-                               const isLow = margin >= 0 && margin < 20;
-                               return (
-                                   <div className={`w-full rounded-lg border p-1 flex items-center justify-center gap-1 shadow-sm transition-all ${isNegative ? 'bg-red-100 border-red-300 animate-pulse' : isLow ? 'bg-amber-50 border-amber-300' : 'bg-emerald-50 border-emerald-200'}`}>
-                                       {isNegative ? <TrendingDown size={10} className="text-red-600" /> : isLow ? <AlertOctagon size={10} className="text-amber-600" /> : <TrendingUp size={10} className="text-emerald-600" />}
-                                       <span className={`text-[11px] font-black font-mono leading-none ${isNegative ? 'text-red-700' : isLow ? 'text-amber-700' : 'text-emerald-700'}`}>
-                                           {margin.toFixed(1)}%
-                                       </span>
-                                       <span className={`text-[8px] font-black uppercase leading-none ${isNegative ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                           {isNegative ? 'PREJUÍZO' : 'MARGEM'}
-                                       </span>
-                                   </div>
-                               );
-                           })()}
-
-                           <div className={`w-full rounded-lg border p-1 flex flex-col items-center justify-center gap-0.5 shadow-sm transition-all ${auditResult?.isInconsistent ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-300' : mission.billing_approved ? 'bg-blue-50 border-blue-200' : pendingApproval?.hasPartial ? 'bg-gray-100 border-gray-300' : hasBeenVerified ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'}`} title={auditResult?.isInconsistent ? auditResult.reason : pendingApproval ? `Aguardando: ${pendingApproval.missing.join(', ')}` : ''}>
-                              {auditResult?.isInconsistent ? (
-                                  <>
-                                      <AlertOctagon size={12} className="text-amber-600 animate-pulse" />
-                                      <span className="text-[9px] font-black text-amber-700 uppercase leading-none">Divergente</span>
-                                  </>
-                              ) : mission.billing_approved ? (
-                                  <>
-                                      <ShieldCheck size={12} className="text-blue-600" />
-                                      <span className="text-[9px] font-black text-blue-700 uppercase leading-none">Auditado</span>
-                                  </>
-                              ) : pendingApproval?.hasPartial ? (
-                                  <>
-                                      <Clock size={10} className="text-gray-500" />
-                                      <span className="text-[9px] font-black text-gray-600 uppercase leading-none truncate w-full text-center">Falta: {pendingApproval.missing.join(', ')}</span>
-                                      <span className="text-[9px] font-bold text-gray-400 leading-none">({pendingApproval.waitingDays}d)</span>
-                                  </>
-                              ) : hasBeenVerified ? (
-                                  <>
-                                      <ShieldCheck size={12} className="text-green-600" />
-                                      <span className="text-[9px] font-black text-green-700 uppercase leading-none">Salvo</span>
-                                  </>
-                              ) : (
-                                  <>
-                                      <Clock size={12} className="text-orange-600" />
-                                      <span className="text-[9px] font-black text-orange-700 uppercase leading-none">Pendente</span>
-                                  </>
-                              )}
-                           </div>
+                {mostraColunaFinanceira && <div className="os-col-fin sm:col-span-1 xl:col-span-1 p-1 flex flex-col justify-center border-l border-r border-gray-100 min-w-[108px] shrink-0">
+                    {!hideFinancialInfo && (isDirector || canSeeBillingSummary) && !hideProviderInfo && (
+                        <div className="os-fin" data-testid={`resumo-financeiro-${mission.id}`}>
+                            <p className="os-fin-titulo"><Coins size={12} /> Financeiro</p>
+                            <div className="os-fin-card os-fin-card--receita">
+                                <span className="os-fin-ico" aria-hidden="true"><BarChart3 size={14} /></span>
+                                <div className="os-fin-texto">
+                                    <small>Faturamento {mission.billing_approved ? '(Auditado)' : isAdjustedRevenue ? '(Salvo)' : '(Projetado)'}</small>
+                                    <strong>{formatCurrency(displayRevenue)}</strong>
+                                </div>
+                            </div>
+                            <div className="os-fin-card os-fin-card--custo">
+                                <span className="os-fin-ico" aria-hidden="true"><Database size={14} /></span>
+                                <div className="os-fin-texto">
+                                    <small>Fornecedor {mission.billing_approved ? '(Auditado)' : isAdjustedCost ? '(Salvo)' : '(Projetado)'}</small>
+                                    {(mission as any).is_same_os && displayCost === 0 ? (
+                                        <strong className="os-fin-mesma" title="Custo zerado: missão compartilha OS principal (reaproveitamento)">Mesma OS</strong>
+                                    ) : (
+                                        <strong>{formatCurrency(displayCost)}</strong>
+                                    )}
+                                </div>
+                            </div>
+                            {(() => {
+                                const margin = profitMargin;
+                                const isNegative = margin < 0;
+                                const isLow = margin >= 0 && margin < 20;
+                                const anel = Math.max(0, Math.min(100, margin));
+                                const margemTxt = margin.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                                return (
+                                    <div className={`os-fin-card os-fin-card--margem ${isNegative ? 'os-fin-card--neg' : isLow ? 'os-fin-card--baixa' : ''}`}>
+                                        <span className="os-fin-anel" style={{ ['--p']: `${anel}%` } as React.CSSProperties} aria-hidden="true" />
+                                        <div className="os-fin-texto">
+                                            <strong>{margemTxt}%</strong>
+                                            <small>{isNegative ? 'Prejuízo' : 'Margem'}</small>
+                                        </div>
+                                        <span className="os-fin-barras" aria-hidden="true"><i /><i /><i /><i /></span>
+                                    </div>
+                                );
+                            })()}
+                            <div
+                                className={`os-fin-status ${auditResult?.isInconsistent ? 'os-fin-status--divergente' : mission.billing_approved ? 'os-fin-status--auditado' : pendingApproval?.hasPartial ? 'os-fin-status--falta' : hasBeenVerified ? 'os-fin-status--salvo' : 'os-fin-status--pendente'}`}
+                                title={auditResult?.isInconsistent ? auditResult.reason : pendingApproval ? `Aguardando: ${pendingApproval.missing.join(', ')}` : ''}
+                            >
+                                {auditResult?.isInconsistent ? (
+                                    <><AlertOctagon size={13} /> Divergente</>
+                                ) : mission.billing_approved ? (
+                                    <><ShieldCheck size={13} /> Auditado</>
+                                ) : pendingApproval?.hasPartial ? (
+                                    <><Clock size={13} /> Falta: {pendingApproval.missing.join(', ')} ({pendingApproval.waitingDays}d)</>
+                                ) : hasBeenVerified ? (
+                                    <><ShieldCheck size={13} /> Salvo</>
+                                ) : (
+                                    <><Clock size={13} /> Pendente</>
+                                )}
+                            </div>
                         </div>
                     )}
-                    {hideProviderInfo && financials && (
+                    {!hideFinancialInfo && hideProviderInfo && financials && (
                         <div className="flex flex-col gap-1" data-testid={`client-billing-${mission.id}`}>
                            <div className="rounded-lg p-1.5 shadow-sm border" style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)', borderColor: '#86efac' }}>
                                <p className="text-[9px] font-black text-green-600 uppercase tracking-wider leading-none mb-0.5">Faturamento</p>
@@ -1129,32 +1189,35 @@ Qualquer dúvida, estamos a disposição.
                            </div>
                         </div>
                     )}
-                </div>
+                </div>}
 
                 <div className="sm:col-span-1 xl:col-span-1 py-1 px-1 flex items-center justify-center border-l border-gray-100 bg-white shrink-0">
-                    <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>
+                    <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>
                         {!hideProviderInfo && (<>
-                        <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
                         {isVeladaMission(mission) && <LiveTrackPanel mission={mission} compact />}
-                        <button onClick={() => onUpdate(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
+                        <button onClick={() => onUpdate(mission)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
+                        <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
+                        <MissionHandoverNoteButton missionId={mission.id} note={handoverNote} onSaved={(saved) => onHandoverNoteSaved?.(saved)} />
                         
-                        {(isDirector || canEditMission) && onOpenFinancials && (
+                        {!hideFinancialInfo && (isDirector || canEditMission) && onOpenFinancials && (
                             <button onClick={() => onOpenFinancials(mission)} className={`flex items-center justify-center rounded-md transition-all duration-200 hover:shadow-sm active:scale-95 border ${mission.billing_approved ? 'w-7 h-7 bg-blue-600 text-white border-blue-700' : pendingApproval?.hasPartial ? 'h-7 px-1.5 gap-1 bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200' : 'w-7 h-7 bg-green-50 text-green-700 border-green-200 hover:bg-green-600 hover:text-white'}`} title={mission.billing_approved ? "Faturamento Aprovado - Visualizar" : pendingApproval?.hasPartial ? `Aguardando: ${pendingApproval.missing.join(', ')} (${pendingApproval.waitingDays}d)` : "Conferência e Aprovação de Faturamento"}>
                                 <Calculator size={14} />
                                 {pendingApproval?.hasPartial && <span className="text-[9px] font-black text-gray-500 leading-none whitespace-nowrap">{pendingApproval.missing[0]} ({pendingApproval.waitingDays}d)</span>}
                             </button>
                         )}
                         
-                        <button onClick={() => onCopyEmail(mission)} disabled={isSendingEmail === mission.id} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${isSendingEmail === mission.id ? 'bg-blue-100 text-blue-600 border-blue-200 animate-pulse cursor-wait' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-600 hover:text-white'}`} title="Enviar E-mail ao Cliente" data-testid={`btn-email-client-${mission.id}`}>{isSendingEmail === mission.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}</button>
-                        <button onClick={() => onCopy(mission)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
-                        {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-7 h-7 flex items-center justify-center rounded-md bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
-                        <button onClick={() => hasEvidence ? setShowEvidenceModal(true) : setShowUploadModal(true)} className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={hasEvidence ? 'Ver Evidência' : 'Anexar Print / Evidência (Ctrl+V para colar)'} data-testid={`button-upload-evidence-${mission.id}`}>
+                        <button onClick={() => onCopyEmail(mission)} disabled={isSendingEmail === mission.id} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${isSendingEmail === mission.id ? 'bg-blue-100 text-blue-600 border-blue-200 animate-pulse cursor-wait' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-600 hover:text-white'}`} title="Enviar E-mail ao Cliente" data-testid={`btn-email-client-${mission.id}`}>{isSendingEmail === mission.id ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}</button>
+                        <button onClick={() => onCopy(mission)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${copiedId === mission.id ? 'bg-green-100 text-green-700 border-green-200' : 'bg-[#25D366]/10 text-[#25D366] border-[#25D366]/20 hover:bg-[#25D366] hover:text-white'}`} title="Copiar Relatório WhatsApp">{copiedId === mission.id ? <Check size={14} strokeWidth={3}/> : <WhatsAppIcon size={14}/>}</button>
+                        {onViewHistory && isDirector && (<button onClick={(e) => { e.stopPropagation(); onViewHistory(mission); }} className="w-8 h-8 flex items-center justify-center rounded-xl bg-purple-50 text-purple-600 border border-purple-200 transition-all duration-200 hover:bg-purple-600 hover:text-white hover:shadow-sm active:scale-95" title="Histórico Detalhado (Auditoria)"><FileSearch size={14} /></button>)}</>)}
+                        <button onClick={() => hasEvidence ? setShowEvidenceModal(true) : setShowUploadModal(true)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${hasEvidence ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-600 hover:text-white' : requiresEvidence ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-600 hover:text-white animate-pulse' : 'bg-cyan-50 text-cyan-600 border-cyan-200 hover:bg-cyan-600 hover:text-white'}`} title={hasEvidence ? 'Ver Evidência' : 'Anexar Print / Evidência (Ctrl+V para colar)'} data-testid={`button-upload-evidence-${mission.id}`}>
                             {hasEvidence ? <Image size={14} /> : <Camera size={14} />}
                         </button>
-                        {onPrint && (<button onClick={handlePrintClick} className="w-7 h-7 flex items-center justify-center rounded-md bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
-                        {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
-                        {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
-                        {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-7 h-7 flex items-center justify-center rounded-md bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
+                        {onPrint && (<button onClick={handlePrintClick} className="w-8 h-8 flex items-center justify-center rounded-xl bg-gray-50 text-gray-700 border border-gray-200 transition-all duration-200 hover:bg-gray-700 hover:text-white hover:shadow-sm active:scale-95" title="Imprimir Folha de Missão (PDF) e Copiar Texto"><Printer size={14} /></button>)}
+                        {onFullReport && (<button onClick={() => onFullReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-amber-50 text-amber-700 border border-amber-200 transition-all duration-200 hover:bg-amber-600 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Completo PDF (Timeline + Auditoria)"><FileText size={14} /></button>)}
+                        {onOperationalReport && (<button onClick={() => onOperationalReport(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-700 border border-red-200 transition-all duration-200 hover:bg-red-700 hover:text-white hover:shadow-sm active:scale-95" title="Relatório Operacional" data-testid={`button-op-report-${mission.id}`}><Briefcase size={14} /></button>)}
+                        {onActionPlan && (<button type="button" onClick={() => onActionPlan(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-[#e8eef4] text-[#0d3b66] border border-[#0d3b66]/30 transition-all duration-200 hover:bg-[#0d3b66] hover:text-white hover:shadow-sm active:scale-95" title="Relatório da Missão" data-testid={`button-os-action-plan-${mission.id}`}><ClipboardList size={14} /></button>)}
+                        {isDirector && !hideProviderInfo && (<button onClick={() => onDelete(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-50 text-red-600 border-red-100 transition-all duration-200 hover:bg-red-600 hover:text-white hover:shadow-sm active:scale-95" title="Excluir Missão"><Trash2 size={14}/></button>)}
                     </div>
                 </div>
             </div>
@@ -1253,6 +1316,14 @@ Qualquer dúvida, estamos a disposição.
             </div>
         )}
 
+        {occurrenceOpen && !hideProviderInfo && (
+            <MissionOccurrenceDialog
+                missionId={mission.id}
+                canWrite={canEditMission}
+                onClose={() => setOccurrenceOpen(false)}
+                onSaved={(count) => setOccurrenceCount(count)}
+            />
+        )}
         {fullScreenImage && (
             <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setFullScreenImage(null)} data-testid="fullscreen-evidence-overlay">
                 <button onClick={(e) => { e.stopPropagation(); setFullScreenImage(null); }} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all z-10" data-testid="button-close-fullscreen-evidence"><X size={24} /></button>

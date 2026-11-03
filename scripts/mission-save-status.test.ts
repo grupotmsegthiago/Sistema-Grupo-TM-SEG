@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  canOperatorRefuseOs,
   resolveStatusForSaveSubmit,
   statusToRestoreOnFinalizeCancel,
   MISSION_PRE_FLIGHT_STATUSES,
@@ -53,6 +54,15 @@ test('OS Em Viagem com Concluída não é alterada pelo resolver de save', () =>
     finalizeConfirmed: false,
   });
   assert.equal(resolved, MissionStatus.COMPLETED);
+});
+
+test('perfil Operador pode recusar OS em aberto e concluída sem aprovação', () => {
+  assert.equal(canOperatorRefuseOs('Operador'), true);
+  assert.equal(canOperatorRefuseOs('operacional'), true);
+  assert.equal(canOperatorRefuseOs('Operador', { billingApproved: true }), false);
+  assert.equal(canOperatorRefuseOs('Operador', { negativeLocked: true }), false);
+  assert.equal(canOperatorRefuseOs('comercial'), false);
+  assert.equal(canOperatorRefuseOs('avançado'), false);
 });
 
 test('cancelar finalização restaura status original da OS', () => {

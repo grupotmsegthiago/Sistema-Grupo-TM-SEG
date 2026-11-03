@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { logAction } from '../lib/logger';
 import { Plus, Search, MapPin, Navigation, Trash2, Loader2, RefreshCw, DollarSign, Database, AlertTriangle, Pencil, Lock, Calculator, Wand2, CheckSquare, Square, X, Edit2, Save, ArrowRight, Eraser, Globe } from 'lucide-react';
@@ -26,6 +27,7 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
   const [isDirector, setIsDirector] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isCommercial, setIsCommercial] = useState(false);
+  const [isFinance, setIsFinance] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
   const [clientMap, setClientMap] = useState<Record<string, string>>({});
@@ -57,6 +59,9 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
                 }
                 if (user.role?.toLowerCase() === 'comercial') {
                     setIsCommercial(true);
+                }
+                if (isFinanceProfileRole(user.role)) {
+                    setIsFinance(true);
                 }
                 if (user.clientId) {
                      const { data } = await supabase.from('clients').select('name').eq('id', user.clientId).single();
@@ -323,13 +328,19 @@ const ClientRouteList: React.FC<Props> = ({ onAdd, onEdit, clientName, embedded 
                           <td className="px-6 py-4">
                              <div className="flex flex-col">
                                 <span className="font-bold text-sm text-gray-900 uppercase">({clientMap[item.client] || item.client}) / {item.name}</span>
+                                {(item.route_type || item.is_active === false) && (
+                                    <span className={`mt-1 inline-flex w-fit text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${item.is_active === false ? 'bg-gray-200 text-gray-600' : 'bg-blue-50 text-blue-700'}`}>
+                                        {item.route_type === 'esporadica' ? 'Esporádica' : item.route_type === 'fixa' ? 'Fixa' : 'Rota'}
+                                        {item.is_active === false ? ' · inativa' : ''}
+                                    </span>
+                                )}
                                 <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5"><MapPin size={10} className="text-blue-500 shrink-0"/> <span className="truncate max-w-[200px]">{item.origin}</span><ArrowRight size={10} className="shrink-0 text-gray-400" /><MapPin size={10} className="text-red-500 shrink-0"/><span className="truncate max-w-[200px]">{item.destination}</span></div>
                              </div>
                           </td>
                           <td className="px-6 py-4">
                              <div className="flex flex-col gap-1 text-xs font-bold text-gray-700">
                                 <div className="flex items-center gap-1.5"><Navigation size={12} className="text-gray-400"/> {item.distance} KM</div>
-                                <div className="flex items-center gap-1.5"><DollarSign size={12} className="text-green-600"/> {(isAdmin || lockedClientName || isCommercial) ? <span>R$ {item.toll_cost?.toFixed(2) || '0.00'}</span> : <span className="flex items-center gap-1 text-gray-400 font-normal"><Lock size={10} /> Restrito</span>}</div>
+                                <div className="flex items-center gap-1.5"><DollarSign size={12} className="text-green-600"/> {(isAdmin || lockedClientName || isCommercial || isFinance) ? <span>R$ {item.toll_cost?.toFixed(2) || '0.00'}</span> : <span className="flex items-center gap-1 text-gray-400 font-normal"><Lock size={10} /> Restrito</span>}</div>
                              </div>
                           </td>
                           <td className="px-6 py-4 text-right">

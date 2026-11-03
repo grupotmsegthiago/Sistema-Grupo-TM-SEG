@@ -1,14 +1,17 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import WhatsAppStatusBanner from './components/WhatsAppStatusBanner';
-import WhatsAppOfflineModal from './components/WhatsAppOfflineModal';
 import OsAnalysisDiretoriaModal from './components/OsAnalysisDiretoriaModal';
 import IdlePresenceGuard from './components/IdlePresenceGuard';
 import Login from './components/Login';
 import ResetPassword from './components/ResetPassword';
 import { APP_VERSION } from './constants';
+import { caminhoPortalDasPermissoes, usuarioSoPortal } from './lib/cevaPortal/regrasAcesso';
+import { lerCaminhoLinkProposta } from './lib/portalCliente/linkProposta';
+import { PropostaPublica } from './components/ceva/PropostaPublica';
+import { PropostaPremiumDemo } from './components/ceva/PropostaPremiumDemo';
 import { supabase } from './lib/supabase';
 import { RefreshCw } from 'lucide-react';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -19,8 +22,10 @@ import { NotificationProvider } from './lib/NotificationContext';
 import { RealtimeProvider } from './lib/RealtimeProvider';
 
 // Componentes
-import Dashboard from './components/Dashboard'; 
+import Dashboard from './components/Dashboard';
+import MeuPortal from './components/MeuPortal'; 
 import MissionTable from './components/MissionTable';
+import ControleDiario from './components/ControleDiario';
 import MissionForm from './components/MissionForm';
 import VehicleList from './components/VehicleList';
 import VehicleForm from './components/VehicleForm';
@@ -57,7 +62,13 @@ import QuoteList from './components/QuoteList';
 import QuoteForm from './components/QuoteForm';
 import PublicAgentRegistration from './components/PublicAgentRegistration';
 import DhlSupplierIntake from './components/DhlSupplierIntake';
+import CevaPortal from './components/CevaPortal';
+import IblPortal from './components/IblPortal';
+import PortalClientePagina from './components/PortalClientePagina';
+import AlertaSolicitacaoPortal from './components/AlertaSolicitacaoPortal';
+import { slugDeCaminho } from './lib/portalCliente/slug';
 import PublicLiveTrack from './components/PublicLiveTrack';
+import MapaViaturasPublico from './components/MapaViaturasPublico';
 import SupportMapFinder from './components/SupportMapFinder'; 
 import PushNotificationManager from './components/PushNotificationManager';
 import CostOptimizationDashboard from './components/CostOptimizationDashboard';
@@ -92,36 +103,63 @@ import FinancialReport from './components/FinancialReport';
 import DashboardDiretoria from './components/dashboard/DashboardDiretoria';
 import ComissoesComerciaisPage from './components/ComissoesComerciaisPage';
 import DiretoriaFaturamentoPage from './components/DiretoriaFaturamentoPage';
+import GestorFiscalPage from './components/gestorFiscal/GestorFiscalPage';
 import GestaoInvestimento from './components/investimentos/GestaoInvestimento'; 
 import ClientBillingReport from './components/ClientBillingReport';
+import PreFaturaMensal from './components/PreFaturaMensal';
 import DailyCashMovement from './components/DailyCashMovement';
 import VendorVerificationControl from './components/VendorVerificationControl';
 import FinancialInvoiceControl from './components/FinancialInvoiceControl';
 import MissionAlertMonitor from './components/MissionAlertMonitor';
+import EvidenceStartAlert from './components/EvidenceStartAlert';
+import VeladaClosureAlert from './components/VeladaClosureAlert';
+import AvisoEdicaoFinanceiraDiretoria from './components/AvisoEdicaoFinanceiraDiretoria';
+import DhlCopiaAoVivo from './components/DhlCopiaAoVivo';
+import DhlViaturaNovaAlerta from './components/DhlViaturaNovaAlerta';
+import CartasTabelaErrada from './components/CartasTabelaErrada';
 import UserPresenceTracker from './components/UserPresenceTracker';
 import PresenceDebugPanel from './components/PresenceDebugPanel';
 import TimeClockGate from './components/TimeClockGate';
 import AppErrorBoundary from './components/AppErrorBoundary';
-import { wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import { getIdleMs, wireUserActivityTracker, touchUserActivity } from './lib/userActivityTracker';
+import { flushInteractionStats } from './lib/productivity/interactionStats';
+import { logProductivityEvent } from './lib/productivity/logProductivity';
+import {
+  idleLogoutReasonKey,
+  isIdleLogoutDue,
+  LOGOUT_REASON_IDLE_KEY,
+  getIdleLogoutThresholdMinutes,
+  shouldEnforceSessionIdleLogout,
+} from './lib/productivity/sessionIdleLogout';
+import { wireNightHeartbeat, reportNightIncident } from './lib/productivity/nightHeartbeat';
+import { isNightWatchActive } from './lib/productivity/nightWatch';
+import {
+  FORCE_LOGOUT_SEEN_KEY,
+  FORCE_LOGOUT_SETTINGS_KEY,
+  clearLocalStoragePreservingForceLogoutSeen,
+  parseForceLogoutSignal,
+} from './lib/forceLogout';
 import RhModule from './components/rh/RhModule';
 import { canAccessRhScreen } from './lib/rh/permissions';
 import { canAccessMissionReport } from './lib/missionReportAccess';
+import { canViewRankingDhl } from './lib/rankingDhlAccess';
 import { canAccessDiretoriaMenu, canAccessComissoesComerciais, canAccessFaturamentoDiretoria } from './lib/diretoriaAccess';
 import { canViewOsAnalysisPendencies } from './lib/osAnalysisAccess';
 import OsAnalysisPendingPage from './components/OsAnalysisPendingPage';
+import { canViewAprovacoesPendentes } from './lib/aprovacoesPendentesAccess';
+import AprovacoesPendentesPage from './components/AprovacoesPendentesPage';
 import { enrichUserWithCltData } from './lib/timeclock/cltEmployee';
 import { persistScreen, resolveInitialScreen, getRoleDefaultScreen, getScreenFromUrl } from './lib/screenNavigation';
 import { canAccessScreen, fallbackScreenForUser } from './lib/screenAccess';
-
-// TEMPO DE INATIVIDADE (30 minutos) — só conta com a aba visível/ativa
-const INACTIVITY_LIMIT = 30 * 60 * 1000;
+import TrainingAcademy from './components/TrainingAcademy';
+import { operadorBloqueado, normalizarModulos } from './lib/training/operadorAcademy';
 
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('authToken') || '';
     const userData = localStorage.getItem('userData');
-    // Não exige app_version === APP_VERSION: após auto-update o login deve persistir.
-    return !!(token && userData);
+    // Sessão antiga, forjável, não mantém a tela aberta.
+    return token.startsWith('ponte.v1.') && !!userData;
   });
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [needsPasswordChange, setNeedsPasswordChange] = useState(false);
@@ -145,44 +183,71 @@ const App: React.FC = () => {
       return shouldShowMotivation(u.id || u.email || 'anon');
     } catch { return false; }
   });
+  const [academyVersion, setAcademyVersion] = useState(0);
 
+  const linkProposta = lerCaminhoLinkProposta(window.location.pathname);
   const normalizedPath = window.location.pathname.toLowerCase().replace(/\/$/, '');
   const isPublicRoute = normalizedPath === '/cadastro-operacional';
+  const isCevaPortalRoute = normalizedPath === '/ceva';
+  const isIblPortalRoute = normalizedPath === '/ibl';
+  const slugPortal = slugDeCaminho(normalizedPath);
+  const isPortalExternoRoute = isCevaPortalRoute || isIblPortalRoute;
   const isDhlSupplierRoute = normalizedPath === '/fornecedor/dhl';
   const isLiveTrackRoute = normalizedPath === '/rastreio';
+  const isViaturasMapaRoute = normalizedPath === '/viaturas' || normalizedPath === '/dhl';
   const isResetPasswordRoute = normalizedPath === '/reset-password';
   const resetToken = new URLSearchParams(window.location.search).get('token') || '';
 
   const handleLogout = useCallback(async () => {
+    let logoutReason = '';
+    try {
+      logoutReason = sessionStorage.getItem(LOGOUT_REASON_IDLE_KEY) || '';
+    } catch {
+      /* ignora */
+    }
     try { window.dispatchEvent(new CustomEvent('tmseg:logout')); } catch {}
     await supabase.auth.signOut();
-    localStorage.clear(); 
-    sessionStorage.clear(); 
-    localStorage.setItem('app_version', APP_VERSION); 
+    clearLocalStoragePreservingForceLogoutSeen();
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* ignora */
+    }
+    if (logoutReason) {
+      try {
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, logoutReason);
+      } catch {
+        /* ignora */
+      }
+    }
+    localStorage.setItem('app_version', APP_VERSION);
     document.cookie.split(";").forEach((c) => {
         document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
     });
     setIsAuthenticated(false);
     setNeedsPasswordChange(false);
     setCurrentScreen('dashboard');
-    window.location.href = '/'; 
+    window.location.href = '/';
   }, []);
 
   const verifySessionInDatabase = async () => {
       const storedUser = localStorage.getItem('userData');
+      const token = localStorage.getItem('authToken') || '';
       if (!storedUser) return;
+      if (!token.startsWith('ponte.v1.')) { handleLogout(); return; }
       try {
           const user = JSON.parse(storedUser);
-          const { data, error } = await supabase.from('system_users').select(`name, status, force_password_change, permissions, profile_id, client_id, profiles:profile_id ( name, permissions )`).eq('id', user.id).single();
-          if (error) {
-            console.warn('[Sessão] Falha temporária ao verificar usuário — mantendo login:', error.message);
-            return;
-          }
-          if (!data || data.status !== 'Ativo') { handleLogout(); return; }
+          const resposta = await fetch('/api/ponte-auth/sessao', {
+            credentials: 'include',
+            headers: { authorization: `Bearer ${token}` },
+          });
+          if (resposta.status === 401 || resposta.status === 403) { handleLogout(); return; }
+          if (!resposta.ok) return;
+          const corpo = await resposta.json() as { usuario?: { name?: string; role?: string; permissions?: string[]; force_password_change?: boolean; clientId?: string | null; trainingRequired?: boolean; trainingPassedAt?: string | null; trainingModules?: unknown; trainingScore?: number | null } };
+          const data = corpo.usuario;
+          if (!data) { handleLogout(); return; }
           if (data.force_password_change) setNeedsPasswordChange(true);
-          const profilePerms = data.profiles?.permissions || [];
-          const userPerms = data.permissions || [];
-          const combinedPermissions = [...new Set([...profilePerms, ...userPerms])];
+          const combinedPermissions = data.permissions || [];
           let needsUpdate = false;
           if (JSON.stringify(user.permissions) !== JSON.stringify(combinedPermissions)) {
               user.permissions = combinedPermissions;
@@ -192,10 +257,15 @@ const App: React.FC = () => {
               user.name = data.name;
               needsUpdate = true;
           }
-          if (data.profiles?.name && (!user.role || user.role === 'Usuário')) {
-              user.role = data.profiles.name;
+          if (data.role && (!user.role || user.role === 'Usuário')) {
+              user.role = data.role;
               needsUpdate = true;
           }
+          user.trainingRequired = Boolean(data.trainingRequired);
+          user.trainingPassedAt = data.trainingPassedAt || null;
+          user.trainingModules = normalizarModulos(data.trainingModules);
+          user.trainingScore = data.trainingScore ?? null;
+          needsUpdate = true;
           if (needsUpdate) {
               localStorage.setItem('userData', JSON.stringify(user));
           }
@@ -204,8 +274,8 @@ const App: React.FC = () => {
             email: user.email,
           });
           localStorage.setItem('userData', JSON.stringify(enriched));
-          if (data.client_id) {
-              const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.client_id).single();
+          if (data.clientId) {
+              const { data: clientData } = await supabase.from('clients').select('name').eq('id', data.clientId).single();
               if (clientData && (clientData.name || '').toUpperCase().includes('CEVA')) {
                   setIsCevaClient(true);
               }
@@ -215,7 +285,7 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     const roleDefault = getRoleDefaultScreen();
     if (roleDefault && !getScreenFromUrl()) {
       setCurrentScreen(roleDefault);
@@ -224,14 +294,74 @@ const App: React.FC = () => {
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
     return wireUserActivityTracker();
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
-    const channel = supabase.channel('global_reset_channel').on('postgres_changes',{event: 'INSERT',schema: 'public',table: 'system_logs',filter: 'entity=eq.FORCE_LOGOUT_SIGNAL'},(payload) => {setRebootCountdown(10);}).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
+    return wireNightHeartbeat();
+  }, [isAuthenticated, isPublicRoute]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
+    const channel = supabase
+      .channel('global_reset_channel')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'system_logs',
+          filter: 'entity=eq.FORCE_LOGOUT_SIGNAL',
+        },
+        () => {
+          setRebootCountdown(10);
+        },
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'system_settings',
+          filter: `key=eq.${FORCE_LOGOUT_SETTINGS_KEY}`,
+        },
+        (payload) => {
+          const next = parseForceLogoutSignal(
+            (payload.new as { value?: unknown } | null)?.value,
+          );
+          if (!next) return;
+          const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+          if (next === seen) return;
+          localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, next);
+          setRebootCountdown(10);
+        },
+      )
+      .subscribe();
+
+    const poll = window.setInterval(async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('value')
+          .eq('key', FORCE_LOGOUT_SETTINGS_KEY)
+          .maybeSingle();
+        const next = parseForceLogoutSignal(data?.value);
+        if (!next) return;
+        const seen = localStorage.getItem(FORCE_LOGOUT_SEEN_KEY) || '';
+        if (next === seen) return;
+        localStorage.setItem(FORCE_LOGOUT_SEEN_KEY, next);
+        setRebootCountdown(10);
+      } catch {
+        /* ignore */
+      }
+    }, 12_000);
+
+    return () => {
+      window.clearInterval(poll);
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated, isPublicRoute]);
 
   useEffect(() => {
@@ -242,7 +372,7 @@ const App: React.FC = () => {
   }, [rebootCountdown, handleLogout]);
 
   useEffect(() => {
-    if (isPublicRoute) return; 
+    if (isPublicRoute || isPortalExternoRoute) return; 
     const storedVersion = localStorage.getItem('app_version');
     const token = localStorage.getItem('authToken');
     const userData = localStorage.getItem('userData');
@@ -257,36 +387,70 @@ const App: React.FC = () => {
     if (!token || !userData) { if (isAuthenticated) handleLogout(); } else { verifySessionInDatabase(); }
   }, [isPublicRoute, isAuthenticated, handleLogout]);
 
+  // Logout obrigatório: 30 min diurno / 20 min na vigia noturna (funcionários).
+  // Conta mesmo com aba em segundo plano; diretoria/CEO isentos (admin entra na vigia).
   useEffect(() => {
-    if (!isAuthenticated || isPublicRoute) return;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    if (!isAuthenticated || isPublicRoute || isPortalExternoRoute) return;
+    let loggingOut = false;
 
-    const resetTimer = () => {
-      if (document.visibilityState === 'hidden') return;
-      if (timeoutId) clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => handleLogout(), INACTIVITY_LIMIT);
-    };
-
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        // Pausa o timer quando o app vai para segundo plano (celular).
-        if (timeoutId) clearTimeout(timeoutId);
-        timeoutId = undefined;
-      } else {
-        resetTimer();
+    const readRole = (): string | undefined => {
+      try {
+        const u = JSON.parse(localStorage.getItem('userData') || '{}');
+        return u?.role;
+      } catch {
+        return undefined;
       }
     };
 
-    const events = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click', 'pointerdown'];
-    events.forEach((event) => document.addEventListener(event, resetTimer, { passive: true }));
+    const forceIdleLogout = async () => {
+      if (loggingOut) return;
+      if (!shouldEnforceSessionIdleLogout(readRole())) return;
+      const idleMs = getIdleMs();
+      if (!isIdleLogoutDue(idleMs)) return;
+      loggingOut = true;
+      const thresholdMin = getIdleLogoutThresholdMinutes();
+      const idleMinutes = Math.max(thresholdMin, Math.floor(idleMs / 60_000));
+      const reason = idleLogoutReasonKey();
+      try {
+        sessionStorage.setItem(LOGOUT_REASON_IDLE_KEY, reason);
+      } catch {
+        /* ignora */
+      }
+      try {
+        await flushInteractionStats('idle_logout');
+        await logProductivityEvent('SESSION_IDLE_LOGOUT', {
+          idleMinutes,
+          thresholdMinutes: thresholdMin,
+          nightWatch: isNightWatchActive(),
+        });
+        if (isNightWatchActive()) {
+          await reportNightIncident({
+            type: 'force_logout',
+            idleMinutes,
+            details: { thresholdMinutes: thresholdMin },
+          });
+        }
+      } catch {
+        /* segue o logout mesmo se o log falhar */
+      }
+      await handleLogout();
+    };
+
+    const tick = () => {
+      void forceIdleLogout();
+    };
+
+    tick();
+    const idlePoll = window.setInterval(tick, 15_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
     document.addEventListener('visibilitychange', onVisibility);
-    resetTimer();
 
     const sessionInterval = setInterval(verifySessionInDatabase, 120000);
     return () => {
-      if (timeoutId) clearTimeout(timeoutId);
+      window.clearInterval(idlePoll);
       clearInterval(sessionInterval);
-      events.forEach((event) => document.removeEventListener(event, resetTimer));
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [isAuthenticated, isPublicRoute, handleLogout]);
@@ -377,19 +541,63 @@ const App: React.FC = () => {
     window.addEventListener('tmseg:navigate', handler as EventListener);
     return () => window.removeEventListener('tmseg:navigate', handler as EventListener);
   }, []);
+  const openBillingRef = useRef(handleOpenBillingMission);
+  openBillingRef.current = handleOpenBillingMission;
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const missionId = String((e as CustomEvent).detail || '').trim();
+      if (missionId) void openBillingRef.current(missionId);
+    };
+    window.addEventListener('tmseg:open-billing-mission', handler as EventListener);
+    return () => window.removeEventListener('tmseg:open-billing-mission', handler as EventListener);
+  }, []);
   const handleSaveAndContinue = (missionId: string) => { localStorage.setItem('openMissionOnLoad', missionId); navigateTo('missions'); };
 
+  if (linkProposta) return <PropostaPublica id={linkProposta.id} token={linkProposta.token} />;
+  if (import.meta.env.DEV && normalizedPath === '/proposta-premium-demo') return <PropostaPremiumDemo />;
   if (isPublicRoute) { return ( <NotificationProvider> <PublicAgentRegistration /> </NotificationProvider> ); }
   if (isDhlSupplierRoute) { return <DhlSupplierIntake />; }
   if (isLiveTrackRoute) { return <PublicLiveTrack />; }
+  if (isViaturasMapaRoute) { return <MapaViaturasPublico />; }
+  if (isIblPortalRoute) { return <IblPortal />; }
+  if (isCevaPortalRoute) { return <CevaPortal />; }
+  if (slugPortal) { return <PortalClientePagina slug={slugPortal} />; }
 
   if (isResetPasswordRoute && resetToken) {
     return <ResetPassword token={resetToken} onComplete={() => { window.location.href = '/'; }} />;
   }
   
   if (!isAuthenticated) { return <Login onLogin={handleLogin} />; }
+
+  const guardado = getStoredUser();
+  const caminhoSoPortal = usuarioSoPortal(guardado?.permissions) ? caminhoPortalDasPermissoes(guardado.permissions) : null;
+  if (caminhoSoPortal) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+        <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow">
+          <h1 className="text-xl font-black text-slate-900">Acesso somente ao portal do cliente</h1>
+          <p className="mt-2 text-sm text-slate-600">Este usuário vê apenas as informações do cliente vinculado. O restante do sistema fica fechado.</p>
+          <a href={caminhoSoPortal} className="mt-5 inline-flex h-11 items-center justify-center rounded-xl bg-black px-4 text-sm font-bold text-white">Abrir o portal</a>
+          <button type="button" onClick={() => void handleLogout()} className="mt-3 block text-sm font-semibold text-slate-500">Sair</button>
+        </div>
+      </div>
+    );
+  }
   
   if (needsPasswordChange) { return <ChangePasswordModal onSuccess={handlePasswordChanged} />; }
+
+  if (operadorBloqueado(getStoredUser())) {
+    return (
+      <NotificationProvider>
+        <TrainingAcademy
+          key={academyVersion}
+          mode="obrigatorio"
+          onPassed={() => setAcademyVersion((v) => v + 1)}
+          onLogout={handleLogout}
+        />
+      </NotificationProvider>
+    );
+  }
 
   if (motivationPending) {
     const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
@@ -408,8 +616,11 @@ const App: React.FC = () => {
     }
 
     switch (currentScreen) {
-      case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />; 
+      case 'dashboard': return <Dashboard onOpenMission={handleOpenBillingMission} />;
+      case 'meu-portal': return <MeuPortal />;
+      case 'treinamento': return <TrainingAcademy mode="revisao" />;
       case 'missions': return <MissionTable onNewMission={() => navigateTo('new-mission')} />;
+      case 'controle-diario': return <ControleDiario />;
       case 'shift-handover': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         const rl = (u.role || '').toLowerCase();
@@ -448,6 +659,7 @@ const App: React.FC = () => {
           ? <ComissoesComerciaisPage />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
+      case 'gestor-fiscal': return <GestorFiscalPage />;
       case 'diretoria-faturamento': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
         return canAccessFaturamentoDiretoria(u)
@@ -474,6 +686,13 @@ const App: React.FC = () => {
           ? <OsAnalysisPendingPage onOpenMission={handleOpenBillingMission} />
           : <Dashboard onOpenMission={handleOpenBillingMission} />;
       }
+      case 'fin-aprovacoes-pendentes': {
+        const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
+        return canViewAprovacoesPendentes(u)
+          ? <AprovacoesPendentesPage onOpenMission={handleOpenBillingMission} />
+          : <Dashboard onOpenMission={handleOpenBillingMission} />;
+      }
+      case 'fin-pre-fatura': return <PreFaturaMensal onNavigate={navigateTo} />;
       case 'fin-billing': return (
         <ClientBillingReport
           onNavigate={navigateTo}
@@ -547,9 +766,7 @@ const App: React.FC = () => {
       }
       case 'ranking-dhl': {
         const u = (() => { try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; } })();
-        const rl = (u.role || '').toLowerCase();
-        const allowed = rl === 'avançado' || rl === 'avancado' || rl === 'diretoria' || rl === 'administrador';
-        return allowed ? <RankingDHL /> : <Dashboard />;
+        return canViewRankingDhl(u) ? <RankingDHL /> : <Dashboard />;
       }
       case 'support-network': return <SupportMapFinder onNavigate={navigateTo} />;
       default: {
@@ -583,16 +800,21 @@ const App: React.FC = () => {
         <Sidebar isOpen={isSidebarOpen} activeScreen={currentScreen} onNavigate={navigateTo} onLogout={handleLogout} />
         <PushNotificationManager />
         <PresenceDebugPanel />
-        {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <MissionAlertMonitor />}
+        {(() => { try { const u = JSON.parse(localStorage.getItem('userData') || '{}'); const r = (u.role || '').toLowerCase(); const allowed = ['operador', 'avançado', 'avancado']; return allowed.includes(r); } catch { return false; } })() && <><MissionAlertMonitor /><EvidenceStartAlert /></>}
+        {isAuthenticated && <AlertaSolicitacaoPortal />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <VeladaClosureAlert />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <AvisoEdicaoFinanceiraDiretoria />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlCopiaAoVivo />}
+        {isAuthenticated && !isPublicRoute && !isDhlSupplierRoute && !isLiveTrackRoute && !isResetPasswordRoute && <DhlViaturaNovaAlerta />}
         <div className="flex-1 flex flex-col min-h-0 min-w-0 relative z-10 lg:pl-20">
             {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
             <Header onMenuClick={toggleSidebar} onProfileSettingsClick={() => setIsProfileSettingsOpen(true)} isCevaClient={isCevaClient} />
             <WhatsAppStatusBanner />
-            <WhatsAppOfflineModal />
             <OsAnalysisDiretoriaModal onOpenMission={handleOpenBillingMission} />
             <IdlePresenceGuard />
             <main className="flex-1 overflow-x-auto overflow-y-auto p-3 sm:p-4 md:p-6 scrollbar-thin" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="w-full mx-auto relative">
+                <CartasTabelaErrada />
                 <AppErrorBoundary onReset={() => {
                   // Só limpa o erro — não joga o usuário pro dashboard automaticamente.
                 }}>

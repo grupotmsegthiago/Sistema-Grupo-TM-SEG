@@ -37,6 +37,9 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
     // Marco (epoch ms) do início do serviço, derivado da última leitura de ponto.
     // Permite recontar os "minutos em serviço" localmente, sem ir ao banco.
     let serviceStartMs: number | null = null;
+    // Início desta conexão. Não pode ser trocado no heartbeat, senão o
+    // quadro sempre mostra "0 min online".
+    const sessionStartedAt = new Date().toISOString();
 
     const buildQuickPayload = (
       raw: TimeClockUserContext & { role?: string }
@@ -47,7 +50,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
       isClt: !!(raw.isClt || raw.requiresTimeclock),
       onDuty: false,
       onDutyLabel: 'Online',
-      onlineAt: new Date().toISOString(),
+      onlineAt: sessionStartedAt,
     });
 
     const buildPayload = async (): Promise<PresenceUserState | null> => {
@@ -103,7 +106,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
           isClt: mustClock,
           onDuty,
           onDutyLabel,
-          onlineAt: new Date().toISOString(),
+          onlineAt: sessionStartedAt,
           lastActivityAt: getLastActivityAt(),
           minutesOnDuty,
           activityStatus,
@@ -140,7 +143,7 @@ const UserPresenceTracker: React.FC<Props> = ({ enabled }) => {
             : lastGoodPayload.minutesOnDuty ?? 0;
         const updated: PresenceUserState = {
           ...lastGoodPayload,
-          onlineAt: new Date().toISOString(),
+          onlineAt: sessionStartedAt,
           lastActivityAt: getLastActivityAt(),
           activityStatus: getActivityStatus(),
           idleMinutes: getIdleMinutes(),

@@ -4,7 +4,10 @@
  */
 
 export function roundMoney(n: number): number {
-  return Math.round((Number(n) || 0) * 100) / 100;
+  const valor = Number(n);
+  if (!Number.isFinite(valor)) return 0;
+  // EPSILON evita que 1,005 vire 1,00 por resíduo de ponto flutuante.
+  return Math.round((valor + Number.EPSILON) * 100) / 100;
 }
 
 export type CalculoComissao = {

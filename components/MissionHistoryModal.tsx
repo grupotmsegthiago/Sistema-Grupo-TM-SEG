@@ -80,7 +80,7 @@ const MissionHistoryModal: React.FC<Props> = ({ missionId, onClose }) => {
             'end_km': 'KM Final',
             'start_time': 'Início da Viagem',
             'end_time': 'Fim da Viagem',
-            'current_location': 'Localização Atual',
+            'current_location': 'Atualização',
             'revenue_value': 'Valor Faturamento',
             'cost_value': 'Custo Operacional',
             'toll_value': 'Pedágio',

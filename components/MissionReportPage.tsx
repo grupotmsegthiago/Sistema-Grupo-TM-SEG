@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Mission, MissionStatus } from '../types';
 import { authFetch } from '../lib/authFetch';
 import { supabase } from '../lib/supabase';
+import { formatDateBR, formatTimeBR } from '../lib/dateUtils';
 import { useNotification } from '../lib/NotificationContext';
 import {
   Loader2, FileBarChart, Download, RefreshCw, Filter, List, Link2,
@@ -21,6 +22,23 @@ function formatRouteCities(origin?: string | null, destination?: string | null):
   const destCity = extractCityFromAddress(destination || '').trim() || '-';
   return `${originCity} → ${destCity}`;
 }
+
+function leituraPedagioDaMissao(m: {
+  toll_value?: unknown;
+  toll_value_provider?: unknown;
+  client?: string | null;
+  is_same_os?: boolean;
+  snapshot_data?: { tollVal?: unknown; toll_value?: unknown } | null;
+}) {
+  const snap = m.snapshot_data;
+  return classificarParPedagio({
+    tollValue: m.toll_value,
+    tollValueProvider: m.toll_value_provider,
+    clientName: m.client,
+    isSameOs: !!m.is_same_os,
+    snapshotToll: snap?.tollVal ?? snap?.toll_value,
+  });
+}
 import {
   auditMissionsBatchAsync,
   clearMissionBillingAuditCache,
@@ -33,6 +51,7 @@ import {
 import { loadAllPricingTables, invalidatePricingTablesCache } from '../lib/pricingTablesLoader';
 import { isTerminalMissionStatusForAudit } from '../lib/missionBillingAuditConfig';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
+import { classificarParPedagio } from '../lib/toll/clientTollBilling';
 import {
   computeCanonicalRevenueCost,
   getCanonicalDateRange,
@@ -40,8 +59,44 @@ import {
   type CanonicalResult,
 } from '../lib/missionFinancialsCanonical';
 import { isFinanceSupervisorName } from '../lib/financeSupervisorAccess';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { isPerfilComercial } from '../lib/diretoriaAccess';
 import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
+
+/** "i" do pedágio: o texto só aparece com o mouse em cima, fora da rolagem da tabela. */
+function AvisoInfo({ texto }: { texto: string }) {
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+  return (
+    <span
+      className="inline-flex items-center"
+      onMouseEnter={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        const largura = 220;
+        const left = Math.min(Math.max(8, r.right - largura), window.innerWidth - largura - 8);
+        const abaixo = r.bottom + 6;
+        const top = abaixo + 80 > window.innerHeight ? Math.max(8, r.top - 80) : abaixo;
+        setBox({ left, top });
+      }}
+      onMouseLeave={() => setBox(null)}
+    >
+      <span
+        className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full border border-amber-700 text-[9px] font-black leading-none text-amber-800 cursor-help"
+        aria-label={texto}
+      >
+        i
+      </span>
+      {box && (
+        <span
+          role="tooltip"
+          className="fixed z-[90] w-[220px] rounded-md bg-gray-900 px-2 py-1.5 text-left text-[10px] font-normal leading-snug text-white shadow-lg whitespace-normal"
+          style={{ left: box.left, top: box.top }}
+        >
+          {texto}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** Limite de linhas na tabela — evita freeze com centenas de OS no DOM. */
 const REPORT_PAGE_SIZE = 10;
@@ -121,6 +176,7 @@ const MissionReportPage: React.FC = () => {
 
   const canSeeFinancials = useMemo(() => {
     if (!currentUser) return false;
+    if (isPerfilAvancado(currentUser)) return false;
     const nameLower = (currentUser.name || '').toLowerCase();
     const roleLower = (currentUser.role || '').toLowerCase();
     return nameLower.includes('daniel') || nameLower.includes('michelle') || isFinanceSupervisorName(currentUser.name) || nameLower.includes('thiago') || roleLower === 'controller';
@@ -353,8 +409,12 @@ const MissionReportPage: React.FC = () => {
   const uniqueClients = useMemo(() => [...new Set(allMissions.map(m => m.client).filter(Boolean))].sort(), [allMissions]);
   const uniqueProviders = useMemo(() => [...new Set(allMissions.map(m => m.provider).filter(Boolean))].sort(), [allMissions]);
 
-  const fmtDate = (d: string | undefined) => d ? new Date(d).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '-';
-  const fmtTime = (d: string | undefined) => d ? new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '-';
+  const fmtDate = (d: string | undefined) => {
+    if (!d) return '-';
+    const texto = formatDateBR(d);
+    return texto === '—' ? '-' : texto;
+  };
+  const fmtTime = (d: string | undefined) => d ? formatTimeBR(d, '-') : '-';
   const fmtMoney = (v: number) => v ? v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-';
 
   const statusBg = (s: string) => {
@@ -568,10 +628,13 @@ const MissionReportPage: React.FC = () => {
     const asNum = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     const lightCanonical = (m: Mission): CanonicalResult => {
       const can = computeCanonicalRevenueCost(m, refs, now);
-      const revBase = asNum((m as any).revenue_value);
-      const costBase = asNum((m as any).cost_value);
-      const tollRev = asNum((m as any).toll_value) || can.tollRev;
-      const tollCost = asNum((m as any).toll_value_provider) || tollRev || can.tollCost;
+      const revRaw = (m as any).revenue_value;
+      const costRaw = (m as any).cost_value;
+      const revBase = revRaw != null ? asNum(revRaw) : can.revBase;
+      const costBase = costRaw != null ? asNum(costRaw) : can.costBase;
+      const parPedagio = leituraPedagioDaMissao(m);
+      const tollRev = parPedagio.clienteExibido;
+      const tollCost = parPedagio.fornecedorExibido;
       const rev = revBase + tollRev + can.dispRev;
       const cost = costBase + tollCost + can.dispCost;
       return {
@@ -614,7 +677,7 @@ const MissionReportPage: React.FC = () => {
   const handleExportCSV = () => {
     const sep = ';';
     const headers = ['#', 'OS', 'Status', 'Cliente', 'Veíc. Escoltado', 'Fornecedor', 'Viatura', 'Agentes', 'Rota', 'Data Inicial', 'Hora Inicial', 'Data Final', 'Hora Final'];
-    if (canSeeFinancials) headers.push('Receita', 'Custo', 'Ped. Recebido', 'Ped. Pago', 'Desloc. Recebido', 'Desloc. Pago', 'Resultado', '% Lucro');
+    if (canSeeFinancials) headers.push('Receita', 'Ped. Recebido', 'Desloc. Recebido', 'Total Recebido', 'Custo', 'Ped. Pago', 'Desloc. Pago', 'Total Pago', 'Resultado', '% Lucro');
 
     const exportParentIds = new Set<string>();
     displayMissions.forEach(m => { if (m.is_same_os && m.parent_mission_id) exportParentIds.add(m.parent_mission_id); });
@@ -646,13 +709,16 @@ const MissionReportPage: React.FC = () => {
       ];
       if (canSeeFinancials) {
         const revTotal = rev + toll + disp;
+        const pagoTotal = cost + tollPaid + dispPaid;
         row.push(
           rev > 0 ? rev.toFixed(2).replace('.', ',') : '',
-          cost > 0 ? cost.toFixed(2).replace('.', ',') : '',
           toll > 0 ? toll.toFixed(2).replace('.', ',') : '',
-          tollPaid > 0 ? tollPaid.toFixed(2).replace('.', ',') : '',
           disp > 0 ? disp.toFixed(2).replace('.', ',') : '',
+          revTotal > 0 ? revTotal.toFixed(2).replace('.', ',') : '',
+          cost > 0 ? cost.toFixed(2).replace('.', ',') : '',
+          tollPaid > 0 ? tollPaid.toFixed(2).replace('.', ',') : '',
           dispPaid > 0 ? dispPaid.toFixed(2).replace('.', ',') : '',
+          pagoTotal > 0 ? pagoTotal.toFixed(2).replace('.', ',') : '',
           resultado !== 0 ? resultado.toFixed(2).replace('.', ',') : '',
           revTotal > 0 ? ((resultado / revTotal) * 100).toFixed(1).replace('.', ',') + '%' : ''
         );
@@ -975,12 +1041,14 @@ const MissionReportPage: React.FC = () => {
           <span className="text-red-700">Canc: {filteredMissions.filter(m => [MissionStatus.CANCELLED, MissionStatus.REFUSED].includes(m.status as MissionStatus)).length}</span>
           {canSeeFinancials && (
             <>
-              <span className="border-l border-gray-300 pl-3 text-green-700">Receita Total: R$ {fmtMoney(totalRev)}</span>
-              <span className="text-blue-700">Custo Total: R$ {fmtMoney(totalCost)}</span>
-              <span className="text-orange-700">Pedágio Recebido: R$ {fmtMoney(totalToll)}</span>
-              <span className="text-orange-500">Pedágio Pago: R$ {fmtMoney(totalTollProvider)}</span>
-              <span className="text-purple-700">Deslocamento Recebido: R$ {fmtMoney(totalDisp)}</span>
-              <span className="text-purple-500">Deslocamento Pago: R$ {fmtMoney(totalDispProvider)}</span>
+              <span className="border-l border-emerald-300 pl-2 ml-1 bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded">Receita: R$ {fmtMoney(totalRev)}</span>
+              <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded">Ped. Recebido: R$ {fmtMoney(totalToll)}</span>
+              <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded">Desl. Recebido: R$ {fmtMoney(totalDisp)}</span>
+              <span className="bg-emerald-200 text-emerald-950 px-2 py-0.5 rounded">Total Recebido: R$ {fmtMoney(totals.rev)}</span>
+              <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded">Custo: R$ {fmtMoney(totalCost)}</span>
+              <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded">Ped. Pago: R$ {fmtMoney(totalTollProvider)}</span>
+              <span className="bg-red-100 text-red-900 px-2 py-0.5 rounded">Desl. Pago: R$ {fmtMoney(totalDispProvider)}</span>
+              <span className="bg-red-200 text-red-950 px-2 py-0.5 rounded">Total Pago: R$ {fmtMoney(totals.cost)}</span>
               <span className={`font-black ${totals.profit >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                 Resultado: R$ {fmtMoney(totals.profit)}
               </span>
@@ -1046,12 +1114,14 @@ const MissionReportPage: React.FC = () => {
                   <th className="px-3 py-2.5 text-left font-black border-r border-gray-700">HORA FINAL</th>
                   {canSeeFinancials && (
                     <>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RECEITA</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">CUSTO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. RECEB.</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">PED. PAGO</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">DESL. RECEB.</th>
-                      <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">DESL. PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-700">RECEITA</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-700">PED. RECEB.</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-700">DESL. RECEB.</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-emerald-900 bg-emerald-800">TOTAL RECEBIDO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-700">CUSTO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-700">PED. PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-700">DESL. PAGO</th>
+                      <th className="px-3 py-2.5 text-right font-black border-r border-red-900 bg-red-800">TOTAL PAGO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">RESULTADO</th>
                       <th className="px-3 py-2.5 text-right font-black border-r border-gray-700">% LUCRO</th>
                     </>
@@ -1071,10 +1141,14 @@ const MissionReportPage: React.FC = () => {
                   const cost = c?.costBase || 0;
                   const toll = c?.tollRev || 0;
                   const tollProvider = c?.tollCost || 0;
+                  const leituraToll = leituraPedagioDaMissao(m);
                   const disp = c?.dispRev || 0;
                   const dispProvider = c?.dispCost || 0;
                   const resultado = c?.profit || 0;
                   const revTotal = rev + toll + disp;
+                  const pagoTotal = cost + tollProvider + dispProvider;
+                  const temRecebido = rev > 0 || toll > 0 || disp > 0;
+                  const temPago = cost > 0 || tollProvider > 0 || dispProvider > 0;
                   const lucroPerc = revTotal > 0 ? ((resultado / revTotal) * 100) : 0;
                   const placaEscoltado = m.clientVehicle?.plate || '-';
                   const agentes = [m.agent1, m.agent2].filter(Boolean).join(' & ') || '-';
@@ -1125,26 +1199,33 @@ const MissionReportPage: React.FC = () => {
                       <td className="px-3 py-2 border-r border-gray-100 whitespace-nowrap">{m.endTime ? fmtTime(m.endTime) : '-'}</td>
                       {canSeeFinancials && (
                         <>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-green-700 whitespace-nowrap" title={tableInfoMap.get(m.id)?.clientTable || ''}>
+                          <td className="px-3 py-2 border-r border-emerald-200 text-right font-bold text-emerald-900 whitespace-nowrap bg-emerald-100" title={tableInfoMap.get(m.id)?.clientTable || ''}>
                             <div className="flex flex-col items-end">
                               <span>{rev > 0 ? fmtMoney(rev) : '-'}</span>
-                              {tableInfoMap.get(m.id) && <span className="text-[8px] text-green-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.clientTable}</span>}
+                              {tableInfoMap.get(m.id) && <span className="text-[8px] text-emerald-700 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.clientTable}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right font-bold text-blue-700 whitespace-nowrap" title={m.is_same_os && cost === 0 ? 'Custo zerado: missão compartilha OS principal (reaproveitamento)' : (tableInfoMap.get(m.id)?.providerTable || '')}>
+                          <td className="px-3 py-2 border-r border-emerald-200 text-right text-emerald-900 whitespace-nowrap bg-emerald-100">
+                            <div className="flex items-center justify-end gap-1">
+                              <span>{toll > 0 ? fmtMoney(toll) : '-'}</span>
+                              {leituraToll.aviso && <AvisoInfo texto={leituraToll.aviso} />}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 border-r border-emerald-200 text-right text-emerald-900 whitespace-nowrap bg-emerald-100">{disp > 0 ? fmtMoney(disp) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-emerald-300 text-right font-black text-emerald-950 whitespace-nowrap bg-emerald-200">{temRecebido ? fmtMoney(revTotal) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-200 text-right font-bold text-red-900 whitespace-nowrap bg-red-100" title={m.is_same_os && cost === 0 ? 'Custo zerado: missão compartilha OS principal (reaproveitamento)' : (tableInfoMap.get(m.id)?.providerTable || '')}>
                             <div className="flex flex-col items-end">
                               {m.is_same_os && cost === 0 ? (
-                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-600">MESMA OS</span>
+                                <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">MESMA OS</span>
                               ) : (
                                 <span>{cost > 0 ? fmtMoney(cost) : '-'}</span>
                               )}
-                              {!(m.is_same_os && cost === 0) && tableInfoMap.get(m.id) && <span className="text-[8px] text-blue-500 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
+                              {!(m.is_same_os && cost === 0) && tableInfoMap.get(m.id) && <span className="text-[8px] text-red-700 font-normal truncate max-w-[100px]">{tableInfoMap.get(m.id)?.providerTable}</span>}
                             </div>
                           </td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-600 whitespace-nowrap">{toll > 0 ? fmtMoney(toll) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-orange-500 whitespace-nowrap">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-600 whitespace-nowrap">{disp > 0 ? fmtMoney(disp) : '-'}</td>
-                          <td className="px-3 py-2 border-r border-gray-100 text-right text-purple-500 whitespace-nowrap">{dispProvider > 0 ? fmtMoney(dispProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-200 text-right text-red-900 whitespace-nowrap bg-red-100">{tollProvider > 0 ? fmtMoney(tollProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-200 text-right text-red-900 whitespace-nowrap bg-red-100">{dispProvider > 0 ? fmtMoney(dispProvider) : '-'}</td>
+                          <td className="px-3 py-2 border-r border-red-300 text-right font-black text-red-950 whitespace-nowrap bg-red-200">{temPago ? fmtMoney(pagoTotal) : '-'}</td>
                           <td className={`px-3 py-2 border-r border-gray-100 text-right font-black whitespace-nowrap ${resultado >= 0 ? 'text-emerald-700' : 'text-red-600 bg-red-50'}`}>
                             {rev > 0 || cost > 0 ? fmtMoney(resultado) : '-'}
                           </td>
@@ -1300,12 +1381,14 @@ const MissionReportPage: React.FC = () => {
                 <tfoot>
                   <tr className="bg-gray-800 text-white font-black text-xs">
                     <td colSpan={13} className="px-3 py-2.5 text-right border-r border-gray-600">TOTAIS →</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-green-300">{fmtMoney(totalRev)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-blue-300">{fmtMoney(totalCost)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-300">{fmtMoney(totalToll)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-orange-200">{fmtMoney(totalTollProvider)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-purple-300">{fmtMoney(totalDisp)}</td>
-                    <td className="px-3 py-2.5 text-right border-r border-gray-600 text-purple-200">{fmtMoney(totalDispProvider)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-emerald-900 bg-emerald-700 text-white">{fmtMoney(totalRev)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-emerald-900 bg-emerald-700 text-white">{fmtMoney(totalToll)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-emerald-900 bg-emerald-700 text-white">{fmtMoney(totalDisp)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-emerald-950 bg-emerald-800 text-white">{fmtMoney(totals.rev)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-900 bg-red-700 text-white">{fmtMoney(totalCost)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-900 bg-red-700 text-white">{fmtMoney(totalTollProvider)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-900 bg-red-700 text-white">{fmtMoney(totalDispProvider)}</td>
+                    <td className="px-3 py-2.5 text-right border-r border-red-950 bg-red-800 text-white">{fmtMoney(totals.cost)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{fmtMoney(totals.profit)}</td>
                     <td className={`px-3 py-2.5 text-right border-r border-gray-600 ${totals.rev > 0 ? (totals.profit >= 0 ? 'text-emerald-300' : 'text-red-300') : ''}`}>
                       {totals.rev > 0 ? `${((totals.profit / totals.rev) * 100).toFixed(1)}%` : '-'}

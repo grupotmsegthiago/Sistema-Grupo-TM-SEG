@@ -1,0 +1,1332 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Autocomplete, GoogleMap, Marker, OverlayView, Polyline, useLoadScript } from '@react-google-maps/api';
+import { ArrowLeftRight, Clock3, FileText, Loader2, MapPinned, Minus, Plus, Route, Satellite, Trash2 } from 'lucide-react';
+import { googleMapsApiKey, googleMapsLoadConfig } from '../../lib/maps';
+import { authFetch } from '../../lib/authFetch';
+import { logoConhecido, logoSeguro, urlMapaEstatico, type CenaVisual, type PontoMapa } from '../../lib/portalCliente/frotaVisual';
+import { pecasPublicadas, type ImagensPremium } from '../../lib/portalCliente/propostaPremium';
+import { dadosConfiaveis, dadosDaProposta, type DadosProposta } from '../../lib/portalCliente/dadosProposta';
+import {
+  destinoDirections,
+  ESTILO_MAPA_COTACAO,
+  indiceNaRota,
+  lerCoordenada,
+  localDaRota,
+  lugarComGeometria,
+  lugarPreenchido,
+  mensagemFalhaDirections,
+  polylineCodificada,
+  precisaFallbackDeTexto,
+  restricoesDaRota,
+  resumirPontos,
+  rotuloCidadeUf,
+  rotuloMarcaTransito,
+  statusDaFalhaDirections,
+  textoComBrasil,
+  textoKmMonitor,
+  textoTempoMonitor,
+  TRACO_PIN,
+  type Coordenada,
+  type LocalPedido,
+} from '../../lib/portalCliente/rotaCotacao';
+import {
+  REGIOES_COTACAO,
+  consultaDoCliente,
+  contaVisivelDaCotacao,
+  propostaDaConta,
+  primeiraRegiaoComTarifa,
+  regiaoAcompanhaOrigem,
+  regiaoTemLinha,
+  tabelaDeLinha,
+  tarifaDoBotao,
+  textoCardRegiao,
+  type PropostaPortal,
+  type TabelaCotacao,
+} from '../../lib/portalCliente/cotacao';
+import { carretaDoCliente, ClientTruckVisual } from './ClientTruckVisual';
+import { ExperienciaProposta } from './ExperienciaProposta';
+import { usePortalCliente } from './portalMarca';
+import { clienteContratualDhlOuIbl, getRegionFromLocation, type VersaoTabelaRegional } from '../../lib/precificacao/tabela2027';
+import { exigeAceiteDoCliente, nomePdfCotacao, pedidoParaRegistro, reservarNumeroCotacao, TEXTO_ACEITE_OS } from '../../lib/portalCliente/historicoCotacoes';
+import { calcularTrechoProposta, somarTrechos, type TrechoPersistido } from '../../lib/portalCliente/trechosProposta';
+import QuoteCalculatorCard from '../precificacao/QuoteCalculatorCard';
+import { HistoricoCotacoes } from './HistoricoCotacoes';
+
+const FRASES_NOVA = [
+  'Preparando sua proposta comercial...',
+  'Consultando informações da operação...',
+  'Montando apresentação personalizada...',
+  'Finalizando proposta...',
+];
+
+const FRASES_ACORDADA = [
+  'Preparando sua proposta comercial...',
+  'Consultando informações da operação...',
+  'Essa rota já está acordada. Montando a apresentação...',
+  'Finalizando proposta...',
+];
+
+function CampoLugar(props: {
+  id: string;
+  valor: string;
+  placeholder: string;
+  cor: string;
+  onValor: (valor: string, coordenada: Coordenada | null, placeId: string | null) => void;
+  onEditando: (id: string, editando: boolean) => void;
+}) {
+  const campo = useRef<google.maps.places.Autocomplete | null>(null);
+  const caixa = useRef<HTMLInputElement | null>(null);
+  const escolhido = useRef(props.valor);
+  useEffect(() => {
+    const elemento = caixa.current;
+    if (!elemento || document.activeElement === elemento) return;
+    elemento.value = props.valor;
+    escolhido.current = props.valor;
+  }, [props.valor]);
+  const aplicarLugar = (endereco: string, coordenada: Coordenada | null, placeId: string | null) => {
+    escolhido.current = endereco;
+    if (caixa.current) caixa.current.value = endereco;
+    props.onValor(endereco, coordenada, placeId);
+  };
+  const resolverTexto = async () => {
+    const limpo = (caixa.current?.value || '').trim();
+    if (!limpo) {
+      if (props.valor) props.onValor('', null, null);
+      return;
+    }
+    if (limpo === escolhido.current) return;
+    if (typeof google === 'undefined' || !google.maps?.Geocoder) {
+      props.onValor(limpo, null, null);
+      return;
+    }
+    try {
+      const resposta = await new google.maps.Geocoder().geocode({ address: textoComBrasil(limpo), componentRestrictions: { country: 'BR' } });
+      const achado = lugarComGeometria(resposta.results?.[0], limpo);
+      if (!achado) {
+        props.onValor(limpo, null, null);
+        return;
+      }
+      aplicarLugar(achado.endereco, achado.coordenada, achado.placeId);
+    } catch {
+      props.onValor(limpo, null, null);
+    }
+  };
+  return (
+    <div className="relative">
+      <span className={`absolute left-3 top-1/2 z-10 h-3 w-3 -translate-y-1/2 rounded-full ring-4 ring-white ${props.cor}`} />
+      <Autocomplete
+        onLoad={(item) => { campo.current = item; }}
+        onPlaceChanged={() => {
+          const achado = lugarComGeometria(campo.current?.getPlace(), caixa.current?.value);
+          if (!achado) return;
+          aplicarLugar(achado.endereco, achado.coordenada, achado.placeId);
+        }}
+        options={{ componentRestrictions: { country: 'BR' }, fields: ['formatted_address', 'name', 'geometry', 'place_id', 'address_components'] }}
+      >
+        <input
+          ref={caixa}
+          defaultValue={props.valor}
+          onChange={(evento) => {
+            const novo = evento.target.value;
+            if (novo === escolhido.current) return;
+            escolhido.current = '';
+            if (props.valor) props.onValor('', null, null);
+          }}
+          onKeyDown={(evento) => {
+            if (evento.key !== 'Enter') return;
+            window.setTimeout(() => { void resolverTexto(); }, 280);
+          }}
+          onFocus={() => props.onEditando(props.id, true)}
+          onBlur={() => {
+            window.setTimeout(() => {
+              props.onEditando(props.id, false);
+              void resolverTexto();
+            }, 320);
+          }}
+          placeholder={props.placeholder}
+          className="h-12 w-full rounded-2xl border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-900 shadow-[0_8px_18px_rgba(15,23,42,0.06)] outline-none focus:border-[#152c54]"
+        />
+      </Autocomplete>
+    </div>
+  );
+}
+
+function tempoDaRota(segundos: number | null): string {
+  if (segundos == null || segundos <= 0) return '—';
+  const minutos = Math.round(segundos / 60);
+  const horas = Math.floor(minutos / 60);
+  const resto = minutos % 60;
+  if (horas <= 0) return `${resto} min`;
+  return `${horas}h ${String(resto).padStart(2, '0')}min`;
+}
+
+function nomeCurto(endereco?: string): string {
+  return (endereco || '').split(',')[0]?.trim() || '';
+}
+
+type TrajetoMapa = {
+  polyline: string;
+  inicio: PontoMapa | null;
+  fim: PontoMapa | null;
+  paradas: PontoMapa[];
+  pontos: PontoMapa[];
+};
+
+/** Pede o mapa estático em Base64 na rota que já existe. A URL https fica só se o servidor não devolver a imagem. */
+async function pedirMapaBase64(alvo: TrajetoMapa, enviar: (corpo: string) => Promise<Response>, traco?: 'ciano' | 'vermelho'): Promise<string> {
+  const mapaUrl = urlMapaEstatico({
+    polyline: alvo.polyline,
+    pontos: alvo.pontos,
+    chave: googleMapsApiKey,
+    inicio: alvo.inicio,
+    fim: alvo.fim,
+    paradas: alvo.paradas,
+    traco,
+  }) || '';
+  try {
+    const corpo = JSON.stringify({
+      polyline: alvo.polyline,
+      inicio: alvo.inicio,
+      fim: alvo.fim,
+      paradas: alvo.paradas,
+      pontos: alvo.pontos,
+      traco: traco === 'vermelho' ? 'vermelho' : undefined,
+    });
+    const resposta = await enviar(corpo);
+    const dados = await resposta.json().catch(() => ({}));
+    if (resposta.ok && typeof dados.mapa === 'string' && dados.mapa.startsWith('data:image/')) return dados.mapa;
+  } catch {
+    // a URL https continua disponível quando o servidor não devolve a imagem
+  }
+  return mapaUrl;
+}
+
+function pontoDe(lugar: unknown): PontoMapa | null {
+  return lerCoordenada(lugar);
+}
+
+function pinDoMapa(cor: string, letra: string | null): google.maps.Symbol {
+  return {
+    path: TRACO_PIN,
+    fillColor: cor,
+    fillOpacity: 1,
+    strokeColor: '#ffffff',
+    strokeWeight: 1.5,
+    scale: letra ? 1.45 : 1.05,
+    anchor: new google.maps.Point(12, 22),
+    labelOrigin: new google.maps.Point(12, 9),
+  };
+}
+
+function folgaDoMapa(): google.maps.Padding {
+  return { top: 72, right: 80, bottom: 96, left: 300 };
+}
+
+function enquadrarMapa(instancia: google.maps.Map, limites: google.maps.LatLngBounds | null | undefined) {
+  if (!limites) return;
+  instancia.fitBounds(limites, folgaDoMapa());
+}
+
+function esperarMapaParado(instancia: google.maps.Map): Promise<void> {
+  return new Promise((resolver) => {
+    let resolvido = false;
+    const acabar = () => {
+      if (resolvido) return;
+      resolvido = true;
+      window.setTimeout(resolver, 160);
+    };
+    const timer = window.setTimeout(acabar, 1500);
+    try {
+      google.maps.event.addListenerOnce(instancia, 'idle', () => {
+        window.clearTimeout(timer);
+        acabar();
+      });
+    } catch {
+      window.clearTimeout(timer);
+      acabar();
+    }
+  });
+}
+
+export function AceiteClienteOs(props: { marcado: boolean; onChange: (marcado: boolean) => void }) {
+  return (
+    <label data-testid="aceite-cliente-os" className="mt-3 flex items-start gap-2 text-[11px] font-semibold leading-snug text-white">
+      <input type="checkbox" checked={props.marcado} onChange={(evento) => props.onChange(evento.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-sky-400" />
+      <span>Concordo com as informações acima para utilização em ordem de serviço.</span>
+    </label>
+  );
+}
+
+function MapaCotacao(props: {
+  origem: string | Coordenada;
+  destino: string | Coordenada;
+  origemPlaceId?: string | null;
+  destinoPlaceId?: string | null;
+  origemTexto: string;
+  destinoTexto: string;
+  km: number | null;
+  duracaoSeg: number | null;
+  paradas: Array<{ texto: string; local: string | Coordenada; placeId?: string | null }>;
+  cliente: string;
+  onRota: (km: number | null, segundos: number | null) => void;
+  onTrajeto: (trajeto: TrajetoMapa | null) => void;
+  mapaPronto: boolean;
+  mapaErro: boolean;
+  mostrarCarreta: boolean;
+  carreta: string | null;
+  logo: string | null;
+  podeGerar: boolean;
+  gerando: boolean;
+  salvando: boolean;
+  exigirAceite: boolean;
+  aceite: boolean;
+  onAceite: (marcado: boolean) => void;
+  onGerar: () => void;
+  onSalvar: () => void;
+  onPdf: () => void;
+  rotuloGerar?: string;
+  rotuloSalvar?: string;
+}) {
+  const mapa = useRef<google.maps.Map | null>(null);
+  const [rota, setRota] = useState<google.maps.DirectionsResult | null>(null);
+  const [satelite, setSatelite] = useState(false);
+  const [falha, setFalha] = useState('');
+  const paradas = props.paradas.filter((item) => item.texto.trim() || lugarPreenchido(item.local));
+  const chaveParadas = paradas.map((item) => `${item.placeId || ''}|${item.texto}|${typeof item.local === 'string' ? item.local : `${item.local.lat},${item.local.lng}`}`).join('||');
+  const chaveOrigem = `${props.origemPlaceId || ''}|${typeof props.origem === 'string' ? props.origem : `${props.origem.lat},${props.origem.lng}`}`;
+  const chaveDestino = `${props.destinoPlaceId || ''}|${typeof props.destino === 'string' ? props.destino : `${props.destino.lat},${props.destino.lng}`}`;
+
+  useEffect(() => {
+    mapa.current?.setMapTypeId(satelite ? 'hybrid' : 'roadmap');
+    mapa.current?.setOptions({ styles: satelite ? [] : ESTILO_MAPA_COTACAO });
+  }, [satelite]);
+
+  useEffect(() => {
+    if (!props.mapaPronto) return;
+    if (!lugarPreenchido(props.origem) || !lugarPreenchido(props.destino)) {
+      setRota(null);
+      setFalha('');
+      props.onRota(null, null);
+      props.onTrajeto(null);
+      return;
+    }
+    let ativo = true;
+    const espera = window.setTimeout(() => {
+      void (async () => {
+      const opcoes = restricoesDaRota();
+      const origemPedido = localDaRota({ placeId: props.origemPlaceId, coordenada: props.origem, texto: props.origemTexto });
+      const destinoPedido = localDaRota({ placeId: props.destinoPlaceId, coordenada: props.destino, texto: props.destinoTexto });
+      const viasPedido = paradas.map((item) => localDaRota({ placeId: item.placeId, coordenada: item.local, texto: item.texto }));
+      const pedir = (origin: LocalPedido, destination: LocalPedido, vias: LocalPedido[]) => new google.maps.DirectionsService().route({
+        origin,
+        destination,
+        waypoints: vias.map((location) => ({ location, stopover: true })),
+        travelMode: google.maps.TravelMode.DRIVING,
+        avoidTolls: opcoes.avoidTolls,
+        avoidHighways: opcoes.avoidHighways,
+        avoidFerries: opcoes.avoidFerries,
+        provideRouteAlternatives: opcoes.provideRouteAlternatives,
+        region: opcoes.region,
+      });
+      const aplicar = (resultado: google.maps.DirectionsResult) => {
+        if (!ativo) return;
+        const pernas = resultado.routes[0]?.legs || [];
+        const metros = pernas.reduce((soma, trecho) => soma + (trecho.distance?.value || 0), 0);
+        const segundos = pernas.reduce((soma, trecho) => soma + (trecho.duration?.value || 0), 0);
+        const km = Math.round(metros / 100) / 10;
+        setRota(resultado);
+        setFalha('');
+        props.onRota(km > 0 ? km : null, segundos > 0 ? segundos : null);
+        const rotaDesenhada = resultado.routes[0];
+        let trajeto: TrajetoMapa | null = null;
+        try {
+          const pontos = resumirPontos((rotaDesenhada?.overview_path || []).map((ponto) => pontoDe(ponto)));
+          let linha = polylineCodificada(rotaDesenhada);
+          if (linha.length < 8 && pontos.length >= 2 && google.maps.geometry?.encoding?.encodePath) {
+            linha = google.maps.geometry.encoding.encodePath(pontos.map((ponto) => new google.maps.LatLng(ponto.lat, ponto.lng)));
+          }
+          trajeto = {
+            polyline: linha,
+            inicio: pontoDe(pernas[0]?.start_location),
+            fim: pontoDe(pernas[pernas.length - 1]?.end_location),
+            paradas: pernas.slice(0, -1).map((perna) => pontoDe(perna.end_location)).filter((ponto): ponto is PontoMapa => ponto != null),
+            pontos,
+          };
+        } catch {
+          trajeto = null;
+        }
+        props.onTrajeto(trajeto);
+        const limites = rotaDesenhada?.bounds;
+        if (limites && mapa.current) enquadrarMapa(mapa.current, limites);
+      };
+      try {
+        let resultado: google.maps.DirectionsResult;
+        try {
+          resultado = await pedir(origemPedido, destinoPedido, viasPedido);
+        } catch (erro) {
+          const origemTexto = textoComBrasil(props.origemTexto);
+          const destinoTexto = textoComBrasil(props.destinoTexto);
+          const viasTexto = paradas.map((item) => textoComBrasil(item.texto));
+          const jaEraTexto = origemPedido === origemTexto && destinoPedido === destinoTexto && viasPedido.every((item, indice) => item === viasTexto[indice]);
+          if (!precisaFallbackDeTexto(statusDaFalhaDirections(erro)) || jaEraTexto || !origemTexto || !destinoTexto) throw erro;
+          resultado = await pedir(origemTexto, destinoTexto, viasTexto);
+        }
+        aplicar(resultado);
+      } catch (erro) {
+        if (!ativo) return;
+        setRota(null);
+        setFalha(mensagemFalhaDirections(statusDaFalhaDirections(erro)));
+        props.onRota(null, null);
+        props.onTrajeto(null);
+      }
+      })();
+    }, 400);
+    return () => {
+      ativo = false;
+      window.clearTimeout(espera);
+    };
+  }, [props.mapaPronto, chaveOrigem, chaveDestino, chaveParadas]);
+
+  const pernas = rota?.routes[0]?.legs || [];
+  const caminho = rota?.routes[0]?.overview_path || [];
+  const saida = pernas[0]?.start_location;
+  const chegada = pernas[pernas.length - 1]?.end_location;
+  const paradasNoMapa = pernas.slice(0, -1).map((perna) => perna.end_location).filter(Boolean);
+
+  const carretaVisivel = Boolean(rota && props.mostrarCarreta);
+  const raizMapa = useRef<HTMLDivElement | null>(null);
+  const limites = rota?.routes[0]?.bounds;
+
+  const publicarEnquadramento = (instancia: google.maps.Map, bounds: google.maps.LatLngBounds | null | undefined) => {
+    const raiz = raizMapa.current;
+    if (!raiz) return;
+    (raiz as HTMLElement & { enquadrarParaProposta?: () => Promise<void> }).enquadrarParaProposta = async () => {
+      enquadrarMapa(instancia, bounds);
+      await esperarMapaParado(instancia);
+    };
+  };
+
+  useEffect(() => {
+    const instancia = mapa.current;
+    if (!instancia) return;
+    publicarEnquadramento(instancia, limites);
+  }, [limites]);
+
+  return (
+    <div ref={raizMapa} data-mapa-cotacao="1" className="relative h-[clamp(460px,52vw,640px)] w-full overflow-hidden rounded-[28px] bg-slate-950 shadow-[0_22px_40px_rgba(15,23,42,0.18)]">
+      {props.mapaErro ? (
+        <p className="flex h-full items-center justify-center px-6 text-center text-sm font-bold text-slate-600">O mapa não carregou.</p>
+      ) : !props.mapaPronto ? (
+        <p className="flex h-full items-center justify-center text-sm font-bold text-slate-600">Carregando mapa…</p>
+      ) : (
+        <GoogleMap
+          onLoad={(instancia) => { mapa.current = instancia; instancia.setMapTypeId(satelite ? 'hybrid' : 'roadmap'); if (!satelite) instancia.setOptions({ styles: ESTILO_MAPA_COTACAO }); const bounds = rota?.routes[0]?.bounds; enquadrarMapa(instancia, bounds); publicarEnquadramento(instancia, bounds); }}
+          mapContainerStyle={{ width: '100%', height: '100%' }}
+          center={{ lat: -14.2, lng: -45.5 }}
+          zoom={5}
+          options={{ disableDefaultUI: true, gestureHandling: 'greedy', clickableIcons: false, mapTypeId: satelite ? 'hybrid' : 'roadmap', styles: satelite ? undefined : ESTILO_MAPA_COTACAO }}
+        >
+          {caminho.length > 0 && (
+            <>
+              <Polyline path={caminho} options={{ strokeColor: '#7dd3fc', strokeOpacity: 0.35, strokeWeight: 22 }} />
+              <Polyline path={caminho} options={{ strokeColor: '#38bdf8', strokeOpacity: 0.95, strokeWeight: 7 }} />
+              <Polyline path={caminho} options={{ strokeColor: '#f8fafc', strokeOpacity: 1, strokeWeight: 2 }} />
+            </>
+          )}
+          {saida && <Marker position={saida} label={{ text: 'A', color: '#ffffff', fontSize: '12px', fontWeight: '800' }} title={nomeCurto(pernas[0]?.start_address)} icon={pinDoMapa('#16a34a', 'A')} />}
+          {paradasNoMapa.map((ponto, indice) => (
+            <Marker key={`parada-${indice}`} position={ponto} icon={pinDoMapa('#f59e0b', null)} />
+          ))}
+          {chegada && <Marker position={chegada} label={{ text: 'B', color: '#ffffff', fontSize: '12px', fontWeight: '800' }} title={nomeCurto(pernas[pernas.length - 1]?.end_address)} icon={pinDoMapa('#dc2626', 'B')} />}
+          {carretaVisivel && caminho.length > 1 && (
+            <OverlayView position={caminho[indiceNaRota(caminho.length)]} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+              <div className="pointer-events-none relative w-[210px] -translate-x-1/2 -translate-y-[78%]">
+                <span className="absolute left-1/2 top-[78%] h-16 w-16 -translate-x-1/2 rounded-full bg-sky-400/30 blur-md" />
+                <span className="absolute left-1/2 top-[82%] h-10 w-28 -translate-x-1/2 rounded-full border border-sky-200/50 bg-sky-300/15 shadow-[0_0_28px_rgba(56,189,248,0.55)]" />
+                <p className="relative z-10 mb-1 whitespace-nowrap rounded-full bg-[#0b1f3a]/90 px-3 py-1 text-[10px] font-black text-white shadow-lg ring-1 ring-sky-300/60">{rotuloMarcaTransito(props.cliente)} • Em Trânsito • {textoKmMonitor(props.km)}</p>
+                <div className="relative z-10 origin-center -rotate-6">
+                  <ClientTruckVisual cliente={props.cliente} src={props.carreta} logo={props.logo} className="h-24 w-auto max-w-none object-contain drop-shadow-[0_16px_14px_rgba(0,0,0,0.55)]" />
+                </div>
+              </div>
+            </OverlayView>
+          )}
+        </GoogleMap>
+      )}
+      <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_40%,rgba(8,16,32,0.5)_100%)]" />
+      <aside data-testid="painel-rota" data-fora-pdf="painel" className="absolute left-3 top-3 z-20 w-[min(320px,calc(100%-5.5rem))] rounded-3xl border border-white/20 bg-slate-950/55 p-4 text-white shadow-[0_18px_40px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-black">Informações da Rota</h3>
+          <button type="button" onClick={props.onPdf} disabled={!props.podeGerar || props.gerando} className="inline-flex h-7 items-center gap-1 rounded-full border border-white/25 bg-white/10 px-2 text-[10px] font-bold text-white disabled:opacity-40">
+            <FileText size={12} /> PDF preview
+          </button>
+        </div>
+        <div className="mt-3 grid gap-2 text-sm">
+          <p className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-[10px] font-black">A</span><span><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-300">Origem</span>{rotuloCidadeUf(props.origemTexto)}</span></p>
+          <p className="flex items-center gap-2"><span className="grid h-5 w-5 place-items-center rounded-full bg-red-600 text-[10px] font-black">B</span><span><span className="block text-[10px] font-bold uppercase tracking-wide text-slate-300">Destino</span>{rotuloCidadeUf(props.destinoTexto)}</span></p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-300">Distância</p>
+            <p className="text-lg font-black">{textoKmMonitor(props.km)}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wide text-slate-300">Est. Time</p>
+            <p className="text-sm font-black leading-snug">{textoTempoMonitor(props.duracaoSeg != null && props.duracaoSeg > 0 ? Math.round(props.duracaoSeg / 60) : null)}</p>
+          </div>
+        </div>
+        {props.exigirAceite && (
+          <AceiteClienteOs marcado={props.aceite} onChange={props.onAceite} />
+        )}
+        <button type="button" onClick={props.onGerar} disabled={!props.podeGerar || props.gerando || (props.exigirAceite && !props.aceite)} data-testid="gerar-proposta" className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-sky-500 text-sm font-black text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.35)] disabled:cursor-not-allowed disabled:opacity-40">
+          <FileText size={16} /> {props.rotuloGerar || 'Gerar proposta'}
+        </button>
+        <button type="button" onClick={props.onSalvar} disabled={!props.podeGerar || props.salvando || props.gerando || (props.exigirAceite && !props.aceite)} data-testid="salvar-cotacao" className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-white/30 bg-white/15 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-40">
+          {props.salvando ? 'Salvando cotação…' : (props.rotuloSalvar || 'Salvar cotação')}
+        </button>
+        {!props.podeGerar && <p className="mt-2 text-[11px] font-semibold text-slate-300">{props.km == null ? 'A rota do Google ainda não fechou.' : 'Escolha a região e os endereços.'}</p>}
+        {props.exigirAceite && props.podeGerar && !props.aceite && <p className="mt-2 text-[11px] font-semibold text-slate-300">Marque o aceite para gerar a proposta.</p>}
+      </aside>
+      <div className="absolute right-3 top-3 z-30 flex flex-col gap-2">
+        <button type="button" onClick={() => setSatelite((atual) => !atual)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Trocar o tipo do mapa"><Satellite size={16} /></button>
+        <button type="button" onClick={() => mapa.current?.setZoom((mapa.current.getZoom() || 4) + 1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Aproximar"><Plus size={16} /></button>
+        <button type="button" onClick={() => mapa.current?.setZoom((mapa.current.getZoom() || 4) - 1)} className="grid h-10 w-10 place-items-center rounded-2xl bg-white/90 text-slate-700 shadow-lg backdrop-blur" aria-label="Afastar"><Minus size={16} /></button>
+      </div>
+      <div className="pointer-events-none absolute bottom-3 right-3 z-10 hidden gap-2 sm:flex">
+        <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Escolta intermediada</p>
+        <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Acompanhamento da operação</p>
+        <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Atendimento 24/7</p>
+      </div>
+      {typeof window !== 'undefined' && window.location.hostname === 'localhost' && (
+        <p className="pointer-events-none absolute bottom-2 left-3 z-10 text-[10px] font-semibold text-white/80">Ambiente de Testes / localhost</p>
+      )}
+      {falha && <p className="absolute bottom-14 left-3 z-20 max-w-sm rounded-2xl bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow">{falha}</p>}
+    </div>
+  );
+}
+
+type ContextoGravacao = {
+  origem: string;
+  destino: string;
+  paradas: string[];
+  km: number;
+  duracaoMin: number | null;
+  aceite: boolean;
+  percurso: { polyline: string; pontos: PontoMapa[] } | null;
+};
+
+type RascunhoCotacao = ContextoGravacao & {
+  nova: PropostaPortal;
+  usouMinimo: boolean;
+  vigencia: VersaoTabelaRegional;
+  id: string | null;
+};
+
+export const CotacaoPortal: React.FC<{
+  clienteNome?: string;
+  clientId?: string | number | null;
+  versao?: VersaoTabelaRegional;
+}> = ({ clienteNome, clientId, versao }) => {
+  const portal = usePortalCliente();
+  const versaoAtiva = versao === '2026' ? '2026' : '2027';
+  const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
+  const [tabelas, setTabelas] = useState<TabelaCotacao[]>([]);
+  const [erro, setErro] = useState('');
+  const [carregando, setCarregando] = useState(true);
+  const [regiao, setRegiao] = useState('');
+  const [origem, setOrigem] = useState('');
+  const [destino, setDestino] = useState('');
+  const [coordOrigem, setCoordOrigem] = useState<Coordenada | null>(null);
+  const [coordDestino, setCoordDestino] = useState<Coordenada | null>(null);
+  const [placeOrigem, setPlaceOrigem] = useState<string | null>(null);
+  const [placeDestino, setPlaceDestino] = useState<string | null>(null);
+  const [paradas, setParadas] = useState<{ id: number; texto: string; coordenada: Coordenada | null; placeId: string | null }[]>([]);
+  const [trechosExtras, setTrechosExtras] = useState<{ id: number; origem: string; destino: string; km: string; kmExtra: string; horaExtra: string }[]>([]);
+  const [kmRota, setKmRota] = useState<number | null>(null);
+  const [duracaoSeg, setDuracaoSeg] = useState<number | null>(null);
+  const [proposta, setProposta] = useState<PropostaPortal | null>(null);
+  const [passo, setPasso] = useState(0);
+  const [etapa, setEtapa] = useState<'parada' | 'animando' | 'proposta'>('parada');
+  const [trajeto, setTrajeto] = useState<TrajetoMapa | null>(null);
+  const [cena, setCena] = useState<CenaVisual | null>(null);
+  const [printMapa, setPrintMapa] = useState<string | null>(null);
+  const [editando, setEditando] = useState<Record<string, boolean>>({});
+  const [carretaPronta, setCarretaPronta] = useState<string | null>(null);
+  const [logoPronto, setLogoPronto] = useState<string | null>(null);
+  const [fichaCliente, setFichaCliente] = useState<{ nome: string; fantasia: string; cnpj: string; site: string; logo: string | null } | null>(null);
+  const [operacoes, setOperacoes] = useState<string | null>(null);
+  const [recargaHistorico, setRecargaHistorico] = useState(0);
+  const [avisoHistorico, setAvisoHistorico] = useState('');
+  const [previewPdf, setPreviewPdf] = useState<PropostaPortal | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [idCotacaoAberta, setIdCotacaoAberta] = useState<string | null>(null);
+  const [aceiteCliente, setAceiteCliente] = useState(false);
+  const [salvandoCotacao, setSalvandoCotacao] = useState(false);
+  const [avisoSalva, setAvisoSalva] = useState('');
+  const [rascunhoAberto, setRascunhoAberto] = useState<RascunhoCotacao | null>(null);
+  const [heroPremium, setHeroPremium] = useState<string | null>(null);
+  const [pecasPremium, setPecasPremium] = useState<Partial<ImagensPremium> | null>(null);
+  const [mapaLimpo, setMapaLimpo] = useState<string | null>(null);
+  const [operacoesRealizadas, setOperacoesRealizadas] = useState<string | null>(null);
+  const [parceirosAtivos, setParceirosAtivos] = useState<string | null>(null);
+  const [dadosProposta, setDadosProposta] = useState<DadosProposta | null>(null);
+  const [esperandoCena, setEsperandoCena] = useState(false);
+  const printGuardado = useRef<{ chave: string; foto: string | null } | null>(null);
+  const digitando = Object.values(editando).some(Boolean);
+  const marcarEdicao = (id: string, ativo: boolean) => {
+    setEditando((atual) => (Boolean(atual[id]) === ativo ? atual : { ...atual, [id]: ativo }));
+  };
+
+  useEffect(() => {
+    let ativo = true;
+    if (clienteNome) {
+      import('../../lib/supabase').then(({ supabase }) => supabase
+        .from('client_price_tables')
+        .select('id, operation_type, activation_fee, franchise_hours, franchise_km, price_per_extra_km, price_per_extra_hour')
+        .or(consultaDoCliente(clienteNome)))
+        .then(({ data, error }) => {
+          if (!ativo) return;
+          if (error) throw error;
+          const lista = ((data || []) as Parameters<typeof tabelaDeLinha>[0][])
+            .map((linha) => tabelaDeLinha(linha))
+            .filter((linha): linha is TabelaCotacao => linha != null);
+          setTabelas(lista);
+        })
+        .then(() => {
+          if (!ativo) return;
+          void authFetch('/api/proposta-escolta/operacoes')
+            .then(async (resposta) => {
+              const corpo = await resposta.json().catch(() => ({}));
+              if (ativo && resposta.ok) setOperacoes(typeof corpo.operacoes === 'string' ? corpo.operacoes : null);
+            })
+            .catch(() => undefined);
+        })
+        .catch((falha: unknown) => {
+          if (ativo) setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar a tabela.');
+        })
+        .finally(() => {
+          if (ativo) setCarregando(false);
+        });
+      return () => { ativo = false; };
+    }
+    fetch(portal.url('/cotacao'), { headers: portal.cabecalhos() })
+      .then(async (resposta) => {
+        const corpo = await resposta.json().catch(() => ({}));
+        if (!resposta.ok) throw new Error(corpo.error || 'Não foi possível carregar a tabela.');
+        if (ativo) setOperacoes(typeof corpo.operacoes === 'string' ? corpo.operacoes : null);
+        return (corpo.tabelas || []) as TabelaCotacao[];
+      })
+      .then((lista) => {
+        if (!ativo) return;
+        setTabelas(lista);
+      })
+      .catch((falha: unknown) => {
+        if (ativo) setErro(falha instanceof Error ? falha.message : 'Não foi possível carregar a tabela.');
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+    return () => { ativo = false; };
+  }, [portal, clienteNome]);
+
+  const clienteDaRegiao = clienteNome || portal.marca.rotulo;
+  useEffect(() => {
+    if (!clienteNome) {
+      setFichaCliente(null);
+      return;
+    }
+    let ativo = true;
+    void (async () => {
+      const { supabase } = await import('../../lib/supabase');
+      const idCliente = Number(clientId);
+      let consulta = supabase.from('clients').select('name, trading_name, cnpj, portal_site, portal_logo_url');
+      consulta = Number.isFinite(idCliente) && idCliente > 0 ? consulta.eq('id', idCliente) : consulta.ilike('name', clienteNome);
+      const { data } = await consulta.limit(1).maybeSingle();
+      if (!ativo || !data) return;
+      const linha = data as { name?: string | null; trading_name?: string | null; cnpj?: string | null; portal_site?: string | null; portal_logo_url?: string | null };
+      setFichaCliente({
+        nome: String(linha.name || clienteNome),
+        fantasia: String(linha.trading_name || ''),
+        cnpj: String(linha.cnpj || ''),
+        site: String(linha.portal_site || ''),
+        logo: logoSeguro(linha.portal_logo_url),
+      });
+    })();
+    return () => { ativo = false; };
+  }, [clienteNome, clientId]);
+  useEffect(() => {
+    setRegiao((atual) => regiaoAcompanhaOrigem(origem, clienteDaRegiao, atual));
+  }, [origem, clienteDaRegiao]);
+  useEffect(() => {
+    setRegiao((atual) => {
+      if (atual && regiaoTemLinha(tabelas, atual, versaoAtiva)) return atual;
+      return primeiraRegiaoComTarifa(tabelas, versaoAtiva) || atual;
+    });
+  }, [tabelas, versaoAtiva]);
+  const linhasTarifa = useMemo(
+    () => tabelas.map((item) => ({
+      operation_type: item.operacao,
+      price_per_extra_km: item.kmExtra,
+      price_per_extra_hour: item.horaExtra,
+    })),
+    [tabelas],
+  );
+  const regioes = useMemo(
+    () => REGIOES_COTACAO.filter((item) => regiaoTemLinha(tabelas, item, versaoAtiva)),
+    [tabelas, versaoAtiva],
+  );
+  const resolvida = useMemo(
+    () => tarifaDoBotao(tabelas, regiao, versaoAtiva),
+    [tabelas, regiao, versaoAtiva],
+  );
+  const tabela = resolvida?.tabela ?? null;
+  const contaAtual = useMemo(() => contaVisivelDaCotacao({
+    cliente: clienteDaRegiao,
+    origem,
+    km: kmRota ?? -1,
+    versao: versaoAtiva,
+    linhas: linhasTarifa,
+    tarifaKmFallback: tabela?.kmExtra,
+    horaExtraFallback: tabela?.horaExtra,
+    vigenciaFallback: resolvida?.vigencia,
+  }), [clienteDaRegiao, origem, kmRota, versaoAtiva, linhasTarifa, tabela, resolvida?.vigencia]);
+  const frases = proposta?.acordada ? FRASES_ACORDADA : FRASES_NOVA;
+  const resumoTrechos = useMemo(() => {
+    const lista: TrechoPersistido[] = [];
+    let erro = '';
+    if (clienteContratualDhlOuIbl(clienteDaRegiao)) return { trechos: lista, soma: somarTrechos(lista), erro };
+    if (contaAtual.aplicar && origem.trim() && destino.trim() && kmRota != null && kmRota > 0) {
+      const principal = calcularTrechoProposta({
+        origem,
+        destino,
+        km: kmRota,
+        cliente: clienteDaRegiao,
+        versao: versaoAtiva,
+        linhas: linhasTarifa,
+        tarifaKmFallback: tabela?.kmExtra,
+        horaExtraFallback: tabela?.horaExtra,
+        vigenciaFallback: resolvida?.vigencia,
+      });
+      if (principal.ok) lista.push(principal.trecho);
+      else erro = principal.error;
+    }
+    for (const extra of trechosExtras) {
+      if (!extra.origem.trim() && !extra.destino.trim() && !extra.km.trim() && !extra.kmExtra.trim() && !extra.horaExtra.trim()) continue;
+      const calculado = calcularTrechoProposta({
+        origem: extra.origem,
+        destino: extra.destino,
+        km: Number(String(extra.km).replace(',', '.')),
+        cliente: clienteDaRegiao,
+        versao: versaoAtiva,
+        linhas: linhasTarifa,
+        vigenciaFallback: versaoAtiva,
+        kmExtraInformado: extra.kmExtra.trim() ? Number(String(extra.kmExtra).replace(',', '.')) : null,
+        horaExtraInformado: extra.horaExtra.trim() ? Number(String(extra.horaExtra).replace(',', '.')) : null,
+      });
+      if (!calculado.ok) {
+        erro = erro || calculado.error;
+        continue;
+      }
+      lista.push(calculado.trecho);
+    }
+    return { trechos: lista, soma: somarTrechos(lista), erro };
+  }, [contaAtual, origem, destino, kmRota, clienteDaRegiao, versaoAtiva, linhasTarifa, tabela, resolvida?.vigencia, trechosExtras]);
+  const extraPreenchido = trechosExtras.some((extra) => extra.origem.trim() || extra.destino.trim() || extra.km.trim());
+  const podeGerar = Boolean(
+    origem.trim() && destino.trim() && kmRota != null && kmRota > 0
+    && (tabela || getRegionFromLocation(origem, '', clienteDaRegiao).region)
+    && (!extraPreenchido || (resumoTrechos.trechos.length > 1 && !resumoTrechos.erro)),
+  );
+  const exigirAceite = exigeAceiteDoCliente(Boolean(clienteNome), portal.ler()?.user.equipeInterna === true);
+
+  useEffect(() => {
+    setAceiteCliente(false);
+  }, [origem, destino, kmRota, paradas]);
+
+  useEffect(() => {
+    if (etapa !== 'animando') return;
+    if (passo >= frases.length && !esperandoCena) {
+      setEtapa('proposta');
+      return;
+    }
+    const espera = window.setTimeout(() => setPasso((atual) => atual + 1), 1600);
+    return () => window.clearTimeout(espera);
+  }, [etapa, passo, frases.length, esperandoCena]);
+
+  const montarAtual = (): { nova: PropostaPortal; usouMinimo: boolean; vigencia: VersaoTabelaRegional } | null => {
+    if (kmRota == null) return null;
+    const conta = contaAtual.aplicar && Math.abs(contaAtual.kmRodado - kmRota) < 0.001
+      ? contaAtual
+      : contaVisivelDaCotacao({
+        cliente: clienteNome || portal.marca.rotulo,
+        origem,
+        km: kmRota,
+        versao: versaoAtiva,
+        linhas: linhasTarifa,
+        tarifaKmFallback: tabela?.kmExtra,
+        horaExtraFallback: tabela?.horaExtra,
+        vigenciaFallback: resolvida?.vigencia,
+      });
+    const tabelaRegiao = tabela ?? (conta.aplicar ? {
+      acionamento: conta.total,
+      franquiaHoras: conta.franquiaHoras,
+      franquiaKm: conta.franquiaKm,
+      kmExtra: conta.tarifaKm,
+      horaExtra: conta.horaExtra,
+    } : null);
+    if (!tabelaRegiao) return null;
+    const nova = propostaDaConta({
+      tabelas,
+      regiao,
+      origem,
+      destino,
+      paradas: paradas.map((item) => item.texto),
+      kmRota,
+      conta,
+      tabelaRegiao,
+      duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
+    });
+    if (nova.acordada) {
+      nova.vigencia = versaoAtiva;
+      nova.kmRota = kmRota;
+      nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
+      return { nova, usouMinimo: kmRota <= 100, vigencia: versaoAtiva };
+    }
+    const vigente = conta.aplicar ? conta.vigencia : versaoAtiva;
+    nova.vigencia = nova.vigencia || vigente;
+    nova.kmRota = kmRota;
+    nova.duracaoMin = duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null;
+    const usouMinimo = conta.aplicar ? conta.usouMinimo : kmRota <= 100;
+    if (resumoTrechos.trechos.length > 1 && !resumoTrechos.erro) {
+      const ultimo = resumoTrechos.trechos[resumoTrechos.trechos.length - 1];
+      nova.trechos = resumoTrechos.trechos;
+      nova.acionamento = resumoTrechos.soma.total;
+      nova.kmRota = resumoTrechos.soma.km;
+      nova.kmFaturado = resumoTrechos.soma.kmFaturado;
+      nova.horasContadas = resumoTrechos.soma.horas;
+      nova.destino = ultimo.destino;
+      nova.operacao = `${nova.regiao} — ${resumoTrechos.trechos.length} trechos`;
+    }
+    return { nova, usouMinimo, vigencia: vigente };
+  };
+
+  const colarPrintDoMapa = async (): Promise<string | null> => {
+    const chave = `${origem}|${destino}|${kmRota ?? ''}|${trajeto?.polyline || ''}`;
+    if (printGuardado.current?.chave === chave && printGuardado.current.foto) return printGuardado.current.foto;
+    const raiz = document.querySelector('[data-mapa-cotacao="1"]');
+    if (!(raiz instanceof HTMLElement) || !trajeto) return null;
+    const fundo = cena?.mapa?.startsWith('data:image/') ? cena.mapa : await pedirMapaBase64(trajeto, (corpo) => (
+      clienteNome
+        ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
+        : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo })
+    ));
+    const enquadrar = (raiz as HTMLElement & { enquadrarParaProposta?: () => Promise<void> }).enquadrarParaProposta;
+    if (enquadrar) await enquadrar();
+    const { printDoMapaVisivel } = await import('./abrirPdfCotacao');
+    const foto = await printDoMapaVisivel(raiz, fundo.startsWith('data:image/') ? fundo : null);
+    printGuardado.current = { chave, foto };
+    return foto;
+  };
+
+  const contextoAtual = (): ContextoGravacao | null => {
+    if (kmRota == null || kmRota <= 0) return null;
+    return {
+      origem,
+      destino,
+      paradas: paradas.map((item) => item.texto).filter(Boolean),
+      km: kmRota,
+      duracaoMin: duracaoSeg != null && duracaoSeg > 0 ? Math.round(duracaoSeg / 60) : null,
+      aceite: aceiteCliente,
+      percurso: trajeto && (trajeto.polyline || trajeto.pontos.length >= 2)
+        ? { polyline: trajeto.polyline, pontos: trajeto.pontos.slice(0, 80) }
+        : null,
+    };
+  };
+
+  const gerar = () => {
+    if (exigirAceite && !aceiteCliente) return;
+    const feito = montarAtual();
+    const contexto = contextoAtual();
+    if (!feito || !contexto) return;
+    const rascunho: RascunhoCotacao = { ...feito, ...contexto, id: null };
+    const cliente = (clienteNome || portal.marca.rotulo).slice(0, 120);
+    setHeroPremium(null);
+    setPecasPremium(pecasPublicadas(cliente));
+    setDadosProposta(dadosDaProposta(feito.nova));
+    setMapaLimpo(null);
+    setPrintMapa(null);
+    setRascunhoAberto(rascunho);
+    setProposta(feito.nova);
+    setIdCotacaoAberta(null);
+    setPasso(frases.length);
+    setEsperandoCena(false);
+    setEtapa('proposta');
+    setAvisoSalva('');
+    setTrechosExtras([]);
+    setOrigem('');
+    setDestino('');
+    setCoordOrigem(null);
+    setCoordDestino(null);
+    setPlaceOrigem(null);
+    setPlaceDestino(null);
+    void (async () => {
+      try {
+        const pedido = JSON.stringify({ proposta: feito.nova });
+        const resposta = clienteNome
+          ? await authFetch('/api/proposta-escolta/dados', { method: 'POST', body: pedido })
+          : await fetch('/api/proposta-escolta/dados', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: pedido });
+        const corpo = await resposta.json().catch(() => ({}));
+        if (resposta.ok) setDadosProposta(dadosConfiaveis(corpo.dados, feito.nova));
+      } catch { /* a tela permanece com o JSON do motor */ }
+      if (trajeto) {
+        const enviar = (pedido: string) => (clienteNome
+          ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: pedido })
+          : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: pedido }));
+        const foto = await pedirMapaBase64(trajeto, enviar, 'vermelho').catch(() => '');
+        if (foto.startsWith('data:image/')) setMapaLimpo(foto);
+      }
+      const numeros = await (clienteNome
+        ? authFetch('/api/proposta-escolta/indicadores')
+        : fetch('/api/proposta-escolta/indicadores', { headers: portal.cabecalhos() })
+      ).then(async (resposta) => {
+        const dados = await resposta.json().catch(() => ({}));
+        if (!resposta.ok || !dados || typeof dados !== 'object') return null;
+        const registro = dados as { operacoes?: unknown; parceiros?: unknown };
+        return {
+          operacoes: typeof registro.operacoes === 'string' ? registro.operacoes : null,
+          parceiros: typeof registro.parceiros === 'string' ? registro.parceiros : null,
+        };
+      }).catch(() => null);
+      setOperacoesRealizadas(numeros?.operacoes || null);
+      setParceirosAtivos(numeros?.parceiros || null);
+    })();
+  };
+
+  const salvarCotacaoAtual = () => {
+    if (salvandoCotacao || (exigirAceite && !aceiteCliente)) return;
+    const feito = montarAtual();
+    const contexto = contextoAtual();
+    if (!feito || !contexto) {
+      setAvisoSalva('');
+      setAvisoHistorico('Escolha origem, destino e espere a rota para salvar.');
+      return;
+    }
+    setSalvandoCotacao(true);
+    void (async () => {
+      const gravado = await gravarNoHistorico(feito.nova, feito.usouMinimo, feito.vigencia, contexto);
+      setSalvandoCotacao(false);
+      if (gravado) setAvisoSalva('Cotação salva.');
+    })();
+  };
+
+  const salvarRascunhoAberto = async (): Promise<string | null> => {
+    if (!rascunhoAberto || salvandoCotacao) return null;
+    if (rascunhoAberto.id) return rascunhoAberto.id;
+    setSalvandoCotacao(true);
+    const gravado = await gravarNoHistorico(rascunhoAberto.nova, rascunhoAberto.usouMinimo, rascunhoAberto.vigencia, rascunhoAberto);
+    setSalvandoCotacao(false);
+    if (!gravado?.id) return null;
+    const numero = gravado.numero ?? rascunhoAberto.nova.numero;
+    const nova = { ...rascunhoAberto.nova, numero };
+    setRascunhoAberto({ ...rascunhoAberto, id: gravado.id, nova });
+    setProposta(nova);
+    setIdCotacaoAberta(gravado.id);
+    return gravado.id;
+  };
+
+  const fecharProposta = () => {
+    setEtapa('parada');
+    setProposta(null);
+    setPasso(0);
+    setIdCotacaoAberta(null);
+    setRascunhoAberto(null);
+    setEsperandoCena(false);
+    setHeroPremium(null);
+    setPecasPremium(null);
+    setDadosProposta(null);
+    setMapaLimpo(null);
+  };
+
+  const preverPdf = () => {
+    if (isGenerating) return;
+    const feito = montarAtual();
+    if (!feito) return;
+    setIsGenerating(true);
+    void (async () => {
+      try {
+        const print = await colarPrintDoMapa();
+        setPrintMapa(print);
+        setPreviewPdf(feito.nova);
+      } catch {
+        setIsGenerating(false);
+        setAvisoHistorico('Não foi possível abrir o PDF.');
+      }
+    })();
+  };
+
+  const editarCotacao = (edicao: { origem: string; destino: string; paradas: string[]; regiao?: string }) => {
+    setOrigem(edicao.origem);
+    setDestino(edicao.destino);
+    setCoordOrigem(null);
+    setCoordDestino(null);
+    setPlaceOrigem(null);
+    setPlaceDestino(null);
+    setParadas(edicao.paradas.map((texto, indice) => ({ id: Date.now() + indice, texto, coordenada: null, placeId: null })));
+    if (edicao.regiao) setRegiao(edicao.regiao);
+    setEtapa('parada');
+    setProposta(null);
+    setIdCotacaoAberta(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const gravarNoHistorico = async (nova: PropostaPortal, usouMinimo: boolean, vigencia: VersaoTabelaRegional, contexto: ContextoGravacao): Promise<{ numero: number | null; id: string | null } | null> => {
+    setAvisoHistorico('');
+    const pedido = {
+      origem: contexto.origem,
+      destino: contexto.destino,
+      paradas: contexto.paradas,
+      km: contexto.km,
+      duracaoMin: contexto.duracaoMin,
+      percurso: contexto.percurso,
+      valor: nova.acionamento,
+      horas: nova.horasContadas ?? nova.horasFranquia,
+      regiao: nova.regiao,
+      kmFranquia: nova.kmFaturado ?? nova.kmFranquia,
+      kmFaturado: nova.kmFaturado ?? nova.kmFranquia,
+      horasContadas: nova.horasContadas ?? nova.horasFranquia,
+      kmExtra: nova.kmExtra,
+      horaExtra: nova.horaExtra,
+      acionamento: nova.acionamento,
+      acordada: nova.acordada,
+      operacao: nova.operacao,
+      usouMinimo,
+      vigencia,
+      ...(nova.trechos && nova.trechos.length > 1 ? {
+        trechos: nova.trechos,
+        valor: nova.acionamento,
+        km: nova.kmRota,
+        horas: nova.horasContadas,
+        destino: nova.destino,
+        acionamento: nova.acionamento,
+      } : {}),
+      ...(exigirAceite && contexto.aceite ? { aceiteCliente: { texto: TEXTO_ACEITE_OS, em: new Date().toISOString() } } : {}),
+    };
+    try {
+      if (clienteNome) {
+        const { supabase } = await import('../../lib/supabase');
+        let idCliente = Number(clientId);
+        if (!Number.isFinite(idCliente) || idCliente <= 0) {
+          const { data } = await supabase.from('clients').select('id').ilike('name', clienteNome).limit(1).maybeSingle();
+          idCliente = Number(data?.id);
+        }
+        let usuario: { name?: string; email?: string } = {};
+        try { usuario = JSON.parse(localStorage.getItem('userData') || '{}') as { name?: string; email?: string }; } catch { usuario = {}; }
+        const numero = await reservarNumeroCotacao(async (inicio, fim) => {
+          const { data, error } = await supabase.from('quotes').select('id, contract_details').order('created_at', { ascending: true }).range(inicio, fim);
+          if (error) return null;
+          return { linhas: Array.isArray(data) ? data : [] };
+        });
+        const registro = pedidoParaRegistro({ ...pedido, numero }, { id: idCliente, name: clienteNome }, { name: usuario.name || '', email: usuario.email || '' });
+        if (!registro.ok) throw new Error(registro.error);
+        const { data, error } = await supabase.from('quotes').insert(registro.linha).select('id').single();
+        if (error) throw new Error('A cotação não foi salva.');
+        setRecargaHistorico((atual) => atual + 1);
+        return { numero, id: data?.id ? String(data.id) : null };
+      }
+      const resposta = await fetch(portal.url('/cotacao'), {
+        method: 'POST',
+        headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acao: 'registrar', ...pedido }),
+      });
+      const corpo = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) throw new Error(corpo.error || 'A cotação não foi salva.');
+      setRecargaHistorico((atual) => atual + 1);
+      return {
+        numero: typeof corpo.numero === 'number' ? corpo.numero : null,
+        id: typeof corpo.id === 'string' && corpo.id ? corpo.id : null,
+      };
+    } catch (falha) {
+      setAvisoHistorico(falha instanceof Error ? falha.message : 'A cotação não foi salva.');
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    if (!previewPdf) return;
+    let ativo = true;
+    const gerarPdf = async () => {
+      await new Promise((resolver) => window.setTimeout(resolver, 80));
+      const artigo = document.querySelector('[data-proposta-pdf="preview"]');
+      if (!(artigo instanceof HTMLElement) || !ativo) return;
+      await Promise.all(Array.from(artigo.querySelectorAll('img')).map((imagem) => (
+        imagem.complete ? null : new Promise<void>((resolver) => {
+          imagem.onload = () => resolver();
+          imagem.onerror = () => resolver();
+        })
+      )));
+      try {
+        const { abrirPdfDaProposta } = await import('./abrirPdfCotacao');
+        await abrirPdfDaProposta(artigo, nomePdfCotacao({
+          cliente: clienteNome || portal.marca.rotulo,
+          origem: previewPdf.origem,
+          destino: previewPdf.destino,
+          numero: previewPdf.numero,
+        }), null);
+      } catch (falha) {
+        if (ativo) setAvisoHistorico(falha instanceof Error ? falha.message : 'Não foi possível abrir o PDF.');
+      } finally {
+        if (ativo) {
+          setPreviewPdf(null);
+          setIsGenerating(false);
+        }
+      }
+    };
+    void gerarPdf();
+    return () => { ativo = false; };
+  }, [previewPdf, clienteNome, portal.marca.rotulo]);
+
+  const clienteVisual = clienteNome || portal.marca.rotulo;
+  const trechoCurto = origem.trim() && destino.trim() ? `${nomeCurto(origem)} → ${nomeCurto(destino)}` : 'Aguardando a rota';
+
+  useEffect(() => {
+    if (!trajeto?.polyline && (trajeto?.pontos.length || 0) < 2) {
+      setCena(null);
+      setPrintMapa(null);
+      setCarretaPronta(null);
+      setLogoPronto(null);
+      return;
+    }
+    let ativo = true;
+    const noPortal = !clienteNome;
+    const logoPortal = noPortal && (portal.marca.logo.startsWith('/') || portal.marca.logo.startsWith('https://')) ? portal.marca.logo : null;
+    const carreta = carretaDoCliente(clienteVisual);
+    const trabalhar = async () => {
+      if (!trajeto) return;
+      let logoCliente: string | null = null;
+      if (clienteNome) {
+        const { supabase } = await import('../../lib/supabase');
+        const idCliente = Number(clientId);
+        let consulta = supabase.from('clients').select('portal_logo_url');
+        consulta = Number.isFinite(idCliente) && idCliente > 0 ? consulta.eq('id', idCliente) : consulta.ilike('name', clienteNome);
+        const { data } = await consulta.limit(1).maybeSingle();
+        logoCliente = logoSeguro((data as { portal_logo_url?: string | null } | null)?.portal_logo_url);
+      }
+      const marca = logoCliente || logoConhecido(clienteVisual) || logoPortal;
+      if (!ativo) return;
+      const mapa = await pedirMapaBase64(trajeto, (corpo) => (
+        clienteNome
+          ? authFetch('/api/proposta-escolta/mapa', { method: 'POST', body: corpo })
+          : fetch('/api/proposta-escolta/mapa', { method: 'POST', headers: { ...portal.cabecalhos(), 'Content-Type': 'application/json' }, body: corpo })
+      ));
+      if (!ativo) return;
+      setCarretaPronta(null);
+      setLogoPronto(marca);
+      setCena(mapa ? { mapa, carreta, logo: marca, sobreporLogo: Boolean(marca) } : null);
+    };
+    void trabalhar();
+    return () => { ativo = false; };
+  }, [trajeto, clienteVisual, clienteNome, clientId, portal]);
+
+  return (
+    <section className="grid items-start gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+      {fichaCliente && (
+        <div className="xl:col-span-2 flex items-center gap-4 rounded-[28px] border border-white/80 bg-white p-4" data-testid="ficha-cliente-cotacao">
+          {fichaCliente.logo ? <img src={fichaCliente.logo} alt="" className="h-12 w-auto max-w-[120px] object-contain" /> : <span className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-[10px] font-black text-slate-400">LOGO</span>}
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black uppercase text-slate-900">{fichaCliente.nome}</p>
+            <p className="text-[11px] font-semibold text-slate-500">{fichaCliente.fantasia || 'Cliente da carteira'}{fichaCliente.cnpj ? ` · ${fichaCliente.cnpj}` : ''}</p>
+            <p className="truncate text-[11px] text-slate-400">{fichaCliente.site || 'Site não informado'}</p>
+          </div>
+        </div>
+      )}
+      <style>{`.pac-container { z-index: 20000 !important; }`}</style>
+      <div className="grid gap-4">
+        <div className="rounded-[28px] border border-white/80 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Cotação</p>
+          <h2 className="mt-1 text-lg font-black text-slate-900">Escolha a região</h2>
+          <p className="mt-1 text-xs text-slate-500">Selecione a região de operação</p>
+          {carregando && <p className="mt-4 inline-flex items-center gap-2 text-sm text-slate-500"><Loader2 className="animate-spin" size={16} /> Lendo os valores da região…</p>}
+          {erro && <p className="mt-4 rounded-2xl bg-red-50 px-3 py-2 text-sm text-red-800">{erro}</p>}
+          {!carregando && !erro && regioes.length === 0 && (
+            <p className="mt-4 text-sm text-slate-600">Este cliente ainda não tem valor por km nas regiões.</p>
+          )}
+          {regioes.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {regioes.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setRegiao(item)}
+                  aria-pressed={regiao === item}
+                  data-testid={`botao-regiao-${item}`}
+                  className={`h-10 rounded-2xl px-3 text-[11px] font-black shadow-[0_8px_16px_rgba(15,23,42,0.08)] motion-safe:transition motion-safe:hover:-translate-y-0.5 motion-reduce:transform-none ${regiao === item ? 'bg-[#152c54] text-white shadow-[0_10px_18px_rgba(21,44,84,0.35)]' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="rounded-[28px] border border-white/80 bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
+          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">Rota</p>
+          <h2 className="mt-1 text-lg font-black text-slate-900">Origem e destino</h2>
+          {isLoaded ? (
+            <div className="relative mt-4 grid gap-3">
+              <span className="absolute bottom-16 left-[17px] top-6 w-px bg-slate-200" />
+              <CampoLugar id="origem" valor={origem} placeholder="Origem" cor="bg-emerald-500" onValor={(texto, coordenada, placeId) => { setOrigem(texto); setCoordOrigem(coordenada); setPlaceOrigem(placeId); }} onEditando={marcarEdicao} />
+              <button type="button" onClick={() => { setOrigem(destino); setDestino(origem); setCoordOrigem(coordDestino); setCoordDestino(coordOrigem); setPlaceOrigem(placeDestino); setPlaceDestino(placeOrigem); }} className="z-10 grid h-9 w-9 place-items-center justify-self-center rounded-full border border-slate-200 bg-white text-slate-500 shadow" aria-label="Inverter origem e destino"><ArrowLeftRight size={14} /></button>
+              {paradas.map((parada) => (
+                <div key={parada.id} className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <CampoLugar id={`parada-${parada.id}`} valor={parada.texto} placeholder="Parada" cor="bg-amber-400" onValor={(texto, coordenada, placeId) => setParadas((lista) => lista.map((item) => item.id === parada.id ? { ...item, texto, coordenada, placeId } : item))} onEditando={marcarEdicao} />
+                  </div>
+                  <button type="button" onClick={() => setParadas((lista) => lista.filter((item) => item.id !== parada.id))} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-500" aria-label="Remover parada"><Trash2 size={16} /></button>
+                </div>
+              ))}
+              <CampoLugar id="destino" valor={destino} placeholder="Destino" cor="bg-red-500" onValor={(texto, coordenada) => { setDestino(texto); setCoordDestino(coordenada); }} onEditando={marcarEdicao} />
+              <button type="button" onClick={() => setParadas((lista) => [...lista, { id: Date.now(), texto: '', coordenada: null, placeId: null }])} className="inline-flex h-10 items-center gap-2 text-sm font-bold text-[#152c54]">
+                <Plus size={16} /> Adicionar parada
+              </button>
+            </div>
+          ) : (
+            <p className="mt-4 text-sm font-bold text-slate-500">{loadError ? 'O Google não carregou.' : 'Carregando o Google…'}</p>
+          )}
+        </div>
+      </div>
+      <div className="grid gap-3">
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <article className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
+            <p className="flex items-center gap-2 text-[11px] font-bold text-slate-400"><Route size={14} /> Distância</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">{kmRota == null ? '—' : `${kmRota.toLocaleString('pt-BR')} km`}</p>
+          </article>
+          <article className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
+            <p className="flex items-center gap-2 text-[11px] font-bold text-slate-400"><Clock3 size={14} /> Tempo de viagem</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">{tempoDaRota(duracaoSeg)}</p>
+          </article>
+          <article className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
+            <p className="flex items-center gap-2 text-[11px] font-bold text-slate-400"><MapPinned size={14} /> Pedágio</p>
+            <p className="mt-2 text-2xl font-black text-slate-900">À parte</p>
+            <p className="text-[11px] text-slate-400">Sem estimativa nesta rota</p>
+          </article>
+          <article className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] backdrop-blur">
+            <p className="text-[11px] font-bold text-slate-400">Região</p>
+            <p className="mt-2 text-2xl font-black text-slate-900" data-testid="card-regiao-cotacao">{textoCardRegiao(origem, clienteDaRegiao, regiao) || '—'}</p>
+            <p className="truncate text-[11px] text-slate-400">{trechoCurto}</p>
+          </article>
+        </div>
+        <QuoteCalculatorCard
+          cliente={clienteVisual}
+          versao={versaoAtiva}
+          linhas={linhasTarifa}
+          origem={origem}
+          destino={destino}
+          km={kmRota == null ? '' : String(kmRota)}
+          onOrigem={(texto) => { if (texto === origem) return; setOrigem(texto); setCoordOrigem(null); setPlaceOrigem(null); }}
+          onDestino={(texto) => { if (texto === destino) return; setDestino(texto); setCoordDestino(null); setPlaceDestino(null); }}
+          onKm={() => undefined}
+          tarifaKm={tabela?.kmExtra}
+          horaExtra={tabela?.horaExtra}
+          conta={contaAtual}
+          ocultarCampos
+        />
+        <div className="rounded-2xl border border-gray-200 bg-white p-4" data-testid="trechos-proposta">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Trechos</p>
+              <h3 className="text-sm font-black text-gray-900">Origem e destino na mesma proposta</h3>
+            </div>
+            <button
+              type="button"
+              className="inline-flex h-9 items-center gap-2 rounded-xl bg-slate-100 px-3 text-xs font-black text-[#152c54]"
+              onClick={() => setTrechosExtras((lista) => lista.length >= 7 ? lista : [...lista, { id: Date.now(), origem: '', destino: '', km: '', kmExtra: '', horaExtra: '' }])}
+            >
+              <Plus size={14} /> Adicionar trecho
+            </button>
+          </div>
+          {trechosExtras.map((extra, indice) => (
+            <div key={extra.id} className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_90px_90px_90px_auto]">
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold uppercase" placeholder="Origem" value={extra.origem} data-testid={`trecho-origem-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, origem: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold uppercase" placeholder="Destino" value={extra.destino} data-testid={`trecho-destino-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, destino: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold" placeholder="KM" inputMode="decimal" value={extra.km} data-testid={`trecho-km-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, km: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold" placeholder="KM extra" inputMode="decimal" value={extra.kmExtra} data-testid={`trecho-km-extra-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, kmExtra: evento.target.value } : item))} />
+              <input className="rounded-lg border border-gray-200 p-2 text-xs font-bold" placeholder="Hora extra" inputMode="decimal" value={extra.horaExtra} data-testid={`trecho-hora-extra-${indice + 2}`} onChange={(evento) => setTrechosExtras((lista) => lista.map((item) => item.id === extra.id ? { ...item, horaExtra: evento.target.value } : item))} />
+              <button type="button" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-500" aria-label="Remover trecho" onClick={() => setTrechosExtras((lista) => lista.filter((item) => item.id !== extra.id))}><Trash2 size={14} /></button>
+            </div>
+          ))}
+          {resumoTrechos.erro && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900" data-testid="trechos-erro">{resumoTrechos.erro}</p>}
+          {resumoTrechos.trechos.length > 0 && (
+            <table className="mt-3 w-full text-left text-[11px]">
+              <thead className="text-[10px] uppercase text-gray-400">
+                <tr><th className="py-1">Trecho</th><th>KM excedente</th><th>Horas excedentes</th><th className="text-right">Valor</th></tr>
+              </thead>
+              <tbody>
+                {resumoTrechos.trechos.map((trecho, indice) => (
+                  <tr key={`${trecho.origem}-${indice}`} className="border-t border-gray-100">
+                    <td className="py-1 pr-2 font-bold text-gray-800">{indice + 1}. {trecho.origem} → {trecho.destino}</td>
+                    <td>{trecho.kmExcedente.toLocaleString('pt-BR')} km</td>
+                    <td>{trecho.horasExcedentes.toLocaleString('pt-BR')} h</td>
+                    <td className="text-right font-black">{trecho.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-200 font-black text-gray-900" data-testid="trechos-total">
+                  <td className="py-2">Total</td>
+                  <td>{resumoTrechos.soma.kmExcedente.toLocaleString('pt-BR')} km</td>
+                  <td>{resumoTrechos.soma.horasExcedentes.toLocaleString('pt-BR')} h</td>
+                  <td className="text-right">{resumoTrechos.soma.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+        {avisoSalva && <p className="rounded-2xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900" data-testid="aviso-cotacao-salva">{avisoSalva}</p>}
+        <MapaCotacao origem={destinoDirections(coordOrigem, origem)} destino={destinoDirections(coordDestino, destino)} origemPlaceId={placeOrigem} destinoPlaceId={placeDestino} origemTexto={origem} destinoTexto={destino} km={kmRota} duracaoSeg={duracaoSeg} paradas={paradas.filter((item) => item.texto.trim()).map((item) => ({ texto: item.texto, local: destinoDirections(item.coordenada, item.texto), placeId: item.placeId }))} cliente={clienteVisual} onRota={(km, segundos) => { setKmRota(km); setDuracaoSeg(segundos); }} onTrajeto={setTrajeto} mapaPronto={isLoaded} mapaErro={Boolean(loadError)} mostrarCarreta={!digitando} carreta={carretaPronta} logo={logoPronto || logoConhecido(clienteVisual)} podeGerar={podeGerar} gerando={etapa !== 'parada'} salvando={salvandoCotacao} exigirAceite={exigirAceite} aceite={aceiteCliente} onAceite={setAceiteCliente} onGerar={gerar} onSalvar={salvarCotacaoAtual} onPdf={preverPdf} rotuloSalvar={clienteNome ? 'Salvar rascunho' : undefined} rotuloGerar={clienteNome ? 'Emitir proposta' : undefined} />
+        <HistoricoCotacoes clienteNome={clienteNome} clientId={clientId} recarga={recargaHistorico} aviso={avisoHistorico} onEditar={editarCotacao} />
+        {isGenerating && (
+          <div className="fixed inset-0 z-[70] grid place-items-center bg-slate-950/45" data-testid="overlay-pdf-cotacao" role="status">
+            <div className="flex items-center gap-3 rounded-2xl bg-white px-5 py-4 shadow-2xl">
+              <Loader2 className="animate-spin text-slate-900" size={22} />
+              <p className="text-sm font-semibold text-slate-900">Gerando PDF da proposta, aguarde...</p>
+            </div>
+          </div>
+        )}
+      </div>
+      {previewPdf && (
+        <ExperienciaProposta
+          modoCaptura
+          frase=""
+          mostrando
+          proposta={previewPdf}
+          pedido={{ regiao, origem, destino, paradas: paradas.map((item) => item.texto).filter(Boolean), km: kmRota || 0 }}
+          clienteInterno={clienteNome}
+          cena={cena}
+          printMapa={printMapa}
+          operacoes={operacoes}
+          marcaPdf="preview"
+          onFechar={() => setPreviewPdf(null)}
+        />
+      )}
+      {etapa !== 'parada' && proposta && (
+        <ExperienciaProposta
+          frase={frases[(esperandoCena ? passo : Math.min(passo, frases.length - 1)) % frases.length] || ''}
+          mostrando={etapa === 'proposta'}
+          proposta={proposta}
+          dados={dadosProposta}
+          pedido={{ regiao: rascunhoAberto?.nova.regiao || proposta.regiao, origem: rascunhoAberto?.origem || proposta.origem, destino: rascunhoAberto?.destino || proposta.destino, paradas: rascunhoAberto?.paradas || proposta.paradas, km: rascunhoAberto?.km || proposta.kmRota || 0 }}
+          clienteInterno={clienteNome}
+          cena={cena}
+          printMapa={printMapa}
+          mapaLimpo={mapaLimpo}
+          hero={heroPremium}
+          pecas={pecasPremium}
+          operacoes={operacoes}
+          operacoesRealizadas={operacoesRealizadas}
+          parceiros={parceirosAtivos}
+          idCotacao={idCotacaoAberta}
+          onSalvarCotacao={salvarRascunhoAberto}
+          onFechar={fecharProposta}
+        />
+      )}
+    </section>
+  );
+};

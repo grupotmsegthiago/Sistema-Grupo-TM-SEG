@@ -8,6 +8,10 @@ import {
 } from '../api/rh-employee-documents';
 import { authorizeRhApiRequest } from '../lib/rh/rhApiAccess';
 import { getSupabaseUrl } from '../lib/supabaseAdmin';
+import { emitirSessao } from '../lib/sessao/token';
+
+process.env.SESSION_SECRET = 'segredo-de-teste-rh-docs';
+const tokenRh = emitirSessao(process.env.SESSION_SECRET, 'user-rh-1').token;
 
 const root = process.cwd();
 const EMPLOYEE_ID = '11111111-1111-4111-8111-111111111111';
@@ -64,7 +68,7 @@ describe('F4-RH-API-FOUNDATION — auth RH real', () => {
 
   it('falha fechado sem service_role', async () => {
     const result = await authorizeRhApiRequest({
-      headers: { authorization: 'Bearer tmseg-token-user-rh-1-123456' },
+      headers: { authorization: `Bearer ${tokenRh}` },
     }, {
       hasServiceRole: () => false,
       resolvePrincipal: async () => principal,
@@ -78,7 +82,7 @@ describe('F4-RH-API-FOUNDATION — auth RH real', () => {
 
   it('preserva roles atuais: RH/Diretoria sim, demais não', async () => {
     const req = {
-      headers: { authorization: 'Bearer tmseg-token-user-rh-1-123456' },
+      headers: { authorization: `Bearer ${tokenRh}` },
     };
     for (const role of ['rh', 'diretoria']) {
       const result = await authorizeRhApiRequest(req, {

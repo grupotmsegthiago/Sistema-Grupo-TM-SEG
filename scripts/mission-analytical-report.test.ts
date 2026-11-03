@@ -162,14 +162,16 @@ describe('relatório analítico da OS — HTML TM SEG', () => {
 });
 
 describe('relatório analítico da OS — Auditoria de Faturamento', () => {
-  it('expõe botão na auditoria e mantém import React', () => {
+  it('não mostra relatório analítico nem plano de ação na auditoria e mantém import React', () => {
     const modal = fs.readFileSync('components/MissionFinancialModal.tsx', 'utf8');
     const page = fs.readFileSync('components/MissionAnalyticalReportModal.tsx', 'utf8');
     assert.match(modal, /from 'react'/);
     assert.match(modal, /import React,/);
-    assert.match(modal, /button-analytical-report-audit/);
-    assert.match(modal, /button-analytical-report-banner/);
-    assert.match(modal, /button-analytical-report-footer/);
+    assert.doesNotMatch(modal, /button-analytical-report-audit/);
+    assert.doesNotMatch(modal, /button-analytical-report-banner/);
+    assert.doesNotMatch(modal, /button-analytical-report-footer/);
+    assert.doesNotMatch(modal, /Gerar Relatório Analítico da Viagem/);
+    assert.doesNotMatch(modal, /Gerar Plano de Ação \(PDF\)/);
     assert.match(modal, /MissionAnalyticalReportModal/);
     assert.match(page, /from 'react'/);
     assert.match(page, /modal-analytical-os-report/);

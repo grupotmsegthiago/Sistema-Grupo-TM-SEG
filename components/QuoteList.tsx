@@ -5,11 +5,16 @@ import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { Quote } from '../types';
 import { Plus, Search, DollarSign, MapPin, RefreshCw, Loader2, Trash2, Pencil, Lock, CheckCircle2 } from 'lucide-react';
 import { useNotification } from '../lib/NotificationContext';
+import { CotacaoPortal } from './ceva/CotacaoPortal';
 import CotacaoRapidaRegional from './CotacaoRapidaRegional';
 import {
   montarPayloadTabelaCliente,
   resultadoFromQuoteItems,
 } from '../lib/comercial/tabelaPrecosRegionais';
+import { checkAndExpireQuotations } from '../lib/precificacao/expirarCotacoes';
+import { cotacaoSelecionavel, cotacaoVencida, patchExpiracaoCotacao } from '../lib/precificacao/tabela2027';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
+import { perfilEhComercialRole } from '../lib/clientDuplicateGuard';
 
 interface Props {
   onAdd: () => void;
@@ -32,9 +37,13 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [isDirector, setIsDirector] = useState(false);
-  const [isCommercial, setIsCommercial] = useState(false);
+  const [isCommercial, setIsCommercial] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('userData') || '{}');
+      return (user.role || '').toLowerCase() === 'comercial' && !user.permissions?.includes('*');
+    } catch { return false; }
+  });
   const [canViewValues, setCanViewValues] = useState(false);
-  
   const [dbStatus, setDbStatus] = useState<'ok' | 'error' | null>(null);
   const [clientMap, setClientMap] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -73,20 +82,35 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
             clients:client_id(id, name, created_by)
         `).order('created_at', { ascending: false });
         
+        const comercial = perfilEhComercialRole(user?.role) && !user?.permissions?.includes('*');
+        let idsCarteira: number[] = [];
+        if (comercial) {
+            const carteira = await carregarNomesClientesDoComercial(supabase, user?.id);
+            idsCarteira = carteira.ids;
+            if (!idsCarteira.length) {
+                setQuotes([]);
+                setClientMap({});
+                setDbStatus('ok');
+                return;
+            }
+            quoteQuery = quoteQuery.in('client_id', idsCarteira);
+        }
         if (clientName) {
             quoteQuery = quoteQuery.eq('client_name', clientName);
-        } else if ((user?.role || '').toLowerCase() === 'comercial' && !user?.permissions?.includes('*')) {
-            const allowedIds = user?.permissions?.filter((p: string) => p.startsWith('client_view:')).map((p: string) => p.split(':')[1]) || [];
-            if (allowedIds.length > 0) {
-                quoteQuery = quoteQuery.or(`created_by.eq."${user?.name}",client_id.in.(${allowedIds.join(',')})`);
-            } else {
-                quoteQuery = quoteQuery.eq('created_by', user?.name);
-            }
         }
 
+        try {
+            await checkAndExpireQuotations(supabase as never);
+        } catch (erroExpiracao) {
+            console.warn('[Cotações] expiração:', erroExpiracao);
+        }
+
+        const nomesClientes = comercial
+            ? supabase.from('clients').select('name, trading_name').in('id', idsCarteira)
+            : supabase.from('clients').select('name, trading_name');
         const [quotesRes, clientsRes] = await Promise.all([
             quoteQuery,
-            supabase.from('clients').select('name, trading_name')
+            nomesClientes,
         ]);
 
         if (quotesRes.error) throw quotesRes.error;
@@ -96,7 +120,13 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
         }
         setClientMap(map);
         setDbStatus('ok');
-        if(quotesRes.data) setQuotes(quotesRes.data as any);
+        if (quotesRes.data) {
+            const agora = new Date();
+            setQuotes((quotesRes.data as Quote[]).map((cotacao) => {
+                const patch = patchExpiracaoCotacao(cotacao, agora);
+                return patch ? { ...cotacao, ...patch } : cotacao;
+            }));
+        }
     } catch(e) { 
         console.error(e);
         setDbStatus('error');
@@ -127,6 +157,10 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
   };
 
   const handleFecharProposta = async (quote: Quote) => {
+    if (!cotacaoSelecionavel(quote)) {
+      showNotification('Cotação indisponível', 'Cotação expirada ou já convertida em OS não entra em nova proposta.', 'warning');
+      return;
+    }
     const resultado = resultadoFromQuoteItems(quote);
     const cliente = String(quote.client_name || clientName || '').trim();
     if (!resultado || !cliente) {
@@ -176,13 +210,20 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
             </div>
           </div>
       )}
-      <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />
+      {embedded && clientName?.trim() && (
+        <div className="rounded-xl border border-gray-200 bg-slate-50 p-4">
+          <CotacaoPortal clienteNome={clientName.trim()} clientId={clientId} />
+        </div>
+      )}
+      {!isCommercial && <CotacaoRapidaRegional clientName={clientName} clientId={clientId} onSaved={fetchQuotes} />}
       <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${embedded ? 'border-t' : ''}`}>
         <div className="p-5 border-b border-gray-100 bg-gray-50/50">
-           <div className="relative max-w-md w-full">
-            <input type="text" placeholder="Buscar origem ou destino..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-            <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
-          </div>
+           <div className="flex flex-wrap items-center gap-3">
+            <div className="relative max-w-md w-full">
+              <input type="text" placeholder="Buscar origem ou destino..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500 outline-none" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <Search size={18} className="absolute left-3.5 top-3 text-gray-400" />
+            </div>
+           </div>
         </div>
         <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse min-w-[800px]">
@@ -196,25 +237,29 @@ const QuoteList: React.FC<Props> = ({ onAdd, onEdit, clientName, clientId, embed
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
                 {isLoading ? (<tr><td colSpan={5} className="text-center p-4">Carregando...</td></tr>) : 
-                 filtered.length === 0 ? (<tr><td colSpan={5} className="text-center p-4 text-gray-500">Nenhuma cotação encontrada na sua carteira.</td></tr>) :
-                 filtered.map((item) => (
+                 filtered.length === 0 ? (<tr><td colSpan={5} className="text-center p-4 text-gray-500" data-testid="cotacoes-vigencia-vazia">{quotes.length > 0 ? 'Nenhuma cotação encontrada nessa busca.' : 'Nenhuma cotação encontrada na sua carteira.'}</td></tr>) :
+                 filtered.map((item) => {
+                    const selecionavel = cotacaoSelecionavel(item);
+                    const expirada = !selecionavel && (cotacaoVencida(item) || String(item.status || '').toLowerCase() === 'expirada' || item.is_active === false);
+                    return (
                     <tr key={item.id} className="hover:bg-gray-50 transition-colors">
-                      {!embedded && (<td className="pl-10 px-6 py-4"><span className="font-bold text-sm text-gray-900 uppercase">{clientMap[item.client_name] || item.client_name || 'Prospect'}</span>{item.quote_source === 'RAPIDA_REGIONAL' && <span className="ml-2 text-[9px] font-black uppercase text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Rápida</span>}</td>)}
-                      <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs text-gray-600"><div className="flex items-center gap-1.5"><MapPin size={12} className="text-blue-500"/> {item.origin}</div><div className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {item.destination}</div></div></td>
+                      {!embedded && (<td className="pl-10 px-6 py-4"><span className="font-bold text-sm text-gray-900 uppercase">{clientMap[item.client_name] || item.client_name || 'Prospect'}</span>{item.quote_source === 'RAPIDA_REGIONAL' && <span className="ml-2 text-[9px] font-black uppercase text-red-700 bg-red-50 px-1.5 py-0.5 rounded">Rápida</span>}{expirada && <span className="ml-2 text-[9px] font-black uppercase text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">Expirada</span>}{item.converted_to_order_id && <span className="ml-2 text-[9px] font-black uppercase text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">OS {item.converted_to_order_id}</span>}</td>)}
+                      <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs text-gray-600"><div className="flex items-center gap-1.5"><MapPin size={12} className="text-blue-500"/> {item.origin}</div><div className="flex items-center gap-1.5"><MapPin size={12} className="text-red-500"/> {item.destination}</div>{embedded && expirada && <span className="w-fit text-[9px] font-black uppercase text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded">Expirada</span>}</div></td>
                       <td className="pl-10 px-6 py-4"><div className="flex flex-col gap-1 text-xs font-bold"><div className="flex items-center gap-1.5 text-gray-700">KM: {item.total_km}</div>{canViewValues ? (<div className="flex items-center gap-1.5 text-green-700 bg-green-50 px-2 py-0.5 rounded w-fit"><DollarSign size={12}/> {formatCurrency(item.total_value)}</div>) : (<div className="flex items-center gap-1 text-gray-400 font-normal italic"><Lock size={10} /> Restrito</div>)}</div></td>
                       <td className="pl-10 px-6 py-4 text-right">
                         <div className="flex justify-end gap-2">
-                           {item.quote_source === 'RAPIDA_REGIONAL' && !item.closed_price_table_id && (
+                           {item.quote_source === 'RAPIDA_REGIONAL' && !item.closed_price_table_id && selecionavel && (
                              <button type="button" onClick={() => void handleFecharProposta(item)} disabled={closingId === item.id} className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-black uppercase text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg disabled:opacity-50" data-testid={`btn-fechar-proposta-${item.id}`}>
                                {closingId === item.id ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Fechar proposta
                              </button>
                            )}
-                           <button onClick={() => onEdit(item.id)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all"><Pencil size={18} /></button>
+                           <button onClick={() => selecionavel && onEdit(item.id)} disabled={!selecionavel} title={selecionavel ? 'Editar' : 'Cotação expirada ou convertida'} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed"><Pencil size={18} /></button>
                            {(isDirector || isCommercial) && (<button onClick={() => handleDelete(item.id)} disabled={isDeleting === item.id} className="p-2 text-red-400 hover:text-red-700 hover:bg-red-50 rounded-lg transition-all">{isDeleting === item.id ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}</button>)}
                         </div>
                       </td>
                     </tr>
-                 ))}
+                    );
+                 })}
               </tbody>
             </table>
         </div>

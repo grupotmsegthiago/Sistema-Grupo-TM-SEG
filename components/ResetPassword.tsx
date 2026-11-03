@@ -50,8 +50,8 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
     e.preventDefault();
     setError('');
 
-    if (newPassword.length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres.');
+    if (newPassword.length < 8) {
+      setError('A senha deve ter no mínimo 8 caracteres.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -151,9 +151,9 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
                 className="w-full pl-10 pr-12 py-3 bg-gray-50 border border-gray-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Mínimo 8 caracteres"
                 required
-                minLength={6}
+                minLength={8}
                 data-testid="input-new-password"
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -173,7 +173,7 @@ const ResetPassword: React.FC<ResetPasswordProps> = ({ token, onComplete }) => {
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-300 rounded-xl text-sm font-bold focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                 placeholder="Repita a senha"
                 required
-                minLength={6}
+                minLength={8}
                 data-testid="input-confirm-password"
               />
             </div>

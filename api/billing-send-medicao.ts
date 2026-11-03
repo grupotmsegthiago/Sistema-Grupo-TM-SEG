@@ -5,6 +5,8 @@
 import { authToken, parseJsonBody } from '../lib/email/missionEmailHelpers.js';
 import { sendMedicaoEmailLite } from '../lib/billing/sendMedicaoEmailServer.js';
 import { parseEmailRecipients } from '../lib/email/recipientList.js';
+import { apagarAnexosMedicao, baixarAnexoMedicao } from '../lib/billing/baixarAnexosMedicao.js';
+import { nomeAnexoMedicaoSeguro } from '../lib/billing/medicaoAnexoStorage.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader?.('Cache-Control', 'no-store');
@@ -43,21 +45,32 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const result = await sendMedicaoEmailLite({
-      clientName,
-      clientEmail,
-      periodLabel: periodLabel || dueDate,
-      amount,
-      dueDate,
-      dueDays,
-      osCount,
-      senderName,
-      attachments: attachments.map((a: any) => ({
-        filename: String(a.filename || 'anexo.bin'),
-        contentBase64: String(a.contentBase64 || ''),
-        contentType: String(a.contentType || 'application/octet-stream'),
-      })),
-    });
+    const caminhos = attachments.map((a: any) => String(a?.storagePath || '').trim());
+    let result: Awaited<ReturnType<typeof sendMedicaoEmailLite>>;
+    try {
+      const baixados = await Promise.all(attachments.map(async (a: any) => {
+        const storagePath = String(a?.storagePath || '').trim();
+        const content = await baixarAnexoMedicao(storagePath);
+        return {
+          filename: nomeAnexoMedicaoSeguro(String(a?.filename || ''), 'Boletim.bin'),
+          content,
+          contentType: String(a?.contentType || 'application/octet-stream'),
+        };
+      }));
+      result = await sendMedicaoEmailLite({
+        clientName,
+        clientEmail,
+        periodLabel: periodLabel || dueDate,
+        amount,
+        dueDate,
+        dueDays,
+        osCount,
+        senderName,
+        attachments: baixados,
+      });
+    } finally {
+      await apagarAnexosMedicao(caminhos).catch(() => undefined);
+    }
 
     if (!result.success) {
       res.status(502).json({
@@ -80,3 +93,5 @@ export default async function handler(req: any, res: any) {
     res.status(500).json({ ok: false, error: e?.message || 'Erro ao enviar medição' });
   }
 }
+
+export const config = { maxDuration: 60 };

@@ -1,4 +1,4 @@
-import { formatDateBR, TMSEG_TIMEZONE } from '../lib/dateUtils';
+import { formatDateBR } from '../lib/dateUtils';
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
@@ -16,6 +16,7 @@ import { ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
 import html2canvas from 'html2canvas';
+import { prepararImagensDoElemento } from '../lib/precificacao/imageUtils';
 import { jsPDF } from 'jspdf';
 import { useNotification } from '../lib/NotificationContext';
 
@@ -193,6 +194,7 @@ const CommercialProposalModal: React.FC<Props> = ({
 
         for (let i = 0; i < pages.length; i++) {
             const page = pages[i] as HTMLElement;
+            await prepararImagensDoElemento(page);
             
             // CONFIGURAÇÃO DE ALTA RESOLUÇÃO (4x Scale para 300 DPI+)
             const canvas = await html2canvas(page, { 
@@ -266,7 +268,7 @@ const CommercialProposalModal: React.FC<Props> = ({
       showNotification('Assinatura Digital', 'Documento enviado para o ZapSign.', 'info');
   };
 
-  const today = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: TMSEG_TIMEZONE });
+  const today = formatDateBR(new Date());
   const fullAddressStr = street ? `${street}, nº ${number}${complement ? ' ('+complement+')' : ''}, ${neighborhood}, ${city}/${state}, CEP: ${zip_code}` : address || 'Endereço não informado';
 
   // DADOS DA CONTRATADA (FIXOS)

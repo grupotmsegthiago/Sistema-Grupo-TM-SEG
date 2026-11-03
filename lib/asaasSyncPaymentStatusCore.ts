@@ -9,13 +9,28 @@ import {
   getPaymentPixQrCode,
   mapAsaasStatus,
 } from './asaasChargeApi.js';
+import { shouldKeepManualPaidStatus } from './invoiceManualPayment.js';
 import { createSupabaseAdminClient } from './supabaseAdmin.js';
+import {
+  normalizeAsaasReceipt,
+  syncAsaasReceiptToReceivables,
+  upsertAsaasReceiptNote,
+  type AsaasReceiptDetails,
+} from './asaasReceiptDetails.js';
 
 export type SyncPaymentStatusResult = {
   status: string;
   statusBr: string;
   isPaid: boolean;
   value: number;
+  paymentDate: string | null;
+  paidAmount: number | null;
+  interestAndFineAmount: number;
+  discountAmount: number;
+  netAmount: number | null;
+  feeAmount: number;
+  creditDate: string | null;
+  availability: 'AVAILABLE' | 'SCHEDULED' | 'UNKNOWN' | null;
   nfPdfUrl: string | null;
   nfStatus: string | null;
   nfNumber: string | null;
@@ -62,6 +77,7 @@ export async function runAsaasSyncPaymentStatus(params: {
   const payment = await getPayment(paymentId, company);
   const statusBr = mapAsaasStatus(payment.status);
   const isPaid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(payment.status);
+  const receipt: AsaasReceiptDetails | null = isPaid ? normalizeAsaasReceipt(payment) : null;
 
   let nfPdfUrl: string | null = null;
   let nfStatus: string | null = null;
@@ -69,6 +85,8 @@ export async function runAsaasSyncPaymentStatus(params: {
   let nfLastError: string | null = null;
   let asaasInvoiceId: string | null = null;
   let skipNfSync = false;
+  let manualPaymentAt: string | null = null;
+  let invoiceNotes: string | null = null;
 
   const sb = createSupabaseAdminClient();
 
@@ -76,9 +94,11 @@ export async function runAsaasSyncPaymentStatus(params: {
     try {
       const { data } = await sb
         .from('financial_invoices')
-        .select('nf_provider, nf_image_url, nf_status, nf_number, plugnotas_invoice_id, asaas_payment_id')
+        .select('nf_provider, nf_image_url, nf_status, nf_number, plugnotas_invoice_id, asaas_payment_id, manual_payment_at, notes')
         .eq('id', invoiceId)
         .maybeSingle();
+      manualPaymentAt = (data as any)?.manual_payment_at || null;
+      invoiceNotes = (data as any)?.notes || null;
       const rawProv = String((data as any)?.nf_provider || '').toUpperCase();
       const isPlug =
         rawProv === 'PLUGNOTAS' || (!rawProv && !!(data as any)?.plugnotas_invoice_id);
@@ -129,6 +149,7 @@ export async function runAsaasSyncPaymentStatus(params: {
       status: newStatus,
       asaas_status: payment.status,
     };
+    if (receipt) updateData.notes = upsertAsaasReceiptNote(invoiceNotes, receipt);
     if (nfPdfUrl) updateData.nf_image_url = nfPdfUrl;
     if (nfStatus) updateData.nf_status = nfStatus;
     if (nfNumber) updateData.nf_number = nfNumber;
@@ -142,21 +163,26 @@ export async function runAsaasSyncPaymentStatus(params: {
     } else if (nfStatus === 'AUTHORIZED' || nfPdfUrl) {
       updateData.nf_last_error = null;
     }
+    if (shouldKeepManualPaidStatus(manualPaymentAt, isPaid)) {
+      delete updateData.status;
+    }
 
     await sb.from('financial_invoices').update(updateData).eq('id', invoiceId);
 
     if (isPaid) {
       const { data: inv } = await sb
         .from('financial_invoices')
-        .select('number, client')
+        .select('id, number, client, notes')
         .eq('id', invoiceId)
         .maybeSingle();
       if (inv?.number) {
-        await sb
-          .from('financial_transactions')
-          .update({ status: 'PAID', paid_date: new Date().toISOString().split('T')[0] })
-          .ilike('description', `%${inv.number}%`)
-          .eq('status', 'PENDING');
+        await syncAsaasReceiptToReceivables(sb, inv, payment);
+      }
+      try {
+        const { syncPaidInvoicesToReceivables } = await import('./invoiceReceivableSync.js');
+        await syncPaidInvoicesToReceivables(sb);
+      } catch {
+        /* a fatura já foi marcada */
       }
     }
   }
@@ -169,6 +195,14 @@ export async function runAsaasSyncPaymentStatus(params: {
     statusBr,
     isPaid,
     value: Number(payment.value || 0),
+    paymentDate: receipt?.paymentDate || null,
+    paidAmount: receipt?.paidAmount || null,
+    interestAndFineAmount: receipt?.interestAndFineAmount || 0,
+    discountAmount: receipt?.discountAmount || 0,
+    netAmount: receipt?.netAmount ?? null,
+    feeAmount: receipt?.feeAmount || 0,
+    creditDate: receipt?.creditDate || null,
+    availability: receipt?.availability || null,
     nfPdfUrl,
     nfStatus,
     nfNumber,

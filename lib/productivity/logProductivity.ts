@@ -5,6 +5,7 @@ export type ProductivityAction =
   | 'IDLE_CHALLENGE_PASSED'
   | 'IDLE_CHALLENGE_FAILED'
   | 'IDLE_CHALLENGE_TIMEOUT'
+  | 'SESSION_IDLE_LOGOUT'
   | 'PRODUCTIVITY_STATS';
 
 function readUser(): { name: string; id: string } {

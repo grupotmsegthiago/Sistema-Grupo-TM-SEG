@@ -9,6 +9,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { name: 'Página Inicial', icon: 'LayoutDashboard', id: 'dashboard' },
+  { name: 'Treinamento', icon: 'GraduationCap', id: 'treinamento' },
   {
     name: 'Diretoria',
     icon: 'Crown',
@@ -16,6 +17,7 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { name: 'Cockpit Executivo', id: 'diretoria-cockpit' },
       { name: 'Faturamento', id: 'diretoria-faturamento' },
+      { name: 'Gestor Fiscal', id: 'gestor-fiscal' },
       { name: 'Comissões Comerciais', id: 'comissoes-comerciais' },
       { name: 'Gestão Investimento', id: 'gestao-investimento' },
       { name: 'Pendências de OS', id: 'os-analysis-pending' },
@@ -28,6 +30,7 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'monitoring-group',
     children: [
       { name: 'Painel de OS', id: 'missions' },
+      { name: 'Controle Diário', id: 'controle-diario' },
       { name: 'Passagem de Plantão', id: 'shift-handover' },
       { name: 'Relatório de OS', id: 'mission-report' },
       { name: 'Ranking DHL', id: 'ranking-dhl' },
@@ -42,15 +45,13 @@ export const NAV_ITEMS: NavItem[] = [
     children: [
       { name: 'Dashboard Financeiro', id: 'fin-dashboard' },
       { name: 'Boletim de Medição', id: 'fin-billing' },
+      { name: 'Pré-fatura', id: 'fin-pre-fatura' },
       { name: 'Movimento Diário', id: 'fin-daily-movement' },
       { name: 'Controle de Faturas / NF', id: 'fin-invoices' },
       { name: 'Contas a Pagar / Receber', id: 'fin-transactions' },
-      { name: 'Relatório Geral (Diretoria)', id: 'fin-report' },
-      { name: 'DRE Gerencial', id: 'fin-dre' },
       { name: 'Gerenciar Contas (Bancos)', id: 'fin-accounts' },
       { name: 'Categorias Financeiras', id: 'fin-categories' },
       { name: 'Controle OS Fornecedor', id: 'fin-vendor-verification' },
-      { name: 'Tabelas DHL Fora do Padrão', id: 'fin-dhl-noncompliant' },
     ]
   },
   { 

@@ -1,4 +1,4 @@
-import { ensureFinancialPaymentTables } from '../lib/financial/ensurePaymentTables.js';
+import { ensureFinancialPaymentTables, ensurePaymentAnticipationTables } from '../lib/financial/ensurePaymentTables.js';
 import {
   denyFinancialPaymentsApiUnlessAuthorized,
   financialPaymentsApiDeniedStatus,
@@ -31,7 +31,8 @@ export async function handleFinancialPaymentsInitRequest(
   try {
     const ensure = deps.ensure || ensureFinancialPaymentTables;
     const result = await ensure();
-    res.status(200).json(result);
+    const anticipation = await ensurePaymentAnticipationTables().catch(() => ({ ok: false, exists: false }));
+    res.status(200).json({ ...result, anticipation });
   } catch (e: any) {
     res.status(200).json({ ok: false, exists: false, error: e?.message || 'init_fail' });
   }

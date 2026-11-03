@@ -1,0 +1,338 @@
+/** Regras puras da rota da cotação. Não chama o Google. */
+
+import { extrairUf } from '../precificacao/tabela2027';
+
+export type Coordenada = { lat: number; lng: number };
+
+type ComponenteEndereco = { long_name?: string; short_name?: string; types?: string[] };
+
+/**
+ * A região da cotação lê a UF no texto. O Google às vezes devolve "Salvador, Bahia, Brazil",
+ * e esse texto não tem a sigla. A cidade com a UF continua no campo.
+ */
+export function enderecoComUf(lugar: {
+  formatted_address?: string | null;
+  name?: string | null;
+  address_components?: ComponenteEndereco[] | null;
+} | null | undefined, digitado?: string | null): string {
+  const escrito = String(digitado || '').trim();
+  if (escrito && extrairUf(escrito, '')) return escrito;
+  const formatado = String(lugar?.formatted_address || lugar?.name || '').trim();
+  if (formatado && extrairUf(formatado, '')) return formatado;
+  const componentes = lugar?.address_components || [];
+  const uf = String(componentes.find((item) => (item.types || []).includes('administrative_area_level_1'))?.short_name || '').trim();
+  const cidade = String(
+    componentes.find((item) => (item.types || []).includes('locality'))?.long_name
+    || componentes.find((item) => (item.types || []).includes('administrative_area_level_2'))?.long_name
+    || '',
+  ).trim();
+  if (cidade && extrairUf('', uf)) return `${cidade}, ${uf.toUpperCase()}`;
+  return formatado || escrito;
+}
+
+const CHAVE_MAPA_ESTAVEL = 'AIzaSyBIs-lrtAP6hoA1z_VA4Gbx1ujA-AlJe2k';
+
+export function lerCoordenada(lugar: unknown): Coordenada | null {
+  if (lugar == null) return null;
+  const candidato = lugar as { lat?: unknown; lng?: unknown };
+  const latBruto = candidato.lat;
+  const lngBruto = candidato.lng;
+  const lat = typeof latBruto === 'function' ? Number(latBruto.call(lugar)) : Number(latBruto);
+  const lng = typeof lngBruto === 'function' ? Number(lngBruto.call(lugar)) : Number(lngBruto);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+export function lugarComGeometria(lugar: {
+  formatted_address?: string | null;
+  name?: string | null;
+  place_id?: string | null;
+  address_components?: ComponenteEndereco[] | null;
+  geometry?: { location?: unknown } | null;
+} | null | undefined, digitado?: string | null): { endereco: string; coordenada: Coordenada; placeId: string | null } | null {
+  if (!lugar) return null;
+  const endereco = enderecoComUf(lugar, digitado);
+  const coordenada = lerCoordenada(lugar.geometry?.location);
+  if (!endereco || !coordenada) return null;
+  const placeId = String(lugar.place_id || '').trim() || null;
+  return { endereco, coordenada, placeId };
+}
+
+/** Coordenada fechada vai para o Directions. Sem ela, segue o texto da cidade. */
+export function destinoDirections(coordenada: Coordenada | null | undefined, texto: string): Coordenada | string {
+  if (coordenada && Number.isFinite(coordenada.lat) && Number.isFinite(coordenada.lng)) {
+    return { lat: coordenada.lat, lng: coordenada.lng };
+  }
+  return String(texto || '').trim();
+}
+
+/** "Salvador, BA" sozinho o Directions não acha. Com o país, a malha rodoviária fecha. */
+export function textoComBrasil(texto: string | null | undefined): string {
+  const limpo = String(texto || '').trim().replace(/,\s*brasil\s*$/i, '').trim();
+  if (!limpo) return '';
+  return `${limpo}, Brasil`;
+}
+
+export type LocalPedido = { placeId: string } | Coordenada | string;
+
+/** placeId primeiro. Coordenada depois. Cidade e UF sempre com o país. */
+export function localDaRota(entrada: {
+  placeId?: string | null;
+  coordenada?: Coordenada | string | null;
+  texto?: string | null;
+}): LocalPedido {
+  const placeId = String(entrada.placeId || '').trim();
+  if (placeId) return { placeId };
+  if (entrada.coordenada && typeof entrada.coordenada !== 'string') {
+    const coord = lerCoordenada(entrada.coordenada);
+    if (coord) return coord;
+  }
+  const escrito = typeof entrada.coordenada === 'string' && entrada.coordenada.trim()
+    ? entrada.coordenada
+    : entrada.texto;
+  return textoComBrasil(escrito);
+}
+
+/** Pedágio, rodovia e balsa ficam liberados. A rota interestadual usa a malha normal. */
+export function restricoesDaRota(): {
+  avoidTolls: false;
+  avoidHighways: false;
+  avoidFerries: false;
+  provideRouteAlternatives: false;
+  region: 'BR';
+} {
+  return {
+    avoidTolls: false,
+    avoidHighways: false,
+    avoidFerries: false,
+    provideRouteAlternatives: false,
+    region: 'BR',
+  };
+}
+
+/** O texto curto falha. A segunda tentativa usa só "Cidade, UF, Brasil". */
+export function precisaFallbackDeTexto(status: string | null | undefined): boolean {
+  const nome = String(status || '').trim().toUpperCase();
+  return nome === 'ZERO_RESULTS' || nome === 'NOT_FOUND';
+}
+
+export function lugarPreenchido(valor: Coordenada | string | null | undefined): boolean {
+  if (valor == null) return false;
+  if (typeof valor === 'string') return Boolean(valor.trim());
+  return Number.isFinite(valor.lat) && Number.isFinite(valor.lng);
+}
+
+export function polylineCodificada(rota: { overview_polyline?: unknown } | null | undefined): string {
+  const bruto = rota?.overview_polyline;
+  if (typeof bruto === 'string') return bruto.trim();
+  if (bruto && typeof bruto === 'object' && typeof (bruto as { points?: unknown }).points === 'string') {
+    return String((bruto as { points: string }).points).trim();
+  }
+  return '';
+}
+
+export function statusDaFalhaDirections(erro: unknown): string {
+  if (typeof erro === 'string') return erro;
+  if (!erro || typeof erro !== 'object') return '';
+  const item = erro as { code?: unknown; status?: unknown; message?: unknown };
+  const direto = String(item.code || item.status || '').trim();
+  if (direto) return direto;
+  const mensagem = String(item.message || '');
+  const conhecido = mensagem.match(/ZERO_RESULTS|NOT_FOUND|MAX_ROUTE_LENGTH_EXCEEDED|MAX_WAYPOINTS_EXCEEDED|OVER_QUERY_LIMIT|REQUEST_DENIED|INVALID_REQUEST|UNKNOWN_ERROR/);
+  return conhecido ? conhecido[0] : '';
+}
+
+export function mensagemFalhaDirections(status: string | null | undefined): string {
+  switch (String(status || '').toUpperCase()) {
+    case 'ZERO_RESULTS':
+      return 'O Google não encontrou um caminho de carro entre esses pontos.';
+    case 'MAX_ROUTE_LENGTH_EXCEEDED':
+    case 'MAX_WAYPOINTS_EXCEEDED':
+      return 'Essa rota passou do limite do Google. Divida o trecho com uma parada.';
+    case 'OVER_QUERY_LIMIT':
+    case 'REQUEST_DENIED':
+      return 'O Google recusou o mapa agora. Tente de novo em instantes.';
+    case 'NOT_FOUND':
+    case 'INVALID_REQUEST':
+      return 'Escolha origem e destino na lista ou confirme a cidade e a UF.';
+    default:
+      return 'Não foi possível traçar essa rota. Confira a cidade e a UF.';
+  }
+}
+
+/**
+ * A tela administrativa grava origin, destination e distance.
+ * Não existe coluna duration_minutes: o tempo só trava o envio quando o cálculo devolveu zero.
+ */
+export function rotaAdministrativaPronta(entrada: {
+  origin?: string | null;
+  destination?: string | null;
+  distance?: string | number | null;
+  durationMinutes?: number | null;
+}): { ok: true } | { ok: false; aviso: string } {
+  const origem = String(entrada.origin || '').trim();
+  const destino = String(entrada.destination || '').trim();
+  const km = Number(String(entrada.distance ?? '').replace(',', '.'));
+  if (!origem || !destino) return { ok: false, aviso: 'Informe a origem e o destino antes de salvar.' };
+  if (!Number.isFinite(km) || km <= 0) {
+    return { ok: false, aviso: 'A rota do Google ainda não fechou a distância. Aguarde o cálculo ou informe os km.' };
+  }
+  if (entrada.durationMinutes != null && (!Number.isFinite(entrada.durationMinutes) || entrada.durationMinutes <= 0)) {
+    return { ok: false, aviso: 'A rota do Google ainda não fechou o tempo. Aguarde o cálculo.' };
+  }
+  return { ok: true };
+}
+
+/** Lê a polyline codificada do Google e devolve coordenadas. Não chama a rede. */
+export function decodificarPolyline(encoded: string, maximo = 80): Coordenada[] {
+  const texto = String(encoded || '');
+  const pontos: Coordenada[] = [];
+  let indice = 0;
+  let lat = 0;
+  let lng = 0;
+  while (indice < texto.length) {
+    let resultado = 0;
+    let deslocamento = 0;
+    let byte = 0;
+    do {
+      if (indice >= texto.length) return resumirPontos(pontos, maximo);
+      byte = texto.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 0x1f) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 0x20);
+    lat += (resultado & 1) ? ~(resultado >> 1) : (resultado >> 1);
+    resultado = 0;
+    deslocamento = 0;
+    do {
+      if (indice >= texto.length) return resumirPontos(pontos, maximo);
+      byte = texto.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 0x1f) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 0x20);
+    lng += (resultado & 1) ? ~(resultado >> 1) : (resultado >> 1);
+    pontos.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    if (pontos.length > 4000) break;
+  }
+  return resumirPontos(pontos, maximo);
+}
+
+/** Reduz o overview_path para a URL do mapa estático caber no limite do Google. */
+export function resumirPontos(pontos: Array<Coordenada | null | undefined>, maximo = 80): Coordenada[] {
+  const validos = pontos.map((ponto) => (ponto ? lerCoordenada(ponto) : null)).filter((ponto): ponto is Coordenada => ponto != null);
+  const teto = Math.max(2, maximo);
+  if (validos.length <= teto) return validos;
+  const passo = (validos.length - 1) / (teto - 1);
+  const saida: Coordenada[] = [];
+  const vistos = new Set<number>();
+  for (let i = 0; i < teto; i++) {
+    const indice = Math.round(i * passo);
+    if (vistos.has(indice)) continue;
+    vistos.add(indice);
+    saida.push(validos[indice]);
+  }
+  return saida;
+}
+
+export function chaveDoMapaNoServidor(ambiente: Record<string, string | undefined>): string {
+  return String(ambiente.GOOGLE_MAPS_API_KEY || ambiente.VITE_GOOGLE_MAPS_API_KEY || CHAVE_MAPA_ESTAVEL).trim();
+}
+
+/** O mapa estático sai do servidor. O Referer precisa ser um domínio já liberado na chave. */
+export function refererDoMapa(origem: string | undefined): string {
+  const texto = String(origem || '').trim();
+  if (/^https:\/\/sistema\.grupotmseg\.com\.br(\/|$)/.test(texto)) return 'https://sistema.grupotmseg.com.br/';
+  if (/^https:\/\/sistema-grupo-tm-seg\.vercel\.app(\/|$)/.test(texto)) return 'https://sistema-grupo-tm-seg.vercel.app/';
+  if (/^http:\/\/localhost(?::\d+)?(\/|$)/.test(texto)) {
+    const base = texto.match(/^http:\/\/localhost(?::\d+)?/)?.[0] || 'http://localhost:5000';
+    return `${base}/`;
+  }
+  return 'https://sistema.grupotmseg.com.br/';
+}
+
+/** Tema corporativo escuro do mapa ao vivo. O satélite continua no botão. */
+export const ESTILO_MAPA_COTACAO: Array<{ featureType?: string; elementType?: string; stylers: Array<Record<string, string>> }> = [
+  { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#cbd5e1' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#0f172a' }] },
+  { featureType: 'administrative', elementType: 'geometry.stroke', stylers: [{ color: '#334155' }] },
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#1e293b' }] },
+  { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#334155' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#94a3b8' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#0c4a6e' }] },
+  { featureType: 'landscape', elementType: 'geometry', stylers: [{ color: '#111827' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+];
+
+/** Gota do pin A/B. A ponta fica na coordenada. */
+export const TRACO_PIN = 'M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7z';
+
+const INICIO_DE_RUA = /^(av\.?|avenida|rua|r\.|rodovia|rod\.|estrada|est\.|alameda|al\.|travessa|tv\.|praça|praca|via)\b/i;
+
+/** Nome curto da cidade para o título. O endereço completo continua nos campos de origem e destino. */
+export function tituloCidade(endereco: string | null | undefined): string {
+  const texto = String(endereco || '').trim();
+  const partes = texto.split(',').map((item) => item.trim()).filter(Boolean);
+  const uf = extrairUf(texto, '');
+  for (const parte of [...partes].reverse()) {
+    const semCep = parte.replace(/\b\d{5}-?\d{3}\b/g, '').replace(/\b(brasil|brazil)\b/ig, '').trim();
+    if (!semCep || INICIO_DE_RUA.test(semCep) || /^\d/.test(semCep)) continue;
+    const nome = semCep.split('-')[0].replace(uf ? new RegExp(`\\b${uf}\\b`, 'i') : /$^/, '').trim();
+    if (nome.length < 2) continue;
+    if (uf && !nome.toUpperCase().includes(uf)) return `${nome}, ${uf}`;
+    return nome;
+  }
+  return rotuloCidadeUf(texto);
+}
+
+/** Cidade e UF para o painel do mapa. O texto longo do Google não entra no card. */
+export function rotuloCidadeUf(endereco: string | null | undefined): string {
+  const partes = String(endereco || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const cidade = partes[0] || '';
+  const uf = extrairUf(String(endereco || ''), '');
+  if (!cidade) return '—';
+  if (!uf || cidade.toUpperCase().includes(uf)) return cidade;
+  return `${cidade}, ${uf}`;
+}
+
+/** Cidade-UF para o nome do PDF. Salvador, BA vira Salvador-BA. */
+export function cidadeUfTraco(endereco: string | null | undefined): string {
+  const partes = String(endereco || '').split(',').map((item) => item.trim()).filter(Boolean);
+  const cidade = (partes[0] || '').replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim();
+  const uf = extrairUf(String(endereco || ''), '');
+  if (!cidade) return 'Rota';
+  if (!uf || cidade.toUpperCase().includes(uf)) return cidade;
+  return `${cidade}-${uf}`;
+}
+
+/** 1.608 min (26h 48m). Os números vêm da rota calculada, não de um exemplo fixo. */
+export function textoTempoMonitor(minutos: number | null | undefined): string {
+  if (minutos == null || !Number.isFinite(minutos) || minutos <= 0) return '—';
+  const total = Math.round(minutos);
+  const horas = Math.floor(total / 60);
+  const resto = total % 60;
+  return `${total.toLocaleString('pt-BR')} min (${horas}h ${String(resto).padStart(2, '0')}m)`;
+}
+
+export function textoKmMonitor(km: number | null | undefined): string {
+  if (km == null || !Number.isFinite(km) || km <= 0) return '—';
+  return `${km.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+}
+
+/** Fração do traçado onde o caminhão de monitoramento fica. 0 é a origem. */
+export function indiceNaRota(total: number, fracao = 0.22): number {
+  if (!Number.isFinite(total) || total <= 1) return 0;
+  const indice = Math.round((total - 1) * fracao);
+  return Math.min(total - 1, Math.max(0, indice));
+}
+
+/** Nome curto da marca no pin do caminhão. CEVA usa o nome institucional. */
+export function rotuloMarcaTransito(cliente: string | null | undefined): string {
+  const nome = String(cliente || '').trim();
+  if (!nome) return 'Cliente';
+  if (nome.toLowerCase().includes('ceva')) return 'CEVA Logistics';
+  return nome;
+}

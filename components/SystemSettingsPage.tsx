@@ -6,6 +6,7 @@ import AlertRecipientsSettings from './AlertRecipientsSettings';
 import AuditSummarySettings from './AuditSummarySettings';
 import WhatsAppTelemetryDashboard from './WhatsAppTelemetryDashboard';
 import WhatsAppConnectionPanel from './WhatsAppConnectionPanel';
+import WhatsAppDesktopIntegracao from './WhatsAppDesktopIntegracao';
 import EmailHealthPanel from './EmailHealthPanel';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 
@@ -561,6 +562,8 @@ const SystemSettingsPage: React.FC<{ onNavigate?: (id: string) => void }> = () =
         </p>
         <WhatsAppConnectionPanel />
       </div>
+
+      <WhatsAppDesktopIntegracao />
 
       <WhatsAppTelemetryDashboard />
 

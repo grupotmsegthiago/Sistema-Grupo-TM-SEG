@@ -5,7 +5,7 @@ import { authFetch } from '../lib/authFetch';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
 import { APP_VERSION } from '../constants';
 import { 
-  Plus, Shield, Loader2, RefreshCw, Pencil, Eye, EyeOff, 
+  Plus, Shield, Loader2, RefreshCw, Pencil, 
   Trash2, Ban, CheckCircle2, Database, AlertTriangle, 
   Building2, Briefcase, LogIn, Search, Package 
 } from 'lucide-react';
@@ -32,7 +32,6 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [equipmentMap, setEquipmentMap] = useState<{[userId: string]: { patrimony_id: string; type: string; brand: string; model: string }[]}>({});
 
-  const [revealedPasswords, setRevealedPasswords] = useState<{[key: string]: boolean}>({});
   const fetchSeqRef = useRef(0);
 
   const buildEquipmentMap = (rows: { patrimony_id: string; type: string; brand: string; model: string; assigned_to?: string | null }[]) => {
@@ -119,7 +118,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
 
         let usersQuery = supabase
             .from('system_users')
-            .select('*')
+            .select('id, name, email, status, profile_id, client_id, provider_id, permissions, force_password_change, user_type, created_at')
             .order('created_at', { ascending: false });
 
         if (isComercialUser) {
@@ -210,13 +209,6 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
     if (userType === 'internal') void fetchEquipments();
   });
 
-  const togglePassword = (id: string) => {
-      setRevealedPasswords(prev => ({
-          ...prev,
-          [id]: !prev[id]
-      }));
-  };
-
   const handleToggleStatus = async (id: string, currentStatus: string, name: string) => {
       const newStatus = currentStatus === 'Ativo' ? 'Inativo' : 'Ativo';
       if (!confirm(`Deseja alterar o status de "${name}" para ${newStatus.toUpperCase()}?`)) return;
@@ -253,7 +245,16 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
             force_password_change: targetUser.force_password_change
         };
 
-        localStorage.setItem('authToken', `impersonation-token-${targetUser.id}-${Date.now()}`);
+        const tokenAtual = localStorage.getItem('authToken') || '';
+        const resposta = await fetch('/api/ponte-auth/personificar', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${tokenAtual}` },
+          body: JSON.stringify({ usuarioId: targetUser.id }),
+        });
+        const corpo = await resposta.json().catch(() => ({})) as { token?: string; motivo?: string };
+        if (!resposta.ok || !corpo.token) throw new Error(corpo.motivo || 'A auditoria não foi autorizada.');
+        localStorage.setItem('authToken', corpo.token);
         localStorage.setItem('userData', JSON.stringify(impersonatedData));
         localStorage.setItem('app_version', APP_VERSION);
         
@@ -425,12 +426,7 @@ const UserList: React.FC<UserListProps> = ({ onAddUser, onEdit, userType }) => {
                     {isDirector && (
                         <td className="px-6 py-4">
                             <div className="flex items-center gap-2 bg-red-50 px-2 py-1 rounded-md border border-red-100 w-fit">
-                                <span className="font-mono text-sm text-red-800">
-                                    {revealedPasswords[user.id] ? (user.password || 'Sem Senha') : '••••••••'}
-                                </span>
-                                <button onClick={() => togglePassword(user.id)} className="text-red-400 hover:text-red-700 transition-colors">
-                                    {revealedPasswords[user.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                                </button>
+                                <span className="font-mono text-sm text-red-800">protegida no servidor</span>
                             </div>
                         </td>
                     )}

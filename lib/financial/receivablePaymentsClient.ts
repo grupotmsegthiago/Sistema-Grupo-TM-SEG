@@ -29,12 +29,25 @@ export function runFinancialPaymentSingleFlight<T>(
   return request;
 }
 
+async function readApiJson(res: Response): Promise<any> {
+  const text = await res.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error('A consulta de pagamentos respondeu uma página em vez dos dados. Atualize a tela e abra de novo.');
+  }
+}
+
 async function readApiError(res: Response): Promise<string> {
   try {
-    const body = await res.json();
-    return String(body?.error || res.statusText || `HTTP ${res.status}`);
-  } catch {
-    return res.statusText || `HTTP ${res.status}`;
+    const body = await readApiJson(res);
+    const message = String(body?.error || res.statusText || `HTTP ${res.status}`);
+    if (res.status === 503) {
+      return 'Este computador não tem a chave de administrador do banco para ler os pagamentos.';
+    }
+    return message;
+  } catch (e: any) {
+    return e?.message || res.statusText || `HTTP ${res.status}`;
   }
 }
 
@@ -46,7 +59,7 @@ export async function listPaymentsForTransaction(
   if (titleNotes) qs.set('titleNotes', titleNotes);
   const res = await authFetch(`${API_PATH}?${qs.toString()}`);
   if (!res.ok) throw new Error(await readApiError(res));
-  const body = await res.json();
+  const body = await readApiJson(res);
   return (body.payments || []) as FinancialTransactionPayment[];
 }
 
@@ -73,7 +86,7 @@ export function addPaymentToTransaction(params: {
       body: JSON.stringify(params),
     });
     if (!res.ok) throw new Error(await readApiError(res));
-    const body = await res.json();
+    const body = await readApiJson(res);
     return {
       payment: body.payment,
       paid: body.paid,
@@ -106,7 +119,7 @@ export async function deletePaymentFromTransaction(params: {
     }),
   });
   if (!res.ok) throw new Error(await readApiError(res));
-  const body = await res.json();
+  const body = await readApiJson(res);
   return {
     paid: body.paid,
     open: body.open,

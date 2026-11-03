@@ -192,7 +192,8 @@ describe('NB-07 — rewrites e preservação', () => {
     for (const route of ROUTES.filter((item) => item.op !== 'init-invoices')) {
       assert.match(serverStats, new RegExp(`authFetch\\('${route.path.replace(/\//g, '\\/')}'\\)`));
     }
-    assert.match(invoices, /authFetch\('\/api\/supabase\/init-invoices'/);
+    assert.doesNotMatch(invoices, /authFetch\('\/api\/supabase\/init-invoices'/);
+    assert.match(invoices, /authFetch\('\/api\/nf\/invoices'/);
     assert.match(transactions, /authFetch\('\/api\/supabase\/init-invoices'/);
   });
 

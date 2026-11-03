@@ -3,7 +3,9 @@ import { ClipboardList, ExternalLink, Loader2, RefreshCw, CheckCircle2 } from 'l
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { useNotification } from '../lib/NotificationContext';
+import { supabase } from '../lib/supabase';
 import type { OsAnalysisRequest } from '../lib/osAnalysisTypes';
+import { OS_ANALYSIS_BROADCAST_CHANNEL } from '../lib/osAnalysisTypes';
 import { canViewOsAnalysisPendencies } from '../lib/osAnalysisAccess';
 
 const fmt = (n: number | null | undefined) =>
@@ -18,7 +20,7 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
   const [items, setItems] = useState<OsAnalysisRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'adjusted' | 'reviewed'>('all');
+  const [filter, setFilter] = useState<'open' | 'pending' | 'adjusted' | 'reviewed'>('open');
   const user = useMemo(() => readStoredUser(), []);
   const canView = canViewOsAnalysisPendencies(user);
 
@@ -26,11 +28,12 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
     setLoading(true);
     setLoadError(null);
     try {
-      const q = filter === 'all' ? 'op=list' : `op=list&status=${encodeURIComponent(filter)}`;
+      const q = filter === 'open' ? 'op=list' : `op=list&status=${encodeURIComponent(filter)}`;
       const res = await authFetch(`/api/os-analysis?${q}`);
       const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Falha ao carregar');
-      setItems(Array.isArray(data.items) ? data.items : []);
+      const lista = Array.isArray(data.items) ? data.items : [];
+      setItems(filter === 'open' ? lista.filter((item) => item.status !== 'reviewed') : lista);
     } catch (e: any) {
       const msg = e?.message || 'Falha ao carregar pendências';
       setLoadError(msg);
@@ -50,14 +53,21 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
     const res = await authFetch(`/api/os-analysis?op=review&id=${encodeURIComponent(id)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ notes: 'Revisado pela Diretoria' }),
+      body: JSON.stringify({ notes: 'Verificado' }),
     });
     const data = await parseJsonResponse(res).catch(() => ({}));
     if (!res.ok) {
       showNotification('Erro', data.error || 'Falha', 'error');
       return;
     }
-    showNotification('OK', 'Marcado como revisado', 'success');
+    void supabase.channel(OS_ANALYSIS_BROADCAST_CHANNEL, {
+      config: { broadcast: { self: true } },
+    }).send({
+      type: 'broadcast',
+      event: 'inbox_changed',
+      payload: { at: Date.now() },
+    });
+    showNotification('Verificado', 'Saiu da fila e do recado de quem recebeu.', 'success');
     await load();
   };
 
@@ -82,14 +92,14 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(['all', 'pending', 'adjusted', 'reviewed'] as const).map((f) => (
+          {(['open', 'pending', 'adjusted', 'reviewed'] as const).map((f) => (
             <button
               key={f}
               type="button"
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-full text-xs font-bold ${filter === f ? 'bg-slate-900 text-amber-300' : 'bg-white border text-slate-600'}`}
             >
-              {f === 'all' ? 'Todas' : f === 'pending' ? 'Pendentes' : f === 'adjusted' ? 'Ajustadas' : 'Revisadas'}
+              {f === 'open' ? 'Abertas' : f === 'pending' ? 'Pendentes' : f === 'adjusted' ? 'Ajustadas' : 'Revisadas'}
             </button>
           ))}
           <button type="button" onClick={() => void load()} className="p-2 rounded-xl border bg-white" data-testid="btn-refresh-os-analysis">
@@ -179,13 +189,14 @@ const OsAnalysisPendingPage: React.FC<{ onOpenMission?: (id: string) => void }> 
                   <p className="mt-1 text-xs text-slate-500 whitespace-pre-wrap">{item.changes_summary}</p>
                 )}
 
-                {item.status === 'adjusted' && (
+                {item.status !== 'reviewed' && (
                   <button
                     type="button"
                     onClick={() => void markReviewed(item.id)}
                     className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg"
+                    data-testid={`btn-verificado-os-${item.id}`}
                   >
-                    <CheckCircle2 size={14} /> Marcar como revisado
+                    <CheckCircle2 size={14} /> Verificado
                   </button>
                 )}
               </article>

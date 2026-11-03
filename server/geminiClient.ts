@@ -28,6 +28,9 @@ export function isGeminiConfigured(): boolean {
 
 let cachedClient: GoogleGenAI | null = null;
 
+// A chave do Google recusa chamada sem este endereço. O mesmo valor está em api/gemini/generate.ts.
+const GEMINI_REFERER = 'https://sistema-grupo-tm-seg.vercel.app/';
+
 export function getGeminiClient(): GoogleGenAI {
   if (cachedClient) return cachedClient;
 
@@ -41,7 +44,10 @@ export function getGeminiClient(): GoogleGenAI {
   const baseUrl = getGeminiBaseUrl();
   cachedClient = new GoogleGenAI({
     apiKey,
-    ...(baseUrl ? { httpOptions: { apiVersion: '', baseUrl } } : {}),
+    httpOptions: {
+      headers: { Referer: GEMINI_REFERER },
+      ...(baseUrl ? { apiVersion: '', baseUrl } : {}),
+    },
   });
 
   return cachedClient;

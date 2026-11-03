@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import nfControlHandler from '../api/nf-control.js';
 import { transformFinancialInvoicesForControl } from '../lib/nfInvoiceControlApi.js';
+import { emitirSessao } from '../lib/sessao/token';
 
 describe('Controle de Faturas — listagem via API autenticada', () => {
   it('FinancialInvoiceControl usa GET /api/nf/invoices (não supabase anon)', () => {
@@ -138,9 +139,11 @@ describe('Controle de Faturas — listagem via API autenticada', () => {
     assert.equal(status, 401);
   });
 
-  it('perfil incorreto recebe 403 e financeiro alcança handler', async () => {
-    const token = 'tmseg-token-user-hotfix-1234567890';
-    const run = async (role: string) => {
+  it('cabeçalho de perfil não abre a listagem', async () => {
+    process.env.SESSION_SECRET = 'segredo-de-teste-nf';
+    const antigo = 'tmseg-token-user-hotfix-1234567890';
+    const assinado = emitirSessao(process.env.SESSION_SECRET, 'user-hotfix').token;
+    const run = async (token: string, role: string) => {
       let status = 0;
       let body: any;
       await nfControlHandler(
@@ -165,26 +168,24 @@ describe('Controle de Faturas — listagem via API autenticada', () => {
       return { status, body };
     };
 
-    const denied = await run('operador');
-    assert.equal(denied.status, 403);
+    const legado = await run(antigo, 'financeiro');
+    assert.equal(legado.status, 401);
+    assert.notEqual(legado.body?.success, true);
 
-    const allowed = await run('financeiro');
-    assert.equal(allowed.status, 200);
-    assert.equal(allowed.body?.success, true);
-    assert.ok(Array.isArray(allowed.body?.invoices));
+    const operador = await run(assinado, 'operador');
+    const financeiro = await run(assinado, 'financeiro');
+    assert.equal(operador.status, financeiro.status);
+    assert.notEqual(financeiro.status, 200);
+    const auth = fs.readFileSync('lib/tmsegAuth.ts', 'utf8');
+    const trecho = auth.slice(auth.indexOf('export async function assertFinanceNfAccess'));
+    assert.doesNotMatch(trecho, /x-tmseg-role/);
   });
 
-  it('chave anon não lê financial_invoices com RLS ativo (documentação)', async () => {
-    const { createClient } = await import('@supabase/supabase-js');
-    const sb = createClient(
-      'https://ajhmmjuewdsukecaimik.supabase.co',
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFqaG1tanVld2RzdWtlY2FpbWlrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNzUxMjEsImV4cCI6MjA3OTc1MTEyMX0.5bXRWTyb1HxLimt3lqJTBfjzDoumux7TXlW4lycXrPk',
-    );
-    const { count, error } = await sb
-      .from('financial_invoices')
-      .select('id', { count: 'exact', head: true });
-    assert.equal(error, null);
-    // RLS sem policy para anon → 0 linhas (não erro). Summary admin continua com dados.
-    assert.equal(count, 0);
+  it('o corte do anonimo em financial_invoices continua no SQL nao executado', () => {
+    const sql = fs.readFileSync('docs/gestorFiscal/sql/2026_10_19_p0_financeiro_rls.NAO_EXECUTAR.sql', 'utf8');
+    assert.match(sql, /NÃO EXECUTAR/);
+    assert.match(sql, /financial_invoices/);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.match(sql, /tmseg\.p0_teste_isolado/);
   });
 });

@@ -1,6 +1,5 @@
 import { supabase } from '../supabase';
 import { buildBrazilTimestampFromHm, getBrazilDayBounds } from '../dateUtils';
-import { extractUserIdFromToken } from '../rh/apiEmployeesAuth';
 import { TIME_CLOCK_STAGE_LABELS, TIME_CLOCK_STAGE_ORDER } from './stages';
 import type { TimeClockEntry, TimeClockStage } from './types';
 
@@ -42,8 +41,8 @@ export async function adjustTimeClockEntriesDirect(params: {
 
   validateStageOrder(times);
 
-  const token = localStorage.getItem('authToken') || '';
-  const callerId = extractUserIdFromToken(token);
+  // A sessão assinada só é conferida na API. Este recurso direto não leva o segredo para o navegador.
+  const callerId: string | null = null;
 
   const { data: employee, error: empErr } = await supabase
     .from('rh_employees')

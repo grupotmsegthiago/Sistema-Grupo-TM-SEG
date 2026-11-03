@@ -19,10 +19,19 @@ import ProviderForm from './ProviderForm';
 import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
-import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint } from '../lib/financialUtils';
+import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint, TABLE_SPECIFIC_CITY_KEYWORDS } from '../lib/financialUtils';
+import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
+import { destinoBloqueiaSugestao, SEM_TABELA_CUSTO_SUGERIDA } from '../lib/billing/tabelaNaCriacao';
+import { calcularValoresOficiais, janelaZeradaNaCriacao } from '../lib/billing/sincronizarValoresOs';
+import { useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
+import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
+import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { buildRotasBrasilUrl, ROTAS_BRASIL_STEPS_PT } from '../lib/toll/rotasBrasil';
+import { consumirPrefillSolicitacao } from '../lib/solicitacaoEscolta/prefill';
+import { consumirRotaEsporadica, filtrarRotasParaNovaOs, getRegionFromLocation, nomeRegiao } from '../lib/precificacao/tabela2027';
 
 const INPUT_CLASS = "w-full bg-white border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-red-500/10 focus:border-red-500 text-sm h-11 transition-all text-gray-700 pl-12 pr-4";
 const LABEL_CLASS = "text-[10px] font-black text-gray-400 uppercase mb-1.5 block tracking-widest";
@@ -131,6 +140,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const { showNotification } = useNotification();
   const [osId, setOsId] = useState("GTM-....");
   const [canViewFinancials, setCanViewFinancials] = useState(false);
+  const [ocultaFinanceiro, setOcultaFinanceiro] = useState(false);
   const [canViewIntakeSnapshots, setCanViewIntakeSnapshots] = useState(false);
   
   const now = new Date();
@@ -149,6 +159,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_se_number: '',
     dhl_sm_number: '',
     dhl_deslocamento_km: ''
+  });
+  const [buscaImediata, setBuscaImediata] = useState(false);
+  const sugestaoTabela = useTabelaSuggestion({
+    clienteId: formData.client,
+    fornecedorId: formData.provider,
+    origem: formData.origin,
+    destino: formData.destination,
+    isRotaPredefinida: buscaImediata,
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
   const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both'; saveAsDefault: boolean }>({ open: false, preferred: 'both', saveAsDefault: false });
@@ -207,6 +225,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const [isCommercialUser, setIsCommercialUser] = useState(false);
   const [providerPending, setProviderPending] = useState(false);
+  const [pendenciaSolicitacao, setPendenciaSolicitacao] = useState(false);
   const [manualOverrides, setManualOverrides] = useState({ revenue: false, cost: false, toll: false });
   const [operatorConfirmedCalc, setOperatorConfirmedCalc] = useState(false);
   const [isCalculatingToll, setIsCalculatingToll] = useState(false);
@@ -265,7 +284,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const isVtcClient = (formData.client || '').toUpperCase().includes('VTC');
   const isCeslogClient = (formData.client || '').toUpperCase().includes('CESLOG') || (formData.client || '').toUpperCase().includes('CESARI');
+  const isVsTransportes = isVsTransportesClient(formData.client);
   const isDhlClient = (formData.client || '').toUpperCase().includes('DHL');
+  const isPerfilFinanceiro = (() => {
+    try {
+      return (JSON.parse(localStorage.getItem('userData') || '{}').role || '').toLowerCase() === 'financeiro';
+    } catch {
+      return false;
+    }
+  })();
   const hasSavedOs = /^GTM-\d+/i.test(osId);
 
   const fetchDhlIntakes = useCallback(async (missionId: string) => {
@@ -570,11 +597,29 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const canShowStep6 = stepComplete.step5;
 
   useEffect(() => {
+    const prefill = consumirPrefillSolicitacao();
+    if (!prefill) return;
+    setFormData(prev => ({
+      ...prev,
+      provider: prefill.provider || prev.provider,
+      origin: prefill.origin || prev.origin,
+      destination: prefill.destination || prev.destination,
+      scheduledDate: prefill.scheduledDate || prev.scheduledDate,
+      scheduledTime: prefill.scheduledTime || prev.scheduledTime,
+    }));
+    setScheduleMode(prefill.imediata ? 'immediate' : 'scheduled');
+    setPendenciaSolicitacao(true);
+  }, []);
+
+  useEffect(() => {
     if (expandedStep === 1 && stepComplete.step1) setExpandedStep(2);
     else if (expandedStep === 2 && stepComplete.step2) setExpandedStep(3);
     else if (expandedStep === 3 && stepComplete.step3) setExpandedStep(4);
     else if (expandedStep === 4 && stepComplete.step4) setExpandedStep(5);
-    else if (expandedStep === 5 && stepComplete.step5) { setScheduleMode('asking'); setExpandedStep(6); }
+    else if (expandedStep === 5 && stepComplete.step5) {
+      setScheduleMode(prev => (prev === 'immediate' || prev === 'scheduled') ? prev : 'asking');
+      setExpandedStep(6);
+    }
   }, [stepComplete.step1, stepComplete.step2, stepComplete.step3, stepComplete.step4, stepComplete.step5, manualRevenueTableId]);
 
   useEffect(() => {
@@ -585,6 +630,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
             const role = (user.role || "").toLowerCase();
             const allowed = ['diretoria', 'administrador'].includes(role) || (user.permissions && user.permissions.includes('*'));
             setCanViewFinancials(allowed);
+            setOcultaFinanceiro(isPerfilAvancado(user));
             const opAllowed = ['administrador', 'diretoria', 'avançado', 'avancado', 'operador'].includes(role) || (user.permissions && user.permissions.includes('*'));
             setCanViewIntakeSnapshots(opAllowed);
             if (role === 'comercial') {
@@ -805,11 +851,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
         supabase.from('client_routes').select('*').or(cFilter).order('name').then(async ({ data, error }) => {
           if (error) console.error('[MissionForm] Erro client_routes:', error.message);
-          if (data && data.length > 0) { setClientRoutes(data as any); return; }
+          if (data && data.length > 0) { setClientRoutes(filtrarRotasParaNovaOs(data as ClientRoute[])); return; }
           if (firstWord) {
             const { data: fb } = await supabase.from('client_routes').select('*').ilike('client', `%${firstWord}%`).order('name');
-            if (fb && fb.length > 0) setClientRoutes(fb as any);
-            else setClientRoutes(data || []);
+            if (fb && fb.length > 0) setClientRoutes(filtrarRotasParaNovaOs(fb as ClientRoute[]));
+            else setClientRoutes(filtrarRotasParaNovaOs((data || []) as ClientRoute[]));
           }
         });
 
@@ -851,7 +897,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return generated;
   };
 
-  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string, missionType?: string, estimatedHours?: number) => {
+  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string, missionType?: string, estimatedHours?: number, destAddress?: string) => {
       if (!tables || tables.length === 0) return null;
       const normalizedTables = tables.map(t => ({ ...t, normOp: normalizeStr(t.operation_type || '') }));
       const opType = normalizeStr(missionType || '');
@@ -872,7 +918,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const originUF = extractUF(originAddress || '') || locationKeywords[1] || '';
       const originRegion = UF_TO_REGION[originUF] || locationKeywords[2] || '';
-      const originCity = locationKeywords[0] || '';
+      const originExclusive = exclusiveCitiesInAddress(originAddress || '');
+      const originCity = originExclusive[0] || locationKeywords[0] || '';
+      // Serra, ES não está na lista de cidades exclusivas. Sem este fallback
+      // a tabela GUARULHOS-GOIANIA passava só porque a origem é Guarulhos.
+      const destCity = exclusiveCitiesInAddress(destAddress || '')[0]
+          || normalizeStr(extractCityFromAddress(destAddress || ''));
 
       const scored = normalizedTables.map(t => {
           let score = 0;
@@ -882,7 +933,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           // só se a origem da OS corresponder; senão cai para tabela padrão (KM).
           const regionalGate = evaluateRegionalTableConstraint(t.normOp, {
               originCity,
-              destCity: '',
+              destCity,
               originRegion,
               originUF,
               originAddress,
@@ -945,6 +996,16 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               score += 3000;
               reasons.push(`CIDADE: ${originCity}`);
           }
+          const exclusiveHit = originExclusive.find((city) => t.normOp.includes(city));
+          if (exclusiveHit) {
+              score += 4000;
+              reasons.unshift(`TABELA EXCLUSIVA: ${exclusiveHit}`);
+          }
+          const namedCities = TABLE_SPECIFIC_CITY_KEYWORDS.map((city) => city.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()).filter((city) => t.normOp.includes(city));
+          if (namedCities.length > 0 && !namedCities.some((city) => originExclusive.includes(city) || (originCity.length > 3 && city === originCity))) {
+              score -= 8000;
+              reasons.push('CIDADE DA TABELA NAO E A ORIGEM');
+          }
 
           if (t.normOp.includes('EXCETO')) {
               if (originUF === 'MG' && t.normOp.includes('EXCETO MG')) { score -= 5000; reasons.push('BLOQUEADO (EXCETO MG)'); }
@@ -989,7 +1050,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const pool = normalizedTables.filter(t => {
               const gate = evaluateRegionalTableConstraint(t.normOp, {
                   originCity,
-                  destCity: '',
+                  destCity,
                   originRegion,
                   originUF,
                   originAddress,
@@ -1070,7 +1131,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               revTable = clientPriceTables.find(t => t.id.toString() === revTableId);
               if (revTable) details.push(`FAT (MANUAL): ${revTable.operation_type}`);
           } else {
-              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin, formData.missionType, estHours);
+              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin, formData.missionType, estHours, route.destination);
               if (result) { revTable = result.table; details.push(`FAT (${result.reason}): ${revTable.operation_type}`); }
           }
           if (revTable) {
@@ -1086,10 +1147,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
 
           let cstTable: any = null;
-          if (currentFlags.isSameOs) { cost = 0; details.push(`CUSTO: ZERADO (MESMA OS)`); } 
+          if (currentFlags.isSameOs) { cost = 0; details.push(`CUSTO: ZERADO (MESMA OS)`); }
+          else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) {
+              details.push('CUSTO: SEM HISTÓRICO DESTE FORNECEDOR');
+          }
           else {
               if (cstTableId) {
                   cstTable = providerCostTables.find(t => t.id.toString() === cstTableId);
+                  if (!cstTable && activeProvider) {
+                      const { data } = await supabase.from('provider_cost_tables').select('*').eq('id', cstTableId).eq('provider', activeProvider).maybeSingle();
+                      if (data) cstTable = data;
+                  }
                   if (cstTable) details.push(`CUSTO (MANUAL): ${cstTable.operation_type}`);
               } else if (activeProvider) {
                   let currentCostTables = providerCostTables;
@@ -1097,7 +1165,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                       const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerOverride);
                       if (data) currentCostTables = data as any;
                   }
-                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin, formData.missionType, estHours);
+                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin, formData.missionType, estHours, route.destination);
                   if (result) { cstTable = result.table; details.push(`CUSTO (${result.reason}): ${cstTable.operation_type}`); }
               }
               if (cstTable) {
@@ -1120,6 +1188,36 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               finalDestination = isDhl ? `RAIO ${radius} KM — DESTINO A DEFINIR` : `${radius}KM DE ACOMPANHAMENTO`;
           }
 
+          const inicioPrevisto = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).toISOString();
+          const janelaPrevista = janelaZeradaNaCriacao(inicioPrevisto);
+          const oficial = calcularValoresOficiais({
+              mission: {
+                  client: formData.client,
+                  provider: activeProvider || '',
+                  origin: route.origin,
+                  destination: finalDestination,
+                  status: MissionStatus.SOLICITED,
+                  totalDistance: displayDist,
+                  startTime: janelaPrevista.startTime,
+                  endTime: janelaPrevista.endTime,
+                  is_same_os: !!currentFlags.isSameOs,
+                  mission_type: formData.missionType || 'Caracterizada',
+              },
+              clientTables: clientPriceTables,
+              providerTables: providerCostTables,
+              clientData: dbClients.find((c) => c.name === formData.client),
+              providers: dbProviders,
+              clientTableId: revTable?.id ? String(revTable.id) : null,
+              providerTableId: cstTable?.id ? String(cstTable.id) : null,
+          });
+          if (oficial && !manualOverrides.revenue && oficial.tabelaCliente && oficial.receitaServico > 0) {
+              revenue = oficial.receitaServico;
+          }
+          if (currentFlags.isSameOs) cost = 0;
+          else if (oficial && !manualOverrides.cost && oficial.tabelaFornecedor && oficial.custoServico > 0) {
+              cost = oficial.custoServico;
+          }
+
           setFormData(prev => ({
               ...prev, provider: activeProvider,
               revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
@@ -1130,8 +1228,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           setCalcDetails(details.join(' | '));
           if (revTable) setManualRevenueTableId(revTable.id.toString());
           if (cstTable) setManualCostTableId(cstTable.id.toString());
+          else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) setManualCostTableId('');
       } finally { setIsCalculating(false); }
-  }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, clientPriceTables, providerCostTables, manualOverrides.revenue, manualOverrides.cost]);
+  }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, formData.scheduledDate, formData.scheduledTime, formData.missionType, clientPriceTables, providerCostTables, dbClients, dbProviders, manualOverrides.revenue, manualOverrides.cost]);
 
   const calculateTollQualP = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; distance?: number; provider?: string } | null> => {
       try {
@@ -1185,53 +1284,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       }
   };
 
-  const calculateTollGemini = async (origin: string, destination: string): Promise<{ value: number; count: number; tolls: any[]; provider?: string; observacoes?: string; confianca?: string } | null> => {
-      try {
-          const resp = await withTimeout(
-              authFetch('/api/toll/gemini-estimate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ origin, destination }),
-              }),
-              TOLL_PROVIDER_TIMEOUT_MS,
-              'Timeout estimativa IA pedágio',
-          );
-          if (!resp.ok) return null;
-          const data = await resp.json();
-          if (data.success && typeof data.tollValue === 'number') {
-              return {
-                  value: data.tollValue,
-                  count: data.tollCount || 0,
-                  tolls: data.tolls || [],
-                  observacoes: data.observacoes,
-                  confianca: data.confianca,
-                  provider: 'gemini-ai',
-              };
-          }
-          return null;
-      } catch (e) {
-          if (!(e instanceof TimeoutError)) console.error('Erro Gemini pedágio:', e);
-          return null;
-      }
-  };
-
-  const isAutoTollResult = (r: { provider?: string; value?: number } | null | undefined): r is { provider: 'qualp' | 'gemini-ai' | 'rapidapi-pedagio'; value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; distance?: number } =>
-      !!r && (r.provider === 'qualp' || r.provider === 'gemini-ai' || r.provider === 'rapidapi-pedagio') && typeof r.value === 'number';
+  const isAutoTollResult = (r: { provider?: string; value?: number } | null | undefined): r is { provider: 'qualp' | 'rapidapi-pedagio'; value: number; count: number; tolls: any[]; observacoes?: string; confianca?: string; distance?: number } =>
+      !!r && (r.provider === 'qualp' || r.provider === 'rapidapi-pedagio') && typeof r.value === 'number';
 
   const notifyTollResult = (r: { provider?: string; value: number; count: number; confianca?: string }) => {
-      if (r.provider === 'gemini-ai') {
-          const confLabel = r.confianca === 'alta' ? 'alta' : r.confianca === 'media' ? 'média' : 'baixa';
-          showNotification(
-              'Pedágio (Estimativa IA)',
-              r.value === 0
-                  ? 'IA não identificou pedágio nesta rota. Confirme manualmente se houver.'
-                  : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''}) — estimativa IA. Confirme manualmente. Confiança: ${confLabel}.`,
-              'info'
-          );
-          return;
-      }
       showNotification(
-          'Pedágio QualP',
+          'Pedágio',
           r.value === 0
               ? 'Rota sem pedágio identificado. Se houver, informe manualmente.'
               : `R$ ${r.value.toFixed(2)} (${r.count} praça${r.count > 1 ? 's' : ''} - Veículo leve 2 eixos).`,
@@ -1247,10 +1305,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           const qualpResult = await calculateTollQualP(origin, destination);
           if (gen !== tollCalcGenRef.current) return null;
           if (qualpResult) return qualpResult;
-
-          const geminiResult = await calculateTollGemini(origin, destination);
-          if (gen !== tollCalcGenRef.current) return null;
-          if (geminiResult) return geminiResult;
 
           const rapidResult = await calculateTollRapidApi(origin, destination);
           if (gen !== tollCalcGenRef.current) return null;
@@ -1292,7 +1346,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           setTollFetchDone(true);
           setTollDetails({ count: 0, tolls: [], provider: 'fixed' });
           setFormData(prev => ({ ...prev, tollValue: '35.00' }));
-          if (opts?.notify !== false) showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
+          if (opts?.notify !== false && !ocultaFinanceiro) showNotification('Regra CEVA', 'Pedágio fixo de R$ 35,00 aplicado (CEVA + Jundiaí + 200KM).', 'success');
           return 35;
       }
 
@@ -1353,66 +1407,73 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       });
   };
 
-  const handleRouteSelect = async (route: ClientRoute) => {
+  const lastAutoRouteRef = useRef('');
+  const handleRouteSelect = (route: ClientRoute) => {
+      const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
+      setBuscaImediata(true);
       setSelectedRouteId(route.id.toString());
       setRouteSearchTerm(route.name);
       setActiveDropdown(null);
       setTollDetails(null);
       setTollFetchDone(false);
       lastTollRouteRef.current = '';
+      lastAutoRouteRef.current = '';
       setOperatorConfirmedCalc(false);
-
-      const routeDist = parseFloat(route.distance) || 0;
-      const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
-      const gResult = await resolveRouteDistance(endpoints.origin, endpoints.destination);
-      if (gResult) {
-          if (gResult.distKm > 0) {
-              if (routeDist <= 0) (route as any).distance = gResult.distKm.toString();
-              (route as any)._googleDistKm = gResult.distKm;
-              (route as any).origin = endpoints.origin;
-              (route as any).destination = endpoints.destination;
-          }
-          if (gResult.durationMin > 0) {
-              (route as any)._googleDurationMin = gResult.durationMin;
-          }
-      }
-
-      await calculatePricing(route);
-      await applyTollForRoute(route.origin, getTollDestination(route.destination));
-
+      setFormData(prev => ({ ...prev, origin: endpoints.origin, destination: endpoints.destination }));
       if (manualOverrides.toll) {
           showNotification('Pedágio Manual', 'Valor de pedágio mantido (editado manualmente). Cálculo automático desativado.', 'info');
       }
   };
 
-  const lastAutoRouteRef = useRef('');
   useEffect(() => {
       if (!formData.client) return;
       const origin = (formData.origin || '').trim();
       const destination = (formData.destination || '').trim();
-      if (!origin || !destination) return;
-      if (/RAIO\s|DESTINO A DEFINIR|ACOMPANHAMENTO/i.test(destination)) return;
-      if (selectedRouteId && clientRoutes.some(r => r.id.toString() === selectedRouteId)) return;
-      const key = `${origin}|||${destination}`;
-      if (lastAutoRouteRef.current === key) return;
+      if (!origin || !destination || destinoBloqueiaSugestao(destination)) return;
+      if (sugestaoTabela.loadingSugestao) return;
 
-      const handle = setTimeout(async () => {
-          lastAutoRouteRef.current = key;
+      const rev = sugestaoTabela.tabelaClienteSugeridaId || '';
+      const cst = sugestaoTabela.tabelaFornecedorSugeridaId || '';
+      const key = `${formData.client}|||${origin}|||${destination}|||${formData.provider}|||${rev}|||${cst}|||${clientPriceTables.length}|||${providerCostTables.length}`;
+      if (lastAutoRouteRef.current === key) return;
+      lastAutoRouteRef.current = key;
+
+      let cancelado = false;
+      (async () => {
           setOperatorConfirmedCalc(false);
-          setSelectedRouteId('manual');
-          setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
+          const catalogo = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+          if (!catalogo) {
+              setSelectedRouteId('manual');
+              setRouteSearchTerm(`${origin.split(',')[0]} → ${destination.split(',')[0]}`);
+          }
 
           const gResult = await resolveRouteDistance(origin, destination);
-          const distKm = (gResult && gResult.distKm > 0) ? gResult.distKm : 0;
-
-          const virtualRoute: any = { id: 'manual', name: `${origin.split(',')[0]} → ${destination.split(',')[0]}`, origin, destination, distance: String(distKm), toll_cost: 0 };
+          if (cancelado) return;
+          const distKm = (gResult && gResult.distKm > 0) ? gResult.distKm : (parseFloat(catalogo?.distance || '0') || 0);
+          const virtualRoute: any = {
+              ...(catalogo || { toll_cost: 0 }),
+              id: catalogo ? catalogo.id : 'manual',
+              name: catalogo?.name || `${origin.split(',')[0]} → ${destination.split(',')[0]}`,
+              origin,
+              destination,
+              distance: String(distKm),
+          };
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
           if (gResult && gResult.distKm > 0) virtualRoute._googleDistKm = gResult.distKm;
-          await calculatePricing(virtualRoute);
-          await applyTollForRoute(origin, destination);
-      }, 1200);
-      return () => clearTimeout(handle);
-  }, [formData.origin, formData.destination, formData.client, selectedRouteId, clientRoutes]);
+
+          const tabelaCliente = sugestaoTabela.tabelaClienteSugeridaId || undefined;
+          const tabelaCusto = !formData.provider
+              ? undefined
+              : (tabelaCliente ? (sugestaoTabela.tabelaFornecedorSugeridaId || SEM_TABELA_CUSTO_SUGERIDA) : undefined);
+          await calculatePricing(virtualRoute, undefined, tabelaCliente, tabelaCusto);
+          if (cancelado) return;
+          await applyTollForRoute(origin, catalogo ? getTollDestination(destination) : destination);
+      })();
+      return () => {
+          cancelado = true;
+          lastAutoRouteRef.current = '';
+      };
+  }, [formData.origin, formData.destination, formData.client, formData.provider, sugestaoTabela.loadingSugestao, sugestaoTabela.tabelaClienteSugeridaId, sugestaoTabela.tabelaFornecedorSugeridaId, clientPriceTables.length, providerCostTables.length]);
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
@@ -1452,6 +1513,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const handleManualTableChange = (type: 'rev' | 'cst', val: string) => {
+      setOperatorConfirmedCalc(false);
       if (type === 'rev') setManualOverrides(prev => ({ ...prev, revenue: false }));
       else setManualOverrides(prev => ({ ...prev, cost: false }));
       const route = getActiveRoute();
@@ -1461,13 +1523,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const handleProviderSelection = (newProviderName: string) => {
+      setBuscaImediata(false);
       setProviderSearchTerm(newProviderName);
-      
-      const route = getActiveRoute();
-      if(route) { 
-          calculatePricing(route, newProviderName, manualRevenueTableId, ''); 
-      }
-      setFormData(prev => ({ ...prev, provider: newProviderName })); 
+      setFormData(prev => ({ ...prev, provider: newProviderName }));
       setActiveDropdown(null);
   };
 
@@ -1483,6 +1541,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     if (!formData.client || (!formData.origin && !formData.destination)) return alert("Selecione o cliente e informe a origem e destino da rota.");
     const clientUpper = (formData.client || '').toUpperCase();
     if ((clientUpper.includes('CESLOG') || clientUpper.includes('CESARI')) && !formData.reference_number.trim()) return alert("Para clientes CESLOG/CESARI, o Nº da Referência é obrigatório.");
+    if (isVsTransportesClient(clientUpper) && !formData.reference_number.trim()) return alert("Para a VS TRANSPORTES, a Referência de Pedidos é obrigatória. Ex.: 303185 / 303189");
     if (clientUpper.includes('DHL') && !formData.dhl_se_number.trim()) return alert("Para o cliente DHL, o Número da S.E. é obrigatório.");
 
     const scheduledDateTime = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`);
@@ -1528,6 +1587,37 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     }
 
     const tollPair = tollPersistencePair(resolvedTollValue, !!formData.isSameOs, formData.client);
+    const janelaCriacao = janelaZeradaNaCriacao(scheduledDateTime.toISOString());
+    const oficialCriacao = calcularValoresOficiais({
+        mission: {
+            client: formData.client,
+            provider: formData.provider || '',
+            origin: formData.origin,
+            destination: formData.destination,
+            status: MissionStatus.SOLICITED,
+            totalDistance: resolvedDistance,
+            startTime: janelaCriacao.startTime,
+            endTime: janelaCriacao.endTime,
+            is_same_os: !!formData.isSameOs,
+            mission_type: formData.missionType || 'Caracterizada',
+            toll_value: resolvedTollValue,
+        },
+        clientTables: clientPriceTables,
+        providerTables: providerCostTables,
+        clientData: dbClients.find((c) => c.name === formData.client),
+        providers: dbProviders,
+        clientTableId: manualRevenueTableId || null,
+        providerTableId: manualCostTableId && manualCostTableId !== SEM_TABELA_CUSTO_SUGERIDA ? manualCostTableId : null,
+    });
+    let receitaGravada = parseFloat(formData.revenueValue) || 0;
+    let custoGravado = formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0);
+    if (oficialCriacao && !manualOverrides.revenue && oficialCriacao.tabelaCliente && oficialCriacao.receitaServico > 0) {
+        receitaGravada = oficialCriacao.receitaServico;
+    }
+    if (formData.isSameOs) custoGravado = 0;
+    else if (oficialCriacao && !manualOverrides.cost && oficialCriacao.tabelaFornecedor && oficialCriacao.custoServico > 0) {
+        custoGravado = oficialCriacao.custoServico;
+    }
 
     try {
         let attempts = 0, saved = false, finalId = '';
@@ -1548,7 +1638,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 total_distance: resolvedDistance > 0 ? resolvedDistance : parseFloat(formData.totalDistance),
                 start_time: scheduledIso,
                 mission_type: formData.missionType || 'Caracterizada', 
-                revenue_value: parseFloat(formData.revenueValue) || 0, cost_value: formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0),
+                revenue_value: receitaGravada, cost_value: custoGravado,
                 toll_value: tollPair.toll_value,
                 toll_value_provider: tollPair.toll_value_provider,
                 valor_zero_motivo: valorZeroMotivo,
@@ -1560,7 +1650,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 driver_name_2: formData.driver_name_2 ? (formData.driver_name_2 || '').toUpperCase() : null,
                 driver_phone_2: formData.driver_phone_2 || null,
                 start_km: parseFloat(formData.startKm) || null,
-                snapshot_data: null, snapshot_approved_by: null, snapshot_approved_at: null,
+                snapshot_data: manualRevenueTableId
+                    ? snapshotTabelaNaCriacao({
+                        clientTableId: manualRevenueTableId,
+                        providerTableId: formData.provider ? manualCostTableId : null,
+                    })
+                    : null,
+                snapshot_approved_by: null, snapshot_approved_at: null,
                 reference_number: formData.reference_number || null,
                 dhl_se_number: formData.dhl_se_number ? formData.dhl_se_number.trim().toUpperCase() : null,
                 dhl_sm_number: formData.dhl_sm_number ? formData.dhl_sm_number.trim().toUpperCase() : null,
@@ -1584,6 +1680,21 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 details: JSON.stringify({ client: formData.client, origin: formData.origin, destination: formData.destination })
             }]);
         } catch (logErr) { console.warn('Falha ao registrar log de criação da OS:', logErr); }
+        try {
+            const rotaEscolhida = clientRoutes.find(r => r.id.toString() === selectedRouteId);
+            if (rotaEscolhida && saved) {
+                const consumo = await consumirRotaEsporadica(supabase, rotaEscolhida, finalId);
+                if (consumo.consumida) {
+                    showNotification('Rota esporádica', 'A rota foi desativada e não entra em outra OS.', 'success');
+                } else if (consumo.motivo === 'coluna_ausente') {
+                    showNotification('Rota esporádica', 'A OS foi salva. O banco ainda não tem as colunas da rota esporádica. Aplique a migration antes de confiar na exclusão automática.', 'warning');
+                } else if (consumo.motivo === 'erro') {
+                    showNotification('Rota esporádica', 'A OS foi salva, mas a rota não foi desativada: ' + (consumo.detalhe || 'erro'), 'warning');
+                }
+            }
+        } catch (consumoErr) {
+            console.warn('Falha ao consumir rota esporádica:', consumoErr);
+        }
         await uploadEvidences(finalId);
         await uploadDhlDeslocamentoPrint(finalId);
 
@@ -1674,11 +1785,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               candidates.push(clean);
       }
       if (candidates.length === 0) return clientRoutes;
-      const matched = clientRoutes.filter(r => {
+      const byOrigin = clientRoutes.filter(r => {
           const rOrigin = normalizeStr(r.origin);
           return candidates.some(c => rOrigin.includes(c));
       });
-      return matched.length > 0 ? matched : clientRoutes;
+      const originPool = byOrigin.length > 0 ? byOrigin : clientRoutes;
+      const destCity = normalizeStr(extractCityFromAddress(formData.destination || ''));
+      if (destCity.length < 4) return originPool;
+      return originPool.filter((route) => registeredRouteFitsOs(route, formData.destination));
   })();
 
   const filteredRoutes = routesFilteredByOrigin.filter(r => 
@@ -1758,11 +1872,37 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return tips.length > 0 ? tips : null;
   })();
 
+  const revenueRouteQuestion = (() => {
+      if (!manualRevenueTableId) return null;
+      const selected = clientPriceTables.find((t) => t.id.toString() === manualRevenueTableId);
+      if (!selected) return null;
+      return questionTableAgainstRoute({
+          tableName: selected.operation_type,
+          origin: formData.origin,
+          destination: formData.destination,
+          candidates: clientPriceTables,
+          distanceKm: parseFloat(formData.totalDistance) || 0,
+      });
+  })();
+  const costRouteQuestion = (() => {
+      if (!manualCostTableId || formData.isSameOs) return null;
+      const selected = providerCostTables.find((t) => t.id.toString() === manualCostTableId);
+      if (!selected) return null;
+      return questionTableAgainstRoute({
+          tableName: selected.operation_type,
+          origin: formData.origin,
+          destination: formData.destination,
+          candidates: providerCostTables,
+          distanceKm: parseFloat(formData.totalDistance) || 0,
+      });
+  })();
+  const tableRouteMismatch = revenueRouteQuestion?.fits === false || costRouteQuestion?.fits === false;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20 animate-in fade-in">
       {isClientModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsClientModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientForm onBack={() => setIsClientModalOpen(false)} onSave={() => { setIsClientModalOpen(false); loadBasicData(); }} onAddVehicle={() => {}} onEditVehicle={() => {}} onAddRoute={() => {}} onEditRoute={() => {}} onAddQuote={() => {}} onEditQuote={() => {}} /></div></div>)}
       {isProviderModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsProviderModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ProviderForm onBack={() => setIsProviderModalOpen(false)} onNavigateToVehicles={() => {}} /></div></div>)}
-      {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').or(clientFuzzyFilter(formData.client)).order('name').then(({ data }) => { if (data) { setClientRoutes(data as any); const newRoute = data.find((r: any) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
+      {isRouteModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsRouteModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientRouteForm onSuccess={(newRouteId) => { setIsRouteModalOpen(false); if (formData.client) { supabase.from('client_routes').select('*').or(clientFuzzyFilter(formData.client)).order('name').then(({ data }) => { if (data) { const visiveis = filtrarRotasParaNovaOs(data as ClientRoute[]); setClientRoutes(visiveis); const newRoute = visiveis.find((r) => r.id.toString() === newRouteId); if (newRoute) handleRouteSelect(newRoute); } }); } }} /></div></div>)}
       {isVehicleModalOpen && (<div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in zoom-in-95"><div className="bg-[#f8fafc] rounded-2xl w-full max-w-5xl p-6 relative shadow-2xl overflow-y-auto max-h-[95vh]"><button onClick={() => setIsVehicleModalOpen(false)} className="absolute top-6 right-6 p-2 bg-white rounded-full shadow-sm hover:bg-red-50 text-gray-400 hover:text-red-600 transition-all z-10"><X size={20}/></button><ClientVehicleForm embedded onBack={() => setIsVehicleModalOpen(false)} onSuccess={() => { setIsVehicleModalOpen(false); if(formData.client) fetchClientVehicles(formData.client); }} /></div></div>)}
 
       {emailConfirmDialog && (
@@ -1925,6 +2065,11 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200" ref={dropdownRef}>
           <form onSubmit={handleSubmit} className="divide-y divide-gray-100">
+              {pendenciaSolicitacao && (
+                <p className="bg-amber-50 px-4 py-3 text-[11px] font-bold text-amber-800" data-testid="text-os-solicitada-pendencia">
+                  A contagem dos outros fornecedores parou. Esta OS fica como Solicitada, com pendência até o cliente e os dados obrigatórios serem preenchidos.
+                </p>
+              )}
 
               {/* ETAPA 1 - TIPO DE OPERAÇÃO */}
               <div className="p-4 space-y-3">
@@ -1960,10 +2105,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <select required className={SELECT_CLASS} value={formData.client} disabled={isCommercialUser} data-testid="select-client" onChange={e => {
                               const clientName = e.target.value;
                               const isVTC = (clientName || '').toUpperCase().includes('VTC');
+                              setBuscaImediata(false);
                               setFormData(prev => {
                                   const next = { ...prev, client: clientName, applyVtc02h: isVTC, clientVehicleId: '', clientVehiclePlate: '', clientVehicleModel: '', clientVehicleId2: '', clientVehiclePlate2: '', clientVehicleModel2: '', driver_name: '', driver_phone: '', driver_name_2: '', driver_phone_2: '' };
-                                  const route = clientRoutes.find(r => r.id.toString() === selectedRouteId);
-                                  if (route) { setTimeout(() => calculatePricing(route, undefined, '', '', { ceva200km: next.applyCeva200km, vtc02h: next.applyVtc02h, isSameOs: next.isSameOs }), 100); }
                                   return next;
                               });
                               setProviderPending(false);
@@ -1996,6 +2140,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <label className={LABEL_CLASS}><span className="text-red-600">*</span> Nº da Referência (CESLOG/CESARI)</label>
                           <input type="text" required className={INPUT_CLASS} placeholder="Informe o número da referência..." value={formData.reference_number} onChange={e => setFormData(prev => ({ ...prev, reference_number: e.target.value }))} data-testid="input-reference-number" />
                           <p className="text-[9px] text-purple-600 font-bold mt-1">Campo obrigatório para clientes CESLOG e CESARI</p>
+                      </div>
+                  )}
+                  {isVsTransportes && (
+                      <div className="p-4 rounded-xl border-2 border-cyan-500 bg-cyan-50 animate-in slide-in-from-top-2 duration-300">
+                          <label className={LABEL_CLASS}><span className="text-red-600">*</span> Referência de Pedidos (VS TRANSPORTES)</label>
+                          <input type="text" required className={INPUT_CLASS} placeholder="Ex.: 303185 / 303189" value={formData.reference_number} onChange={e => setFormData(prev => ({ ...prev, reference_number: e.target.value }))} data-testid="input-vs-pedido-ref" />
+                          <p className="text-[9px] text-cyan-800 font-bold mt-1">Obrigatório só para a VS TRANSPORTES. Sai na coluna REF. PEDIDOS do boletim de medição.</p>
                       </div>
                   )}
                   {(isDhlClient || hasSavedOs) && (
@@ -2134,7 +2285,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           </p>
                       </>)}
 
-                          {hasSavedOs && (
+                          {hasSavedOs && !(isDhlClient && isPerfilFinanceiro) && (
                             <div className="mt-4 pt-4 border-t-2 border-dashed" style={{ borderColor: isDhlClient ? '#D40511' : '#e5e7eb' }} data-testid="panel-dhl-intakes">
                               <div className="flex items-center justify-between mb-2">
                                 <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: '#7f1d1d' }}>
@@ -2748,14 +2899,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       onLoad={ac => { originAutocompleteRef.current = ac; }}
                                       onPlaceChanged={() => {
                                           const place = originAutocompleteRef.current?.getPlace();
-                                          if (place?.formatted_address) setFormData(prev => ({...prev, origin: place.formatted_address!.toUpperCase()}));
+                                          if (place?.formatted_address) {
+                                              setBuscaImediata(false);
+                                              setFormData(prev => ({...prev, origin: place.formatted_address!.toUpperCase()}));
+                                          }
                                       }}
                                       options={{ componentRestrictions: { country: 'br' } }}
                                   >
                                       <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de origem..." data-testid="input-origin" />
                                   </Autocomplete>
                               ) : (
-                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Rua das Flores, 100 - São Paulo, SP" value={formData.origin} onChange={e => setFormData(prev => ({...prev, origin: e.target.value}))} data-testid="input-origin" />
+                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Rua das Flores, 100 - São Paulo, SP" value={formData.origin} onChange={e => { setBuscaImediata(false); setFormData(prev => ({...prev, origin: e.target.value})); }} data-testid="input-origin" />
                               )}
                               <MapPin size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 pointer-events-none z-10" />
                           </div>
@@ -2768,14 +2922,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       onLoad={ac => { destinationAutocompleteRef.current = ac; }}
                                       onPlaceChanged={() => {
                                           const place = destinationAutocompleteRef.current?.getPlace();
-                                          if (place?.formatted_address) setFormData(prev => ({...prev, destination: place.formatted_address!.toUpperCase()}));
+                                          if (place?.formatted_address) {
+                                              setBuscaImediata(false);
+                                              setFormData(prev => ({...prev, destination: place.formatted_address!.toUpperCase()}));
+                                          }
                                       }}
                                       options={{ componentRestrictions: { country: 'br' } }}
                                   >
                                       <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de destino..." data-testid="input-destination" />
                                   </Autocomplete>
                               ) : (
-                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Av. Brasil, 500 - Jundiaí, SP" value={formData.destination} onChange={e => setFormData(prev => ({...prev, destination: e.target.value}))} data-testid="input-destination" />
+                                  <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Av. Brasil, 500 - Jundiaí, SP" value={formData.destination} onChange={e => { setBuscaImediata(false); setFormData(prev => ({...prev, destination: e.target.value})); }} data-testid="input-destination" />
                               )}
                               <Flag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none z-10" />
                           </div>
@@ -2824,6 +2981,23 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           )}
                       </div>
                   </div>
+
+                  {formData.origin && (() => {
+                      const regiaoOrigem = getRegionFromLocation(formData.origin, '', formData.client);
+                      if (regiaoOrigem.clienteContratual) {
+                          return (
+                              <p className="text-[10px] font-black uppercase tracking-wider text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="text-regiao-origem">
+                                  Cliente contratual: a tabela já cadastrada permanece.
+                              </p>
+                          );
+                      }
+                      if (!regiaoOrigem.region) return null;
+                      return (
+                          <p className="text-[10px] font-black uppercase tracking-wider text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2" data-testid="text-regiao-origem">
+                              Região da origem: {nomeRegiao(regiaoOrigem.region)}
+                          </p>
+                      );
+                  })()}
 
                   {clientRoutes.length > 0 && (
                       <div className="space-y-2">
@@ -2874,7 +3048,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
                   {formData.origin && routesFilteredByOrigin.length < clientRoutes.length && (
                       <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-700 uppercase tracking-wider">
-                          <Search size={12} /> Rotas filtradas pela origem: {formData.origin.split(',')[0]} ({routesFilteredByOrigin.length} de {clientRoutes.length})
+                          <Search size={12} /> Rotas filtradas pela origem{formData.destination ? ' e pelo destino' : ''}: {formData.origin.split(',')[0]}{formData.destination ? ` → ${formData.destination.split(',')[0]}` : ''} ({routesFilteredByOrigin.length} de {clientRoutes.length})
                       </div>
                   )}
 
@@ -2957,14 +3131,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               <div className="flex items-center gap-2">
                                   {manualOverrides.toll ? <AlertTriangle size={16} className="text-amber-600" /> : <CheckCircle2 size={16} className={parseFloat(formData.tollValue || '0') > 0 ? 'text-green-600' : 'text-blue-600'} />}
                                   <p className="text-[11px] font-black uppercase text-gray-800">
-                                      Pedágio (valor real): R$ {parseFloat(formData.tollValue || '0').toFixed(2)}
+                                      {`Pedágio (valor real): R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}
                                   </p>
                               </div>
                               {tollDetails?.provider === 'qualp' && !manualOverrides.toll && <span className="text-[8px] font-black text-blue-600 uppercase">QualP</span>}
-                              {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && <span className="text-[8px] font-black text-purple-600 uppercase">Estimativa IA</span>}
                               {tollDetails?.provider === 'fixed' && !manualOverrides.toll && <span className="text-[8px] font-black text-orange-600 uppercase">Regra fixa</span>}
                           </div>
-                          {(() => {
+                          {!ocultaFinanceiro && (() => {
                               const realToll = normalizeTollAmount(formData.tollValue);
                               const pair = tollPersistencePair(realToll, !!formData.isSameOs, formData.client);
                               return (
@@ -2980,9 +3153,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   </div>
                               );
                           })()}
-                          {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
-                              <p className="text-[9px] text-purple-700 font-bold">Estimativa por IA — confirme o valor manualmente se necessário.</p>
-                          )}
                           {tollDetails && tollDetails.count > 0 && !manualOverrides.toll && (
                               <p className="text-[9px] text-gray-600 font-bold">{tollDetails.count} praça{tollDetails.count > 1 ? 's' : ''} identificada{tollDetails.count > 1 ? 's' : ''}</p>
                           )}
@@ -3067,30 +3237,52 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tag size={12} /> Selecionar Tabelas</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
+                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {sugestaoTabela.loadingSugestao ? <span className="text-amber-600">buscando…</span> : manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
                                   <div className="relative">
-                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5">
+                                      {sugestaoTabela.loadingSugestao && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" data-testid="sugestao-tabela-loading" />}
+                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5" aria-busy={sugestaoTabela.loadingSugestao}>
                                           <option value="">Selecione a tabela...</option>
                                           {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
-                                  {manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
+                                  {!ocultaFinanceiro && manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
                               </div>
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {manualCostTableId && <span className="text-red-600">✓</span>}</label>
+                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {sugestaoTabela.loadingSugestao ? <span className="text-amber-600">buscando…</span> : manualCostTableId && <span className="text-red-600">✓</span>}</label>
                                   <div className="relative">
-                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5">
+                                      {sugestaoTabela.loadingSugestao && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" />}
+                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5" aria-busy={sugestaoTabela.loadingSugestao}>
                                           <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o fornecedor primeiro'}</option>
                                           {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
-                                  {manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
+                                  {!ocultaFinanceiro && manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
                               </div>
                           </div>
+
+                          {(revenueRouteQuestion || costRouteQuestion) && (
+                              <div className={`p-4 rounded-xl border-2 space-y-2 ${tableRouteMismatch ? 'bg-amber-50 border-amber-400' : 'bg-emerald-50 border-emerald-300'}`} data-testid="table-route-question">
+                                  <p className="text-[12px] font-black text-gray-900">{revenueRouteQuestion?.headline || costRouteQuestion?.headline}</p>
+                                  {revenueRouteQuestion && <p className="text-[11px] font-semibold text-gray-800" data-testid="table-route-revenue">{revenueRouteQuestion.answer}</p>}
+                                  {costRouteQuestion && <p className="text-[11px] font-semibold text-gray-800" data-testid="table-route-cost">{costRouteQuestion.answer}</p>}
+                                  <div className="flex flex-wrap gap-2">
+                                      {revenueRouteQuestion?.suggestedTableId && (
+                                          <button type="button" onClick={() => handleManualTableChange('rev', revenueRouteQuestion.suggestedTableId!)} className="rounded-lg bg-amber-600 px-3 py-2 text-[10px] font-black uppercase text-white" data-testid="button-use-exclusive-revenue">
+                                              Usar tabela do cliente: {revenueRouteQuestion.suggestedTableName}
+                                          </button>
+                                      )}
+                                      {costRouteQuestion?.suggestedTableId && (
+                                          <button type="button" onClick={() => handleManualTableChange('cst', costRouteQuestion.suggestedTableId!)} className="rounded-lg bg-amber-800 px-3 py-2 text-[10px] font-black uppercase text-white" data-testid="button-use-exclusive-cost">
+                                              Usar tabela do fornecedor: {costRouteQuestion.suggestedTableName}
+                                          </button>
+                                      )}
+                                  </div>
+                              </div>
+                          )}
 
                           {/* RESUMO CLARO PARA CONFIRMAÇÃO DO OPERADOR */}
                           {manualRevenueTableId && (
@@ -3143,13 +3335,12 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                           <span className="font-black text-gray-900">Pedágio:</span>
                                           <span>{isCalculatingToll ? 'Calculando...' : `R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}</span>
                                           {tollDetails?.provider === 'qualp' && <span className="text-[8px] text-blue-600 font-black">(via QualP)</span>}
-                                          {tollDetails?.provider === 'gemini-ai' && <span className="text-[8px] text-purple-600 font-black">(estimativa IA — confirmar)</span>}
                                           {manualOverrides.toll && <span className="text-[8px] text-amber-600 font-black">(manual)</span>}
                                       </div>
                                   </div>
                                   {!operatorConfirmedCalc ? (
-                                      <button type="button" onClick={() => setOperatorConfirmedCalc(true)} className="w-full py-3 bg-blue-600 text-white rounded-xl text-[11px] font-black uppercase tracking-wider hover:bg-blue-700 transition-all active:scale-[0.98] shadow-lg" data-testid="button-confirm-calc">
-                                          <Check size={14} className="inline mr-2" />Li e confirmo que os dados estão corretos
+                                      <button type="button" onClick={() => setOperatorConfirmedCalc(true)} className={`w-full py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-[0.98] shadow-lg ${tableRouteMismatch ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'}`} data-testid="button-confirm-calc">
+                                          <Check size={14} className="inline mr-2" />{tableRouteMismatch ? 'Confirmo mesmo assim: a tabela não é a exclusiva da origem' : 'Sim, a tabela bate com a origem e o destino'}
                                       </button>
                                   ) : (
                                       <div className="flex items-center justify-between">
@@ -3350,11 +3541,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                             data-testid="input-toll-summary"
                                           />
                                       </div>
-                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'gemini-ai' ? (tollDetails.count === 0 ? 'Sem pedágio · Estimativa IA' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · Estimativa IA`) : tollDetails.provider === 'fixed' ? 'Regra fixa CEVA' : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : tollFetchDone ? 'Calculado nesta tela' : 'Aguardando cálculo'}</p>
-                                      {tollDetails?.provider === 'gemini-ai' && !manualOverrides.toll && (
-                                          <p className="text-[7px] font-black uppercase mt-1 text-purple-700">Estimativa IA — confirmar manualmente</p>
-                                      )}
-                                      {tollDetails?.confianca && !manualOverrides.toll && <p className={`text-[7px] font-black uppercase mt-1 ${tollDetails.confianca === 'alta' ? 'text-green-600' : tollDetails.confianca === 'media' ? 'text-yellow-600' : 'text-red-600'}`}>Conf: {tollDetails.confianca}</p>}
+                                      <p className="text-[8px] text-gray-400 font-bold mt-1">{manualOverrides.toll ? 'Editado pelo usuário' : tollDetails ? (tollDetails.provider === 'fixed' ? 'Regra fixa CEVA' : (tollDetails.count === 0 ? 'Sem pedágio · QualP' : `${tollDetails.count} praça${tollDetails.count > 1 ? 's' : ''} · QualP`)) : isCalculatingToll ? 'Calculando...' : tollFetchDone ? 'Calculado nesta tela' : 'Aguardando cálculo'}</p>
                                       {manualOverrides.toll && <button type="button" onClick={() => { setManualOverrides(prev => ({ ...prev, toll: false })); applyTollForRoute(formData.origin, formData.destination, { force: true }); }} className="text-[7px] font-bold text-amber-600 hover:text-amber-500 underline mt-1">Recalcular pedágio</button>}
                                   </div>
                               </div>
@@ -3367,7 +3554,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                               <Navigation size={10} />
                                               Praças de Pedágio Identificadas
                                               {tollDetails.provider === 'qualp' && <span className="px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded text-[7px] text-blue-600">via QualP</span>}
-                                              {tollDetails.provider === 'gemini-ai' && <span className="px-1.5 py-0.5 bg-purple-50 border border-purple-200 rounded text-[7px] text-purple-700">estimativa IA</span>}
                                           </p>
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
@@ -3377,7 +3563,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                                       <p className="text-[9px] font-bold text-gray-700 truncate">{t.name}</p>
                                                       <p className="text-[7px] text-gray-400 font-bold">{t.road}{t.sentido ? ` · ${t.sentido}` : ''}{t.cobrancaUnica ? ' · Unidirecional' : ''}</p>
                                                   </div>
-                                                  <span className="text-[10px] font-black text-green-600 ml-2">R$ {(t.value || 0).toFixed(2)}</span>
+                                                  {!ocultaFinanceiro && <span className="text-[10px] font-black text-green-600 ml-2">R$ {(t.value || 0).toFixed(2)}</span>}
                                               </div>
                                           ))}
                                       </div>

@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   canAccessScreen,
   hasProfilePermission,
@@ -10,6 +13,7 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
   it('oculta tela que não está nas permissions', () => {
     const user = { role: 'Operador', permissions: ['dashboard', 'missions'] };
     assert.equal(canAccessScreen(user, 'missions'), true);
+    assert.equal(canAccessScreen(user, 'treinamento'), true);
     assert.equal(canAccessScreen(user, 'fin-dashboard'), false);
     assert.equal(canAccessScreen(user, 'providers'), false);
     assert.equal(canAccessScreen(user, 'profiles'), false);
@@ -21,6 +25,21 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     assert.equal(canAccessScreen({ role: 'Administrador', permissions: [] }, 'system-settings'), false);
     assert.equal(canAccessScreen({ role: 'Diretoria', permissions: [] }, 'rh-dashboard'), false);
     assert.equal(canAccessScreen({ role: 'Financeiro', permissions: [] }, 'fin-dashboard'), false);
+  });
+
+  it('perfil Financeiro não abre Cadastro de Viaturas', () => {
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: ['provider-vehicles', 'providers-group'] }, 'provider-vehicles'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: ['provider-vehicles'] }, 'provider-vehicle-form'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Operador', permissions: ['provider-vehicles'] }, 'provider-vehicles'),
+      true,
+    );
   });
 
   it('mostra apenas o que foi vinculado no perfil', () => {
@@ -57,7 +76,11 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     );
     assert.equal(
       canAccessScreen({ role: 'Financeiro', permissions: ['comissoes-comerciais'] }, 'comissoes-comerciais'),
-      false,
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ role: 'Financeiro', permissions: [] }, 'comissoes-comerciais'),
+      true,
     );
   });
 
@@ -70,6 +93,7 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
     assert.equal(canAccessScreen(client, 'fin-dashboard'), false);
     assert.equal(canAccessScreen(client, 'providers'), false);
     assert.equal(canAccessScreen(client, 'missions'), true);
+    assert.equal(canAccessScreen(client, 'treinamento'), false);
   });
 
   it('Pendências de OS abre para Thiagos e perfil Diretoria', () => {
@@ -85,6 +109,60 @@ describe('screenAccess — menu só pelo vínculo do perfil', () => {
       canAccessScreen({ name: 'Miguel Mota', role: 'comercial', permissions: ['os-analysis-pending'] }, 'os-analysis-pending'),
       false,
     );
+  });
+
+  it('Aprovações Pendentes abre para Financeiro e Diretoria', () => {
+    assert.equal(
+      canAccessScreen({ name: 'Ana', role: 'Financeiro', permissions: [] }, 'fin-aprovacoes-pendentes'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Maria', role: 'Administrador', permissions: ['*'] }, 'fin-aprovacoes-pendentes'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Bárbara', role: 'Diretoria', permissions: [] }, 'fin-aprovacoes-pendentes'),
+      true,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'João', role: 'Operador', permissions: ['fin-aprovacoes-pendentes'] }, 'fin-aprovacoes-pendentes'),
+      false,
+    );
+    assert.equal(
+      canAccessScreen({ name: 'Ana', role: 'Financeiro', permissions: ['fin-dashboard'] }, 'finance-group'),
+      true,
+    );
+  });
+
+  it('Ranking DHL fica só para Diretoria e Financeiro', () => {
+    assert.equal(canAccessScreen({ role: 'Diretoria', permissions: [] }, 'ranking-dhl'), true);
+    assert.equal(canAccessScreen({ role: 'Financeiro', permissions: [] }, 'ranking-dhl'), true);
+    assert.equal(canAccessScreen({ role: 'Administrador', permissions: ['*'] }, 'ranking-dhl'), false);
+    assert.equal(canAccessScreen({ role: 'Avançado', permissions: ['ranking-dhl', '*'] }, 'ranking-dhl'), false);
+    assert.equal(canAccessScreen({ role: 'Operador', permissions: ['ranking-dhl'] }, 'ranking-dhl'), false);
+    assert.equal(canAccessScreen({ role: 'Controller', permissions: ['*'] }, 'ranking-dhl'), false);
+    const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../App.tsx'), 'utf8');
+    assert.match(app, /canViewRankingDhl/);
+    assert.doesNotMatch(app, /rl === 'avançado' \|\| rl === 'avancado' \|\| rl === 'diretoria'/);
+  });
+
+  it('comercial fica na carteira mesmo com as telas antigas no perfil', () => {
+    const comercial = {
+      role: 'COMERCIAL',
+      permissions: [
+        'dashboard', 'clients-group', 'client-routes', 'client-users', 'providers-group',
+        'providers', 'alvara-control', 'provider-users', 'provider-vehicles', 'provider-agents',
+        'provider-technologies', 'client-vehicles', 'contract-manager', 'quotes', 'clients',
+        'missions', 'monitoring-group', 'mission-report', 'shift-handover', '*',
+      ],
+    };
+    for (const tela of ['provider-agents', 'providers', 'alvara-control', 'contract-manager', 'provider-form', 'mission-report', 'client-users', 'client-vehicles', 'client-routes']) {
+      assert.equal(canAccessScreen(comercial, tela), false, tela);
+    }
+    for (const tela of ['dashboard', 'clients', 'quotes', 'missions', 'comissoes-comerciais', 'client-form', 'quote-form']) {
+      assert.equal(canAccessScreen(comercial, tela), true, tela);
+    }
+    assert.equal(canAccessScreen({ role: 'Diretoria', permissions: ['providers', 'provider-agents'] }, 'provider-agents'), true);
   });
 
   it('wildcard * libera telas comuns (não quebra exclusividade dos Thiagos no cockpit)', () => {

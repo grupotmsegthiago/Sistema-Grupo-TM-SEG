@@ -1,0 +1,97 @@
+import React, { useEffect, useState } from 'react';
+import { logoConhecido, type CenaVisual } from '../../lib/portalCliente/frotaVisual';
+
+const CARRETAS: Record<string, string> = {
+  ceva: '/caminhoes/3d/ceva-sem-fundo.webp',
+  dhl: '/caminhoes/3d/dhl-recorte.webp',
+  ibl: '/caminhoes/3d/ibl-recorte.webp',
+};
+
+const GENERICA = '/caminhoes/3d/generico-recorte.webp';
+
+/** A mesma cena do botão, do PDF, do e-mail e do link: mapa estático e a carreta do cliente. */
+export function cenaDaProposta(cliente: string, mapa: string | null | undefined): CenaVisual | null {
+  if (!mapa || !mapa.startsWith('data:image/')) return null;
+  const logo = logoConhecido(cliente);
+  return { mapa, carreta: carretaDoCliente(cliente), logo, sobreporLogo: Boolean(logo) };
+}
+
+/** Usa a carreta já gravada no projeto. A imagem nova, quando existe, chega pela prop src. */
+export function carretaDoCliente(nome: string): string {
+  const chave = nome.toLowerCase();
+  if (chave.includes('ceva')) return CARRETAS.ceva;
+  if (chave.includes('dhl')) return CARRETAS.dhl;
+  if (chave.includes('ibl')) return CARRETAS.ibl;
+  return GENERICA;
+}
+
+export const ClientTruckVisual: React.FC<{
+  cliente: string;
+  src?: string | null;
+  logo?: string | null;
+  className?: string;
+}> = ({ cliente, src, logo, className = '' }) => {
+  const [imagem, setImagem] = useState(src || carretaDoCliente(cliente));
+  useEffect(() => {
+    setImagem(src || carretaDoCliente(cliente));
+  }, [src, cliente]);
+  return (
+    <span className="relative inline-flex items-end [filter:drop-shadow(0_18px_12px_rgba(0,0,0,0.55))]">
+      <img
+        src={imagem}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={() => setImagem(GENERICA)}
+        className={className}
+      />
+      {logo ? (
+        <span className="pointer-events-none absolute left-[56%] top-[18%] flex h-[18%] w-[26%] items-center justify-center rounded-md bg-white/95 px-1 shadow-[0_8px_16px_rgba(15,23,42,0.35)] ring-1 ring-slate-200/80">
+          <img src={logo} alt="" className="max-h-full max-w-full object-contain" />
+        </span>
+      ) : null}
+    </span>
+  );
+};
+
+/** Foto da rota real com a carreta por cima. O traçado vem do mapa estático do Google. */
+export const CenaRotaVisual: React.FC<{
+  mapa: string;
+  carreta: string;
+  logo?: string | null;
+  className?: string;
+  faixa?: boolean;
+  onMapaErro?: () => void;
+}> = ({ mapa, carreta, logo, className = '', faixa = true, onMapaErro }) => (
+  <div className={`relative aspect-video w-full overflow-hidden bg-slate-200 ${className}`}>
+    <img
+      src={mapa}
+      alt="Mapa da rota calculada no Google"
+      className="absolute inset-0 h-full w-full object-contain object-center"
+      onLoad={(evento) => {
+        if (evento.currentTarget.naturalWidth < 80) onMapaErro?.();
+      }}
+      onError={() => onMapaErro?.()}
+    />
+    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(8,16,32,0.5)_100%)]" />
+    <div className="pointer-events-none absolute left-1/2 top-1/2 z-10 -translate-x-[42%] -translate-y-[58%]" data-testid="carreta-centro-mapa">
+      <ClientTruckVisual cliente="" src={carreta} logo={logo} className="h-40 w-auto max-w-none object-contain drop-shadow-[0_22px_16px_rgba(0,0,0,0.55)] sm:h-48" />
+      <svg viewBox="0 0 86 36" className="absolute -bottom-2 -left-10 h-8 w-16 drop-shadow-[0_10px_8px_rgba(0,0,0,0.55)] sm:h-10 sm:w-20" aria-hidden="true">
+        <rect x="8" y="14" width="70" height="14" rx="4" fill="#111827" />
+        <path d="M20 14 28 6h28l8 8" fill="#1f2937" />
+        <rect x="36" y="3" width="14" height="4" rx="1" fill="#f59e0b" />
+        <circle cx="24" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
+        <circle cx="64" cy="28" r="4" fill="#0f172a" stroke="#94a3b8" />
+      </svg>
+    </div>
+    <div className="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-end gap-3">
+      {faixa && (
+        <div className="mb-2 hidden gap-2 sm:flex">
+          <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Escolta intermediada</p>
+          <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Acompanhamento da operação</p>
+          <p className="rounded-2xl border border-white/50 bg-white/75 px-3 py-2 text-[11px] font-semibold text-slate-800 shadow backdrop-blur">Atendimento 24/7</p>
+        </div>
+      )}
+    </div>
+  </div>
+);

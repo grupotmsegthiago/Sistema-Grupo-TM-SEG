@@ -441,7 +441,8 @@ describe('missionBillingAudit', () => {
       providersList,
     );
 
-    assert.ok(finAuto.provider.serviceTotal > finReal100.provider.serviceTotal + 100, 'motor auto deve divergir da tabela real');
+    assert.equal(finAuto.provider.tableName, '100KM');
+    assert.ok(Math.abs(finAuto.provider.serviceTotal - finReal100.provider.serviceTotal) < 0.01, 'tabela contratual vence a mestre genérica');
 
     const audit = computeMissionBillingAudit(
       {

@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useRef } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { Mission, MissionStatus } from '../types';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -13,6 +14,7 @@ import {
     ArrowDownRight, Minus, Route, Timer, Package, Eye
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
+import { prepararImagensDoElemento } from '../lib/precificacao/imageUtils';
 import jsPDF from 'jspdf';
 
 const BRAND_PRIMARY = '#9E0032';
@@ -227,6 +229,7 @@ const ClientCommitteePresentation: React.FC<Props> = ({ missions, clientName }) 
         setIsExporting(true);
         try {
             const element = presentationRef.current;
+            await prepararImagensDoElemento(element);
             const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false });
             const imgData = canvas.toDataURL('image/png');
             const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
@@ -354,7 +357,7 @@ const ClientCommitteePresentation: React.FC<Props> = ({ missions, clientName }) 
                                 </div>
                                 <div className="text-right">
                                     <p className="text-white/30 text-[8px] font-bold uppercase">Documento Confidencial</p>
-                                    <p className="text-white/20 text-[8px]">Gerado em {new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+                                    <p className="text-white/20 text-[8px]">Gerado em {formatDateBR(new Date())}</p>
                                 </div>
                             </div>
                         </div>

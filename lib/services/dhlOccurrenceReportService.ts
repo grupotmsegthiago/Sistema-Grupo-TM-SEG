@@ -61,9 +61,23 @@ async function postOccurrenceReport(
 
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  const htmlStages = [
+    'Lendo KM, horários, timeline e histórico do cliente…',
+    'Analisando a ocorrência com o fornecedor…',
+    'Gerando o plano de ação com prazos…',
+    'Montando justificativa e causa raiz…',
+  ];
+  let stageIndex = 0;
+  const stageTimer =
+    format === 'html'
+      ? window.setInterval(() => {
+          stageIndex = Math.min(stageIndex + 1, htmlStages.length - 1);
+          report(12 + stageIndex * 12, htmlStages[stageIndex]);
+        }, 3500)
+      : 0;
 
   try {
-    report(format === 'html' ? 15 : 10, 'Enviando dados ao servidor...');
+    report(format === 'html' ? 12 : 10, format === 'html' ? htmlStages[0] : 'Enviando dados ao servidor...');
 
     const res = await authFetch('/api/dhl/occurrence-report', {
       method: 'POST',
@@ -93,6 +107,7 @@ async function postOccurrenceReport(
     throw new Error('Falha ao gerar relatório DHL');
   } finally {
     window.clearTimeout(timer);
+    if (stageTimer) window.clearInterval(stageTimer);
   }
 }
 

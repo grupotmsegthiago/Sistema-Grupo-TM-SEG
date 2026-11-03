@@ -48,7 +48,9 @@ function removeRedundantMunicipalServiceLine(observations: string): string {
     .map((part) => part.trim())
     .filter(Boolean)
     // Código e nome do serviço já seguem em campos fiscais próprios.
+    // A opção interna (escolta, rastreamento, intermediação) também não vai no texto da nota.
     .filter((part) => !/^CNAE\/Servi[cç]o municipal:/i.test(part))
+    .filter((part) => !/^Opção serviço NF:/i.test(part))
     .join('|');
 }
 

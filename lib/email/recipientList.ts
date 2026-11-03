@@ -19,6 +19,12 @@ export function formatEmailRecipients(value: unknown): string {
   return parseEmailRecipients(value).join(', ');
 }
 
+/** Os N primeiros e-mails válidos, na ordem do cadastro. */
+export function takeFirstEmailRecipients(value: unknown, max = 2): string[] {
+  const limit = Number.isFinite(max) && max > 0 ? Math.floor(max) : 2;
+  return parseEmailRecipients(value).slice(0, limit);
+}
+
 export function normalizeSmtpAddress(value: unknown): string {
   if (typeof value === 'string') return value.trim().toLowerCase();
   if (value && typeof value === 'object' && 'address' in value) {

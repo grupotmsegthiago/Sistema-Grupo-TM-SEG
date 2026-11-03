@@ -1,4 +1,5 @@
 import { formatDateBR } from '../lib/dateUtils';
+import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -37,6 +38,13 @@ function isDiretoria(): boolean {
     } catch { return false; }
 }
 
+function ocultaValoresRanking(): boolean {
+    try {
+        const u = JSON.parse(localStorage.getItem('userData') || '{}');
+        return isPerfilAvancado(u);
+    } catch { return false; }
+}
+
 export default function RankingDHL() {
     const now = new Date();
     const [year, setYear] = useState<number>(now.getFullYear());
@@ -45,6 +53,8 @@ export default function RankingDHL() {
     const [prodRows, setProdRows] = useState<ProdRow[]>([]);
     const [loading, setLoading] = useState(false);
     const diretoria = isDiretoria();
+    const ocultaValores = ocultaValoresRanking();
+    const colunas = ocultaValores ? 6 : 8;
 
     const loadData = async () => {
         setLoading(true);
@@ -186,7 +196,7 @@ export default function RankingDHL() {
                     </div>
                     <div>
                         <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight">Ranking DHL</h1>
-                        <p className="text-sm text-gray-500 font-semibold">R$ 10,00 por OS aberta para o cliente DHL</p>
+                        <p className="text-sm text-gray-500 font-semibold">{ocultaValores ? 'OS abertas para o cliente DHL' : 'R$ 10,00 por OS aberta para o cliente DHL'}</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -238,18 +248,20 @@ export default function RankingDHL() {
                     <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Demais</div>
                     <div className="text-base font-black text-gray-700 mt-1" data-testid="text-total-demais">{totals.demais}</div>
                 </div>
+                {!ocultaValores && (
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200 col-span-2 md:col-span-1">
                     <div className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Valor a Pagar</div>
                     <div className="text-base font-black text-emerald-700 mt-1" data-testid="text-total-value">{formatBRL(totals.value)}</div>
                 </div>
+                )}
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+            {!ocultaValores && <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
                 <Calendar className="text-amber-700 flex-shrink-0" size={18} />
                 <span className="text-[10px] font-black text-amber-700 uppercase tracking-widest">Data de Pagamento:</span>
                 <span className="text-base font-black text-amber-900" data-testid="text-payment-date">{paymentDate}</span>
                 <span className="text-xs font-bold text-amber-700">(fim do mês de referência + 40 dias)</span>
-            </div>
+            </div>}
 
             <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-4 mb-6 flex items-start gap-3" data-testid="alert-produtividade">
                 <AlertTriangle className="text-red-600 flex-shrink-0 mt-0.5" size={22} />
@@ -275,18 +287,18 @@ export default function RankingDHL() {
                             <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">OS Concluída</th>
                             <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">OS Aberta</th>
                             <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Demais</th>
-                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Valor</th>
-                            <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Pagamento</th>
+                            {!ocultaValores && <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Valor</th>}
+                            {!ocultaValores && <th className="px-3 py-3 text-right text-xs font-black uppercase tracking-widest">Pagamento</th>}
                         </tr>
                     </thead>
                     <tbody>
                         {loading && (
-                            <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 font-bold">
+                            <tr><td colSpan={colunas} className="px-4 py-8 text-center text-gray-400 font-bold">
                                 <Loader2 size={20} className="animate-spin inline mr-2" /> Carregando...
                             </td></tr>
                         )}
                         {!loading && rows.length === 0 && (
-                            <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 font-bold" data-testid="text-empty">
+                            <tr><td colSpan={colunas} className="px-4 py-8 text-center text-gray-400 font-bold" data-testid="text-empty">
                                 Nenhuma OS criada neste mês.
                             </td></tr>
                         )}
@@ -300,8 +312,8 @@ export default function RankingDHL() {
                                 <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-concluida-${i}`}>{r.concluida}</td>
                                 <td className="px-3 py-3 text-sm font-black text-amber-700 text-right" data-testid={`text-aberta-${i}`}>{r.aberta}</td>
                                 <td className="px-3 py-3 text-sm font-black text-gray-700 text-right" data-testid={`text-demais-${i}`}>{r.demais}</td>
-                                <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-value-${i}`}>{formatBRL(r.value)}</td>
-                                <td className="px-3 py-3 text-sm font-black text-amber-700 text-right whitespace-nowrap" data-testid={`text-payment-${i}`}>{paymentDate}</td>
+                                {!ocultaValores && <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right" data-testid={`text-value-${i}`}>{formatBRL(r.value)}</td>}
+                                {!ocultaValores && <td className="px-3 py-3 text-sm font-black text-amber-700 text-right whitespace-nowrap" data-testid={`text-payment-${i}`}>{paymentDate}</td>}
                             </tr>
                         ))}
                         {!loading && rows.length > 0 && (
@@ -311,8 +323,8 @@ export default function RankingDHL() {
                                 <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right">{totals.concluida}</td>
                                 <td className="px-3 py-3 text-sm font-black text-amber-700 text-right">{totals.aberta}</td>
                                 <td className="px-3 py-3 text-sm font-black text-gray-700 text-right">{totals.demais}</td>
-                                <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right">{formatBRL(totals.value)}</td>
-                                <td className="px-3 py-3"></td>
+                                {!ocultaValores && <td className="px-3 py-3 text-sm font-black text-emerald-700 text-right">{formatBRL(totals.value)}</td>}
+                                {!ocultaValores && <td className="px-3 py-3"></td>}
                             </tr>
                         )}
                     </tbody>

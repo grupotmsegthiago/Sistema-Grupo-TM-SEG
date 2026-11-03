@@ -1,10 +1,13 @@
 
 import React, { useState, useEffect } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { X, Printer, Download, ShieldCheck, MapPin, Flag, Navigation, Clock, DollarSign, Calendar, Fingerprint, Building2, Loader2, FileDown, CircleDot } from 'lucide-react';
 import { Quote } from '../types';
 import { supabase } from '../lib/supabase';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { prepararImagensDoElemento } from '../lib/precificacao/imageUtils';
+import ImagemSegura from './ImagemSegura';
 
 interface Props {
   quote: Quote;
@@ -102,6 +105,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
         const element = document.getElementById('print-area');
         if (!element) return;
 
+        await prepararImagensDoElemento(element);
         const canvas = await html2canvas(element, {
             scale: 2,
             useCORS: true,
@@ -252,7 +256,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                 
                 <div className="flex justify-between items-start mb-12 border-b border-gray-100 pb-8">
                     <div className="space-y-4 max-w-[60%]">
-                        <img src="/logo.png" alt="TMSEG" className="h-16 object-contain" />
+                        <ImagemSegura src="/logo.png" alt="TMSEG" className="h-16 object-contain" />
                         <div className="mt-2">
                             <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">Destinatário:</p>
                             <h2 className="text-lg font-black text-slate-900 uppercase leading-tight">
@@ -267,7 +271,7 @@ const QuotePrintModal: React.FC<Props> = ({ quote, onClose, waypoints = [] }) =>
                     <div className="text-right">
                         <h1 className="text-2xl font-black uppercase tracking-tighter text-slate-900 leading-tight">SIMULAÇÃO DE SERVIÇO -<br/><span className="text-red-700">Intermediação</span></h1>
                         <div className="flex items-center justify-end gap-2 text-gray-400 font-bold text-[10px] mt-4 uppercase">
-                            <Calendar size={12}/> São Paulo, {new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+                            <Calendar size={12}/> São Paulo, {formatDateBR(new Date())}
                         </div>
                     </div>
                 </div>

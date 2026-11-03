@@ -4,7 +4,7 @@ import {
   isTmSegSupabaseAnonKey,
   isTmSegSupabaseUrl,
   isValidHttpUrl,
-} from './supabasePublicEnv';
+} from './supabasePublicEnv.js';
 
 declare global {
   interface Window {

@@ -1,12 +1,16 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
+import { exportarTabelaCustoFornecedor } from '../exports/tabela-custo-fornecedor-export';
 import { ArrowLeft, Save, Briefcase, Truck, Loader2, Search, Calendar, FileText, AlertTriangle, CheckCircle2, MapPin, Upload, Eye, X, Trash2, DollarSign, Plus, Edit, FileSpreadsheet, TrendingUp, Percent, Lock, Phone as PhoneIcon, Mail, Hash, Fingerprint, Building2, ShieldCheck, User, RotateCcw, Check, CheckSquare, Square, Download, ScrollText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { logAction } from '../lib/logger';
+import { publicarNovidadeCadastro } from '../lib/tmsegNews';
 import { ProviderCostTable } from '../types';
 import ImportProviderCostModal from './ImportProviderCostModal';
 import { AUTO_MASTER_OP_TYPE, generateAutoBands, suggestAutoMasterFromManualTables, isAutoMasterRow, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
 import ClientContractTab from './ClientContractTab';
 import ProviderOperatingCoverageEditor from './ProviderOperatingCoverageEditor';
 import {
@@ -15,6 +19,10 @@ import {
   serializeOperatingCoverage,
   type ProviderOperatingCoverageRow,
 } from '../lib/providerOperatingCoverage';
+import {
+  acharClienteMesmoDocumento,
+  digitosDocumentoCliente,
+} from '../lib/clientDuplicateGuard';
 
 interface ProviderFormProps {
   onBack: () => void;
@@ -41,6 +49,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     dhl_solicitation_email: '',
     phone: '',
     whatsapp_group_id: '',
+    whatsapp_group_link: '',
+    whatsapp_desktop_group_name: '',
+    whatsapp_desktop_vinculo: 'nao_vinculado',
     zip_code: '',
     street: '',
     number: '',
@@ -50,7 +61,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
     state: '',
     alvaraValidity: '',
     alvaraUrl: '',
-    dhl_channel_preference: 'both' as 'email' | 'whatsapp' | 'both'
+    dhl_channel_preference: 'both' as 'email' | 'whatsapp' | 'both',
+    emite_nota_fiscal: 'nao_informado' as 'sim' | 'nao' | 'nao_informado'
   });
   const [operatingCoverage, setOperatingCoverage] = useState<ProviderOperatingCoverageRow[]>([]);
   const [coverageTouched, setCoverageTouched] = useState(false);
@@ -90,7 +102,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
   const isFinanceAdmin = currentUser && (() => {
     const r = (currentUser.role || '').toLowerCase();
     const perms = currentUser.permissions || [];
-    return r === 'diretoria' || r === 'administrador' || r === 'comercial' || r === 'controller' ||
+    return r === 'diretoria' || r === 'administrador' || r === 'comercial' || r === 'controller' || isFinanceProfileRole(r) ||
            perms.includes('*') || perms.includes('provider-costs');
   })();
 
@@ -194,6 +206,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     dhl_solicitation_email: data.dhl_solicitation_email || '',
                     phone: data.phone || '',
                     whatsapp_group_id: data.whatsapp_group_id || '',
+                    whatsapp_group_link: data.whatsapp_group_link || '',
+                    whatsapp_desktop_group_name: data.whatsapp_desktop_group_name || '',
+                    whatsapp_desktop_vinculo: data.whatsapp_desktop_vinculo || 'nao_vinculado',
                     zip_code: data.zip_code || '',
                     street: data.street || '',
                     number: data.number || '',
@@ -203,7 +218,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                     state: data.state || '',
                     alvaraValidity: data.alvara_validity || '',
                     alvaraUrl: data.alvara_url || '',
-                    dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both'
+                    dhl_channel_preference: (data.dhl_channel_preference === 'email' || data.dhl_channel_preference === 'whatsapp' || data.dhl_channel_preference === 'both') ? data.dhl_channel_preference : 'both',
+                    emite_nota_fiscal: data.emite_nota_fiscal === 'sim' || data.emite_nota_fiscal === 'nao' ? data.emite_nota_fiscal : 'nao_informado'
                 });
                 const coverage = parseOperatingCoverage(data.operating_coverage);
                 setOperatingCoverage(coverage);
@@ -511,12 +527,40 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
       }
   };
 
+  const verificarCnpjDuplicado = async (cnpjValue: string) => {
+    const digits = digitosDocumentoCliente(cnpjValue);
+    if (digits.length !== 11 && digits.length !== 14) {
+      setCnpjError('');
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('providers')
+        .select('id, name, cnpj, status');
+      if (error) throw error;
+      const dup = acharClienteMesmoDocumento(data || [], digits, id);
+      if (dup) {
+        setCnpjError(
+          `Já existe fornecedor com este CNPJ/CPF (id ${dup.id}: ${dup.name || 'sem nome'}).`,
+        );
+      } else {
+        setCnpjError('');
+      }
+    } catch (e) {
+      console.error('Verificação CNPJ fornecedor', e);
+    }
+  };
+
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
-    if (cleanCnpj.length !== 14) return;
+    if (cleanCnpj.length !== 14) {
+      await verificarCnpjDuplicado(formData.cnpj);
+      return;
+    }
     
     setIsSearchingCnpj(true);
     try {
+        await verificarCnpjDuplicado(cleanCnpj);
         const response = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cleanCnpj}`);
         if (!response.ok) {
             if (response.status === 404) throw new Error('CNPJ não localizado.');
@@ -621,6 +665,9 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             dhl_solicitation_email: formData.dhl_solicitation_email?.toLowerCase() || null,
             phone: formData.phone,
             whatsapp_group_id: formData.whatsapp_group_id?.trim() || null,
+            whatsapp_group_link: formData.whatsapp_group_link?.trim() || null,
+            whatsapp_desktop_group_name: formData.whatsapp_desktop_group_name?.trim() || null,
+            whatsapp_desktop_vinculo: formData.whatsapp_desktop_vinculo || 'nao_vinculado',
             zip_code: formData.zip_code,
             street: formData.street.toUpperCase(),
             number: formData.number,
@@ -631,7 +678,8 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
             address: fullAddress,
             alvara_validity: formData.alvaraValidity || null, 
             alvara_url: formData.alvaraUrl,
-            dhl_channel_preference: formData.dhl_channel_preference || 'both'
+            dhl_channel_preference: formData.dhl_channel_preference || 'both',
+            emite_nota_fiscal: formData.emite_nota_fiscal === 'sim' || formData.emite_nota_fiscal === 'nao' ? formData.emite_nota_fiscal : 'nao_informado'
        };
        if (coverageTouched) {
            payload.operating_coverage = serializeOperatingCoverage(operatingCoverage, formData.state, formData.city);
@@ -642,24 +690,33 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
            if (/dhl_channel_preference/i.test(errMsg)) delete (fallback as any).dhl_channel_preference;
            if (/dhl_solicitation_email/i.test(errMsg)) delete (fallback as any).dhl_solicitation_email;
            if (/whatsapp_group_id/i.test(errMsg)) delete (fallback as any).whatsapp_group_id;
+           if (/whatsapp_group_link/i.test(errMsg)) delete (fallback as any).whatsapp_group_link;
+           if (/whatsapp_desktop_group_name/i.test(errMsg)) delete (fallback as any).whatsapp_desktop_group_name;
+           if (/whatsapp_desktop_vinculo/i.test(errMsg)) delete (fallback as any).whatsapp_desktop_vinculo;
            if (/operating_coverage/i.test(errMsg)) {
                delete (fallback as any).operating_coverage;
                coverageColumnMissing = true;
            }
+           if (/emite_nota_fiscal/i.test(errMsg)) delete (fallback as any).emite_nota_fiscal;
            if (op === 'update') return await supabase.from('providers').update(fallback).eq('id', id);
            return await supabase.from('providers').insert([fallback]);
        };
        if (id) {
            let { error } = await supabase.from('providers').update(payload).eq('id', id);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|whatsapp_group_link|whatsapp_desktop_group_name|whatsapp_desktop_vinculo|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('update', error.message));
            if (error) throw new Error('Erro ao salvar fornecedor: ' + error.message);
            await logAction('UPDATE', 'Provider', id, `Fornecedor atualizado: ${formData.name}`);
        } else {
            payload.created_by = currentUser?.name || 'SISTEMA';
            let { error } = await supabase.from('providers').insert([payload]);
-           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|operating_coverage)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
+           if (error && /(dhl_channel_preference|dhl_solicitation_email|whatsapp_group_id|whatsapp_group_link|whatsapp_desktop_group_name|whatsapp_desktop_vinculo|operating_coverage|emite_nota_fiscal)/i.test(error.message)) ({ error } = await retryWithoutMissingCols('insert', error.message));
            if (error) throw error;
            await logAction('CREATE', 'Provider', 'NEW', `Fornecedor cadastrado: ${formData.name}`);
+           void publicarNovidadeCadastro({
+             tipo: 'fornecedor',
+             nomeCadastro: formData.name,
+             autor: currentUser?.name || 'Equipe',
+           });
        }
        if (coverageColumnMissing && coverageTouched) {
            showNotification('Atenção', 'Fornecedor salvo, mas os estados/filiais ainda não puderam ser gravados. Rode a migration 2026_08_18_providers_operating_coverage.sql no Supabase.', 'warning');
@@ -736,10 +793,13 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         <div className="relative">
                             <input 
                                 type="text" 
-                                className={`${INPUT_CLASS} pl-10 pr-12`} 
+                                className={`${INPUT_CLASS} pl-10 pr-12 ${cnpjError ? 'border-red-500 focus:border-red-500' : ''}`} 
                                 required 
                                 value={formData.cnpj} 
-                                onChange={e => setFormData({...formData, cnpj: e.target.value})}
+                                onChange={e => {
+                                  setCnpjError('');
+                                  setFormData({...formData, cnpj: e.target.value});
+                                }}
                                 onBlur={handleSearchCNPJ}
                             />
                             <Fingerprint className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
@@ -748,10 +808,22 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                 onClick={handleSearchCNPJ}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                                 disabled={isSearchingCnpj}
+                                title="Consultar CNPJ na Receita Federal"
                             >
                                 {isSearchingCnpj ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                             </button>
                         </div>
+                        {cnpjError && (
+                          <p className="text-[10px] font-bold text-red-600 mt-1">{cnpjError}</p>
+                        )}
+                    </div>
+                    <div className="space-y-1.5 md:col-span-3">
+                        <label className={LABEL_CLASS}>Emite nota fiscal?</label>
+                        <select className={INPUT_CLASS} value={formData.emite_nota_fiscal} onChange={e => setFormData({ ...formData, emite_nota_fiscal: e.target.value === 'sim' || e.target.value === 'nao' ? e.target.value : 'nao_informado' })}>
+                            <option value="sim">Sim</option>
+                            <option value="nao">Não</option>
+                            <option value="nao_informado">Não informado</option>
+                        </select>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Razão Social *</label>
@@ -929,6 +1001,40 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                           Opcional. Também dá para vincular pelo WhatsApp: no grupo, mencione @monitoramento e digite
                           {' '}<span className="text-gray-500">cadastra este grupo no fornecedor NOME</span>.
                         </p>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-3">
+                        <label className={LABEL_CLASS}>Link do grupo no WhatsApp do operador</label>
+                        <input
+                          type="text"
+                          className={`${INPUT_CLASS} normal-case`}
+                          value={formData.whatsapp_group_link}
+                          onChange={e => setFormData({ ...formData, whatsapp_group_link: e.target.value.trim() })}
+                          placeholder="https://chat.whatsapp.com/..."
+                          data-testid="input-provider-whatsapp-group-link"
+                        />
+                        <p className="text-[10px] text-gray-400 font-medium normal-case">
+                          Referência de cadastro. O aplicativo do WhatsApp Desktop não usa este link para enviar.
+                        </p>
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>Nome exato do grupo no WhatsApp Desktop</label>
+                        <input
+                          type="text"
+                          className={`${INPUT_CLASS} normal-case`}
+                          value={formData.whatsapp_desktop_group_name}
+                          onChange={e => setFormData({ ...formData, whatsapp_desktop_group_name: e.target.value })}
+                          placeholder="Como o grupo aparece no WhatsApp"
+                          data-testid="input-provider-whatsapp-desktop-name"
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Vinculação do grupo</label>
+                        <select className={INPUT_CLASS} value={formData.whatsapp_desktop_vinculo} onChange={e => setFormData({ ...formData, whatsapp_desktop_vinculo: e.target.value })} data-testid="select-provider-whatsapp-vinculo">
+                            <option value="nao_vinculado">Não vinculado</option>
+                            <option value="supervisionado">Vinculado com supervisão</option>
+                            <option value="incerto">Incerto</option>
+                            <option value="desativado">Desativado</option>
+                        </select>
                     </div>
                     <div className="space-y-1.5 md:col-span-3">
                         <label className={LABEL_CLASS}>Canal preferido do link DHL (reenvio)</label>
@@ -1324,6 +1430,18 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                         ? `${costTables.filter((t: any) => (t.operation_type || '').toLowerCase().includes(costSearch.toLowerCase())).length} / ${costTables.length}`
                         : `${costTables.length} itens`}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const termo = costSearch.toLowerCase();
+                    const linhas = costTables.filter((t: any) => !termo || (t.operation_type || '').toLowerCase().includes(termo));
+                    void exportarTabelaCustoFornecedor({ fornecedor: formData.name, linhas });
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[10px] font-black uppercase text-emerald-800 hover:bg-emerald-100"
+                  data-testid="button-exportar-tabela-custo"
+                >
+                  <FileSpreadsheet size={14} /> Exportar Excel
+                </button>
               </div>
 
               <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-sm bg-white">
@@ -1367,7 +1485,7 @@ const ProviderForm: React.FC<ProviderFormProps> = ({ onBack, onNavigateToVehicle
                                             <div className="flex flex-col items-center gap-0.5">
                                                 <span className="bg-green-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 shadow-sm"><Check size={8} strokeWidth={4} /> Ativo</span>
                                                 {table.last_adjustment_date && (
-                                                    <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {new Date(table.last_adjustment_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
+                                                    <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {formatDateBR(table.last_adjustment_date)}</span>
                                                 )}
                                             </div>
                                         ) : (

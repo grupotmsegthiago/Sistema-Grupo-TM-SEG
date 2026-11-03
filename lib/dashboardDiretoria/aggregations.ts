@@ -17,6 +17,7 @@ import {
   listMonthsFromJuneThrough,
 } from './periodUtils';
 import { formatIsoDateFromTimestampBR } from '../dateUtils';
+import { getNetCreditedAmount } from '../financial/transactionAmounts';
 import type {
   AccountBalanceOverview,
   CashKpis,
@@ -217,7 +218,7 @@ export function computeCashKpis(
   const incomePaid = round2(
     inPeriod
       .filter(t => t.type === 'INCOME' && t.status === 'PAID' && !isInternalGroupTransfer(t, categories) && !isInvestmentCashMovement(t, investmentIds, categories))
-      .reduce((s, t) => s + Number(t.amount || 0), 0),
+      .reduce((s, t) => s + getNetCreditedAmount(t), 0),
   );
   const expensePaid = round2(
     inPeriod
@@ -249,7 +250,7 @@ export function computeCashKpis(
   const totalCash = round2(
     accounts.reduce((sum, acc) => {
       const accTrans = allTransactions.filter(t => t.account_id === acc.id && t.status === 'PAID');
-      const income = accTrans.filter(t => t.type === 'INCOME').reduce((s, t) => s + Number(t.amount || 0), 0);
+      const income = accTrans.filter(t => t.type === 'INCOME').reduce((s, t) => s + getNetCreditedAmount(t), 0);
       const expense = accTrans.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + Number(t.amount || 0), 0);
       return sum + Number(acc.initial_balance || 0) + income - expense;
     }, 0),
@@ -280,7 +281,9 @@ function toCashTitleRow(
   return {
     id: String(t.id),
     description: desc,
-    amount: round2(Number(t.amount) || 0),
+    amount: t.type === 'INCOME' && bucket === 'paid'
+      ? getNetCreditedAmount(t)
+      : round2(Number(t.amount) || 0),
     date,
     category: String(t.category_name || 'Sem categoria'),
     entity,
@@ -311,7 +314,9 @@ export function buildCashTitleBreakdown(
   const pending = filterPendingTransactionsInPeriod(allTransactions, period, now)
     .filter(t => !isInternalGroupTransfer(t, categories) && !isInvestmentCashMovement(t, investmentIds, categories));
 
-  const paidIncomeAll = paid.filter(t => t.type === 'INCOME').map(t => toCashTitleRow(t, 'paid'));
+  const paidIncomeAll = paid
+    .filter(t => t.type === 'INCOME' && getNetCreditedAmount(t) > 0)
+    .map(t => toCashTitleRow(t, 'paid'));
   const paidExpenseAll = paid.filter(t => t.type === 'EXPENSE').map(t => toCashTitleRow(t, 'paid'));
   const pendingRecvAll = pending.filter(t => t.type === 'INCOME').map(t => toCashTitleRow(t, 'pending'));
   const pendingPayAll = pending.filter(t => t.type === 'EXPENSE').map(t => toCashTitleRow(t, 'pending'));
@@ -551,7 +556,8 @@ export function buildDailyCashFlow(
     const day = getCashMovementDate(t);
     if (!day) continue;
     const row = map.get(day) || { inflow: 0, outflow: 0 };
-    const amt = Number(t.amount) || 0;
+    const amt = t.type === 'INCOME' ? getNetCreditedAmount(t) : Number(t.amount) || 0;
+    if (t.type === 'INCOME' && amt <= 0) continue;
     if (t.type === 'INCOME') row.inflow += amt;
     else row.outflow += amt;
     map.set(day, row);

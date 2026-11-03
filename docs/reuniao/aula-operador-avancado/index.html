@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Aula Operador e Avançado — Grupo TM SEG</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0c0c0c; color: #111; font-family: "Segoe UI", Arial, sans-serif; }
+  #moldura { margin: 12px auto 0; position: relative; overflow: hidden; }
+  #palco { width: 1920px; height: 1080px; background: #f3f4f6; position: relative; transform-origin: top left; }
+  .topo { height: 56px; background: #111; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; }
+  .marca { font-weight: 800; letter-spacing: 0.18em; font-size: 18px; }
+  .marca span { color: #dc2626; }
+  .topo-meio { font-size: 15px; color: #d1d5db; letter-spacing: 0.04em; }
+  .topo-num { font-size: 15px; color: #fca5a5; font-weight: 700; }
+  .miolo { height: 748px; display: flex; overflow: hidden; }
+  .side { width: 300px; background: linear-gradient(180deg, #000 0%, #1a0505 55%, #450a0a 100%); color: #fff; padding: 12px 10px; overflow: hidden; }
+  .logo-bloco { padding: 4px 12px 10px; border-bottom: 1px solid rgba(255,255,255,.12); margin-bottom: 8px; }
+  .logo-bloco small { letter-spacing: .22em; color: #d1d5db; font-size: 11px; }
+  .logo-bloco strong { display: block; color: #dc2626; font-size: 22px; letter-spacing: .14em; }
+  .perfil-side { margin: 0 8px 8px; background: rgba(255,255,255,.06); border-radius: 10px; padding: 6px 10px; font-size: 13px; color: #fecaca; font-weight: 700; }
+  .item { padding: 6px 12px; border-radius: 8px; color: #e5e7eb; font-size: 14px; margin-bottom: 1px; }
+  .item.grupo { color: #fff; font-weight: 700; }
+  .filho { padding: 4px 12px 4px 32px; color: #d1d5db; font-size: 13px; border-radius: 8px; }
+  .filho.on, .item.on { background: rgba(255,255,255,.08); color: #f87171; font-weight: 700; }
+  .foco { outline: 4px solid #f97316; outline-offset: 2px; border-radius: 10px; }
+  .main { flex: 1; padding: 22px 26px; overflow: hidden; }
+  .h1 { font-size: 28px; font-weight: 800; margin: 0 0 6px; }
+  .sub { color: #6b7280; font-size: 16px; margin: 0 0 16px; }
+  .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; padding: 16px 18px; }
+  .row { display: flex; gap: 14px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; border: 0; border-radius: 10px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+  .btn-laranja { background: #f97316; color: #111; padding: 12px 18px; font-size: 14px; }
+  .btn-preto { background: #111; color: #fff; padding: 12px 18px; font-size: 14px; }
+  .btn-branco { background: #fff; color: #6b7280; border: 1px solid #e5e7eb; padding: 12px 18px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th { text-align: left; font-size: 12px; letter-spacing: .06em; color: #6b7280; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }
+  td { padding: 12px 10px; border-bottom: 1px solid #f3f4f6; }
+  .tag { font-size: 12px; font-weight: 800; padding: 4px 8px; border-radius: 999px; }
+  .tag-azul { background: #dbeafe; color: #1d4ed8; }
+  .tag-verde { background: #dcfce7; color: #166534; }
+  .tag-cinza { background: #f3f4f6; color: #374151; }
+  .opcao { flex: 1; border: 2px solid #e5e7eb; border-radius: 14px; padding: 18px; background: #fff; }
+  .opcao.carac { border-color: #dc2626; background: #fef2f2; }
+  .opcao.vel { border-color: #111; background: #111; color: #fff; }
+  .campo label { display: block; font-size: 12px; font-weight: 800; letter-spacing: .06em; color: #6b7280; margin-bottom: 6px; text-transform: uppercase; }
+  .campo .box { background: #fff; border: 1px solid #d1d5db; border-radius: 10px; padding: 12px 14px; font-size: 16px; font-weight: 700; }
+  .passo { font-size: 13px; font-weight: 800; color: #dc2626; letter-spacing: .08em; }
+  .legenda { height: 276px; background: #111; color: #fff; padding: 16px 36px 14px; }
+  .legenda .quem { display: inline-block; background: #dc2626; color: #fff; font-size: 13px; font-weight: 800; letter-spacing: .12em; padding: 4px 10px; border-radius: 999px; }
+  .legenda h2 { margin: 10px 0 8px; font-size: 22px; }
+  .legenda p { margin: 0; font-size: 22px; line-height: 1.32; color: #f9fafb; }
+  .capa { height: 748px; background: linear-gradient(160deg, #000 0%, #1a0505 50%, #450a0a 100%); color: #fff; display: flex; flex-direction: column; justify-content: center; padding: 0 90px; }
+  .capa .k { letter-spacing: .28em; color: #fca5a5; font-weight: 700; }
+  .capa h1 { font-size: 78px; line-height: 1.02; margin: 12px 0; }
+  .capa h1 span { color: #dc2626; }
+  .capa .linha { width: 120px; height: 6px; background: #dc2626; margin: 18px 0; }
+  .capa p { font-size: 30px; color: #e5e7eb; max-width: 1100px; margin: 0; }
+  .chips { display: flex; gap: 12px; margin-top: 28px; }
+  .chip { border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 10px 16px; font-size: 16px; }
+  .bloqueio { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 12px; padding: 14px 16px; font-weight: 700; }
+  .ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 12px; padding: 14px 16px; font-weight: 700; }
+  #controles { width: min(1100px, 96vw); margin: 10px auto 16px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+  #controles button { background: #fff; color: #111; border: 0; border-radius: 10px; padding: 12px 18px; font-weight: 800; font-size: 16px; cursor: pointer; }
+  #controles button.play { background: #f97316; }
+  #controles span { color: #d1d5db; font-size: 14px; }
+  body.gravar #controles, body.gravar #moldura { margin: 0; }
+  body.gravar { background: #000; }
+</style>
+</head>
+<body>
+<div id="moldura"><div id="palco"></div></div>
+<div id="controles"></div>
+<script type="application/json" id="cenas-json">
+[
+  {
+    "perfil": "Time",
+    "titulo": "Como o sistema funciona",
+    "tela": "capa",
+    "kicker": "GRUPO TM SEG",
+    "manchete": "Operador<br>e <span>Avançado</span>",
+    "apoio": "Aula do sistema para a reunião do time. Os menus e os botões têm o mesmo nome de quando você entra no sistema.",
+    "fala": "Olá, time. Esta aula mostra o sistema do Grupo TM SEG no dia a dia de dois perfis: Operador e Avançado. Os menus e os botões que aparecem aqui têm o mesmo nome de quando vocês entram no sistema. Primeiro, quem abre e acompanha a ordem de serviço. Depois, quem cadastra cliente, carga e viatura."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "O que o Operador enxerga",
+    "tela": "menu",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "Quando o Operador entra, o menu é curto. Tem a Página Inicial, o Monitoramento com o Painel de OS e o Controle Diário, a Rede de Apoio, e o Fornecedor apenas com o Mapa de Acionamento. Cliente, viatura e financeiro não aparecem para esse perfil."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Onde abrir uma OS",
+    "tela": "os-lista",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "focoBtn": "nova",
+    "fala": "O trabalho começa no Painel de OS. Ali está a lista das missões. Para abrir uma nova, use o botão laranja Nova Missão. Operador e Avançado usam esse mesmo botão."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Etapa 1 — tipo de operação",
+    "tela": "os-tipo",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "A Nova Missão tem seis etapas. A primeira é o tipo de operação. Caracterizada é a escolta identificada. Velada é a escolta discreta. Escolha um dos dois. Sem o tipo, as próximas etapas não seguem do jeito certo, porque o fornecedor muda conforme a escolha."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Etapa 2 — selecionar cliente",
+    "tela": "os-cliente",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "Segunda etapa: Selecionar Cliente. Digite o nome e escolha na lista. O cliente precisa já existir no cadastro. Quem inclui cliente novo é o perfil Avançado, mais à frente. Preencha também o número da Solicitação de Escolta, a S.E."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Etapa 3 — carga e motorista",
+    "tela": "os-carga",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "Terceira etapa: veículo do cliente e motorista. Busque a placa da carga. Se a viagem tiver dois caminhões, use Adicionar segundo veículo. Coloque nome e telefone do motorista. Atenção: isso é o caminhão do cliente. Não é a viatura da escolta."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Etapa 4 — fornecedor da escolta",
+    "tela": "os-fornecedor",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "Quarta etapa: o fornecedor, o parceiro da escolta. O sistema lista só quem atende o tipo escolhido, caracterizada ou velada. Se ainda não souber quem vai, use Aguardando informação e pule a etapa. Dá para completar o fornecedor depois."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Etapa 5 — origem e destino",
+    "tela": "os-rota",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "Quinta etapa: a rota. Endereço de origem, o ponto A, e endereço de destino, o ponto B. Os dois são obrigatórios. É essa rota que a operação vai acompanhar no painel."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Etapa 6 — gerar a ordem",
+    "tela": "os-agenda",
+    "menu": "operador",
+    "foco": "Painel de OS",
+    "fala": "Sexta etapa: o agendamento, com data e hora de início. Se o cliente mandou o print do pedido, cole na evidência. Quando o horário estiver completo, o botão laranja libera: Gerar Ordem de Serviço. Só nesse clique a OS passa a existir no Painel."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "Depois que a OS existe",
+    "tela": "os-depois",
+    "menu": "operador",
+    "foco": "Controle Diário",
+    "fala": "Com a OS aberta, o Operador acompanha em três lugares. Controle Diário mostra o que está na rua naquele dia. Rede de Apoio, o QRF, ajuda a achar apoio no mapa. Mapa de Acionamento, dentro de Fornecedor, mostra quem pode ser chamado."
+  },
+  {
+    "perfil": "Operador",
+    "titulo": "O que o Operador não faz",
+    "tela": "limites",
+    "menu": "operador",
+    "quem": "operador",
+    "fala": "O Operador não cadastra cliente, não cadastra viatura e não mexe em preço. Se faltar o cliente ou a placa da carga na hora de abrir a OS, chame o perfil Avançado. Financeiro e tabela de preço nem entram nesse menu."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "Entra a supervisão",
+    "tela": "capa",
+    "kicker": "PERFIL AVANÇADO",
+    "manchete": "Quem deixa<br>a OS <span>pronta</span>",
+    "apoio": "O Avançado abre missão, como o Operador, e ainda cuida dos cadastros: cliente, carga, rota, fornecedor, viatura e agente.",
+    "fala": "Agora o perfil Avançado. No sistema ele é a supervisora. Esse perfil abre missão do mesmo jeito que o Operador, e ainda prepara os cadastros sem os quais a missão não fecha: cliente, placa da carga, rota, fornecedor, viatura e agente."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "O menu da supervisora",
+    "tela": "menu",
+    "menu": "avancado",
+    "foco": "Cadastro de Cliente",
+    "fala": "O menu do Avançado é maior. No Monitoramento entram também Relatório de OS e Ranking DHL. Em Cliente: cadastro, veículos de carga e rotas. Em Fornecedor: o parceiro, o alvará, as viaturas e os agentes. Financeiro, proposta e tabela de preço continuam fechados."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "Cadastrar cliente",
+    "tela": "cliente",
+    "menu": "avancado",
+    "foco": "Cadastro de Cliente",
+    "fala": "Para cadastrar cliente, abra Cliente, Cadastro de Cliente, e clique em Novo Cliente. Preencha o CPF ou CNPJ. A lupa consulta a Receita. Informe a razão social e marque se é cliente efetivo ou só prospecção. Salve os dados cadastrais. Contrato, tabela de preço e cotação não abrem para o Avançado."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "Placa da carga e rota fixa",
+    "tela": "carga-rota",
+    "menu": "avancado",
+    "foco": "Veículos (Carga)",
+    "fala": "Ainda em Cliente, Veículos de Carga é onde entra a placa do caminhão. O botão é Novo Veículo. Cadastro de Rotas, no botão Nova Rota, guarda origem e destino que se repetem. Sem a placa cadastrada, a etapa três da missão fica sem o veículo para escolher."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "Cadastrar a viatura",
+    "tela": "vtr",
+    "menu": "avancado",
+    "foco": "Cadastro de Viaturas",
+    "fala": "Viatura de escolta é outro cadastro. Menu Fornecedor, Cadastro de Viaturas, botão Cadastrar Viatura. Informe placa, marca, modelo e de qual fornecedor ela é. Se não for viatura da TM SEG ou da Ativa, o rastreador é obrigatório. VTR é esta tela. O caminhão do cliente fica em Veículos de Carga."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "Fornecedor, agente e alvará",
+    "tela": "parceiro",
+    "menu": "avancado",
+    "foco": "Cadastro de Fornecedor",
+    "fala": "No mesmo grupo, Cadastro de Fornecedor cria o parceiro que aparece na etapa quatro da OS. Cadastro de Agentes guarda a equipe. Gestão de Alvarás controla o documento do fornecedor. Fornecedor bloqueado ou incompleto não deve ser escolhido na missão."
+  },
+  {
+    "perfil": "Avançado",
+    "titulo": "Relatório, ranking e o dia",
+    "tela": "acompanha",
+    "menu": "avancado",
+    "foco": "Relatório de OS",
+    "fala": "Além do cadastro, o Avançado acompanha resultado. Relatório de OS reúne a missão. Ranking DHL mostra o desempenho nesse cliente. Controle Diário é o painel do dia. O Operador também vê o Controle Diário. Relatório de OS e Ranking DHL ficam com o Avançado."
+  },
+  {
+    "perfil": "Diretoria",
+    "titulo": "Tabela de preço",
+    "tela": "preco",
+    "menu": "avancado",
+    "fala": "Tabela de preço não é tela do Operador nem do Avançado. Quem abre é Diretoria, Administrador ou Comercial, dentro do cliente, na aba Tabela de Preços. Ali ficam a franquia, o quilômetro extra e a hora extra. O Avançado vê o cliente, mas essa aba não aparece. Se a OS estiver sem preço, o aviso sobe para quem tem esse acesso."
+  },
+  {
+    "perfil": "Time",
+    "titulo": "O que cada um leva daqui",
+    "tela": "fim",
+    "fala": "Resumo da reunião. O Operador abre e acompanha a OS: tipo, cliente, carga, fornecedor, rota e horário, e clica em Gerar Ordem de Serviço. O Avançado prepara o cadastro: cliente, placa da carga, rota, fornecedor, viatura e agente. Preço fica com Diretoria, Administrador ou Comercial. Bom trabalho."
+  }
+]
+</script>
+<script>
+const CENAS = JSON.parse(document.getElementById('cenas-json').textContent);
+const params = new URLSearchParams(location.search);
+const gravar = params.get('gravar') === '1';
+let indice = Math.max(0, Math.min(CENAS.length - 1, parseInt(params.get('cena') || '0', 10) || 0));
+let tocando = false;
+let vozPronta = false;
+
+const MENUS = {
+  operador: [
+    { nome: 'Página Inicial' },
+    { nome: 'Monitoramento', filhos: ['Painel de OS', 'Controle Diário'] },
+    { nome: 'Rede de Apoio (QRF)' },
+    { nome: 'Fornecedor', filhos: ['Mapa de Acionamento'] }
+  ],
+  avancado: [
+    { nome: 'Página Inicial' },
+    { nome: 'Monitoramento', filhos: ['Painel de OS', 'Controle Diário', 'Relatório de OS', 'Ranking DHL'] },
+    { nome: 'Rede de Apoio (QRF)' },
+    { nome: 'Cliente', filhos: ['Cadastro de Cliente', 'Veículos (Carga)', 'Cadastro de Rotas'] },
+    { nome: 'Fornecedor', filhos: ['Cadastro de Fornecedor', 'Gestão de Alvarás', 'Cadastro de Viaturas', 'Cadastro de Agentes'] }
+  ]
+};
+
+function esc(s) {
+  return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+}
+function on(nome, foco) { return nome === foco ? ' on foco' : ''; }
+
+function sidebar(menu, foco, perfil) {
+  const blocos = MENUS[menu].map(item => {
+    const filhos = (item.filhos || []).map(f => `<div class="filho${on(f, foco)}">${esc(f)}</div>`).join('');
+    const ativo = item.nome === foco ? ' on foco' : '';
+    return `<div class="item${item.filhos ? ' grupo' : ''}${ativo}">${esc(item.nome)}</div>${filhos}`;
+  }).join('');
+  return `<aside class="side">
+    <div class="logo-bloco"><small>GRUPO</small><strong>TMSEG</strong></div>
+    <div class="perfil-side">Perfil ${esc(perfil)}</div>
+    ${blocos}
+  </aside>`;
+}
+
+function moldura(cena, miolo, menu) {
+  const n = indice + 1;
+  const side = menu ? sidebar(menu, cena.foco || '', cena.perfil) : '';
+  return `<div class="topo">
+      <div class="marca">GRUPO <span>TMSEG</span></div>
+      <div class="topo-meio">Aula · Operador e Avançado</div>
+      <div class="topo-num">${n} / ${CENAS.length}</div>
+    </div>
+    <div class="miolo">${side}<div class="main">${miolo}</div></div>
+    <div class="legenda">
+      <span class="quem">${esc(cena.perfil.toUpperCase())}</span>
+      <h2>${esc(cena.titulo)}</h2>
+      <p>${esc(cena.fala)}</p>
+    </div>`;
+}
+
+function capa(cena) {
+  return `<div class="topo">
+      <div class="marca">GRUPO <span>TMSEG</span></div>
+      <div class="topo-meio">Aula · Operador e Avançado</div>
+      <div class="topo-num">${indice + 1} / ${CENAS.length}</div>
+    </div>
+    <div class="capa">
+      <div class="k">${esc(cena.kicker)}</div>
+      <h1>${cena.manchete}</h1>
+      <div class="linha"></div>
+      <p>${esc(cena.apoio)}</p>
+    </div>
+    <div class="legenda">
+      <span class="quem">${esc(cena.perfil.toUpperCase())}</span>
+      <h2>${esc(cena.titulo)}</h2>
+      <p>${esc(cena.fala)}</p>
+    </div>`;
+}
+
+function osLista(cena) {
+  const foco = cena.focoBtn === 'nova' ? ' foco' : '';
+  const miolo = `<div style="display:flex;justify-content:space-between;align-items:flex-end">
+      <div><p class="h1">Painel de OS</p><p class="sub">Missões em acompanhamento</p></div>
+      <button class="btn btn-laranja${foco}">+ Nova Missão</button>
+    </div>
+    <div class="card">
+      <table>
+        <tr><th>OS</th><th>CLIENTE</th><th>ROTA</th><th>STATUS</th></tr>
+        <tr><td>10421</td><td>CLIENTE EXEMPLO</td><td>SOROCABA → CAMPINAS</td><td><span class="tag tag-azul">Em viagem</span></td></tr>
+        <tr><td>10418</td><td>CLIENTE EXEMPLO</td><td>CAMPINAS → SANTOS</td><td><span class="tag tag-verde">Concluída</span></td></tr>
+        <tr><td>10402</td><td>OUTRO CLIENTE</td><td>GUARULHOS → CURITIBA</td><td><span class="tag tag-cinza">Solicitada</span></td></tr>
+      </table>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osTipo(cena) {
+  const miolo = `<p class="passo">ETAPA 1 DE 6</p><p class="h1">Tipo de operação</p><p class="sub">Nova Missão</p>
+    <div class="row">
+      <div class="opcao carac foco"><strong>CARACTERIZADA</strong><p>Escolta identificada</p></div>
+      <div class="opcao vel"><strong>VELADA</strong><p>Escolta discreta</p></div>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osCliente(cena) {
+  const miolo = `<p class="passo">ETAPA 2 DE 6</p><p class="h1">Selecionar cliente</p>
+    <div class="row">
+      <div class="campo" style="flex:2"><label>Cliente</label><div class="box foco">CLIENTE EXEMPLO LTDA</div></div>
+      <div class="campo" style="flex:1"><label>Número da S.E.</label><div class="box">SE-10421</div></div>
+    </div>
+    <p class="sub" style="margin-top:14px">O cliente precisa já estar cadastrado. Cliente novo é com o perfil Avançado.</p>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osCarga(cena) {
+  const miolo = `<p class="passo">ETAPA 3 DE 6</p><p class="h1">Veículo do cliente / motorista</p>
+    <div class="row">
+      <div class="campo" style="flex:1"><label>Placa da carga</label><div class="box foco">ABC1D23</div></div>
+      <div class="campo" style="flex:1"><label>Motorista</label><div class="box">MOTORISTA EXEMPLO</div></div>
+      <div class="campo" style="flex:1"><label>Telefone</label><div class="box">(11) 90000-0000</div></div>
+    </div>
+    <p class="sub" style="margin-top:14px">Caminhão do cliente. A viatura da escolta é outro cadastro.</p>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osFornecedor(cena) {
+  const miolo = `<p class="passo">ETAPA 4 DE 6</p><p class="h1">Fornecedor (parceiro de escolta)</p>
+    <div class="card" style="margin-bottom:12px">Exibindo fornecedores de Escolta Caracterizada</div>
+    <div class="campo"><label>Fornecedor</label><div class="box">PARCEIRO EXEMPLO</div></div>
+    <button class="btn btn-branco foco" style="margin-top:14px;width:100%;justify-content:center">Aguardando informação — pular etapa</button>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osRota(cena) {
+  const miolo = `<p class="passo">ETAPA 5 DE 6</p><p class="h1">Rota (origem x destino)</p>
+    <div class="row">
+      <div class="campo" style="flex:1"><label>Endereço de origem (ponto A)</label><div class="box foco">SOROCABA / SP</div></div>
+      <div class="campo" style="flex:1"><label>Endereço de destino (ponto B)</label><div class="box foco">CAMPINAS / SP</div></div>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osAgenda(cena) {
+  const miolo = `<p class="passo">ETAPA 6 DE 6</p><p class="h1">Agendamento</p>
+    <div class="row" style="margin-bottom:14px">
+      <div class="campo" style="flex:1"><label>Data</label><div class="box foco">02/10/2026</div></div>
+      <div class="campo" style="flex:1"><label>Hora de início</label><div class="box foco">08:00</div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px;color:#6b7280">Evidência da solicitação — cole o print do pedido, se o cliente enviou.</div>
+    <div style="display:flex;justify-content:flex-end;gap:10px">
+      <button class="btn btn-branco">Cancelar</button>
+      <button class="btn btn-laranja foco">Gerar Ordem de Serviço</button>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function osDepois(cena) {
+  const miolo = `<p class="h1">Depois de gerar a OS</p><p class="sub">Três lugares do dia a dia do Operador</p>
+    <div class="row">
+      <div class="card foco" style="flex:1"><strong>Controle Diário</strong><p>O que está na rua hoje.</p></div>
+      <div class="card" style="flex:1"><strong>Rede de Apoio (QRF)</strong><p>Apoio no mapa.</p></div>
+      <div class="card" style="flex:1"><strong>Mapa de Acionamento</strong><p>Quem pode ser chamado.</p></div>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function limites(cena) {
+  const miolo = `<p class="h1">Limite do Operador</p><p class="sub">Se faltar cadastro, chame o Avançado</p>
+    <div class="row">
+      <div style="flex:1" class="bloqueio">Não cadastra cliente</div>
+      <div style="flex:1" class="bloqueio">Não cadastra viatura</div>
+      <div style="flex:1" class="bloqueio">Não mexe em preço</div>
+    </div>
+    <div class="ok" style="margin-top:16px">Faz: Nova Missão, Painel de OS, Controle Diário, Rede de Apoio e Mapa de Acionamento.</div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function cliente(cena) {
+  const miolo = `<div style="display:flex;justify-content:space-between;align-items:flex-end">
+      <div><p class="h1">Cadastro de Cliente</p><p class="sub">Dados cadastrais</p></div>
+      <button class="btn btn-preto foco">+ Novo Cliente</button>
+    </div>
+    <div class="card">
+      <div class="row">
+        <div class="campo" style="flex:1"><label>CPF / CNPJ</label><div class="box">00.000.000/0001-00</div></div>
+        <div class="campo" style="flex:2"><label>Razão social</label><div class="box">CLIENTE EXEMPLO LTDA</div></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <div class="ok" style="flex:1">Cliente efetivo</div>
+        <div class="card" style="flex:1">Prospecção / lead</div>
+      </div>
+    </div>
+    <p class="sub">Abas de contrato, tabela de preço e cotação não abrem neste perfil.</p>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function cargaRota(cena) {
+  const miolo = `<p class="h1">Carga e rota do cliente</p>
+    <div class="row">
+      <div class="card" style="flex:1">
+        <strong>Veículos (Carga)</strong>
+        <p class="sub">Placa do caminhão</p>
+        <div class="box foco" style="border:1px solid #d1d5db;border-radius:10px;padding:12px;font-weight:800">ABC1D23 · Novo Veículo</div>
+      </div>
+      <div class="card" style="flex:1">
+        <strong>Cadastro de Rotas</strong>
+        <p class="sub">Origem e destino que se repetem</p>
+        <div class="box" style="border:1px solid #d1d5db;border-radius:10px;padding:12px;font-weight:800">SOROCABA → CAMPINAS · Nova Rota</div>
+      </div>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function vtr(cena) {
+  const miolo = `<div style="display:flex;justify-content:space-between;align-items:flex-end">
+      <div><p class="h1">Cadastro de Viaturas</p><p class="sub">VTR da escolta · Fornecedor</p></div>
+      <button class="btn btn-preto foco">+ Cadastrar Viatura</button>
+    </div>
+    <div class="card">
+      <div class="row">
+        <div class="campo" style="flex:1"><label>Placa</label><div class="box">TMG2A24</div></div>
+        <div class="campo" style="flex:1"><label>Marca / modelo</label><div class="box">EXEMPLO TRAILBLAZER</div></div>
+        <div class="campo" style="flex:1"><label>Fornecedor</label><div class="box">PARCEIRO EXEMPLO</div></div>
+      </div>
+      <p class="sub" style="margin-top:12px">Fora da TM SEG e da Ativa, o rastreador é obrigatório.</p>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function parceiro(cena) {
+  const miolo = `<p class="h1">Parceiro da escolta</p><p class="sub">Grupo Fornecedor</p>
+    <div class="row">
+      <div class="card foco" style="flex:1"><strong>Cadastro de Fornecedor</strong><p>Entra na etapa 4 da OS.</p></div>
+      <div class="card" style="flex:1"><strong>Cadastro de Agentes</strong><p>A equipe do parceiro.</p></div>
+      <div class="card" style="flex:1"><strong>Gestão de Alvarás</strong><p>Documento do fornecedor.</p></div>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function acompanha(cena) {
+  const miolo = `<p class="h1">Acompanhamento do Avançado</p>
+    <div class="row">
+      <div class="card foco" style="flex:1"><strong>Relatório de OS</strong><p>A missão reunida.</p></div>
+      <div class="card" style="flex:1"><strong>Ranking DHL</strong><p>Desempenho nesse cliente.</p></div>
+      <div class="card" style="flex:1"><strong>Controle Diário</strong><p>O dia, em visão de supervisão.</p></div>
+    </div>`;
+  return moldura(cena, miolo, cena.menu);
+}
+
+function preco(cena) {
+  const miolo = `<p class="h1">Tabela de preços</p><p class="sub">Dentro do cliente · aba que o Avançado não vê</p>
+    <div class="row">
+      <div style="flex:1" class="bloqueio">Operador e Avançado: aba fechada</div>
+      <div style="flex:1" class="ok">Abrem: Diretoria, Administrador ou Comercial</div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="row">
+        <div class="campo" style="flex:1"><label>Franquia</label><div class="box">definida no cadastro</div></div>
+        <div class="campo" style="flex:1"><label>Km extra</label><div class="box">definido no cadastro</div></div>
+        <div class="campo" style="flex:1"><label>Hora extra</label><div class="box">definida no cadastro</div></div>
+      </div>
+    </div>`;
+  return moldura(cena, miolo, 'avancado');
+}
+
+function fim(cena) {
+  const miolo = `<p class="h1">Cada um no seu lugar</p>
+    <div class="row">
+      <div class="card" style="flex:1"><strong>Operador</strong><p>Abre a OS nas seis etapas e acompanha o dia.</p></div>
+      <div class="card" style="flex:1"><strong>Avançado</strong><p>Cadastra cliente, carga, rota, fornecedor, VTR e agente.</p></div>
+      <div class="card" style="flex:1"><strong>Diretoria</strong><p>Tabela de preço, junto com Administrador e Comercial.</p></div>
+    </div>`;
+  return moldura(cena, miolo, null);
+}
+
+const TELAS = {
+  capa, menu: (c) => moldura(c, `<p class="h1">Menu do ${esc(c.perfil)}</p><p class="sub">O que fica aberto neste perfil. O item em destaque é o próximo passo.</p><div class="ok">Olhe a coluna da esquerda. Só aparece o que esse perfil pode abrir.</div>`, c.menu),
+  'os-lista': osLista,
+  'os-tipo': osTipo,
+  'os-cliente': osCliente,
+  'os-carga': osCarga,
+  'os-fornecedor': osFornecedor,
+  'os-rota': osRota,
+  'os-agenda': osAgenda,
+  'os-depois': osDepois,
+  limites,
+  cliente,
+  'carga-rota': cargaRota,
+  vtr,
+  parceiro,
+  acompanha,
+  preco,
+  fim
+};
+
+function desenhar() {
+  const cena = CENAS[indice];
+  const fn = TELAS[cena.tela];
+  document.getElementById('palco').innerHTML = fn(cena);
+  document.body.dataset.pronta = '1';
+  if (!gravar) controles();
+}
+
+function ajustar() {
+  if (gravar) {
+    document.body.classList.add('gravar');
+    document.getElementById('moldura').style.width = '1920px';
+    document.getElementById('moldura').style.height = '1080px';
+    return;
+  }
+  const livre = window.innerHeight - 78;
+  const s = Math.min(window.innerWidth / 1920, livre / 1080, 1);
+  const palco = document.getElementById('palco');
+  palco.style.transform = 'scale(' + s + ')';
+  const moldura = document.getElementById('moldura');
+  moldura.style.width = (1920 * s) + 'px';
+  moldura.style.height = (1080 * s) + 'px';
+}
+
+function vozPt() {
+  const lista = speechSynthesis.getVoices();
+  return lista.find(v => /pt-BR/i.test(v.lang) && /maria|francisca/i.test(v.name))
+    || lista.find(v => /pt-BR/i.test(v.lang))
+    || lista.find(v => /^pt/i.test(v.lang));
+}
+
+function falar(texto) {
+  return new Promise(resolve => {
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = 'pt-BR';
+    u.rate = 0.96;
+    const v = vozPt();
+    if (v) u.voice = v;
+    u.onend = resolve;
+    u.onerror = resolve;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+  });
+}
+
+async function reproduzir() {
+  if (tocando) {
+    tocando = false;
+    speechSynthesis.cancel();
+    controles();
+    return;
+  }
+  tocando = true;
+  controles();
+  while (tocando && indice < CENAS.length) {
+    desenhar();
+    await falar(CENAS[indice].fala);
+    if (!tocando) break;
+    if (indice < CENAS.length - 1) indice += 1;
+    else { tocando = false; break; }
+  }
+  controles();
+}
+
+function controles() {
+  const box = document.getElementById('controles');
+  box.innerHTML = '';
+  const anterior = document.createElement('button');
+  anterior.textContent = 'Anterior';
+  anterior.onclick = () => { tocando = false; speechSynthesis.cancel(); indice = Math.max(0, indice - 1); desenhar(); };
+  const play = document.createElement('button');
+  play.className = 'play';
+  play.textContent = tocando ? 'Pausar' : (indice === 0 ? 'Reproduzir aula' : 'Continuar');
+  play.onclick = () => reproduzir();
+  const proxima = document.createElement('button');
+  proxima.textContent = 'Próxima';
+  proxima.onclick = () => { tocando = false; speechSynthesis.cancel(); indice = Math.min(CENAS.length - 1, indice + 1); desenhar(); };
+  const info = document.createElement('span');
+  info.textContent = 'Cena ' + (indice + 1) + ' de ' + CENAS.length + ' · setas do teclado também mudam a cena';
+  box.append(anterior, play, proxima, info);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (gravar) return;
+  if (e.key === 'ArrowRight') { tocando = false; speechSynthesis.cancel(); indice = Math.min(CENAS.length - 1, indice + 1); desenhar(); }
+  if (e.key === 'ArrowLeft') { tocando = false; speechSynthesis.cancel(); indice = Math.max(0, indice - 1); desenhar(); }
+  if (e.key === ' ') { e.preventDefault(); reproduzir(); }
+});
+
+speechSynthesis.onvoiceschanged = () => { vozPronta = true; };
+if (gravar) document.body.classList.add('gravar');
+window.addEventListener('resize', ajustar);
+ajustar();
+desenhar();
+</script>
+</body>
+</html>

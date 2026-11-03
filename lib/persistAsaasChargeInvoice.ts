@@ -66,6 +66,16 @@ function todayIsoDate(): string {
  * Descrição do Contas a Receber na emissão de NF.
  * Formato: "Ref. a primeira quinzena de Junho/2026" (não "NF TMSEG — Cliente").
  */
+/**
+ * Valor da cobrança filha no split (-S1, -S2).
+ * Só aceita o valor da própria subconta. O total da fatura pai não entra aqui.
+ */
+export function valorPersistidoDoSplit(chargeValue: unknown): number | null {
+  const valor = typeof chargeValue === 'number' ? chargeValue : Number(chargeValue);
+  if (!Number.isFinite(valor) || valor <= 0) return null;
+  return Math.round(valor * 100) / 100;
+}
+
 export function resolveNfServiceDescription(input: {
   serviceDescription?: string | null;
   notes?: string | null;
@@ -251,14 +261,18 @@ export async function persistAsaasChargeInvoice(
         const prevCat = String(rxExisting[0]?.category_name || '').trim();
         const looksLikeLegacyNf =
           /^NF\s+(TMSEG-|ASAAS-)/i.test(prevDesc) || !/^Ref\.\s+a/i.test(prevDesc);
-        if (existingId && (looksLikeLegacyNf || !prevCat)) {
+        const valorTitulo = Number(input.amount);
+        const patchTitulo: Record<string, unknown> = {};
+        if (looksLikeLegacyNf || !prevCat) {
+          patchTitulo.description = desc;
+          patchTitulo.category_name = prevCat || CLIENT_RECEIVABLE_CATEGORY;
+          patchTitulo.notes = `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'} | ${desc}`;
+        }
+        if (Number.isFinite(valorTitulo) && valorTitulo > 0) patchTitulo.amount = valorTitulo;
+        if (existingId && Object.keys(patchTitulo).length > 0) {
           let rxUp = sb
             .from('financial_transactions')
-            .update({
-              description: desc,
-              category_name: prevCat || CLIENT_RECEIVABLE_CATEGORY,
-              notes: `Fatura ${number} | Asaas: ${paymentId} | Emissora: ${input.issuerCompany || '-'} | ${desc}`,
-            })
+            .update(patchTitulo)
             .eq('id', existingId);
           if (signal) rxUp = rxUp.abortSignal(signal);
           await rxUp;

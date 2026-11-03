@@ -4,6 +4,10 @@
 
 Monorepo React/Vite (frontend) + Express serverless na Vercel (API). Supabase hardcoded em build para o projeto TM SEG. Produção: `https://sistema.grupotmseg.com.br`.
 
+### Governança permanente (Fase 1)
+
+Antes de alterar código, ler `docs/governanca/ESTADO-ATUAL.md`. Constituição, fontes da verdade, propriedade, migrations, publicação, riscos e decisões: `docs/governanca/08-CONSTITUICAO-TECNICA.md` até `16-REGRAS-CURSOR.md`. Regras automáticas novas: `.cursor/rules/constituicao-tmseg.mdc`, `fontes-verdade-tmseg.mdc`, `protocolo-alteracao-tmseg.mdc`. Elas não substituem `.cursorrules` nem `publicar.mdc`. A Fase 2 não começa sem ordem explícita. O app é o Supabase `ajhmmjuewdsukecaimik` (`missions`). Catálogo com `service_orders` é o outro projeto (TORRES).
+
 ### Projeto Vercel oficial (obrigatório)
 
 - **Único projeto de produção:** `sistema-grupo-tm-seg` (`prj_vFuq5oPg20uHhSg59h9z2UCiRtkZ`).

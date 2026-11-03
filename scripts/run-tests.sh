@@ -11,5 +11,9 @@ echo "▶ Testes server-side (*.test.ts)"
 npx tsx --test scripts/*.test.ts
 
 echo
+echo "▶ Login da equipe interna no portal (mock de módulo)"
+node --experimental-test-module-mocks --import tsx --test scripts/ibl-equipe-login.test.ts
+
+echo
 echo "▶ Testes de componente React (*.test.tsx)"
 node --import tsx --import ./scripts/test-loaders/register.mjs --test scripts/*.test.tsx

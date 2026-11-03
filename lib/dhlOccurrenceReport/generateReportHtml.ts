@@ -89,6 +89,7 @@ function buildAiContext(data: DhlOccurrenceReportData): DhlReportAiContext {
     `Atraso registrado na origem (minutos): ${data.delayMinutesAtOrigin ?? 0}`,
     `Hodômetro inicial: ${data.odometerStartKm || '—'}`,
     `Hodômetro final: ${data.odometerEndKm || '—'}`,
+    `Data de emissão deste plano (marco zero dos prazos): ${formatDateBR(data.generatedAt)}`,
     'Marcos operacionais (registro sistêmico):',
     ...data.marks.map((m) => `  - ${m.label}: ${markWhen(m.at)}`),
   ].join('\n');
@@ -119,12 +120,11 @@ export async function generateDhlOccurrenceReportHtml(
       logoDataUri,
     });
 
-    // Quando há e-mail do cliente anexado e a IA está disponível, o relatório é
-    // redigido pela IA a partir dos dados do sistema + contexto do e-mail
-    // (o e-mail NÃO é copiado). Se a IA falhar, mantém o texto-padrão (template).
+    // A IA redige justificativa, 5 porquês e plano de ação com prazos a partir
+    // dos dados da OS (KM, horários, timeline) e, quando houver, do e-mail.
+    // O e-mail não é copiado. Se a IA falhar, permanece o texto-padrão.
     let aiGenerated = false;
-    const hasEmailContext = !!(data.emailAttachmentText?.trim() || data.emailLink?.trim());
-    if (options?.generateText && hasEmailContext) {
+    if (options?.generateText) {
       try {
         html = await generateDhlReportHtmlWithAi(html, buildAiContext(data), options.generateText);
         aiGenerated = true;

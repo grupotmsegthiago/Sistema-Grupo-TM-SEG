@@ -6,13 +6,7 @@ const TZ = TMSEG_TIMEZONE;
 const TIME_HM: Intl.DateTimeFormatOptions = {
   hour: '2-digit',
   minute: '2-digit',
-  timeZone: TZ,
-};
-
-const DATE_SHORT: Intl.DateTimeFormatOptions = {
-  day: '2-digit',
-  month: '2-digit',
-  year: 'numeric',
+  hourCycle: 'h23',
   timeZone: TZ,
 };
 
@@ -22,8 +16,28 @@ const DATETIME_SHORT: Intl.DateTimeFormatOptions = {
   year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
+  hourCycle: 'h23',
   timeZone: TZ,
 };
+
+function dataCivilBR(value: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+function partesBR(d: Date, tipo: Intl.DateTimeFormatPartTypes): string {
+  const parts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d);
+  return parts.find((p) => p.type === tipo)?.value || '';
+}
 
 function toDate(value: string | Date | null | undefined): Date | null {
   if (value == null || value === '') return null;
@@ -35,25 +49,35 @@ export const nowBR = (): Date => {
   return new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
 };
 
-/** Data dd/mm/aaaa em Brasília. */
+/** Data DD/MM/AAAA em Brasília. Data civil AAAA-MM-DD não desloca o dia. */
 export const formatDateBR = (date: string | Date | null | undefined): string => {
+  if (typeof date === 'string') {
+    const civil = dataCivilBR(date);
+    if (civil) return civil;
+  }
   const d = toDate(date);
   if (!d) return '—';
-  return d.toLocaleDateString('pt-BR', DATE_SHORT);
+  return `${partesBR(d, 'day')}/${partesBR(d, 'month')}/${partesBR(d, 'year')}`;
 };
 
-/** Data e hora dd/mm/aaaa HH:MM em Brasília (sem segundos). */
+/** Data e hora DD/MM/AAAA HH:mm em Brasília (24h, sem segundos). */
 export const formatDateTimeBR = (date: string | Date | null | undefined): string => {
+  if (typeof date === 'string') {
+    const civil = dataCivilBR(date);
+    if (civil) return civil;
+  }
   const d = toDate(date);
   if (!d) return '—';
-  return d.toLocaleString('pt-BR', DATETIME_SHORT);
+  const hora = partesBR(d, 'hour').padStart(2, '0');
+  const minuto = partesBR(d, 'minute').padStart(2, '0');
+  return `${partesBR(d, 'day')}/${partesBR(d, 'month')}/${partesBR(d, 'year')} ${hora}:${minuto}`;
 };
 
-/** Hora HH:MM em Brasília. */
+/** Hora HH:mm em Brasília (24h). */
 export const formatTimeBR = (date: string | Date | null | undefined, fallback = '—'): string => {
   const d = toDate(date);
   if (!d) return fallback;
-  return d.toLocaleTimeString('pt-BR', TIME_HM);
+  return `${partesBR(d, 'hour').padStart(2, '0')}:${partesBR(d, 'minute').padStart(2, '0')}`;
 };
 
 /** Hora atual em Brasília — HH:MM. */
@@ -169,7 +193,8 @@ export const formatTimeAuditBR = (date: string | Date | null | undefined, fallba
 export const formatDateTimeAuditBR = (date: string | Date | null | undefined, fallback = '—'): string => {
   const d = toDate(date);
   if (!d) return fallback;
-  return d.toLocaleString('pt-BR', { ...DATETIME_SHORT, second: '2-digit' });
+  const texto = d.toLocaleString('pt-BR', { ...DATETIME_SHORT, second: '2-digit' }).replace(',', '');
+  return texto;
 };
 
 export const toISOBR = (): string => {

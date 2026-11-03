@@ -129,3 +129,38 @@ export function defaultMunicipalServiceForClient(
   if (nm.includes('CEVA')) return findMunicipalServiceOption('intermediacao');
   return findMunicipalServiceOption('escolta');
 }
+
+/** Trinca nacional do monitoramento (Asaas). O municipal 07930 continua no campo municipal. */
+export const ASAAS_MONITORAMENTO_NACIONAL = {
+  federalServiceTaxCode: '110501',
+  nbsCode: '1.1802.30.00',
+  municipalServiceCode: '07930',
+  issRate: 2,
+} as const;
+
+/**
+ * Código nacional e NBS só no monitoramento/intermediação ligado ao 07930.
+ * Escolta, 06298 e cliente Amazon ficam de fora.
+ * Sem opção gravada, a descrição com "escolta" também fica de fora.
+ */
+export function resolveAsaasNationalMonitoring(input: {
+  optionId?: string | null;
+  municipalCode?: string | null;
+  serviceDescription?: string | null;
+  clientName?: string | null;
+  tradingName?: string | null;
+}): { federalServiceTaxCode: string; nbsCode: string } | null {
+  if (isAmazonBillingClient(input.clientName, input.tradingName)) return null;
+  const optionId = String(input.optionId || '').trim().toLowerCase();
+  const code = String(input.municipalCode || '').replace(/\D/g, '');
+  const desc = String(input.serviceDescription || '');
+  if (optionId === 'escolta' || optionId === 'rastreamento' || code === '06298') return null;
+  if (/escolta/i.test(desc) && optionId !== 'intermediacao') return null;
+  if (optionId === 'intermediacao' || code === '07930') {
+    return {
+      federalServiceTaxCode: ASAAS_MONITORAMENTO_NACIONAL.federalServiceTaxCode,
+      nbsCode: ASAAS_MONITORAMENTO_NACIONAL.nbsCode,
+    };
+  }
+  return null;
+}

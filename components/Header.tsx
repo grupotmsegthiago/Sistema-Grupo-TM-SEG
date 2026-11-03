@@ -52,8 +52,15 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileSettingsClick, is
 
   const handleClearCache = () => {
     if (window.confirm("Isso limpará os dados locais e reiniciará o sistema. Deseja continuar?")) {
-      localStorage.clear();
-      sessionStorage.clear();
+      try {
+        const seen = localStorage.getItem('tmseg:force_logout_seen');
+        localStorage.clear();
+        sessionStorage.clear();
+        if (seen) localStorage.setItem('tmseg:force_logout_seen', seen);
+      } catch {
+        localStorage.clear();
+        sessionStorage.clear();
+      }
       window.location.reload();
     }
   };

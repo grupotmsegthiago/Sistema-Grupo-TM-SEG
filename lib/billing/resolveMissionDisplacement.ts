@@ -2,8 +2,8 @@
  * Deslocamento cobrável da OS (cliente / fornecedor).
  *
  * Mesma regra do Relatório de OS / canônico:
- * - Se já há R$ em displacement_value(_provider), usa o persistido.
- * - Senão, com dhl_deslocamento_km > 0, deriva km × taxa (fallback DHL por UF no cliente).
+ * - Se displacement_value(_provider) não é NULL, usa o persistido, inclusive 0.
+ * - Só deriva km × taxa quando a coluna está NULL (fallback DHL por UF no cliente).
  *
  * Usar em boletim, Contas a Receber/Pagar e verificação de fornecedor para
  * não “perder” o DESL que o relatório já mostra a partir do KM autorizado.

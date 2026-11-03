@@ -83,6 +83,21 @@ export interface Mission {
   billing_approved?: boolean;
   billing_verified_by?: string;
 
+  /** Operador que finalizou velada ATIVA/TM SEG e ainda deve informar KM, hora e pedágio. */
+  velada_closure_operator?: string | null;
+  velada_closure_opened_at?: string | null;
+  velada_closure_notified_at?: string | null;
+  velada_closure_escalated_at?: string | null;
+  velada_toll_confirmed?: boolean;
+
+  /** Quantidade de ocorrências de problema registradas nesta OS. */
+  occurrence_count?: number | null;
+
+  /** Prejuízo analisado e travado. Só o perfil Diretoria altera depois. */
+  negative_margin_locked?: boolean;
+  negative_margin_locked_by?: string | null;
+  negative_margin_locked_at?: string | null;
+
   vendor_os_number?: string;
   invoice_number?: string;
   payment_date?: string;
@@ -185,7 +200,12 @@ export interface Client {
   state?: string;
   zip_code?: string;
   address: string;
-  whatsapp_group_id?: string; 
+  whatsapp_group_id?: string;
+  /** Link de convite. Referência de cadastro, não identificador de envio. */
+  whatsapp_group_link?: string | null;
+  whatsapp_desktop_group_name?: string | null;
+  whatsapp_desktop_vinculo?: string | null;
+  whatsapp_desktop_ativo?: boolean | null;
   full_extra_hour_after_16_min?: boolean;
   adjustment_2026_applied?: boolean;
   proposal_2026_sent?: boolean;
@@ -213,6 +233,13 @@ export interface ProviderData {
   alvaraUrl?: string;
   /** Grupo WhatsApp vinculado (mesmo padrão de clients.whatsapp_group_id). */
   whatsapp_group_id?: string;
+  /** Link chat.whatsapp.com que abre o grupo no WhatsApp do operador. */
+  whatsapp_group_link?: string | null;
+  /** Nome exato do grupo no WhatsApp Desktop. */
+  whatsapp_desktop_group_name?: string | null;
+  whatsapp_desktop_vinculo?: string | null;
+  whatsapp_desktop_verificado_em?: string | null;
+  whatsapp_desktop_local_id?: string | null;
   dhl_channel_preference?: 'email' | 'whatsapp' | 'both' | null;
   dhl_solicitation_email?: string | null;
   /** Estados de atuação (sede + filiais) e valor 100 km por UF. */
@@ -256,6 +283,10 @@ export interface ClientRoute {
   client: string;
   stops?: string[];
   toll_cost?: number;
+  route_type?: 'fixa' | 'esporadica' | null;
+  is_active?: boolean | null;
+  region?: string | null;
+  consumed_in_order_id?: string | null;
 }
 
 export interface QuoteItem {
@@ -307,7 +338,9 @@ export interface Quote {
   total_value: number;
   created_at: string;
   created_by: string;
-  status: 'Rascunho' | 'Enviada' | 'Aprovada';
+  status: 'Rascunho' | 'Enviada' | 'Aprovada' | 'expirada' | 'convertida';
+  is_active?: boolean | null;
+  converted_to_order_id?: string | null;
   items?: QuoteItem[]; 
   contract_details?: string;
   quote_source?: 'ROTA' | 'RAPIDA_REGIONAL';
@@ -389,6 +422,9 @@ export interface FinancialTransaction {
   doc_nf_status?: FinancialDocStatus | null;
   doc_comprovante_url?: string | null;
   doc_comprovante_status?: FinancialDocStatus | null;
+  manual_payment_amount?: number | null;
+  manual_payment_interest?: number | null;
+  manual_payment_reason?: string | null;
 }
 
 export interface BrandIdentity {

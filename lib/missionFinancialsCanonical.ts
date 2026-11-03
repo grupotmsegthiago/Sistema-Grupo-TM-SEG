@@ -50,10 +50,11 @@ const ZERO_RESULT: CanonicalResult = {
  *
  * Regras (mesmas em todo o sistema):
  *  - REFUSED → tudo zero (a OS recusada não fatura).
- *  - Aprovada (billing_approved/billing_verified_by) → usa valores salvos no banco.
- *  - Tem revenue_value E cost_value salvos → usa salvos.
- *  - Tem só um salvo → usa salvo nesse e ESTIMA o outro via tabelas.
- *  - Não tem nenhum salvo → estima ambos.
+ *  - Coluna gravada, inclusive 0, entra no total mesmo sem conferência ou aprovação.
+ *  - Estimativa só quando a coluna está NULL e a OS ainda não foi conferida/aprovada.
+ *  - Conferida/aprovada com coluna NULL → needs_validation, sem inventar valor.
+ *  - Tem só um lado gravado → usa o gravado e estima só o lado NULL.
+ *  - OS filha (is_same_os) mantém custo de fornecedor zerado.
  *  - Pedágio recebido = toll_value (com regra; legado aplica na leitura).
  *  - Pedágio pago = toll_value_provider (valor real; fallback toll_value).
  *  - CANCELLED é tratada como COMPLETED só pra estimativa não dar zero por causa do status.
@@ -65,8 +66,8 @@ export function computeCanonicalRevenueCost(
 ): CanonicalResult {
   if (m.status === MissionStatus.REFUSED) return ZERO_RESULT;
 
-  const hasStoredRev = (m.revenue_value != null && m.revenue_value > 0);
-  const hasStoredCost = (m.cost_value != null && m.cost_value > 0);
+  const hasStoredRev = m.revenue_value != null;
+  const hasStoredCost = m.cost_value != null;
   const revExplicitlySaved = m.revenue_value != null;
   const costExplicitlySaved = m.cost_value != null;
   const isVerified = !!(m.billing_approved || m.billing_verified_by);
@@ -134,12 +135,15 @@ export function computeCanonicalRevenueCost(
     }
   }
 
-  // Com KM autorizado e sem R$ salvo, busca taxas da tabela (mesmo em OS já salva)
+  // Com KM autorizado e deslocamento NULL, busca taxas da tabela (mesmo em OS já salva)
   // para o auditor/relatório contabilizar DESL sem abrir o modal financeiro.
+  // Zero gravado permanece zero: não deriva por cima.
   const kmAuth = num(m.dhl_deslocamento_km);
+  const dispClienteSalvo = m.displacement_value != null;
+  const dispFornecedorSalvo = m.displacement_value_provider != null;
   const needsDispDerive =
     kmAuth > 0 &&
-    (!(num(m.displacement_value) > 0) || (!(num(m.displacement_value_provider) > 0) && !m.is_same_os));
+    (!dispClienteSalvo || (!dispFornecedorSalvo && !m.is_same_os));
   if (needsDispDerive && (clientUnitKm <= 0 || providerUnitKm <= 0)) {
     try {
       const isCancelled = m.status === MissionStatus.CANCELLED;
@@ -173,8 +177,8 @@ export function computeCanonicalRevenueCost(
     origin: m.origin,
     isSameOs: !!m.is_same_os,
   });
-  const dispRev = disp.client;
-  const dispCost = disp.provider;
+  const dispRev = dispClienteSalvo ? num(m.displacement_value) : disp.client;
+  const dispCost = m.is_same_os ? 0 : (dispFornecedorSalvo ? num(m.displacement_value_provider) : disp.provider);
 
   const rev = revBase + tollRev + dispRev;
   const cost = costBase + tollCost + dispCost;

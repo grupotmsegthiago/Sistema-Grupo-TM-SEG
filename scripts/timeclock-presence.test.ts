@@ -12,6 +12,7 @@ import {
   mergeRosterWithPresence,
   formatPresenceShortName,
   formatPresenceStatusLine,
+  formatPresenceLiveLine,
   partitionPresenceBoardUsers,
   normalizePresenceUserId,
   PRESENCE_USER_AVATAR_SRC,
@@ -436,4 +437,43 @@ test('formatPresenceStatusLine usa HH:MM em vez de minutos', () => {
   );
   assert.match(line, /desde 08:15/);
   assert.doesNotMatch(line, /min/i);
+});
+
+test('formatPresenceLiveLine mostra minutos online e hora da última interação', () => {
+  const now = new Date('2026-07-10T16:09:30.000Z');
+  const line = formatPresenceLiveLine(
+    {
+      userId: '1',
+      name: 'Ana',
+      role: 'Operador',
+      isClt: true,
+      onDuty: true,
+      onDutyLabel: 'Em serviço',
+      onlineAt: '2026-07-10T16:00:00.000Z',
+      lastActivityAt: '2026-07-10T16:08:10.000Z',
+    },
+    now,
+  );
+  assert.match(line, /9 min online/);
+  assert.match(line, /interação /);
+  assert.doesNotMatch(line, /online agora/);
+});
+
+test('formatPresenceLiveLine com menos de 1 minuto fica online agora', () => {
+  const now = new Date('2026-07-10T16:00:40.000Z');
+  const line = formatPresenceLiveLine(
+    {
+      userId: '1',
+      name: 'Ana',
+      role: 'Diretoria',
+      isClt: false,
+      onDuty: false,
+      onDutyLabel: 'Online',
+      onlineAt: '2026-07-10T16:00:10.000Z',
+      lastActivityAt: '2026-07-10T16:00:20.000Z',
+    },
+    now,
+  );
+  assert.match(line, /online agora/);
+  assert.match(line, /interação /);
 });

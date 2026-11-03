@@ -3,7 +3,7 @@ import { isFinanceSupervisorName, normalizePersonName } from './financeSuperviso
 
 export type OpsAlertUser = { name?: string | null; role?: string | null };
 
-/** Michelle, supervisão financeira (Bárbara/Giovanna) e Daniel — veem alertas de dados operacionais pendentes. */
+/** Michelle, supervisão financeira (Bárbara/Giovanna/Ana Fernandes) e Daniel — veem alertas de dados operacionais pendentes. */
 export function isOpsAlertRecipient(user: OpsAlertUser | null | undefined): boolean {
   const name = normalizePersonName(user?.name);
   return (

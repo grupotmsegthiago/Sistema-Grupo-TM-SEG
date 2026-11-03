@@ -1,0 +1,23 @@
+---
+description: Rolagem fica em div, main ou section. Fieldset só desabilita campos.
+globs: "**/*.{tsx,jsx}"
+alwaysApply: false
+---
+
+# Rolagem e fieldset
+
+- Não troque `div`, `main` ou `section` de layout/rolagem por `fieldset` ou `form`.
+- Para desabilitar vários campos, envolva só os controles em `<fieldset disabled>`. O container com `overflow-y-auto` ou `overflow-scroll` permanece o mesmo.
+- Não altere `overflow`, `height`, `min-height` nem `display: flex/grid` se a tarefa não for de layout.
+- Edição mínima: não refatore, renomeie nem mova código que já funciona.
+- Ao revisar o diff, olhe a tag pai. `fieldset` tem `min-width: min-content` e não rola no navegador.
+
+Exemplo:
+
+```tsx
+<div className="flex-1 overflow-y-auto">
+  <fieldset disabled={salvando} className="border-0 m-0 p-0">
+    {/* só os campos */}
+  </fieldset>
+</div>
+```

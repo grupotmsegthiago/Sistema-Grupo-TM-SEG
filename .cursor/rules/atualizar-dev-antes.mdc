@@ -1,0 +1,27 @@
+---
+description: Antes de alterar arquivo na dev, atualiza a cópia local com a dev publicada usando só avanço direto
+alwaysApply: true
+---
+
+# Atualizar a dev antes de alterar
+
+Antes de criar, editar ou apagar arquivo com a branch `dev` em uso, a `dev` local tem de estar no mesmo commit da `dev` do GitHub, ou à frente dele sem ter ficado para trás.
+
+Um hook do projeto (`.cursor/hooks/atualizar-dev.cjs`) faz isso antes de gravar arquivo. Se ele bloquear a edição, obedeça a mensagem e não tente o mesmo patch de novo.
+
+## Se o hook não tiver rodado
+
+Na raiz, com a branch `dev`:
+
+```powershell
+git fetch origin +refs/heads/dev:refs/remotes/origin/dev
+git merge --ff-only origin/dev
+```
+
+- Avanço direto concluído: releia os arquivos afetados e só então altere.
+- `Already up to date`: pode alterar.
+- O Git recusou: pare. Não use `reset --hard`, não apague commit e não publique. Avise o usuário.
+
+## Fora da dev
+
+Não troque de branch e não atualize outra branch no lugar da `dev`.

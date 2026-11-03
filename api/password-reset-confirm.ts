@@ -1,5 +1,10 @@
+import { createRequire } from 'node:module';
 import { parseJsonBody } from '../lib/email/missionEmailHelpers.js';
-import { handlePasswordResetConfirm } from '../lib/passwordReset.js';
+
+const require = createRequire(import.meta.url);
+const { handlePasswordResetConfirm } = require('./_password-reset-core.cjs') as {
+  handlePasswordResetConfirm: (body: unknown) => Promise<{ status: number; body: Record<string, unknown> }>;
+};
 
 export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {

@@ -9,6 +9,7 @@ import {
   ArrowUpCircle, ArrowDownCircle,   BarChart3,
 } from 'lucide-react';
 import DiretoriaSistemaTab from './DiretoriaSistemaTab';
+import CockpitEvidenceByOperator from '../CockpitEvidenceByOperator';
 import InvoiceDivergenceAuditPanel from '../InvoiceDivergenceAuditPanel';
 import CashFlowPreviewButton from '../CashFlowPreviewButton';
 import { useDashboardDiretoriaData } from '../../lib/dashboardDiretoria/useDashboardDiretoriaData';
@@ -34,6 +35,7 @@ import {
   fmtBRL,
   fmtShort,
 } from '../../lib/dashboardDiretoria/aggregations';
+import { cotacaoContaComoAberta } from '../../lib/precificacao/tabela2027';
 import {
   buildYearOptions,
   createDefaultPeriod,
@@ -303,7 +305,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const arAp = useMemo(() => buildArApByMonth(data.allTransactions, data.categories), [data.allTransactions, data.categories]);
   const expenseDonut = useMemo(() => buildExpenseDonut(data.transactions, data.categories), [data.transactions, data.categories]);
   const pendingApprovals = useMemo(() => buildPendingApprovals(data.missions, data.refs), [data.missions, data.refs]);
-  const openQuotes = useMemo(() => data.quotes.filter(q => q.status !== 'Aprovada').length, [data.quotes]);
+  const openQuotes = useMemo(() => data.quotes.filter((q) => cotacaoContaComoAberta(q)).length, [data.quotes]);
 
   const alerts = useMemo(
     () => buildCriticalAlerts({
@@ -840,7 +842,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
   const renderFinanceiro = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
       <div className="lg:col-span-12">
-        <InvoiceDivergenceAuditPanel />
+        <InvoiceDivergenceAuditPanel audiencia="diretoria" />
       </div>
       <div className="lg:col-span-12 space-y-3">
         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Dívidas · Contas · Receita</p>
@@ -913,6 +915,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
 
   const renderOperacao = () => (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="lg:col-span-12"><CockpitEvidenceByOperator /></div>
       <div className="lg:col-span-4 grid grid-cols-2 gap-3">
         <KpiTile label="OS no período" value={String(operational.missionCount)} />
         <KpiTile label="OS Mãe ativas" value={String(parentSummary.active)} sub={`${parentSummary.total} grupos`} accent="text-gray-900" />
@@ -1151,7 +1154,7 @@ const DashboardDiretoria: React.FC<Props> = ({ onNavigate }) => {
               type="button"
               onClick={() => { void data.refresh(); }}
               disabled={data.loading}
-              title="Recalcula hora extra/valores nas OS em aberto (não faturadas) e atualiza os KPIs"
+              title="Busca de novo os dados gravados. Não altera OS."
               className="inline-flex items-center justify-center gap-2 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-bold px-4 py-2 rounded-xl shadow-sm w-full sm:w-auto"
               data-testid="button-diretoria-refresh"
             >

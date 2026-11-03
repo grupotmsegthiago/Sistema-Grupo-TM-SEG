@@ -190,6 +190,10 @@ REGRAS OBRIGAT\xD3RIAS:
 5. Em textos narrativos, prefira "parceiro" ou "fornecedor" em vez de citar o nome comercial do parceiro. Tom construtivo e profissional, sem linguagem punitiva ou acusat\xF3ria que manche a imagem do parceiro.
 6. Mantenha HTML simples no campo html: <strong>, <em>, <br/> quando necess\xE1rio. Respeite o formato de cada bloco: respostas de c\xE9lula de tabela devem ser curtas e diretas; blocos de s\xEDntese/causa podem ser um par\xE1grafo.
 7. Escreva em portugu\xEAs do Brasil. Se faltar informa\xE7\xE3o para algum bloco, produza um texto coerente e neutro com base no que existe, sem inventar dados factuais.
+8. O plano de a\xE7\xE3o \xE9 o que o cliente precisa ver: demonstre que a TM SEG est\xE1 tratando a ocorr\xEAncia em conjunto com o fornecedor, com a\xE7\xF5es, respons\xE1veis e prazos. Reescreva os blocos ac-*, ap-*, contencao-*, 5pq-* e 5w2h-* para ESTA ocorr\xEAncia. N\xE3o repita a hist\xF3ria de outra S.E. N\xE3o afirme troca de viatura, rota invertida ou sobreposi\xE7\xE3o de janela se isso n\xE3o estiver nos DADOS ou no e-mail.
+9. Blocos prazo-ac-* e prazo-ap-*: devolva SOMENTE "dd/mm/aaaa", "Imediato" ou "Semanal". A data de emiss\xE3o est\xE1 nos DADOS DO SISTEMA e \xE9 o marco zero. Todo prazo datado deve ser igual ou posterior a essa emiss\xE3o. N\xE3o reuse datas de exemplo anteriores \xE0 emiss\xE3o.
+10. Bloco cronograma: reescreva no formato "dd/mm/aaaa \u2500\u2500\u25CF ...", usando exatamente os mesmos prazos dos blocos prazo-*. Inclua a emiss\xE3o, as a\xE7\xF5es com o fornecedor e o encerramento do acompanhamento cerca de 30 dias depois.
+11. N\xE3o invente quantidade de miss\xF5es hist\xF3ricas. Se o n\xFAmero n\xE3o estiver nos DADOS, n\xE3o cite contagem (ex.: "380 miss\xF5es").
 
 DADOS DO SISTEMA (fatos reais):
 ${context.factsBlock}

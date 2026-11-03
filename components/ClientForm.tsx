@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { formatDateBR } from '../lib/dateUtils';
 import { ArrowLeft, Save, Building2, Truck, Users, Search, Loader2, AlertTriangle, DollarSign, Edit, Trash2, Plus, FileSpreadsheet, MessageCircle, RefreshCw, Navigation, FileText, MapPin, CheckSquare, Square, X, Edit2, Clock, ScrollText, TrendingUp, Percent, Send, CheckCircle, ShieldCheck, ArrowRight, RotateCcw, Copy, Lock, Calendar, Check, Mail, Phone as PhoneIcon, Map as MapIcon, Hash, Fingerprint, Calculator, Target, UserCheck, XCircle } from 'lucide-react';
 import { Client, ClientPriceTable } from '../types';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
 import { logAction } from '../lib/logger';
+import { publicarNovidadeCadastro } from '../lib/tmsegNews';
 import { clientFuzzyFilter } from '../lib/financialUtils';
 import { generateAutoBands, suggestAutoMasterFromManualTables, type ProviderAutoMasterConfig } from '../lib/providerAutoPricing';
 import { useNotification } from '../lib/NotificationContext';
@@ -19,7 +21,68 @@ import CommercialProposalModal from './CommercialProposalModal';
 import ClientPriceCalculator from './ClientPriceCalculator';
 import QuotePrintModal from './QuotePrintModal';
 import ClientContractTab from './ClientContractTab';
+import ClientMonthlyServicesTab from './ClientMonthlyServicesTab';
+import { contentTypeLogo, pendenciaMarcaComercial, validarArquivoLogo } from '../lib/clienteMarca';
 import { sincronizarComerciaisDeUsuarios } from '../lib/comissao/comissaoUsuarios';
+import {
+  acharClienteMesmoDocumento,
+  acharConflitoRaizCnpj,
+  cadastroExigeTravaRaiz,
+  carregarLinhasDocumentoCliente,
+  comercialIdDoUsuarioLogado,
+  digitosDocumentoCliente,
+  mensagemTitularidadeRaizCnpj,
+  perfilEhComercialRole,
+  type ClienteCarteiraRow,
+} from '../lib/clientDuplicateGuard';
+import { carregarNomesClientesDoComercial } from '../lib/comercialEscopo';
+import { isFinanceProfileRole } from '../lib/financeSupervisorAccess';
+import { colunaAusenteNoBanco, erroMencionaColunaPortal, mensagemDeErro, portalPorNomeCliente, semColunasDePortal } from '../lib/cevaPortal/portalServidor';
+import { limparSlug, slugDeNome, slugPublico } from '../lib/portalCliente/slug';
+import {
+  clienteContratualDhlOuIbl,
+  colunaRegionalAusente,
+  ehLinhaPadraoRegional,
+  FAIXAS_REGIONAIS,
+  montarAplicacaoTabela,
+  patchEdicaoRegional,
+  filtrarPorVigencia,
+  perfilPodeAplicarTabelaRegional,
+  versaoDaLinhaTarifaria,
+  type VersaoTabelaRegional,
+} from '../lib/precificacao/tabela2027';
+import QuoteCalculatorCard from './precificacao/QuoteCalculatorCard';
+import RotaGoogleCotacao from './precificacao/RotaGoogleCotacao';
+import ImagemSegura from './ImagemSegura';
+
+/** Página da base de clientes para a trava de documento. Erro não vira lista vazia. */
+async function lerPaginaClientesDocumento(
+  from: number,
+  to: number,
+): Promise<{ rows: ClienteCarteiraRow[]; error?: string }> {
+  const { data, error } = await supabase
+    .from('clients')
+    .select('id, name, cnpj, status, responsavel_comercial_id')
+    .order('id', { ascending: true })
+    .range(from, to);
+  if (error) return { rows: [], error: error.message };
+  return { rows: (data || []) as ClienteCarteiraRow[] };
+}
+
+/** Sobe PNG ou SVG no bucket que o cadastro já usa. Não cria bucket novo. */
+async function enviarLogoCliente(clienteId: string, arquivo: File): Promise<string> {
+  const erro = validarArquivoLogo(arquivo);
+  if (erro) throw new Error(erro);
+  const nome = arquivo.name.replace(/[^\w.]+/g, '-');
+  const caminho = `portal-logos/${clienteId}-${Date.now()}-${nome}`;
+  const { error } = await supabase.storage.from('mission-evidence').upload(caminho, arquivo, {
+    upsert: true,
+    contentType: contentTypeLogo(arquivo),
+  });
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('mission-evidence').getPublicUrl(caminho);
+  return data.publicUrl;
+}
 
 interface ClientFormProps {
   onBack: () => void;
@@ -65,7 +128,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
     nfAddressRequiredHint = false,
 }) => {
   const { showNotification } = useNotification();
-  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts'>('registration');
+  const [activeTab, setActiveTab] = useState<'registration' | 'costs' | 'cancellation' | 'vehicles' | 'routes' | 'quotes' | 'contracts' | 'monthly-services'>('registration');
   const [cancellationDrafts, setCancellationDrafts] = useState<Record<string, string>>({});
   const [savingCancellationId, setSavingCancellationId] = useState<string | null>(null);
   const [cancellationSearch, setCancellationSearch] = useState('');
@@ -88,6 +151,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
     medicao_email: '',
     status: 'Ativo',
     whatsapp_group_id: '',
+    whatsapp_group_link: '',
+    whatsapp_desktop_group_name: '',
+    whatsapp_desktop_vinculo: 'nao_vinculado',
+    whatsapp_desktop_ativo: true,
     full_extra_hour_after_16_min: false,
     adjustment_2026_applied: false,
     proposal_2026_sent: false,
@@ -98,7 +165,14 @@ const ClientForm: React.FC<ClientFormProps> = ({
     nf_municipal_service_name: '',
     responsavel_comercial_id: '',
     ciclo_faturamento: '' as '' | 'diario' | 'quinzenal' | 'mensal',
+    portal_ativo: false,
+    portal_slug: '',
+    portal_site: '',
+    portal_logo_url: '',
+    portal_cor: '#111111',
+    portal_cor_acao: '#F7941E',
   }); 
+  const [logoPendente, setLogoPendente] = useState<File | null>(null);
   const [osEmailInput, setOsEmailInput] = useState('');
   const [medicaoEmailInput, setMedicaoEmailInput] = useState('');
   const [isSearchingCep, setIsSearchingCep] = useState(false);
@@ -106,6 +180,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [duplicateError, setDuplicateError] = useState('');
+  /** Após o 1º insert bem-sucedido, o retry (ex.: falha Asaas) atualiza o mesmo id — não cria outro. */
+  const [persistedId, setPersistedId] = useState<string | null>(id ? String(id) : null);
   
   const [priceTables, setPriceTables] = useState<ClientPriceTable[]>([]);
 
@@ -181,15 +257,22 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const [isReverting, setIsReverting] = useState(false);
   const [selectedPriceIds, setSelectedPriceIds] = useState<string[]>([]);
   const [priceSearch, setPriceSearch] = useState<string>('');
+  const tabelaVigencia: VersaoTabelaRegional = '2027';
+  const [aplicandoTabelaRegional, setAplicandoTabelaRegional] = useState(false);
+  const [cotacaoOrigem, setCotacaoOrigem] = useState('');
+  const [cotacaoDestino, setCotacaoDestino] = useState('');
+  const [cotacaoKm, setCotacaoKm] = useState('');
+  const [linhaRegional, setLinhaRegional] = useState<ClientPriceTable | null>(null);
+  const [regionalForm, setRegionalForm] = useState({ km: '', hora: '', franquiaKm: '100', franquiaHoras: '3' });
+  const [salvandoRegional, setSalvandoRegional] = useState(false);
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [clients, setClientsList] = useState<Client[]>([]);
-  const [comerciais, setComerciais] = useState<Array<{ id: string; nome: string }>>([]);
+  const [comerciais, setComerciais] = useState<Array<{ id: string; nome: string; usuario_id?: number | null }>>([]);
   const [copySourceClientId, setCopySourceClientId] = useState('');
 
   // Motor de Precificação Automática (cópia da lógica de ProviderForm, com REGIÃO)
   const AUTO_MASTER_PREFIX = '__AUTO_MASTER__';
-  const buildMasterOpType = (region: string) => `${AUTO_MASTER_PREFIX} ${region}`.toUpperCase().trim();
   const parseMasterRegion = (opType: string | null | undefined): string | null => {
     const s = (opType || '').toUpperCase().trim();
     if (!s.startsWith(AUTO_MASTER_PREFIX)) return null;
@@ -235,6 +318,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     medicao_email: data.medicao_email || '',
                     status: data.status || 'Ativo',
                     whatsapp_group_id: data.whatsapp_group_id || '',
+                    whatsapp_group_link: data.whatsapp_group_link || '',
+                    whatsapp_desktop_group_name: data.whatsapp_desktop_group_name || '',
+                    whatsapp_desktop_vinculo: data.whatsapp_desktop_vinculo || 'nao_vinculado',
+                    whatsapp_desktop_ativo: data.whatsapp_desktop_ativo !== false,
                     full_extra_hour_after_16_min: !!data.full_extra_hour_after_16_min,
                     adjustment_2026_applied: !!data.adjustment_2026_applied,
                     proposal_2026_sent: !!data.proposal_2026_sent,
@@ -247,6 +334,12 @@ const ClientForm: React.FC<ClientFormProps> = ({
                     ciclo_faturamento: (data.ciclo_faturamento === 'diario' || data.ciclo_faturamento === 'quinzenal' || data.ciclo_faturamento === 'mensal')
                       ? data.ciclo_faturamento
                       : '',
+                    portal_ativo: data.portal_ativo === true || Boolean(portalPorNomeCliente(data.name)),
+                    portal_slug: data.portal_slug || (portalPorNomeCliente(data.name)?.caminho || '').replace(/^\//, ''),
+                    portal_site: data.portal_site || '',
+                    portal_logo_url: data.portal_logo_url || '',
+                    portal_cor: data.portal_cor || '#111111',
+                    portal_cor_acao: data.portal_cor_acao || '#F7941E',
                 });
                 fetchPriceTables(data.name);
             }
@@ -259,24 +352,68 @@ const ClientForm: React.FC<ClientFormProps> = ({
   };
 
   useEffect(() => {
+    setPersistedId(id ? String(id) : null);
+  }, [id]);
+
+  useEffect(() => {
     const storedUser = localStorage.getItem('userData');
     if (storedUser) {
         try { setCurrentUser(JSON.parse(storedUser)); } catch (e) { console.error(e); }
     }
     fetchClientData();
-    supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name')
-        .then(({ data }) => data && setClientsList(data as any));
+    void (async () => {
+      try {
+        const usuario = JSON.parse(localStorage.getItem('userData') || '{}');
+        let consulta = supabase.from('clients').select('id, name, trading_name').eq('status', 'Ativo').order('name');
+        if (perfilEhComercialRole(usuario?.role)) {
+          const carteira = await carregarNomesClientesDoComercial(supabase, usuario?.id);
+          if (!carteira.ids.length) {
+            setClientsList([]);
+            return;
+          }
+          consulta = consulta.in('id', carteira.ids);
+        }
+        const { data } = await consulta;
+        if (data) setClientsList(data as any);
+      } catch {
+        const usuario = (() => {
+          try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+        })();
+        if (perfilEhComercialRole(usuario?.role)) setClientsList([]);
+      }
+    })();
     void (async () => {
       await sincronizarComerciaisDeUsuarios(supabase);
-      const { data } = await supabase
+      const usuario = (() => {
+        try { return JSON.parse(localStorage.getItem('userData') || '{}'); } catch { return {}; }
+      })();
+      let consulta = supabase
         .from('comerciais')
         .select('id, nome, usuario_id')
         .eq('ativo', true)
         .not('usuario_id', 'is', null)
         .order('nome');
+      if (perfilEhComercialRole(usuario?.role)) {
+        const idNum = Number(usuario?.id);
+        if (!Number.isFinite(idNum) || idNum <= 0) {
+          setComerciais([]);
+          return;
+        }
+        consulta = consulta.eq('usuario_id', idNum);
+      }
+      const { data } = await consulta;
       if (data) setComerciais(data as any);
     })();
   }, [id]);
+
+  /** Comercial logado: cliente novo já nasce na carteira dele (comissão). */
+  useEffect(() => {
+    if (persistedId || !currentUser || formData.responsavel_comercial_id) return;
+    if (!perfilEhComercialRole(currentUser.role)) return;
+    const comercialId = comercialIdDoUsuarioLogado(comerciais, currentUser.id);
+    if (!comercialId) return;
+    setFormData((prev) => (prev.responsavel_comercial_id ? prev : { ...prev, responsavel_comercial_id: comercialId }));
+  }, [comerciais, currentUser, persistedId, formData.responsavel_comercial_id]);
 
   useEffect(() => {
     if (!nfAddressRequiredHint) return;
@@ -309,8 +446,60 @@ const ClientForm: React.FC<ClientFormProps> = ({
   const isNfFieldMissing = (field: ClientAddressFieldKey) =>
     showNfAddressGuide && missingNfAddressFields.includes(field);
 
+  const comercialIdDoCadastro = () => {
+    let comercialId = formData.responsavel_comercial_id || '';
+    if (!comercialId && perfilEhComercialRole(currentUser?.role)) {
+      comercialId = comercialIdDoUsuarioLogado(comerciais, currentUser?.id) || '';
+    }
+    return comercialId;
+  };
+
+  const nomeDoComercial = (comercialId: string | null | undefined) => {
+    const chave = String(comercialId || '').trim().toLowerCase();
+    if (!chave) return '';
+    return comerciais.find((c) => String(c.id).trim().toLowerCase() === chave)?.nome || '';
+  };
+
   const handleSearchCNPJ = async () => {
     const cleanCnpj = formData.cnpj.replace(/\D/g, '');
+    // Consulta no cadastro TM SEG (duplicata e raiz) mesmo com CPF (11) ou CNPJ completo.
+    if (cleanCnpj.length === 11 || cleanCnpj.length === 14) {
+      try {
+        const carregado = await carregarLinhasDocumentoCliente(lerPaginaClientesDocumento);
+        if (carregado.error) {
+          showNotification(
+            'CNPJ',
+            'Não foi possível conferir a carteira agora. Ao salvar, o sistema confere de novo e não grava se a consulta falhar.',
+            'warning',
+          );
+        } else {
+          const dup = acharClienteMesmoDocumento(carregado.rows, cleanCnpj, persistedId || id);
+          if (dup) {
+            showNotification(
+              'CNPJ já cadastrado',
+              `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente.`,
+              'warning',
+            );
+          } else if (cadastroExigeTravaRaiz(carregado.rows, cleanCnpj, persistedId || id)) {
+            const conflito = acharConflitoRaizCnpj(
+              carregado.rows,
+              cleanCnpj,
+              comercialIdDoCadastro(),
+              persistedId || id,
+            );
+            if (conflito) {
+              showNotification(
+                'CNPJ já cadastrado',
+                mensagemTitularidadeRaizCnpj(conflito, nomeDoComercial(conflito.responsavel_comercial_id)),
+                'warning',
+              );
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Verificação CNPJ cliente', e);
+      }
+    }
     if (cleanCnpj.length !== 14) return;
     
     setIsSearchingCnpj(true);
@@ -372,10 +561,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
       }
   };
 
+  const perfilComercial = perfilEhComercialRole(currentUser?.role);
   const isFinanceAdmin = currentUser && (() => {
       const r = (currentUser.role || '').toLowerCase();
       const perms = currentUser.permissions || [];
-      return r === 'diretoria' || r === 'administrador' || r === 'comercial' ||
+      return r === 'diretoria' || r === 'administrador' || isFinanceProfileRole(r) ||
              perms.includes('*') || perms.includes('client-prices');
   })();
 
@@ -474,42 +664,11 @@ const ClientForm: React.FC<ClientFormProps> = ({
   };
 
   const handleSaveAutoMaster = async () => {
-      if (!id || !formData.name) { showNotification('Atenção', 'Salve o cliente primeiro.', 'warning'); return; }
-      if (!canEditAutoMaster) { showNotification('Sem permissão', 'Apenas diretoria/administrador/financeiro/comercial pode configurar o motor automático.', 'error'); return; }
-      if (!autoMasterRegion) { showNotification('Atenção', 'Selecione uma região.', 'warning'); return; }
-      const cfg = autoMasterConfig;
-      if (cfg.baseActivationValue <= 0 || cfg.baseKmAllowance <= 0 || cfg.baseHourAllowance <= 0 || cfg.extraKmValue < 0 || cfg.extraHourValue < 0) {
-          showNotification('Atenção', 'Preencha as 5 variáveis mestre com valores positivos.', 'warning');
-          return;
-      }
-      setIsSavingMaster(true);
-      try {
-          const opType = buildMasterOpType(autoMasterRegion);
-          const payload: any = {
-              client: formData.name,
-              operation_type: opType,
-              activation_fee: cfg.baseActivationValue,
-              franchise_km: cfg.baseKmAllowance,
-              franchise_hours: cfg.baseHourAllowance,
-              price_per_extra_km: cfg.extraKmValue,
-              price_per_extra_hour: cfg.extraHourValue,
-          };
-          if (currentMasterRow) {
-              const { error } = await supabase.from('client_price_tables').update(payload).eq('id', currentMasterRow.id);
-              if (error) throw error;
-          } else {
-              const { error } = await supabase.from('client_price_tables').insert([payload]);
-              if (error) throw error;
-          }
-          await logAction('UPDATE', 'ClientAutoMaster', formData.name, `Motor Auto Cliente — ${formData.name} / ${autoMasterRegion}: base R$${cfg.baseActivationValue}, ${cfg.baseKmAllowance}km/${cfg.baseHourAllowance}h, +R$${cfg.extraKmValue}/km, +R$${cfg.extraHourValue}/h`);
-          setLastSuggestionInfo(null);
-          showNotification('Sucesso', `Configuração mestre salva para ${autoMasterRegion}.`, 'success');
-          fetchPriceTables(formData.name);
-      } catch (err: any) {
-          showNotification('Erro', 'Falha ao salvar configuração mestre: ' + (err?.message || 'erro desconhecido'), 'error');
-      } finally {
-          setIsSavingMaster(false);
-      }
+      showNotification(
+          'Tabela mestre desativada',
+          'O sistema não grava nem aplica uma tabela __AUTO_MASTER__. Mantenha a tabela contratual do cliente. Se essa linha ainda existir no cadastro, desative ou exclua.',
+          'warning',
+      );
   };
 
   const handleDisableAutoMaster = async () => {
@@ -634,7 +793,6 @@ const ClientForm: React.FC<ClientFormProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (duplicateError) return;
     const cepDigits = String(formData.zip_code || '').replace(/\D/g, '');
     const uf = String(formData.state || '').trim().toUpperCase();
     if (cepDigits.length !== 8) {
@@ -649,19 +807,72 @@ const ClientForm: React.FC<ClientFormProps> = ({
       showNotification('Cadastro incompleto', 'Informe Cidade e UF (necessário para emitir NF).', 'error');
       return;
     }
-    const cnpjDigits = String(formData.cnpj || '').replace(/\D/g, '');
+    const cnpjDigits = digitosDocumentoCliente(formData.cnpj);
     if (String(formData.status || '') === 'Ativo' && cnpjDigits.length !== 11 && cnpjDigits.length !== 14) {
       showNotification('Cadastro incompleto', 'Informe um CNPJ/CPF válido para cadastrar o cliente no Asaas.', 'error');
       return;
     }
+    if (formData.portal_ativo && !portalPorNomeCliente(formData.name) && !slugPublico(formData.portal_slug)) {
+      showNotification('Portal', 'Informe o endereço da página do cliente.', 'warning');
+      return;
+    }
+    let comercialForcado = '';
+    if (perfilEhComercialRole(currentUser?.role)) {
+      comercialForcado = comercialIdDoUsuarioLogado(comerciais, currentUser?.id) || '';
+      if (!comercialForcado) {
+        showNotification('Cadastro', 'Seu usuário ainda não está vinculado a um comercial. O cliente não foi salvo.', 'error');
+        return;
+      }
+      const faltaMarca = pendenciaMarcaComercial({
+        website: formData.portal_site,
+        logoUrl: formData.portal_logo_url,
+        temArquivo: Boolean(logoPendente),
+      });
+      if (faltaMarca) {
+        showNotification('Cadastro incompleto', faltaMarca, 'error');
+        return;
+      }
+    }
     setIsSaving(true);
+    setDuplicateError('');
     try {
+      const editingId = persistedId || (id ? String(id) : null);
+      const comercialIdPayload = comercialForcado || comercialIdDoCadastro();
+
+      // Bloqueia CNPJ/CPF duplicado e filial de outra carteira no TM SEG (cadastro Torres é outro sistema).
+      if (cnpjDigits.length === 11 || cnpjDigits.length === 14) {
+        const carregado = await carregarLinhasDocumentoCliente(lerPaginaClientesDocumento);
+        if (carregado.error) {
+          throw new Error('Não foi possível conferir o CNPJ na base inteira. O cadastro não foi salvo.');
+        }
+        const dup = acharClienteMesmoDocumento(carregado.rows, cnpjDigits, editingId);
+        if (dup) {
+          const st = String(dup.status || '');
+          const msg =
+            st.toLowerCase() === 'inativo'
+              ? `Já existe cliente inativo com este CNPJ/CPF (id ${dup.id}: ${dup.name || 'sem nome'}). Reative esse cadastro — não crie outro. Cadastro na Torres continua só no sistema Torres.`
+              : `Já existe cliente com este CNPJ/CPF no sistema TM SEG (id ${dup.id}: ${dup.name || 'sem nome'}). Abra o cadastro existente — não crie outro. Cadastro na Torres continua só no sistema Torres.`;
+          setDuplicateError(msg);
+          showNotification('CNPJ já cadastrado', msg, 'error');
+          return;
+        }
+        const conflito = cadastroExigeTravaRaiz(carregado.rows, cnpjDigits, editingId)
+          ? acharConflitoRaizCnpj(carregado.rows, cnpjDigits, comercialIdPayload, editingId)
+          : null;
+        if (conflito) {
+          const msg = mensagemTitularidadeRaizCnpj(conflito, nomeDoComercial(conflito.responsavel_comercial_id));
+          setDuplicateError(msg);
+          showNotification('CNPJ já cadastrado', msg, 'error');
+          return;
+        }
+      }
+
       const fullAddress = `${formData.street}, ${formData.number}${formData.complement ? ' - ' + formData.complement : ''}, ${formData.neighborhood}, ${formData.city} - ${formData.state}, CEP: ${formData.zip_code}`;
 
       const payload: any = {
         name: formData.name, 
         trading_name: formData.trading_name, 
-        cnpj: formData.cnpj,
+        cnpj: cnpjDigits.length === 11 || cnpjDigits.length === 14 ? cnpjDigits : formData.cnpj,
         rg_ie: formData.rg_ie,
         contact_name: formData.contact, 
         email: formData.email, 
@@ -678,6 +889,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
         medicao_email: formData.medicao_email?.toLowerCase() || null,
         status: formData.status, 
         whatsapp_group_id: formData.whatsapp_group_id || null,
+        whatsapp_group_link: formData.whatsapp_group_link?.trim() || null,
+        whatsapp_desktop_group_name: formData.whatsapp_desktop_group_name?.trim() || null,
+        whatsapp_desktop_vinculo: formData.whatsapp_desktop_vinculo || 'nao_vinculado',
+        whatsapp_desktop_ativo: formData.whatsapp_desktop_ativo,
         full_extra_hour_after_16_min: formData.full_extra_hour_after_16_min,
         adjustment_2026_applied: formData.adjustment_2026_applied,
         proposal_2026_sent: formData.proposal_2026_sent,
@@ -686,33 +901,72 @@ const ClientForm: React.FC<ClientFormProps> = ({
         nf_service_description: formData.nf_service_description?.trim() || null,
         nf_municipal_service_code: formData.nf_municipal_service_code?.trim() || null,
         nf_municipal_service_name: formData.nf_municipal_service_name?.trim() || null,
-        responsavel_comercial_id: formData.responsavel_comercial_id || null,
+        responsavel_comercial_id: comercialIdPayload || null,
         ciclo_faturamento: formData.ciclo_faturamento || null,
+        portal_ativo: Boolean(portalPorNomeCliente(formData.name) || formData.portal_ativo),
+        portal_slug: portalPorNomeCliente(formData.name) ? null : (formData.portal_ativo ? (slugPublico(formData.portal_slug) || null) : null),
+        portal_site: formData.portal_site?.trim() || null,
+        portal_logo_url: formData.portal_logo_url?.trim() || null,
+        portal_cor: formData.portal_cor || null,
+        portal_cor_acao: formData.portal_cor_acao || null,
       };
 
-      let savedClientId: string | null = id ? String(id) : null;
-      if (id) {
-          let { error: updErr } = await supabase.from('clients').update(payload).eq('id', id);
-          if (updErr && updErr.code === '42703') {
-            const { operational_email, ciclo_faturamento, ...safePayload } = payload;
-            const res2 = await supabase.from('clients').update(safePayload).eq('id', id);
+      let savedClientId: string | null = editingId;
+      let portalFicouDeFora = false;
+      const payloadSemColunaAusente = (erro: { message?: string }) => {
+        const copia = { ...semColunasDePortal(payload) };
+        if (!erroMencionaColunaPortal(erro)) {
+          delete copia.operational_email;
+          delete copia.ciclo_faturamento;
+          delete copia.whatsapp_group_link;
+          delete copia.whatsapp_desktop_group_name;
+          delete copia.whatsapp_desktop_vinculo;
+          delete copia.whatsapp_desktop_ativo;
+        }
+        return copia;
+      };
+      if (editingId) {
+          let { error: updErr } = await supabase.from('clients').update(payload).eq('id', editingId);
+          if (updErr && colunaAusenteNoBanco(updErr)) {
+            const faltaPortal = erroMencionaColunaPortal(updErr);
+            const res2 = await supabase.from('clients').update(payloadSemColunaAusente(updErr)).eq('id', editingId);
             updErr = res2.error;
+            portalFicouDeFora = !updErr && faltaPortal;
           }
           if (updErr) throw updErr;
-          await logAction('UPDATE', 'Client', id, `Cliente atualizado: ${formData.name}`);
+          await logAction('UPDATE', 'Client', editingId, `Cliente atualizado: ${formData.name}`);
       } else {
           payload.created_by = currentUser?.name || 'SISTEMA';
           let { data: inserted, error: insErr } = await supabase.from('clients').insert([payload]).select('id').single();
-          if (insErr && insErr.code === '42703') {
-            const { operational_email, ciclo_faturamento, ...safePayload } = payload;
-            safePayload.created_by = currentUser?.name || 'SISTEMA';
-            const res2 = await supabase.from('clients').insert([safePayload]).select('id').single();
+          if (insErr && colunaAusenteNoBanco(insErr)) {
+            const faltaPortal = erroMencionaColunaPortal(insErr);
+            const res2 = await supabase.from('clients').insert([payloadSemColunaAusente(insErr)]).select('id').single();
             insErr = res2.error;
             inserted = res2.data;
+            portalFicouDeFora = !insErr && faltaPortal;
           }
           if (insErr) throw insErr;
           savedClientId = inserted?.id != null ? String(inserted.id) : null;
+          if (savedClientId) setPersistedId(savedClientId);
+          if (comercialIdPayload && !formData.responsavel_comercial_id) {
+            setFormData((prev) => ({ ...prev, responsavel_comercial_id: comercialIdPayload }));
+          }
           await logAction('CREATE', 'Client', savedClientId || 'NEW', `Cliente cadastrado: ${formData.name}`);
+          void publicarNovidadeCadastro({
+            tipo: 'cliente',
+            nomeCadastro: formData.name,
+            autor: currentUser?.name || 'Equipe',
+          });
+      }
+
+      if (logoPendente && savedClientId) {
+        const urlLogo = await enviarLogoCliente(savedClientId, logoPendente);
+        const { error: logoErr } = await supabase.from('clients').update({ portal_logo_url: urlLogo }).eq('id', savedClientId);
+        if (logoErr) {
+          throw new Error('O cliente foi salvo, mas o logotipo não entrou. Envie de novo: o mesmo cadastro será atualizado.');
+        }
+        setFormData((prev) => ({ ...prev, portal_logo_url: urlLogo }));
+        setLogoPendente(null);
       }
 
       // Cliente Ativo: cadastra/atualiza nas 3 contas Asaas (endereço fiscal obrigatório).
@@ -726,35 +980,149 @@ const ClientForm: React.FC<ClientFormProps> = ({
           throw new Error(
             syncData?.error ||
               syncData?.results?.[0]?.skipReason ||
-              'Falha ao cadastrar o cliente no Asaas. Corrija o endereço/CNPJ e salve novamente.',
+              'Falha ao cadastrar o cliente no Asaas. O cliente já ficou salvo no TM SEG — corrija e salve novamente (não cria outro cadastro).',
           );
         }
         const companyErrors = (syncData?.results?.[0]?.companies || []).filter((c: any) => !c.ok);
         if (syncData?.results?.[0]?.skipped) {
           throw new Error(
             syncData.results[0].skipReason ||
-              'Cadastro incompleto para o Asaas. Preencha CNPJ e endereço completo.',
+              'Cadastro incompleto para o Asaas. Preencha CNPJ e endereço completo. O cliente já está no TM SEG.',
           );
         }
         if (companyErrors.length > 0) {
           const detail = companyErrors
             .map((c: any) => `${c.company}: ${c.error || 'erro'}`)
             .join(' | ');
-          throw new Error(`Salvo no sistema, mas falhou no Asaas (${detail}). Ajuste e salve novamente.`);
+          throw new Error(`Salvo no sistema TM SEG, mas falhou no Asaas (${detail}). Ajuste e salve novamente — o mesmo cadastro será atualizado.`);
         }
+        if (!portalFicouDeFora) {
+          showNotification(
+            'Cliente sincronizado',
+            'Cadastro TM SEG salvo e enviado às 3 contas Asaas. Comissão usa este vínculo; Torres continua no sistema Torres.',
+            'success',
+          );
+        }
+      }
+
+      if (portalFicouDeFora) {
         showNotification(
-          'Cliente sincronizado',
-          'Cadastro salvo e enviado às 3 contas Asaas (TM Gestão, TM Segurança e TM Security).',
-          'success',
+          'Portal não gravado',
+          'O restante do cliente foi salvo. Site, logotipo e cores não entraram: o banco ainda não tem essas colunas.',
+          'warning',
         );
+      } else if (savedClientId && formData.portal_ativo && !portalPorNomeCliente(formData.name) && String(formData.status || '') === 'Ativo') {
+        const provisao = await authFetch('/api/cliente-portal/provisionar', {
+          method: 'POST',
+          body: JSON.stringify({ clientId: savedClientId }),
+        });
+        const acesso = await provisao.json().catch(() => ({}));
+        if (!provisao.ok) {
+          showNotification('Portal', acesso.error || 'O cliente foi salvo, mas o primeiro acesso não foi criado.', 'warning');
+        } else if (acesso.criado && acesso.email) {
+          showNotification('Portal', `Primeiro acesso: ${acesso.email}. A senha é o CNPJ, só os números. Na entrada ele troca o e-mail e a senha.`, 'success');
+        }
       }
 
       onBack();
     } catch (error) { 
         console.error(error);
-        const msg = error instanceof Error ? error.message : 'Erro desconhecido';
+        const msg = mensagemDeErro(error);
         showNotification('Erro', 'Erro ao salvar cliente: ' + msg, 'error');
     } finally { setIsSaving(false); }
+  };
+
+  const podeAplicarTabelaRegional = perfilPodeAplicarTabelaRegional(currentUser?.role);
+
+  const handleAplicarTabelaRegional = async () => {
+      if (!podeAplicarTabelaRegional) {
+          showNotification('Sem permissão', 'Somente Diretoria ou Administrador aplica a tabela por região.', 'error');
+          return;
+      }
+      if (!formData.name) {
+          showNotification('Atenção', 'Salve o cliente antes de aplicar a tabela.', 'warning');
+          return;
+      }
+      const plano = montarAplicacaoTabela({
+          versao: tabelaVigencia,
+          cliente: formData.name,
+          existentes: priceTables,
+      });
+      setAplicandoTabelaRegional(true);
+      try {
+          const gravacaoVigencia = await authFetch('/api/pricing/tabela-regional-vigente', {
+              method: 'POST',
+              body: JSON.stringify({ versao: tabelaVigencia }),
+          });
+          const vigencia = await gravacaoVigencia.json().catch(() => ({}));
+          if (!gravacaoVigencia.ok) throw new Error(vigencia.error || 'Não foi possível gravar a vigência da tabela.');
+
+          const catalogo = await supabase.from('regional_rates').upsert(plano.catalogo, { onConflict: 'versao,region' });
+          const catalogoPendente = !!catalogo.error && colunaRegionalAusente(catalogo.error);
+
+          if (!plano.aplicarNoCliente) {
+              await logAction('UPDATE', 'TabelaRegional', tabelaVigencia, `Tabela ${tabelaVigencia} definida como padrão. ${plano.motivo}`);
+              showNotification('Tabela contratual', `A Tabela ${tabelaVigencia} ficou como padrão do portal. ${plano.motivo}`, 'warning');
+              return;
+          }
+
+          for (const linha of plano.linhas) {
+              const payload = {
+                  client: linha.client,
+                  operation_type: linha.operation_type,
+                  activation_fee: linha.activation_fee,
+                  franchise_hours: linha.franchise_hours,
+                  franchise_km: linha.franchise_km,
+                  price_per_extra_km: linha.price_per_extra_km,
+                  price_per_extra_hour: linha.price_per_extra_hour,
+              };
+              const gravacao = linha.id
+                  ? await supabase.from('client_price_tables').update(payload).eq('id', linha.id)
+                  : await supabase.from('client_price_tables').insert([payload]);
+              if (gravacao.error) throw new Error(gravacao.error.message);
+          }
+
+          let rotasSemColuna = false;
+          for (const rota of plano.rotas) {
+              const busca = await supabase.from('client_routes').select('id').eq('client', formData.name).eq('name', rota.name).limit(1);
+              if (busca.error) throw new Error(busca.error.message);
+              const idRota = busca.data?.[0]?.id;
+              if (idRota) {
+                  const atualizacao = await supabase.from('client_routes').update(rota.atualizar).eq('id', idRota);
+                  if (atualizacao.error && colunaRegionalAusente(atualizacao.error)) {
+                      rotasSemColuna = true;
+                      break;
+                  }
+                  if (atualizacao.error) throw new Error(atualizacao.error.message);
+              } else {
+                  const inclusao = await supabase.from('client_routes').insert([{ ...rota.criar, client: formData.name }]);
+                  if (inclusao.error && colunaRegionalAusente(inclusao.error)) {
+                      const { route_type, is_active, region, ...legado } = rota.criar;
+                      void route_type; void is_active; void region;
+                      const retry = await supabase.from('client_routes').insert([{ ...legado, client: formData.name }]);
+                      if (retry.error) throw new Error(retry.error.message);
+                      rotasSemColuna = true;
+                      break;
+                  }
+                  if (inclusao.error) throw new Error(inclusao.error.message);
+              }
+          }
+
+          await logAction('UPDATE', 'TabelaRegional', tabelaVigencia, `Tabela ${tabelaVigencia} aplicada em ${formData.name}. ${plano.linhas.length} linhas padrão. Rotas nomeadas não foram alteradas.`);
+          await fetchPriceTables(formData.name);
+          const avisoColuna = rotasSemColuna || catalogoPendente
+              ? ' As colunas novas ainda não existem no banco: aplique migrations/2026_10_26_tabela_2027_rotas.sql.'
+              : '';
+          showNotification(
+              'Tabela aplicada',
+              `A Tabela ${tabelaVigencia} é o padrão do portal. As regiões deste cliente foram gravadas.${avisoColuna}`,
+              avisoColuna ? 'warning' : 'success',
+          );
+      } catch (erro: any) {
+          showNotification('Erro', erro?.message || 'Não foi possível aplicar a tabela.', 'error');
+      } finally {
+          setAplicandoTabelaRegional(false);
+      }
   };
 
   const handlePriceSubmit = async (e: React.FormEvent) => {
@@ -787,6 +1155,77 @@ const ClientForm: React.FC<ClientFormProps> = ({
           const msg = err instanceof Error ? err.message : 'Erro desconhecido';
           showNotification('Erro', msg, 'error');
       } finally { setIsSavingPrice(false); }
+  };
+
+  const abrirEdicaoRegional = (table: ClientPriceTable) => {
+      if (!podeAplicarTabelaRegional) {
+          showNotification('Sem permissão', 'Somente Diretoria ou Administrador edita a tarifa regional.', 'error');
+          return;
+      }
+      setLinhaRegional(table);
+      setRegionalForm({
+          km: String(table.price_per_extra_km ?? ''),
+          hora: String(table.price_per_extra_hour ?? ''),
+          franquiaKm: String(table.franchise_km ?? 100),
+          franquiaHoras: String(table.franchise_hours ?? 3),
+      });
+  };
+
+  const salvarLinhaRegional = async () => {
+      if (!linhaRegional || !formData.name) return;
+      if (!podeAplicarTabelaRegional) {
+          showNotification('Sem permissão', 'Somente Diretoria ou Administrador edita a tarifa regional.', 'error');
+          return;
+      }
+      if (ehLinhaPadraoRegional(linhaRegional.operation_type) && clienteContratualDhlOuIbl(formData.name)) {
+          showNotification('Tabela contratual', 'DHL e IBL permanecem na tabela já cadastrada.', 'warning');
+          return;
+      }
+      const patch = patchEdicaoRegional({
+          id: linhaRegional.id,
+          clientName: formData.name,
+          ratePerKm: parseCurrency(regionalForm.km),
+          extraHourRate: parseCurrency(regionalForm.hora),
+          franchiseKm: parseCurrency(regionalForm.franquiaKm),
+          franchiseHours: parseCurrency(regionalForm.franquiaHoras),
+          linhas: [{ id: linhaRegional.id, client: formData.name }],
+      });
+      if (!patch.ok) {
+          showNotification('Atenção', patch.erro, 'warning');
+          return;
+      }
+      setSalvandoRegional(true);
+      try {
+          let gravouPelaApi = false;
+          if (id) {
+              const resposta = await authFetch(`/api/clients/${id}/pricing-tables/${linhaRegional.id}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({
+                      rate_per_km: patch.payload.price_per_extra_km,
+                      extra_hour_rate: patch.payload.price_per_extra_hour,
+                      franchise_km: patch.payload.franchise_km,
+                      franchise_hours: patch.payload.franchise_hours,
+                  }),
+              });
+              if (resposta.ok) gravouPelaApi = true;
+              else if (resposta.status !== 404) {
+                  const corpo = await resposta.json().catch(() => ({}));
+                  throw new Error(corpo.error || 'Não foi possível gravar a linha.');
+              }
+          }
+          if (!gravouPelaApi) {
+              const { error } = await supabase.from('client_price_tables').update(patch.payload).eq('id', patch.id).eq('client', formData.name);
+              if (error) throw new Error(error.message);
+              await logAction('UPDATE', 'ClientPriceTable', patch.id, `Edição regional de ${formData.name} — ${linhaRegional.operation_type}: KM ${patch.payload.price_per_extra_km}, hora extra ${patch.payload.price_per_extra_hour}, franquia ${patch.payload.franchise_km} km / ${patch.payload.franchise_hours} h.`);
+          }
+          showNotification('Linha atualizada', 'A tarifa desta região foi gravada só neste cliente.', 'success');
+          setLinhaRegional(null);
+          await fetchPriceTables(formData.name);
+      } catch (erro) {
+          showNotification('Erro', mensagemDeErro(erro), 'error');
+      } finally {
+          setSalvandoRegional(false);
+      }
   };
 
   const handleEditPrice = (table: ClientPriceTable) => {
@@ -877,9 +1316,32 @@ const ClientForm: React.FC<ClientFormProps> = ({
       } finally { setIsBulkDeleting(false); }
   };
 
+  const tabelasDaVigencia = useMemo(
+      () => filtrarPorVigencia(priceTables, tabelaVigencia, (tabela) => versaoDaLinhaTarifaria(tabela.operation_type)),
+      [priceTables, tabelaVigencia],
+  );
+  const tabelasExibidas = useMemo(() => {
+      const termo = priceSearch.trim().toLowerCase();
+      if (!termo) return priceTables;
+      return priceTables.filter((tabela) => (tabela.operation_type || '').toLowerCase().includes(termo));
+  }, [priceTables, priceSearch]);
+  const linhasProposta = useMemo(
+      () => tabelasDaVigencia.filter((tabela) => selectedPriceIds.includes(tabela.id)),
+      [tabelasDaVigencia, selectedPriceIds],
+  );
+  useEffect(() => {
+      const visiveis = new Set(priceTables.map((tabela) => tabela.id));
+      setSelectedPriceIds((atual) => {
+          const proximo = atual.filter((id) => visiveis.has(id));
+          return proximo.length === atual.length ? atual : proximo;
+      });
+  }, [priceTables]);
+
   const handleSelectAllPrices = () => {
-      if (selectedPriceIds.length === priceTables.length && priceTables.length > 0) setSelectedPriceIds([]);
-      else setSelectedPriceIds(priceTables.map(t => t.id));
+      const ids = tabelasExibidas.map((tabela) => tabela.id);
+      const todos = ids.length > 0 && ids.every((id) => selectedPriceIds.includes(id));
+      if (todos) setSelectedPriceIds((atual) => atual.filter((id) => !ids.includes(id)));
+      else setSelectedPriceIds(ids);
   };
 
   const handleSelectPriceRow = (id: string) => {
@@ -906,11 +1368,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
           <CommercialProposalModal 
             onClose={() => { setIsProposalModalOpen(false); fetchClientData(); }} 
             clientName={formData.trading_name || formData.name} 
-            priceTables={
-              selectedPriceIds.length > 0
-                ? priceTables.filter((t) => selectedPriceIds.includes(t.id))
-                : priceTables
-            }
+            priceTables={linhasProposta}
             contactName={formData.contact} 
             email={formData.email} 
             cnpj={formData.cnpj} 
@@ -970,11 +1428,13 @@ const ClientForm: React.FC<ClientFormProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (selectedPriceIds.length === 0) {
+                  if (linhasProposta.length === 0) {
                     setActiveTab('costs');
                     showNotification(
                       'Atenção',
-                      'Na aba Tabela de Preços, marque as rotas/tabelas que devem entrar na proposta. Só as selecionadas serão emitidas no documento.',
+                      selectedPriceIds.length > 0
+                        ? 'A Tabela 2026 (ANTIGA) fica na grade. A proposta nova usa as linhas da Tabela 2027.'
+                        : 'Na aba Tabela de Preços, marque as linhas da Tabela 2027 para a proposta.',
                       'warning',
                     );
                     return;
@@ -985,7 +1445,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 data-testid="button-gerar-proposta"
               >
                 <ScrollText size={18} /> Gerar Contrato / Proposta
-                {selectedPriceIds.length > 0 ? ` (${selectedPriceIds.length})` : ''}
+                {linhasProposta.length > 0 ? ` (${linhasProposta.length})` : ''}
               </button>
             )}
         </div>}
@@ -998,9 +1458,10 @@ const ClientForm: React.FC<ClientFormProps> = ({
       )}
 
       <div className="flex flex-wrap gap-2 bg-white p-1.5 rounded-xl w-full lg:w-fit shadow-sm border border-gray-200">
-          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'cancellation', label: 'Cancelamento', icon: XCircle }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
+          {[ { id: 'registration', label: 'Dados Cadastrais', icon: Users }, { id: 'contracts', label: 'Contratos', icon: ScrollText }, { id: 'monthly-services', label: 'Serviços mensais', icon: Calendar }, { id: 'costs', label: 'Tabela de Preços', icon: DollarSign }, { id: 'cancellation', label: 'Cancelamento', icon: XCircle }, { id: 'vehicles', label: 'Veículos (Carga)', icon: Truck }, { id: 'routes', label: 'Rotas Fixas', icon: Navigation }, { id: 'quotes', label: 'Cotações', icon: FileText } ].filter(tab => {
               if (tab.id === 'registration') return true;
-              if (tab.id === 'contracts') return !!id && isFinanceAdmin;
+              if (perfilComercial) return tab.id === 'quotes' && !!id;
+              if (tab.id === 'contracts' || tab.id === 'monthly-services') return !!id && isFinanceAdmin;
               return isFinanceAdmin;
           }).map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all uppercase ${activeTab === tab.id ? 'bg-black text-white shadow-sm' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}><tab.icon size={14} /> {tab.label}</button>
@@ -1053,6 +1514,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                 onClick={handleSearchCNPJ}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 transition-colors"
                                 disabled={isSearchingCnpj}
+                                title="Consultar CNPJ na Receita Federal"
                             >
                                 {isSearchingCnpj ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
                             </button>
@@ -1086,15 +1548,27 @@ const ClientForm: React.FC<ClientFormProps> = ({
                           className={INPUT_CLASS}
                           value={formData.responsavel_comercial_id}
                           onChange={e => setFormData({...formData, responsavel_comercial_id: e.target.value})}
+                          disabled={perfilComercial}
                           data-testid="select-responsavel-comercial"
                         >
-                            <option value="">— Sem comercial (não gera comissão) —</option>
-                            {comerciais.map((c) => (
+                            {!perfilComercial && <option value="">— Sem comercial (não gera comissão) —</option>}
+                            {(perfilComercial
+                              ? comerciais.filter((c) => String(c.id) === String(formData.responsavel_comercial_id))
+                              : comerciais
+                            ).map((c) => (
                               <option key={c.id} value={c.id}>{c.nome}</option>
                             ))}
                         </select>
-                        <p className="text-[10px] text-gray-400">Vínculo com usuário interno de perfil COMERCIAL. Não digite nome avulso — cadastre o usuário em Configurações.</p>
+                        <p className="text-[10px] text-gray-400">
+                          Cadastro deste formulário é só do sistema TM SEG. Comercial logado já vincula a carteira dele para comissão.
+                          O quadro de comissão lê TM SEG + Torres; o cadastro na Torres continua no sistema Torres.
+                        </p>
                     </div>
+                    {duplicateError && (
+                      <div className="md:col-span-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-bold text-red-700" data-testid="text-client-duplicate-error">
+                        {duplicateError}
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Status Operacional</label>
                         <select className={INPUT_CLASS} value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} data-testid="select-client-status">
@@ -1116,6 +1590,110 @@ const ClientForm: React.FC<ClientFormProps> = ({
                             <option value="mensal">Mensal — dia 1 ao último do mês</option>
                         </select>
                         <p className="text-[10px] text-gray-400">Define o boletim e os alertas do Financeiro. Sem ciclo cadastrado o painel trata como não validado.</p>
+                    </div>
+                    <div className="md:col-span-3 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                        <label className="flex items-center gap-2 text-sm font-black text-slate-800">
+                            <input
+                                type="checkbox"
+                                checked={Boolean(portalPorNomeCliente(formData.name) || formData.portal_ativo)}
+                                disabled={Boolean(portalPorNomeCliente(formData.name))}
+                                onChange={(event) => {
+                                  const ligado = event.target.checked;
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    portal_ativo: ligado,
+                                    portal_slug: ligado ? (prev.portal_slug || slugDeNome(prev.trading_name || prev.name)) : prev.portal_slug,
+                                  }));
+                                }}
+                                data-testid="checkbox-portal-cliente"
+                            />
+                            Portal do cliente
+                        </label>
+                        {portalPorNomeCliente(formData.name) ? (
+                          <p className="text-xs text-slate-600">Este cliente já tem a página {portalPorNomeCliente(formData.name)?.caminho}. A CEVA permanece com o layout próprio. A IBL é o modelo dos demais.</p>
+                        ) : formData.portal_ativo && (
+                          <p className="text-xs text-slate-600">A página fica no ar em /{formData.portal_slug || slugDeNome(formData.trading_name || formData.name)}, no mesmo modelo da IBL. A equipe da TM SEG entra com o login interno. O primeiro acesso do cliente é portal@domínio do site, senha igual ao CNPJ, perfil administrador, e na entrada ele troca o e-mail e a senha. Quem ele cadastrar depois também entra no Cadastro de Usuário do cliente.</p>
+                        )}
+                        {!portalPorNomeCliente(formData.name) && formData.portal_ativo && (
+                          <div className="space-y-1.5">
+                            <label className={LABEL_CLASS}>Endereço da página</label>
+                            <input
+                              className={INPUT_CLASS}
+                              value={formData.portal_slug}
+                              onChange={(event) => setFormData({ ...formData, portal_slug: limparSlug(event.target.value) })}
+                              data-testid="input-portal-slug"
+                            />
+                          </div>
+                        )}
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className={LABEL_CLASS}>Site do cliente{perfilEhComercialRole(currentUser?.role) ? ' *' : ''}</label>
+                            <div className="flex gap-2">
+                              <input className={INPUT_CLASS} placeholder="https://cliente.com.br" value={formData.portal_site} onChange={(event) => setFormData({ ...formData, portal_site: event.target.value })} data-testid="input-portal-site" />
+                              <button
+                                type="button"
+                                className="rounded-lg bg-slate-800 px-3 text-xs font-bold text-white"
+                                onClick={async () => {
+                                  const resposta = await authFetch('/api/cliente-portal/marca-site', { method: 'POST', body: JSON.stringify({ url: formData.portal_site }) });
+                                  const corpo = await resposta.json().catch(() => ({}));
+                                  if (!resposta.ok) {
+                                    showNotification('Site', corpo.error || 'Não foi possível ler o site. Envie o logotipo e escolha as cores.', 'warning');
+                                    return;
+                                  }
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    portal_logo_url: corpo.logo || prev.portal_logo_url,
+                                    portal_cor: corpo.cor || prev.portal_cor,
+                                    portal_cor_acao: corpo.corAcao || prev.portal_cor_acao,
+                                  }));
+                                  showNotification('Site', corpo.logo ? 'Logotipo vetorizado e cores do site. Confira antes de salvar.' : 'O site não publicou um SVG sem fundo. Envie o arquivo vetorizado e confira as cores.', corpo.logo ? 'info' : 'warning');
+                                }}
+                              >Ler</button>
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className={LABEL_CLASS}>Logotipo{perfilEhComercialRole(currentUser?.role) ? ' *' : ''}</label>
+                            <input
+                              type="file"
+                              accept="image/png,image/svg+xml,.png,.svg"
+                              data-testid="input-portal-logo"
+                              onChange={async (event) => {
+                              const arquivo = event.target.files?.[0];
+                              event.target.value = '';
+                              if (!arquivo) return;
+                              const erroLogo = validarArquivoLogo(arquivo);
+                              if (erroLogo) {
+                                showNotification('Logotipo', erroLogo, 'warning');
+                                return;
+                              }
+                              const destino = persistedId || id;
+                              if (!destino) {
+                                setLogoPendente(arquivo);
+                                showNotification('Logotipo', 'Arquivo aceito. Ele sobe quando o cliente for salvo.', 'info');
+                                return;
+                              }
+                              try {
+                                const urlLogo = await enviarLogoCliente(String(destino), arquivo);
+                                setLogoPendente(null);
+                                setFormData((prev) => ({ ...prev, portal_logo_url: urlLogo }));
+                                showNotification('Logotipo', 'Arquivo enviado. Salve o cliente para gravar o endereço.', 'success');
+                              } catch (erroEnvio) {
+                                showNotification('Logotipo', erroEnvio instanceof Error ? erroEnvio.message : 'Falha no envio do logotipo.', 'error');
+                              }
+                            }} />
+                            <p className="text-[10px] text-gray-500">PNG ou SVG, até 2 MB. O comercial precisa de site e logotipo. Cadastro antigo sem esses dados continua no banco.</p>
+                            {logoPendente && !formData.portal_logo_url && (
+                              <p className="text-[10px] font-bold text-slate-700" data-testid="text-logo-pendente">Arquivo pronto: {logoPendente.name}</p>
+                            )}
+                            {formData.portal_logo_url && <ImagemSegura src={formData.portal_logo_url} alt="Logotipo do portal" className="h-10 w-auto object-contain" />}
+                          </div>
+                          <label className="text-xs font-bold text-slate-600">Cor principal
+                            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(formData.portal_cor) ? formData.portal_cor : '#111111'} onChange={(event) => setFormData({ ...formData, portal_cor: event.target.value })} className="mt-1 block h-10 w-full" />
+                          </label>
+                          <label className="text-xs font-bold text-slate-600">Cor de ação
+                            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(formData.portal_cor_acao) ? formData.portal_cor_acao : '#F7941E'} onChange={(event) => setFormData({ ...formData, portal_cor_acao: event.target.value })} className="mt-1 block h-10 w-full" />
+                          </label>
+                        </div>
                     </div>
                     <div className="space-y-1.5 md:col-span-2">
                         <label className={LABEL_CLASS}>Grupo de WhatsApp do Cliente (envio automático de atualizações de OS)</label>
@@ -1158,6 +1736,31 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               {' '}<span className="text-gray-400">cadastra este grupo no cliente NOME</span>.
                             </p>
                         )}
+                    </div>
+                    <div className="space-y-1.5 md:col-span-2">
+                        <label className={LABEL_CLASS}>Link do grupo WhatsApp do cliente</label>
+                        <input className={INPUT_CLASS} value={formData.whatsapp_group_link} onChange={e => setFormData({ ...formData, whatsapp_group_link: e.target.value.trim() })} placeholder="https://chat.whatsapp.com/..." data-testid="input-client-whatsapp-link" />
+                        <p className="text-[10px] text-gray-500">Referência de cadastro. Não envia mensagem por este link.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Nome exato do grupo</label>
+                        <input className={INPUT_CLASS} value={formData.whatsapp_desktop_group_name} onChange={e => setFormData({ ...formData, whatsapp_desktop_group_name: e.target.value })} data-testid="input-client-whatsapp-desktop-name" />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Vinculação</label>
+                        <select className={INPUT_CLASS} value={formData.whatsapp_desktop_vinculo} onChange={e => setFormData({ ...formData, whatsapp_desktop_vinculo: e.target.value })}>
+                            <option value="nao_vinculado">Não vinculado</option>
+                            <option value="supervisionado">Vinculado com supervisão</option>
+                            <option value="incerto">Incerto</option>
+                            <option value="desativado">Desativado</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className={LABEL_CLASS}>Integração WhatsApp Desktop</label>
+                        <select className={INPUT_CLASS} value={formData.whatsapp_desktop_ativo ? 'sim' : 'nao'} onChange={e => setFormData({ ...formData, whatsapp_desktop_ativo: e.target.value === 'sim' })} data-testid="select-client-whatsapp-desktop-ativo">
+                            <option value="sim">Ativa</option>
+                            <option value="nao">Desativada</option>
+                        </select>
                     </div>
                     <div className="space-y-1.5">
                         <label className={LABEL_CLASS}>Empresa Emissora (NF / Asaas)</label>
@@ -1544,8 +2147,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                               <h3 className="font-bold text-base uppercase tracking-tighter">Reajuste Seletivo</h3>
                               <p className="text-[10px] text-white/80 uppercase font-bold tracking-widest mt-1">
                                   {selectedPriceIds.length > 0
-                                    ? `${selectedPriceIds.length} itens marcados — entram na proposta / reajuste / exclusão`
-                                    : 'Marque as rotas abaixo para a proposta, reajuste ou exclusão'}
+                                    ? `${selectedPriceIds.length} itens marcados. Proposta nova: ${linhasProposta.length} da Tabela 2027. Reajuste e exclusão usam a marca, inclusive 2026 (ANTIGA).`
+                                    : 'A Tabela 2026 (ANTIGA) aparece na grade. Proposta nova usa a Tabela 2027.'}
                               </p>
                           </div>
                       </div>
@@ -1565,42 +2168,61 @@ const ClientForm: React.FC<ClientFormProps> = ({
                   </div>
               </div>
 
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                <h4 className="text-xs font-bold text-gray-500 uppercase mb-3 flex items-center gap-2">{editingPriceId ? <Edit size={14}/> : <Plus size={14}/>} {editingPriceId ? 'Editar Regra' : 'Adicionar Nova Regra'}</h4>
-                <form onSubmit={handlePriceSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="md:col-span-1"><label className={LABEL_CLASS}>Região</label><select required className="w-full p-2 border rounded text-xs font-bold bg-white uppercase" value={priceRegion} onChange={e => setPriceRegion(e.target.value)}><option value="">Selecione...</option>{REGIONS.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                    <div className="md:col-span-2"><label className={LABEL_CLASS}>Descrição</label><input required type="text" className="w-full p-2 border rounded text-xs font-bold uppercase" value={priceDescription} onChange={e => setPriceDescription(e.target.value)} /></div>
-                    <div>
-                        <label className={LABEL_CLASS}>Acionamento</label>
-                        <div className="relative">
-                            <input required type="text" className={`w-full p-2 border rounded text-xs font-bold ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={priceFormData.activation_fee} onChange={e => setPriceFormData({...priceFormData, activation_fee: e.target.value})} readOnly={!isFinanceAdmin} />
-                            {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                        </div>
-                    </div>
+              {podeAplicarTabelaRegional && (
+                  <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3" data-testid="card-tabela-regional">
+                      <div className="flex flex-col md:flex-row md:items-end justify-between gap-3">
+                          <div>
+                              <h4 className="text-xs font-bold text-gray-700 uppercase">Tabela 2027</h4>
+                              <p className="text-[10px] text-gray-500 font-bold uppercase mt-1">Diretoria e administrador. Aplica as seis regiões padrão. Rotas de cidade não são reescritas. Linhas de 2026 já gravadas permanecem no banco.</p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                  type="button"
+                                  onClick={handleAplicarTabelaRegional}
+                                  disabled={aplicandoTabelaRegional}
+                                  className="px-4 py-2 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
+                                  data-testid="button-aplicar-valor-regiao"
+                              >
+                                  {aplicandoTabelaRegional ? <Loader2 size={12} className="animate-spin" /> : <DollarSign size={12} />}
+                                  Aplicar valor por região
+                              </button>
+                          </div>
+                      </div>
+                      {clienteContratualDhlOuIbl(formData.name) && (
+                          <p className="text-[11px] font-bold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" data-testid="aviso-cliente-contratual">
+                              Este cliente permanece na tabela contratual. O botão só grava a vigência do portal.
+                          </p>
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          {FAIXAS_REGIONAIS.map((faixa) => (
+                              <div key={faixa.region} className="text-[10px] font-bold uppercase text-gray-600 border border-gray-100 rounded-lg px-3 py-2">
+                                  {faixa.nome}: R$ {faixa.km2027.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/km · 100 km / 3 h
+                              </div>
+                          ))}
+                      </div>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div><label className={LABEL_CLASS}>Franquia KM</label><input required type="text" className="w-full p-2 border rounded text-xs" value={priceFormData.franchise_km} onChange={e => setPriceFormData({...priceFormData, franchise_km: e.target.value})} /></div>
-                    <div><label className={LABEL_CLASS}>Franquia Horas</label><input required type="text" className="w-full p-2 border rounded text-xs" value={priceFormData.franchise_hours} onChange={e => setPriceFormData({...priceFormData, franchise_hours: e.target.value})} /></div>
-                    <div>
-                        <label className={LABEL_CLASS}>KM Extra</label>
-                        <div className="relative">
-                            <input required type="text" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={priceFormData.price_per_extra_km} onChange={e => setPriceFormData({...priceFormData, price_per_extra_km: e.target.value})} readOnly={!isFinanceAdmin} />
-                            {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                        </div>
-                    </div>
-                    <div>
-                        <label className={LABEL_CLASS}>Hora Extra</label>
-                        <div className="relative">
-                            <input required type="text" className={`w-full p-2 border rounded text-xs ${!isFinanceAdmin ? 'bg-gray-100 cursor-not-allowed' : ''}`} value={priceFormData.price_per_extra_hour} onChange={e => setPriceFormData({...priceFormData, price_per_extra_hour: e.target.value})} readOnly={!isFinanceAdmin} />
-                            {!isFinanceAdmin && <Lock size={12} className="absolute right-2 top-2.5 text-gray-400" />}
-                        </div>
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-2"><button type="submit" disabled={isSavingPrice} className="px-4 py-1.5 bg-black text-white text-xs font-bold rounded hover:bg-gray-800 flex items-center gap-2">{isSavingPrice ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />} Salvar Regra</button></div>
-                </form>
-              </div>
-              
+              )}
+
+              <RotaGoogleCotacao
+                  origem={cotacaoOrigem}
+                  destino={cotacaoDestino}
+                  onOrigem={setCotacaoOrigem}
+                  onDestino={setCotacaoDestino}
+                  onKm={setCotacaoKm}
+              />
+              <QuoteCalculatorCard
+                  cliente={formData.name}
+                  versao={tabelaVigencia}
+                  linhas={tabelasDaVigencia}
+                  origem={cotacaoOrigem}
+                  destino={cotacaoDestino}
+                  km={cotacaoKm}
+                  onOrigem={setCotacaoOrigem}
+                  onDestino={setCotacaoDestino}
+                  onKm={setCotacaoKm}
+                  ocultarCampos
+              />
+
               <div className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-xl">
                 <Search size={14} className="text-gray-400" />
                 <input
@@ -1614,8 +2236,8 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 {priceSearch && (
                     <button onClick={() => setPriceSearch('')} className="text-[10px] font-bold text-gray-500 hover:text-red-600 uppercase" data-testid="button-clear-price-search">Limpar</button>
                 )}
-                <span className="text-[10px] font-bold text-gray-400 uppercase">
-                    {priceSearch ? `${priceTables.filter(t => (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length} / ${priceTables.length}` : `${priceTables.length} itens`}
+                <span className="text-[10px] font-bold text-gray-400 uppercase" data-testid="contador-tabelas-preco">
+                    {tabelasExibidas.length} itens · 2026 (ANTIGA) {tabelasExibidas.filter((tabela) => versaoDaLinhaTarifaria(tabela.operation_type) === '2026').length}
                 </span>
               </div>
 
@@ -1623,7 +2245,7 @@ const ClientForm: React.FC<ClientFormProps> = ({
                 <table className="w-full text-left border-collapse table-auto">
                     <thead className="bg-gray-100 text-gray-600 font-bold uppercase">
                         <tr className="text-[10px]">
-                            <th className="pl-4 py-3 w-8"><button onClick={handleSelectAllPrices} className="flex items-center text-gray-400">{selectedPriceIds.length === priceTables.length && priceTables.length > 0 ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></th>
+                            <th className="pl-4 py-3 w-8"><button onClick={handleSelectAllPrices} className="flex items-center text-gray-400">{tabelasExibidas.length > 0 && tabelasExibidas.every((tabela) => selectedPriceIds.includes(tabela.id)) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></th>
                             <th className="p-2">Operação / Rota</th>
                             <th className="p-2 text-right">Acionamento</th>
                             <th className="p-2 text-center">Franquia</th>
@@ -1634,13 +2256,20 @@ const ClientForm: React.FC<ClientFormProps> = ({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                        {priceTables.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).length === 0 && priceSearch && (
-                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs">Nenhuma tabela encontrada para "{priceSearch}"</td></tr>
+                        {tabelasExibidas.length === 0 && (
+                            <tr><td colSpan={8} className="p-6 text-center text-gray-400 italic text-xs" data-testid="precos-vigencia-vazia">{priceSearch ? `Nenhuma tabela encontrada para "${priceSearch}"` : 'Nenhuma linha na tabela de preços deste cliente.'}</td></tr>
                         )}
-                        {priceTables.filter(t => !priceSearch || (t.operation_type || '').toLowerCase().includes(priceSearch.toLowerCase())).map((table) => (
+                        {tabelasExibidas.map((table) => (
                             <tr key={table.id} className={`text-[11px] transition-all ${selectedPriceIds.includes(table.id) ? 'bg-blue-50/50' : table.adjustment_status ? 'bg-green-50/30' : 'hover:bg-gray-50/30'}`}>
                                 <td className="pl-4 py-2"><button onClick={() => handleSelectPriceRow(table.id)}>{selectedPriceIds.includes(table.id) ? <CheckSquare size={16} className="text-blue-600" /> : <Square size={16} />}</button></td>
-                                <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>{table.operation_type}</td>
+                                <td className={`p-2 font-bold uppercase ${table.adjustment_status ? 'text-green-800' : 'text-gray-700'}`}>
+                                    <span className="inline-flex flex-wrap items-center gap-2">
+                                        {table.operation_type}
+                                        {versaoDaLinhaTarifaria(table.operation_type) === '2026' && (
+                                            <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[8px] font-black uppercase" data-testid={`badge-tabela-antiga-${table.id}`}>2026 (ANTIGA)</span>
+                                        )}
+                                    </span>
+                                </td>
                                 <td className={`p-2 text-right font-mono font-black ${table.adjustment_status ? 'text-green-700' : 'text-gray-900'}`}>R$ {(table.activation_fee ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
                                 <td className="p-2 text-center text-gray-500">{table.franchise_km}km / {table.franchise_hours}h</td>
                                 <td className="p-2 text-right text-red-600 font-bold">R$ {(table.price_per_extra_km ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
@@ -1650,18 +2279,51 @@ const ClientForm: React.FC<ClientFormProps> = ({
                                         <div className="flex flex-col items-center gap-0.5">
                                             <span className="bg-green-600 text-white px-1.5 py-0.5 rounded text-[8px] font-black uppercase flex items-center gap-1 shadow-sm"><Check size={8} strokeWidth={4} /> Reajustado</span>
                                             {table.last_adjustment_date && (
-                                                <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {new Date(table.last_adjustment_date).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</span>
+                                                <span className="text-[7px] text-green-700 font-bold flex items-center gap-0.5"><Calendar size={7} /> {formatDateBR(table.last_adjustment_date)}</span>
                                             )}
                                         </div>
                                     ) : (
                                         <span className="text-gray-300 font-bold uppercase text-[8px]">Pendente</span>
                                     )}
                                 </td>
-                                <td className="p-2 text-right"><div className="flex justify-end gap-1"><button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta"><FileText size={12} /></button><button onClick={() => handleEditPrice(table)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><Edit size={12} /></button><button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
+                                <td className="p-2 text-right"><div className="flex justify-end gap-1">{versaoDaLinhaTarifaria(table.operation_type) === '2027' && <button onClick={() => setQuickQuoteTable(table)} className="p-1 text-green-600 hover:bg-green-50 rounded" title="Gerar Proposta" data-testid={`button-proposta-linha-${table.id}`}><FileText size={12} /></button>}{ehLinhaPadraoRegional(table.operation_type) && <button type="button" onClick={() => abrirEdicaoRegional(table)} className="px-2 py-1 text-[10px] font-black uppercase text-blue-700 hover:bg-blue-50 rounded inline-flex items-center gap-1" title="Editar tarifa regional" data-testid={`button-editar-regional-${table.id}`}><Edit size={12} /> Editar</button>}<button onClick={async () => { if(confirm("Excluir?")) { await supabase.from('client_price_tables').delete().eq('id', table.id); await logAction('DELETE', 'ClientPriceTable', table.id, `Tabela de preço excluída: ${table.client || 'N/A'} — ${table.origin || '?'} → ${table.destination || '?'} (R$ ${table.price?.toFixed(2) || '0.00'})`); fetchPriceTables(formData.name); } }} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 size={12} /></button></div></td>
                             </tr> 
                         ))}
                     </tbody>
                 </table>
+              </div>
+          </div>
+      )}
+      {linhaRegional && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" data-testid="modal-editar-regional">
+              <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                      <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Tarifa deste cliente</p>
+                          <h3 className="text-sm font-black uppercase text-gray-900">{linhaRegional.operation_type}</h3>
+                      </div>
+                      <button type="button" onClick={() => setLinhaRegional(null)} className="p-2 text-gray-400 hover:text-gray-700"><X size={16} /></button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Valor do KM
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.km} onChange={(evento) => setRegionalForm({ ...regionalForm, km: evento.target.value })} data-testid="input-regional-km" />
+                      </label>
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Hora extra
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.hora} onChange={(evento) => setRegionalForm({ ...regionalForm, hora: evento.target.value })} data-testid="input-regional-hora" />
+                      </label>
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Franquia de KM
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.franquiaKm} onChange={(evento) => setRegionalForm({ ...regionalForm, franquiaKm: evento.target.value })} data-testid="input-regional-franquia-km" />
+                      </label>
+                      <label className="text-[10px] font-bold uppercase text-gray-500">Franquia de horas
+                          <input className="mt-1 w-full rounded-lg border p-2 text-xs font-bold" value={regionalForm.franquiaHoras} onChange={(evento) => setRegionalForm({ ...regionalForm, franquiaHoras: evento.target.value })} data-testid="input-regional-franquia-horas" />
+                      </label>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => setLinhaRegional(null)} className="px-4 py-2 text-xs font-bold uppercase text-gray-600">Cancelar</button>
+                      <button type="button" onClick={() => { void salvarLinhaRegional(); }} disabled={salvandoRegional} className="px-4 py-2 rounded-lg bg-black text-white text-xs font-black uppercase disabled:opacity-50" data-testid="button-salvar-regional">
+                          {salvandoRegional ? 'Salvando…' : 'Salvar neste cliente'}
+                      </button>
+                  </div>
               </div>
           </div>
       )}
@@ -1762,6 +2424,9 @@ const ClientForm: React.FC<ClientFormProps> = ({
           </div>
       )}
       {activeTab === 'vehicles' && <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"><ClientVehicleList onAddVehicle={onAddVehicle} onEdit={onEditVehicle} clientId={id ? parseInt(id) : undefined} embedded={true} /></div>}
+      {activeTab === 'monthly-services' && id && (
+          <ClientMonthlyServicesTab clientId={id} clientName={formData.trading_name || formData.name} />
+      )}
       {activeTab === 'contracts' && id && (
           <ClientContractTab
             clientId={id}

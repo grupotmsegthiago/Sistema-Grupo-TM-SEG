@@ -204,6 +204,9 @@ CREATE TABLE IF NOT EXISTS public.financial_transaction_payments (id uuid);
     assert.match(list, /ReceivablePaymentsModal/);
     assert.match(list, /ReceivablePayConfirmModal/);
     assert.match(list, /\/api\/financial-payments-init/);
+    const routes = read('server/routes.ts');
+    assert.match(routes, /\/api\/financial-transaction-payments/);
+    assert.match(routes, /handleFinancialTransactionPaymentsRequest/);
   });
 });
 

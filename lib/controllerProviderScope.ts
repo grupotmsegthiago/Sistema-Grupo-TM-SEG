@@ -1,11 +1,14 @@
 /**
  * Escopo financeiro do perfil `controller` (ex.: Plínio):
  * - leitura/escrita no lado FORNECEDOR (custo, pedágio fornecedor, deslocamento, motivo)
- * - bloqueio estrito do lado CLIENTE (receita, pedágio cliente, aprovação de faturamento)
+ * - bloqueio de receita, pedágio do cliente, deslocamento cliente e aprovação de faturamento
  */
 
 export type ProviderOnlySaveInput = {
   costValue: number;
+  tollValue?: number;
+  /** Quando verdadeiro, o controller grava também o pedágio do cliente. */
+  persistClientToll?: boolean;
   tollValueProvider: number;
   displacementValueProvider: number;
   costEditReason?: string | null;
@@ -28,6 +31,12 @@ export function buildProviderOnlyMissionPayload(input: ProviderOnlySaveInput): R
     displacement_value_provider: Number(input.displacementValueProvider) || 0,
     last_update: input.lastUpdate || new Date().toISOString(),
   };
+  if (input.persistClientToll) {
+    const clientToll = Number(input.tollValue);
+    payload.toll_value = Number.isFinite(clientToll) && clientToll > 0
+      ? Math.round(clientToll * 100) / 100
+      : 0;
+  }
   const reason = String(input.costEditReason || '').trim();
   if (reason) {
     // Nunca enviar null — constraints históricas rejeitam null em motivos.
@@ -54,7 +63,7 @@ export function resolveProviderSaveObservation(opts: {
   return { ok: false, observation: '' };
 }
 
-/** Campos do lado cliente que o controller/Plínio nunca deve mutar. */
+/** Campos do lado cliente que o controller/Plínio não deve mutar. */
 export const CLIENT_SIDE_MISSION_FIELDS = [
   'revenue_value',
   'toll_value',
