@@ -1,5 +1,7 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 03/11/2026, depois da rejeição "Código de tributação inválido" na nota da TM Segurança. O Portal Nacional não aceita o 07930 no código de serviço. O payload Asaas desse serviço passa a enviar `11.05.01`, com código nacional `110501` e NBS `1.1802.30.00`. A troca vale também para escolta e Amazon quando o código resolvido é 07930, porque o portal recusa o código antigo. O 06298 não muda. ISS segue 2%, sem retenção. Testes da nota: 46 passaram. O T14 do reenvio em lote já falhava antes. Build sem erro. A nota já enviada com 07930 precisa ser reemitida depois do deploy.
+
 Executado em 03/11/2026 na branch `cursor/nf-asaas-monitoramento-nacional`, criada a partir da `dev` `a0aa8aa9`. A branch de WhatsApp `feat/whatsapp-desktop-instalador` não foi alterada.
 
 Objetivo: na emissão Asaas do monitoramento ligado ao municipal 07930, enviar o código nacional 110501 e a NBS 1.1802.30.00, com ISS 2% e sem retenção, porque o DAS já é pago.

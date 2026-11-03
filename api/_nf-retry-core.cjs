@@ -1242,29 +1242,26 @@ function normalizeAsaasNfDiscrimination(input) {
 }
 
 // lib/billing/municipalServiceOptions.ts
-function isAmazonBillingClient(name, tradingName) {
-  return `${name || ""} ${tradingName || ""}`.toUpperCase().includes("AMAZON");
-}
 var ASAAS_MONITORAMENTO_NACIONAL = {
   federalServiceTaxCode: "110501",
+  /** Formato de 8 caracteres exigido pelo Portal Nacional no código de serviço. */
+  portalServiceCode: "11.05.01",
   nbsCode: "1.1802.30.00",
-  municipalServiceCode: "07930",
+  /** Código municipal antigo. Serve só para reconhecer o serviço; não é enviado ao portal. */
+  legacyMunicipalServiceCode: "07930",
   issRate: 2
 };
 function resolveAsaasNationalMonitoring(input) {
-  if (isAmazonBillingClient(input.clientName, input.tradingName)) return null;
   const optionId = String(input.optionId || "").trim().toLowerCase();
   const code = String(input.municipalCode || "").replace(/\D/g, "");
-  const desc = String(input.serviceDescription || "");
-  if (optionId === "escolta" || optionId === "rastreamento" || code === "06298") return null;
-  if (/escolta/i.test(desc) && optionId !== "intermediacao") return null;
-  if (optionId === "intermediacao" || code === "07930") {
-    return {
-      federalServiceTaxCode: ASAAS_MONITORAMENTO_NACIONAL.federalServiceTaxCode,
-      nbsCode: ASAAS_MONITORAMENTO_NACIONAL.nbsCode
-    };
-  }
-  return null;
+  if (optionId === "rastreamento" || code === "06298") return null;
+  const isLegacyMonitoring = optionId === "escolta" || optionId === "intermediacao" || code === ASAAS_MONITORAMENTO_NACIONAL.legacyMunicipalServiceCode;
+  if (!isLegacyMonitoring) return null;
+  return {
+    federalServiceTaxCode: ASAAS_MONITORAMENTO_NACIONAL.federalServiceTaxCode,
+    nbsCode: ASAAS_MONITORAMENTO_NACIONAL.nbsCode,
+    portalServiceCode: ASAAS_MONITORAMENTO_NACIONAL.portalServiceCode
+  };
 }
 
 // server/asaasService.ts
@@ -1591,6 +1588,9 @@ async function scheduleInvoice(params) {
     clientName: params.clientName
   });
   if (national) {
+    body.municipalServiceCode = national.portalServiceCode;
+    const previousName = String(body.municipalServiceName || "").trim();
+    body.municipalServiceName = previousName ? previousName.replace(/^07930\b/, national.portalServiceCode) : `${national.portalServiceCode} - Monitoramento e rastreamento a dist\xE2ncia de ve\xEDculos, cargas, pessoas e semoventes`;
     taxes.federalServiceTaxCode = national.federalServiceTaxCode;
     taxes.nbsCode = national.nbsCode;
     taxes.iss = 2;

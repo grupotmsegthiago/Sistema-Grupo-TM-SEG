@@ -4317,9 +4317,9 @@ Retorne SOMENTE um JSON puro com esses campos. Sem explicações.` });
                                                     <p className="text-[10px] text-gray-800"><span className="font-black">ISS:</span> 2% sem retenção. PIS, COFINS, CSLL, IR e INSS sem destaque.</p>
                                                     {national && (
                                                         <div data-testid="section-nf-nacional-monitoramento">
+                                                            <p className="text-[10px] text-gray-800"><span className="font-black">Código no portal:</span> {national.portalServiceCode}</p>
                                                             <p className="text-[10px] text-gray-800"><span className="font-black">Código nacional:</span> {national.federalServiceTaxCode}</p>
                                                             <p className="text-[10px] text-gray-800"><span className="font-black">NBS:</span> {national.nbsCode}</p>
-                                                            <p className="text-[10px] text-gray-800"><span className="font-black">Municipal:</span> {municipalOpt.code}</p>
                                                         </div>
                                                     )}
                                                 </div>

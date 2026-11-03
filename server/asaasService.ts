@@ -668,8 +668,8 @@ export async function scheduleInvoice(params: {
     }
   }
   if (params.externalReference) body.externalReference = params.externalReference;
-  // Monitoramento 07930 (não escolta, não 06298, não Amazon): código nacional + NBS.
-  // O municipal 07930 permanece. ISS 2% e sem retenção, porque o DAS já é pago.
+  // O Portal Nacional recusa o 07930. O código de serviço vai como 11.05.01.
+  // O 110501 fica no código nacional. ISS 2% e sem retenção, porque o DAS já é pago.
   const national = resolveAsaasNationalMonitoring({
     optionId: params.municipalServiceOptionId,
     municipalCode: body.municipalServiceCode,
@@ -677,6 +677,11 @@ export async function scheduleInvoice(params: {
     clientName: params.clientName,
   });
   if (national) {
+    body.municipalServiceCode = national.portalServiceCode;
+    const previousName = String(body.municipalServiceName || '').trim();
+    body.municipalServiceName = previousName
+      ? previousName.replace(/^07930\b/, national.portalServiceCode)
+      : `${national.portalServiceCode} - Monitoramento e rastreamento a distância de veículos, cargas, pessoas e semoventes`;
     taxes.federalServiceTaxCode = national.federalServiceTaxCode;
     taxes.nbsCode = national.nbsCode;
     taxes.iss = 2;
