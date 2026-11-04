@@ -23,8 +23,10 @@ import { isOdometerExemptProvider, isVeladaPassThroughTerminal, shouldDowngradeC
 import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
 import {
   buildMonitoringWhatsAppReport,
+  buscarLinkRastreioCliente,
   formatAgentShortName,
   parseMonitoringCityFromLocationName,
+  relatorioComRastreioAoVivo,
 } from '../lib/monitoringWhatsAppReport';
 import {
   computeScaledCanvasSize,
@@ -3008,6 +3010,9 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 if (finalStatus === MissionStatus.IN_TRANSIT && !dhlInTransitAt) dhlInTransitAt = nowStr;
                 if (finalStatus === MissionStatus.COMPLETED && !dhlCompletedAt) dhlCompletedAt = nowStr;
             }
+            const liveTrackUrl = !isDHL && relatorioComRastreioAoVivo({ client: mission.client, operationType: editData.missionType })
+                ? await buscarLinkRastreioCliente(String(mission.id))
+                : '';
             const report = isDHL ? `*ESCOLTA ARMADA*⚡️
 
 🗒️ *SE:* ${(editData.dhl_se_number || '').toString().trim().toUpperCase()}
@@ -3048,6 +3053,7 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 occurrence: finalDescription || 'SEM INFORMAÇÃO',
                 locationCity: cityPart,
                 mapLink: editData.mapLink,
+                liveTrackUrl,
             });
 
             const isNowCompleted = finalStatus === MissionStatus.COMPLETED && originalStatus !== MissionStatus.COMPLETED;

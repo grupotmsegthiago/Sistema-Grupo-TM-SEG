@@ -21,8 +21,10 @@ import { extractCoordinates } from '../lib/utils';
 import { copyTextAsync } from '../lib/clipboard';
 import {
   buildMonitoringWhatsAppReport,
+  buscarLinkRastreioCliente,
   formatAgentShortName,
   parseMonitoringLocation,
+  relatorioComRastreioAoVivo,
 } from '../lib/monitoringWhatsAppReport';
 import { resolveRouteProgressPct } from '../lib/routeProgress';
 import MissionStatusModal from './MissionStatusModal';
@@ -1777,6 +1779,9 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
                 if (live && live.progressPct > 0) progressPct = live.progressPct;
             } catch { /* mantém progress salvo */ }
         }
+        const liveTrackUrl = !isDHL && relatorioComRastreioAoVivo({ client: mission.client, operationType: mission.mission_type })
+            ? await buscarLinkRastreioCliente(String(mission.id))
+            : '';
         const text = isDHL ? `*ESCOLTA ARMADA*⚡️
 
 🗒️ *SE:* ${(mission.dhl_se_number || '').toString().trim().toUpperCase()}
@@ -1817,6 +1822,7 @@ const MissionTable: React.FC<MissionTableProps> = ({ onNewMission }) => {
             occurrence: locationOccurrence,
             locationCity: cityField,
             mapLink: mission.mapLink,
+            liveTrackUrl,
         });
         
             return text;

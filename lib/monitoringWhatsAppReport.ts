@@ -1,3 +1,6 @@
+import { authFetch } from './authFetch';
+import { isVeladaMission } from './liveTrack/isVeladaMission';
+
 /**
  * Relatório WhatsApp de monitoramento para clientes NÃO-DHL.
  * O template DHL (*ESCOLTA ARMADA*) permanece inline em UpdateMissionModal e MissionTable.
@@ -22,7 +25,32 @@ export type MonitoringWhatsAppReportInput = {
   occurrence?: string;
   locationCity?: string;
   mapLink?: string;
+  liveTrackUrl?: string;
 };
+
+/** Velada da Intermodal troca localização e Google pelo link do cliente. */
+export function relatorioComRastreioAoVivo(input: { client?: string; operationType?: string }): boolean {
+  return isVeladaMission({ mission_type: input.operationType }) && /intermodal/i.test(String(input.client || ''));
+}
+
+/** Link já existente da OS. Se a velada ainda está aberta e não há link, gera um. */
+export async function buscarLinkRastreioCliente(missionId: string): Promise<string> {
+  const id = String(missionId || '').trim();
+  if (!id) return '';
+  try {
+    const watch = await authFetch(`/api/live-track?op=watch&missionId=${encodeURIComponent(id)}`);
+    const atual = await watch.json();
+    if (atual?.clientUrl) return String(atual.clientUrl);
+    const gen = await authFetch('/api/live-track?op=generate', {
+      method: 'POST',
+      body: JSON.stringify({ missionId: id }),
+    });
+    const criado = await gen.json();
+    return criado?.clientUrl ? String(criado.clientUrl) : '';
+  } catch {
+    return '';
+  }
+}
 
 /** Nome curto para relatório (primeiro + último sobrenome). */
 export function formatAgentShortName(name?: string): string {
@@ -110,8 +138,9 @@ export function buildMonitoringWhatsAppReport(input: MonitoringWhatsAppReportInp
 
 📈*PROGRESSO DA MISSÃO:* ${formatProgressSquares(input.progress)}
 
-🏙️ *LOCALIZAÇÃO:* ${(input.locationCity || 'S/D').toUpperCase()}
-🗾 *LINK DO GOOGLE:* ${input.mapLink || 'N/A'}
+${relatorioComRastreioAoVivo(input)
+    ? `🗾 *EM TEMPO REAL:* ${input.liveTrackUrl || 'N/A'}`
+    : `🏙️ *LOCALIZAÇÃO:* ${(input.locationCity || 'S/D').toUpperCase()}\n🗾 *LINK DO GOOGLE:* ${input.mapLink || 'N/A'}`}
 
 📣 *OCORRÊNCIA:* ${(input.occurrence || 'SEM INFORMAÇÃO').toUpperCase()}`;
 }

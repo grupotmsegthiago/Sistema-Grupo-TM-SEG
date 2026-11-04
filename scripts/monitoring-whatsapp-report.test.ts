@@ -151,6 +151,63 @@ test('buildMonitoringWhatsAppReport: exemplo GTM-6238 em origem', () => {
   assert.doesNotMatch(report, /cada quadrado vale/i);
 });
 
+test('velada da Intermodal troca localização e Google pelo link em tempo real', () => {
+  const report = buildMonitoringWhatsAppReport({
+    osId: 'GTM-9107',
+    status: 'CONCLUÍDA',
+    dateStr: '04/11/2026',
+    timeStr: '16:00',
+    operationType: 'VELADA',
+    client: 'INTERMODAL BRASIL LOGISTICA S.A.',
+    origin: 'CLARO - BELÉM - PA',
+    destination: 'ANANINDEUA - PA',
+    progress: 100,
+    occurrence: 'AUTO DESCARREGADO, FIM DE MISSÃO.',
+    locationCity: '67130 - 580',
+    mapLink: 'https://www.google.com/maps?q=-1.36,-48.41&z=17&hl=pt-BR',
+    liveTrackUrl: 'https://sistema.grupotmseg.com.br/rastreio?c=exemplo',
+  });
+  assert.match(report, /🗾 \*EM TEMPO REAL:\* https:\/\/sistema\.grupotmseg\.com\.br\/rastreio\?c=exemplo/);
+  assert.doesNotMatch(report, /LOCALIZAÇÃO/);
+  assert.doesNotMatch(report, /LINK DO GOOGLE/);
+  assert.match(report, /📈\*PROGRESSO DA MISSÃO:\* 🟩🟩🟩🟩 100%\n\n🗾 \*EM TEMPO REAL:\*/);
+  assert.match(report, /rastreio\?c=exemplo\n\n📣 \*OCORRÊNCIA:\*/);
+});
+
+test('velada de outro cliente e Intermodal que não é velada mantêm o Google', () => {
+  const veladaOutro = buildMonitoringWhatsAppReport({
+    osId: 'GTM-1',
+    status: 'EM VIAGEM',
+    dateStr: '04/11/2026',
+    timeStr: '16:00',
+    operationType: 'VELADA',
+    client: 'CESLOG',
+    origin: 'A',
+    destination: 'B',
+    progress: 10,
+    locationCity: 'BELÉM - PA',
+    mapLink: 'https://www.google.com/maps?q=1,2',
+    liveTrackUrl: 'https://sistema.grupotmseg.com.br/rastreio?c=nao',
+  });
+  assert.match(veladaOutro, /LINK DO GOOGLE/);
+  assert.doesNotMatch(veladaOutro, /EM TEMPO REAL/);
+  const intermodalCaracterizada = buildMonitoringWhatsAppReport({
+    osId: 'GTM-2',
+    status: 'EM VIAGEM',
+    dateStr: '04/11/2026',
+    timeStr: '16:00',
+    operationType: 'CARACTERIZADA',
+    client: 'INTERMODAL BRASIL LOGISTICA S.A.',
+    origin: 'A',
+    destination: 'B',
+    progress: 10,
+    mapLink: 'https://www.google.com/maps?q=1,2',
+    liveTrackUrl: 'https://sistema.grupotmseg.com.br/rastreio?c=nao',
+  });
+  assert.match(intermodalCaracterizada, /LINK DO GOOGLE/);
+  assert.doesNotMatch(intermodalCaracterizada, /EM TEMPO REAL/);
+});
+
 test('buildMonitoringWhatsAppReport não altera o padrão DHL (ESCOLTA ARMADA)', () => {
   const report = buildMonitoringWhatsAppReport({
     osId: 'GTM-0001',

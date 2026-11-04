@@ -1,5 +1,17 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 04/11/2026 na `dev`, depois de "pode publicar".
+
+Objetivo: copiar o WhatsApp da velada com o link real daquela OS, e trocar o formulário de monitoramento da Intermodal velada pelo acompanhamento ao vivo.
+
+No card, toda velada ganha Copiar Agente e Copiar Cliente. Copiar Parceiro ATIVA só entra com fornecedor ATIVA e cliente Intermodal. Fora da velada os três ficam ocultos. O clique busca o rastreio da OS e, se ainda não existir, cria. O mesmo link é reutilizado. Agente e parceiro recebem `https://sistema.grupotmseg.com.br/rastreio?token=`. O cliente recebe `?c=`. O texto sai com negrito do WhatsApp, OS, origem, destino, motorista, agente e viatura. Fornecedor INATIVA não libera o botão do parceiro.
+
+No relatório de monitoramento, a velada da Intermodal troca LOCALIZAÇÃO e LINK DO GOOGLE por EM TEMPO REAL com o link do cliente daquela OS. Outro cliente e a Intermodal que não é velada continuam com o Google. O modelo DHL não mudou.
+
+Arquivos: `lib/ativaIntermodalWhatsApp.ts`, `components/MensagensAtivaIntermodal.tsx`, `components/MissionCard.tsx`, `lib/monitoringWhatsAppReport.ts`, `components/MissionTable.tsx`, `components/UpdateMissionModal.tsx`, `scripts/ativa-intermodal-whatsapp.test.ts`, `scripts/monitoring-whatsapp-report.test.ts`.
+
+Motor da OS, Asaas, NF, comissão e o limite de funções da Vercel não mudaram. Sem banco novo. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Executado em 04/11/2026 na `dev`, depois de "Fluxo aprovado, pode executar".
 
 Objetivo: cancelar a fatura também cancela o título em Contas a Receber, o boleto no Asaas e a NFS-e autorizada.
