@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. Quando o agente já enviou posição e o celular pausa o GPS, o link do cliente mostra Sinal em pausa e pede tela acesa, sem economia de bateria e localização o tempo todo. A página do agente deixa de dizer que ocultar a tela mantém o GPS. Na foto da velada o selo usa o mesmo estado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. A previsão do link do cliente é o horário de chegada em Brasília: a hora atual mais o tempo que falta. No mesmo dia aparece HH:mm, como 19:16. Se a chegada cair no dia seguinte, entra a data. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. A distância e o traçado do link do cliente vêm do servidor, pela rota de carro. O painel deixa de ficar preso em "Calculando a rota pelas ruas." Na foto da velada, acima dos links, aparece Agente conectado ou Agente desconectado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

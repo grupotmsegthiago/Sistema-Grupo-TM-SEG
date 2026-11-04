@@ -20,7 +20,7 @@ const MARCA_PADRAO: LiveTrackKeepaliveMarca = {
   title: 'TM SEG — rastreio ao vivo',
   artist: 'Grupo TM SEG',
   album: 'Acompanhamento de missão',
-  body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. Só para se fechar esta página.',
+  body: 'Deixe a tela acesa. Se o celular bloquear, o painel perde o sinal. Só para de vez se fechar esta página.',
 };
 
 export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveMarca> = {}): Promise<LiveTrackKeepalive> {

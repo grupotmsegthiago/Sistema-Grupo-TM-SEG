@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: o painel deixa de tratar a pausa do celular como se o agente nunca tivesse conectado.
+
+Se já houve posição e o envio parou, o selo fica Sinal em pausa. O texto pede tela acesa, economia de bateria desligada no navegador e localização o tempo todo. A página do agente e o texto do WhatsApp deixam de prometer GPS com a tela oculta. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 15 passaram, inclusive logado, pausa e aguardando.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: a previsão do cliente passa a ser o horário de chegada, não a duração.
 
 O painel soma a hora atual de Brasília ao tempo que falta. Quatorze minutos deixam de aparecer como 00:14:02 e passam a aparecer como 19:16. Se a chegada for no dia seguinte, a data entra junto. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

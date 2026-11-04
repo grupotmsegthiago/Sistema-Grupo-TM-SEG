@@ -9,6 +9,7 @@ import {
   buildLiveTrackWhatsappText,
   etapasDaTrilha,
   agenteEstaLogado,
+  estadoDoSinal,
   haversineMeters,
   isLiveTrackStale,
   LIVE_TRACK_STALE_MS,
@@ -80,6 +81,9 @@ test('cliente vê agente logado só com envio recente', () => {
   assert.equal(agenteEstaLogado({ status: 'sharing', vistoEm: '2026-11-04T20:50:00.000Z', now }), false);
   assert.equal(agenteEstaLogado({ status: 'pending', vistoEm: '2026-11-04T20:59:00.000Z', now }), false);
   assert.equal(agenteEstaLogado({ status: 'sharing', ended: true, vistoEm: '2026-11-04T20:59:00.000Z', now }), false);
+  assert.equal(estadoDoSinal({ status: 'sharing', vistoEm: '2026-11-04T20:59:00.000Z', now }), 'logado');
+  assert.equal(estadoDoSinal({ status: 'sharing', vistoEm: '2026-11-04T20:50:00.000Z', now }), 'pausa');
+  assert.equal(estadoDoSinal({ status: 'pending', vistoEm: null, now }), 'aguardando');
 });
 
 test('timeline junta a saída, as paradas e a última posição', () => {
@@ -124,7 +128,7 @@ test('texto WhatsApp e URL pública usam o domínio canônico', () => {
   assert.match(text, /acompanhamento da sua missão/i);
   assert.match(text, /tempo real até o fim da missão/);
   assert.match(text, /GTM-9999/);
-  assert.match(text, /Ocultar/);
+  assert.match(text, /tela acesa/);
   assert.match(text, /WhatsApp/);
 });
 
@@ -142,8 +146,9 @@ test('botão gerar link só existe no fluxo velada', () => {
   assert.doesNotMatch(card, /LiveTrackPanel/);
   const botoes = fs.readFileSync('components/MensagensAtivaIntermodal.tsx', 'utf8');
   assert.match(botoes, /botoesWhatsAppDaOs/);
-  assert.match(botoes, /agenteEstaLogado/);
+  assert.match(botoes, /estadoDoSinal/);
   assert.match(botoes, /Agente conectado/);
+  assert.match(botoes, /Sinal em pausa/);
   assert.match(botoes, /Agente desconectado/);
   const regra = fs.readFileSync('lib/ativaIntermodalWhatsApp.ts', 'utf8');
   assert.match(regra, /isVeladaMission/);
@@ -205,7 +210,9 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /GPS_VERDE/);
   assert.match(page, /live-track-timeline/);
   assert.match(page, /AGENTE LOGADO/);
-  assert.match(page, /AGUARDANDO POSIÇÃO DO AGENTE/);
+  assert.match(page, /SINAL EM PAUSA/);
+  assert.match(page, /live-track-pausa/);
+  assert.match(page, /tela acesa/);
   assert.match(page, /live-track-keep-open/);
   assert.match(page, /formatDateTimeBR/);
   assert.match(page, /PIN_POSICAO/);

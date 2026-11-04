@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { copyTextAsync } from '../lib/clipboard';
-import { agenteEstaLogado } from '../lib/liveTrack/pure';
+import { estadoDoSinal, type EstadoDoSinal } from '../lib/liveTrack/pure';
 import {
   botoesWhatsAppDaOs,
   textoAgenteAtiva,
@@ -30,8 +30,8 @@ async function linksDaMissao(missionId: string): Promise<{ url: string; clientUr
   return { url: String(criado.url), clientUrl: String(criado.clientUrl) };
 }
 
-function useAgenteConectado(missionId: string, ativo: boolean): boolean | null {
-  const [conectado, setConectado] = useState<boolean | null>(null);
+function useEstadoDoSinal(missionId: string, ativo: boolean): EstadoDoSinal | null {
+  const [estado, setEstado] = useState<EstadoDoSinal | null>(null);
   useEffect(() => {
     if (!ativo) return;
     let vivo = true;
@@ -41,7 +41,7 @@ function useAgenteConectado(missionId: string, ativo: boolean): boolean | null {
         const j = await parseJsonResponse(r);
         if (!vivo || !r.ok) return;
         const track = j?.track;
-        setConectado(agenteEstaLogado({
+        setEstado(estadoDoSinal({
           status: track?.status,
           ended: track?.status === 'ended' || Boolean(track?.ended_at),
           vistoEm: track?.last_seen_at,
@@ -57,13 +57,13 @@ function useAgenteConectado(missionId: string, ativo: boolean): boolean | null {
       window.clearInterval(id);
     };
   }, [missionId, ativo]);
-  return conectado;
+  return estado;
 }
 
 export default function MensagensAtivaIntermodal({ mission }: { mission: Mission }) {
   const quais = botoesWhatsAppDaOs(mission);
   const ativo = Boolean(quais.agente || quais.cliente || quais.parceiro);
-  const conectado = useAgenteConectado(mission.id, ativo);
+  const estado = useEstadoDoSinal(mission.id, ativo);
   const [busy, setBusy] = useState<Qual | null>(null);
   const [gerado, setGerado] = useState<Partial<Record<Qual, boolean>>>({});
   const [sobre, setSobre] = useState<Qual | null>(null);
@@ -125,12 +125,12 @@ export default function MensagensAtivaIntermodal({ mission }: { mission: Mission
 
   return (
     <div className="flex flex-col items-end gap-1" onClick={(e) => e.stopPropagation()} data-testid={`wa-ativa-intermodal-${mission.id}`}>
-      {conectado !== null && (
+      {estado !== null && (
         <p
           data-testid={`wa-agente-sinal-${mission.id}`}
-          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase leading-tight shadow-lg border backdrop-blur-sm ${conectado ? 'bg-emerald-500 text-slate-950 border-emerald-200' : 'bg-amber-400 text-slate-950 border-amber-200'}`}
+          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase leading-tight shadow-lg border backdrop-blur-sm ${estado === 'logado' ? 'bg-emerald-500 text-slate-950 border-emerald-200' : 'bg-amber-400 text-slate-950 border-amber-200'}`}
         >
-          {conectado ? 'Agente conectado' : 'Agente desconectado'}
+          {estado === 'logado' ? 'Agente conectado' : estado === 'pausa' ? 'Sinal em pausa' : 'Agente desconectado'}
         </p>
       )}
       {quais.agente && botao('agente', 'Gerar link do agente', 'Link agente - gerado')}

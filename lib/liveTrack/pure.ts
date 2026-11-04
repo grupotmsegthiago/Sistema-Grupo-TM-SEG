@@ -18,6 +18,22 @@ export function agenteEstaLogado(opts: {
   if (!Number.isFinite(t) || t <= 0) return false;
   return (opts.now ?? Date.now()) - t < LIVE_TRACK_SINAL_FRESCO_MS;
 }
+
+export type EstadoDoSinal = 'logado' | 'pausa' | 'aguardando';
+
+/** Logado é envio recente. Pausa é página que já enviou e o celular segurou o GPS. */
+export function estadoDoSinal(opts: {
+  status?: string | null;
+  ended?: boolean;
+  vistoEm?: string | number | null;
+  now?: number;
+}): EstadoDoSinal {
+  if (agenteEstaLogado(opts)) return 'logado';
+  if (opts.ended) return 'aguardando';
+  const t = typeof opts.vistoEm === 'number' ? opts.vistoEm : opts.vistoEm ? new Date(opts.vistoEm).getTime() : 0;
+  if (Number.isFinite(t) && t > 0) return 'pausa';
+  return 'aguardando';
+}
 export const LIVE_TRACK_TRAIL_MIN_METERS = 25;
 export const LIVE_TRACK_TRAIL_MIN_MS = 8000;
 export const LIVE_TRACK_PUBLIC_PATH = '/rastreio';
@@ -113,7 +129,7 @@ export function buildLiveTrackWhatsappText(opts: { osNumber: string; url: string
     `OS: ${os}`,
     '',
     'Abra o link e clique para compartilhar sua localização em tempo real até o fim da missão.',
-    'Depois toque em *Ocultar* para usar o WhatsApp. O GPS segue em segundo plano enquanto esta página existir. Só para se você fechar a aba ou encerrar o Chrome/Safari.',
+    'Deixe a tela acesa e a página em primeiro plano. Se o celular bloquear ou você abrir o WhatsApp, o GPS pode pausar. Fechar esta página interrompe o rastreio.',
     '',
     opts.url,
   ].join('\n');

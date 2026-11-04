@@ -8,7 +8,7 @@ import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { formatDateTimeBR, formatTimeBR, previsaoChegadaBR } from '../lib/dateUtils';
 import { googleMapsLoadConfig } from '../lib/maps';
-import { agenteEstaLogado, haversineMeters } from '../lib/liveTrack/pure';
+import { estadoDoSinal, haversineMeters } from '../lib/liveTrack/pure';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
 type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error';
@@ -462,6 +462,8 @@ function ClientLiveMap({ credential }: { credential: string }) {
     return () => window.clearInterval(t);
   }, [carregar]);
 
+  const sinal = estadoDoSinal({ status: statusRastreio, ended: phase === 'ended', vistoEm });
+
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white" data-testid="live-track-client-view">
       <header className="px-4 pt-5 pb-3 border-b border-white/10">
@@ -485,12 +487,17 @@ function ClientLiveMap({ credential }: { credential: string }) {
               </p>
             </div>
             <p
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black tracking-wide ${agenteEstaLogado({ status: statusRastreio, ended: phase === 'ended', vistoEm }) ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}`}
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black tracking-wide ${sinal === 'logado' ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}`}
               data-testid="live-track-sinal"
             >
               <span className="h-2.5 w-2.5 rounded-full bg-current" />
-              {agenteEstaLogado({ status: statusRastreio, ended: phase === 'ended', vistoEm }) ? 'AGENTE LOGADO' : 'AGUARDANDO POSIÇÃO DO AGENTE'}
+              {sinal === 'logado' ? 'AGENTE LOGADO' : sinal === 'pausa' ? 'SINAL EM PAUSA' : 'AGUARDANDO POSIÇÃO DO AGENTE'}
             </p>
+            {sinal === 'pausa' && (
+              <p className="text-xs text-amber-100 leading-snug" data-testid="live-track-pausa">
+                A página pode continuar aberta. O celular pausa o GPS quando a tela bloqueia, o navegador vai para segundo plano ou a permissão é só durante o uso. Peça para deixar a tela acesa, desligar a economia de bateria do navegador e permitir a localização o tempo todo.
+              </p>
+            )}
             <div className="space-y-1 border-t border-white/10 pt-3">
               <p><span className="text-slate-400">Origem: </span>{ficha.origin || '—'}</p>
               <p><span className="text-slate-400">Destino: </span>{ficha.destination || '—'}</p>
@@ -823,7 +830,7 @@ function AgentLiveTrack() {
         title: 'ATIVA — rastreio ao vivo',
         artist: 'ATIVA Pronta Resposta',
         album: 'Acompanhamento da missão',
-        body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. A posição segue de 1 em 1 minuto.',
+        body: 'Deixe a tela acesa. Se o celular bloquear, o painel perde o sinal.',
         icon: ativaLogo,
       } : {}).then((k) => {
         keepaliveRef.current = k;
@@ -872,7 +879,7 @@ function AgentLiveTrack() {
 
   const avisoAberto = (
     <p className="bg-amber-400 text-slate-950 px-4 py-3 text-sm font-black leading-snug" data-testid="live-track-keep-open">
-      Atenção: mantenha esta página aberta em segundo plano. Fechar a aba interrompe o rastreio da missão.
+      Atenção: deixe a tela acesa e mantenha esta página aberta. Se o celular bloquear ou você abrir o WhatsApp, o painel perde o sinal. Fechar esta página interrompe o rastreio.
     </p>
   );
 
@@ -984,7 +991,7 @@ function AgentLiveTrack() {
               {busy ? <Loader2 className="animate-spin" size={18} /> : <Radio size={18} />}
               Compartilhar localização em tempo real
             </button>
-            <p className="text-[11px] text-slate-400 text-center">Na permissão de GPS escolha Permitir. Depois use Ocultar para ir ao WhatsApp — o rastreio segue até você fechar esta página.</p>
+            <p className="text-[11px] text-slate-400 text-center">Na permissão de GPS escolha Sempre permitir. Deixe a tela acesa. Se o celular bloquear, o painel perde o sinal.</p>
           </div>
         )}
 
@@ -993,8 +1000,8 @@ function AgentLiveTrack() {
             {hiddenWarn && (
               <div className="rounded-2xl bg-emerald-400 text-slate-950 p-4 font-bold text-sm">
                 {ativa
-                  ? 'Segundo plano ativo. A posição segue de 1 em 1 minuto. O GPS só para se você fechar esta página.'
-                  : 'Segundo plano ativo. Pode usar o WhatsApp. O GPS só para se você fechar esta página.'}
+                  ? 'Tela em segundo plano. O celular pode pausar o GPS. Volte para esta página e deixe a tela acesa.'
+                  : 'Tela em segundo plano. O celular pode pausar o GPS. Deixe a tela acesa para o painel não perder o sinal.'}
               </div>
             )}
             <LiveMapBox ponto={ponto} trilha={trilha} origem={originPoint} destino={destinationPoint} />
@@ -1018,11 +1025,11 @@ function AgentLiveTrack() {
               data-testid="live-track-minimize"
               className="w-full h-12 rounded-2xl bg-white/10 border border-white/20 text-white text-sm font-black uppercase tracking-wide flex items-center justify-center gap-2"
             >
-              <EyeOff size={16} /> Ocultar e rastrear em segundo plano
+              <EyeOff size={16} /> Recolher esta tela
             </button>
             <ul className="space-y-2 text-sm text-slate-200">
-              <li className="flex gap-2"><EyeOff size={16} className="mt-0.5 shrink-0" /> Ocultar, Home ou WhatsApp: GPS continua. Só para se você fechar esta página.</li>
-              <li className="flex gap-2"><Smartphone size={16} className="mt-0.5 shrink-0" /> Deixe o Chrome/Safari aberto (pode ficar oculto) até o fim da missão.</li>
+              <li className="flex gap-2"><EyeOff size={16} className="mt-0.5 shrink-0" /> Tela bloqueada, Home ou WhatsApp: o celular pode pausar o GPS. Deixe a tela acesa.</li>
+              <li className="flex gap-2"><Smartphone size={16} className="mt-0.5 shrink-0" /> Desligue a economia de bateria do navegador e permita a localização o tempo todo.</li>
               <li className="flex gap-2"><Radio size={16} className="mt-0.5 shrink-0" /> GPS em alta precisão (não use só Wi‑Fi).</li>
               <li className="flex gap-2"><ShieldCheck size={16} className="mt-0.5 shrink-0" /> Localização usada só nesta OS, com registro LGPD.</li>
             </ul>
