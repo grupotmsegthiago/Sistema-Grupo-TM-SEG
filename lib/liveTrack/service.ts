@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { resolvePublicAppUrl } from '../publicAppUrl.js';
 import { LIVE_TRACK_LGPD_FULL, LIVE_TRACK_LGPD_SUMMARY, LIVE_TRACK_LGPD_VERSION } from './lgpd.js';
-import { geocodeAddress } from '../../api/geocode-address.js';
+import { geocodeAddress, reverseGeocode } from '../../api/geocode-address.js';
 import { isTerminalMissionStatus, isVeladaMission, fornecedorAtiva, rastreioOsAberta } from './isVeladaMission.js';
 import {
   buildLiveTrackClientUrl,
@@ -19,6 +19,17 @@ import {
 import { ensureLiveTrackSchema, getLiveTrackSupabase } from './schema.js';
 
 const ACTIVE_STATUSES: LiveTrackStatus[] = ['pending', 'consented', 'sharing', 'paused'];
+const cacheEndereco = new Map<string, { texto: string; expira: number }>();
+
+async function enderecoDaPosicao(lat: number, lng: number): Promise<string | null> {
+  const chave = `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
+  const salvo = cacheEndereco.get(chave);
+  if (salvo && salvo.expira > Date.now()) return salvo.texto;
+  const texto = await reverseGeocode(Number(lat), Number(lng));
+  if (!texto) return null;
+  cacheEndereco.set(chave, { texto, expira: Date.now() + 30 * 60 * 1000 });
+  return texto;
+}
 
 function segredoDoCliente(): string {
   return String(process.env.LIVE_TRACK_CLIENT_SECRET || 'tmseg-rastreio-cliente-v1');
@@ -440,6 +451,11 @@ export async function publicGetLiveTrack(opts: {
     trail = (pts || []).slice().reverse();
   }
 
+  let endereco: string | null = null;
+  if (papel === 'cliente' && track.last_lat != null && track.last_lng != null) {
+    endereco = await enderecoDaPosicao(Number(track.last_lat), Number(track.last_lng));
+  }
+
   return {
     status: 200,
     body: {
@@ -451,7 +467,14 @@ export async function publicGetLiveTrack(opts: {
       lgpdSummary: LIVE_TRACK_LGPD_SUMMARY,
       lgpdFull: LIVE_TRACK_LGPD_FULL,
       mission: papel === 'cliente' ? ficha : publicMissionView(mission, pontos),
-      position: track.last_lat != null ? { lat: track.last_lat, lng: track.last_lng, accuracy: track.last_accuracy, at: track.last_seen_at } : null,
+      position: track.last_lat != null ? {
+        lat: track.last_lat,
+        lng: track.last_lng,
+        accuracy: track.last_accuracy,
+        speed: track.last_speed,
+        at: track.last_seen_at,
+        address: endereco,
+      } : null,
       trail,
     },
   };

@@ -97,6 +97,54 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
+## Mapa do cliente estável na última posição, com endereço
+
+**Status:** Executado em 04/11/2026 na `dev` e publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+O link do cliente deixa de reenquadrar a rota a cada consulta. A câmera fica na última posição. O painel mostra o endereço, a data e a hora de Brasília. O ponto B usa o GPS verde e a logo da escolta. A origem é A e o destino é C. A barra mostra o percentual e a distância restante em linha reta, e a previsão só quando o GPS manda velocidade. O aviso do agente e o envio de 1 minuto continuam. O motor da OS não mudou.
+
+### Objetivo da Tarefa
+
+No link do cliente, o mapa deixa de reenquadrar a rota inteira a cada consulta de 3 segundos. A câmera fica na última posição do agente. O painel mostra o endereço completo dessa posição.
+
+### Passo a Passo Sequencial
+
+1. Hoje `enquadrarMapa` roda de novo sempre que a trilha muda e faz `fitBounds` de origem, destino e todos os pontos. Isso faz a tela pular. No link do cliente, o enquadramento da rota acontece uma vez. Posição nova só desloca o centro (`panTo`) até o agente, sem alterar o zoom.
+2. A trilha, o marcador A e a consulta de 3 segundos continuam. O link do agente não muda de câmera.
+3. A última posição do agente passa por geocodificação reversa no Google, reusando `api/geocode-address.ts`. O resultado fica em memória por coordenadas próximas, para a consulta de 3 segundos não chamar o Google toda vez. Se o endereço não vier, o painel mostra as coordenadas e não inventa rua.
+4. No painel do cliente, um bloco "Última posição" exibe esse endereço completo, data e hora de Brasília.
+5. Teste do rastreio e health em `http://localhost:5000/`. Sem publicação até o pedido.
+
+### Ficheiros Afetados
+
+- `components/PublicLiveTrack.tsx`
+- `api/geocode-address.ts` (função de reverso; a rota que já devolve `address` para o modal da OS permanece)
+- `lib/liveTrack/service.ts`
+- `api/_live-track-core.cjs` (bundle já existente, gerado no build)
+- `scripts/live-track-velada.test.ts`
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md` (depois da execução)
+
+### Garantias de Não Impacto
+
+- O motor da OS (`lib/financialUtils.ts`) não entra.
+- Contratos DHL/IBL, Asaas e NF não entram.
+- Sem tabela nova, sem migration e sem função nova no `vercel.json`.
+- Data e hora em `America/Sao_Paulo`, 24 horas, `DD/MM/AAAA`.
+- A marca ATIVA no link público permanece.
+
+### Nove pontos
+
+1. Objetivo: o cliente acompanha a última posição sem o mapa pular e lê o endereço daquele ponto.
+2. O que já existe: consulta pública a cada 3 segundos, trilha, marcador A e geocodificação de endereço para coordenada.
+3. Fonte única: `mission_live_positions` e o endereço devolvido pelo Google para aquela coordenada.
+4. Quem grava: o ping do agente. Quem lê: o `public-get` do cliente.
+5. Teste: `scripts/live-track-velada.test.ts`. Dependência: chave do Google já usada na geocodificação.
+6. OS, financeiro, Asaas, NF, TORRES e WhatsApp não mudam.
+7. Reutiliza o mapa e a geocodificação. Sem arquivo novo.
+8. Arquivo novo: nenhum.
+9. Muda o comportamento do mapa público do cliente. Para aqui até a aprovação.
+
 ## Trilha no mapa, aviso para não fechar e marca ATIVA
 
 Executado em 04/11/2026 na `dev`, no pedido de publicar. Cada ponto gravado entra no mapa com a logo da missão. O toque mostra data, hora de Brasília e coordenadas. A ficha do cliente traz `ativa`. A página do agente mostra a faixa para não fechar a aba. O motor da OS não mudou.

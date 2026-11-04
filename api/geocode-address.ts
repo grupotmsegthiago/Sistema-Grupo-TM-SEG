@@ -51,6 +51,27 @@ async function geocodeWithNominatim(address: string): Promise<GeoResult | null> 
   };
 }
 
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const keys = Array.from(new Set([
+    process.env.GOOGLE_MAPS_API_KEY,
+    process.env.VITE_GOOGLE_MAPS_API_KEY,
+    PUBLIC_GOOGLE_MAPS_KEY,
+  ].map((key) => String(key || "").trim()).filter(Boolean)));
+  for (const key of keys) {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${lat},${lng}`)}&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
+    const resp = await fetch(url);
+    const data: any = await resp.json();
+    const texto = String(data?.results?.[0]?.formatted_address || "").trim();
+    if (data?.status === "OK" && texto) return texto;
+  }
+  const osm = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lng))}`;
+  const resp = await fetch(osm, { headers: { "User-Agent": "TMSEG/1.0 (contato@grupotmseg.com.br)", "Accept-Language": "pt-BR,pt;q=0.9" } });
+  const data: any = await resp.json();
+  const texto = String(data?.display_name || "").trim();
+  return texto || null;
+}
+
 export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
   const q = String(address || '').trim();
   if (q.length < 3) return null;

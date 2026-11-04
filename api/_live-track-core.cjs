@@ -117,6 +117,26 @@ async function geocodeWithNominatim(address) {
     source: "nominatim"
   };
 }
+async function reverseGeocode(lat, lng) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const keys = Array.from(new Set([
+    process.env.GOOGLE_MAPS_API_KEY,
+    process.env.VITE_GOOGLE_MAPS_API_KEY,
+    PUBLIC_GOOGLE_MAPS_KEY
+  ].map((key) => String(key || "").trim()).filter(Boolean)));
+  for (const key of keys) {
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${lat},${lng}`)}&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
+    const resp2 = await fetch(url);
+    const data2 = await resp2.json();
+    const texto2 = String(data2?.results?.[0]?.formatted_address || "").trim();
+    if (data2?.status === "OK" && texto2) return texto2;
+  }
+  const osm = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lng))}`;
+  const resp = await fetch(osm, { headers: { "User-Agent": "TMSEG/1.0 (contato@grupotmseg.com.br)", "Accept-Language": "pt-BR,pt;q=0.9" } });
+  const data = await resp.json();
+  const texto = String(data?.display_name || "").trim();
+  return texto || null;
+}
 async function geocodeAddress(address) {
   const q = String(address || "").trim();
   if (q.length < 3) return null;
@@ -407,6 +427,16 @@ async function ensureLiveTrackSchema() {
 
 // lib/liveTrack/service.ts
 var ACTIVE_STATUSES = ["pending", "consented", "sharing", "paused"];
+var cacheEndereco = /* @__PURE__ */ new Map();
+async function enderecoDaPosicao(lat, lng) {
+  const chave = `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}`;
+  const salvo = cacheEndereco.get(chave);
+  if (salvo && salvo.expira > Date.now()) return salvo.texto;
+  const texto = await reverseGeocode(Number(lat), Number(lng));
+  if (!texto) return null;
+  cacheEndereco.set(chave, { texto, expira: Date.now() + 30 * 60 * 1e3 });
+  return texto;
+}
 function segredoDoCliente() {
   return String(process.env.LIVE_TRACK_CLIENT_SECRET || "tmseg-rastreio-cliente-v1");
 }
@@ -725,6 +755,10 @@ async function publicGetLiveTrack(opts) {
     const { data: pts } = await sb.from("mission_live_positions").select("lat, lng, recorded_at").eq("track_id", track.id).order("recorded_at", { ascending: false }).limit(250);
     trail = (pts || []).slice().reverse();
   }
+  let endereco = null;
+  if (papel === "cliente" && track.last_lat != null && track.last_lng != null) {
+    endereco = await enderecoDaPosicao(Number(track.last_lat), Number(track.last_lng));
+  }
   return {
     status: 200,
     body: {
@@ -736,7 +770,14 @@ async function publicGetLiveTrack(opts) {
       lgpdSummary: LIVE_TRACK_LGPD_SUMMARY,
       lgpdFull: LIVE_TRACK_LGPD_FULL,
       mission: papel === "cliente" ? ficha : publicMissionView(mission, pontos),
-      position: track.last_lat != null ? { lat: track.last_lat, lng: track.last_lng, accuracy: track.last_accuracy, at: track.last_seen_at } : null,
+      position: track.last_lat != null ? {
+        lat: track.last_lat,
+        lng: track.last_lng,
+        accuracy: track.last_accuracy,
+        speed: track.last_speed,
+        at: track.last_seen_at,
+        address: endereco
+      } : null,
       trail
     }
   };

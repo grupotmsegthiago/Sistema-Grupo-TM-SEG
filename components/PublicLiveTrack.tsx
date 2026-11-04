@@ -8,6 +8,7 @@ import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { formatDateTimeBR } from '../lib/dateUtils';
 import { googleMapsLoadConfig } from '../lib/maps';
+import { haversineMeters } from '../lib/liveTrack/pure';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
 type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error';
@@ -16,6 +17,24 @@ type PontoTrilha = Ponto & { at?: string };
 
 const PING_VISIVEL_MS = 1800;
 const PING_OCULTO_MS = 60000;
+const GPS_VERDE = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#16a34a" stroke="#ffffff" stroke-width="4"/><circle cx="32" cy="32" r="10" fill="#ffffff"/><path d="M32 6 v10 M32 48 v10 M6 32 h10 M48 32 h10" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg>')}`;
+
+function textoDistancia(metros: number): string {
+  const total = Math.max(0, Math.round(metros));
+  const km = Math.floor(total / 1000);
+  const resto = total % 1000;
+  if (km <= 0) return `${resto} m`;
+  return `${km} km ${resto} m`;
+}
+
+function textoPrevisao(segundos: number): string {
+  const total = Math.max(0, Math.round(segundos));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(h)}:${p(m)}:${p(s)}`;
+}
 
 const ATIVA_LGPD_SUMMARY =
   'A ATIVA Pronta Resposta acompanha a sua missão. Ao compartilhar, você autoriza o tratamento da sua localização em tempo real até o encerramento da OS.';
@@ -68,25 +87,59 @@ function LiveMapBox({
   origem,
   destino,
   marca,
+  modoCliente,
+  enderecoAtual,
+  quando,
 }: {
   ponto: Ponto | null;
   trilha: PontoTrilha[];
   origem?: Ponto | null;
   destino?: Ponto | null;
   marca?: string;
+  modoCliente?: boolean;
+  enderecoAtual?: string;
+  quando?: string | null;
 }) {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [mapa, setMapa] = useState<google.maps.Map | null>(null);
   const [aberto, setAberto] = useState<number | null>(null);
   const centroInicial = useRef<Ponto>({ lat: -15.78, lng: -47.93 });
+  const cameraPronta = useRef(false);
+  const ultimoCentro = useRef('');
   const icone = isLoaded && marca
-    ? { url: marca, scaledSize: new google.maps.Size(32, 32) }
+    ? { url: marca, scaledSize: new google.maps.Size(32, 32), anchor: new google.maps.Point(16, 46) }
+    : undefined;
+  const iconeGps = isLoaded
+    ? { url: GPS_VERDE, scaledSize: new google.maps.Size(42, 42), anchor: new google.maps.Point(21, 21) }
     : undefined;
 
   useEffect(() => {
-    if (!mapa) return;
+    if (!mapa || modoCliente) return;
     enquadrarMapa(mapa, origem, destino, ponto, trilha);
-  }, [mapa, origem, destino, ponto, trilha]);
+  }, [mapa, modoCliente, origem, destino, ponto, trilha]);
+
+  useEffect(() => {
+    if (!mapa || !modoCliente) return;
+    if (ponto) {
+      const chave = `${ponto.lat.toFixed(5)},${ponto.lng.toFixed(5)}`;
+      if (!cameraPronta.current) {
+        mapa.setCenter(ponto);
+        mapa.setZoom(16);
+        cameraPronta.current = true;
+        ultimoCentro.current = chave;
+        return;
+      }
+      if (ultimoCentro.current !== chave) {
+        mapa.panTo(ponto);
+        ultimoCentro.current = chave;
+      }
+      return;
+    }
+    if (!cameraPronta.current && (origem || destino)) {
+      enquadrarMapa(mapa, origem, destino, null, []);
+      cameraPronta.current = true;
+    }
+  }, [mapa, modoCliente, ponto, origem, destino]);
 
   if (loadError) return <p className="text-sm text-amber-200">Mapa indisponível neste navegador.</p>;
   if (!isLoaded) return <div className="h-72 rounded-2xl bg-white/5 animate-pulse" data-testid="live-track-map" />;
@@ -96,7 +149,7 @@ function LiveMapBox({
         mapContainerClassName="w-full h-72 rounded-2xl"
         center={centroInicial.current}
         zoom={4}
-        onLoad={(map) => { setMapa(map); enquadrarMapa(map, origem, destino, ponto, trilha); }}
+        onLoad={(map) => { setMapa(map); if (!modoCliente) enquadrarMapa(map, origem, destino, ponto, trilha); }}
         options={{ disableDefaultUI: true, zoomControl: true }}
       >
         {trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
@@ -112,10 +165,59 @@ function LiveMapBox({
             ) : null}
           </Marker>
         ))}
-        {origem ? <Marker position={origem} label="O" title="Origem" /> : null}
-        {destino ? <Marker position={destino} label="D" title="Destino" /> : null}
-        {ponto ? <Marker position={ponto} label="A" title="Agente" /> : null}
+        {origem ? <Marker position={origem} label={modoCliente ? 'A' : 'O'} title="Origem" /> : null}
+        {destino ? <Marker position={destino} label={modoCliente ? 'C' : 'D'} title="Destino" /> : null}
+        {modoCliente && ponto && icone ? <Marker position={ponto} icon={icone} zIndex={2} title="Logo da escolta" /> : null}
+        {modoCliente && ponto ? (
+          <Marker position={ponto} label="B" icon={iconeGps} zIndex={3} title="Última posição" onClick={() => setAberto(-1)}>
+            {aberto === -1 ? (
+              <InfoWindow onCloseClick={() => setAberto(null)}>
+                <div style={{ color: '#0f172a', fontFamily: 'sans-serif', minWidth: 180 }}>
+                  <p style={{ margin: 0, fontWeight: 800 }}>Última posição</p>
+                  <p style={{ margin: '4px 0 0' }}>{enderecoAtual || `${ponto.lat.toFixed(5)}, ${ponto.lng.toFixed(5)}`}</p>
+                  <p style={{ margin: '4px 0 0' }}>{quando ? formatDateTimeBR(quando) : 'Sem horário'}</p>
+                </div>
+              </InfoWindow>
+            ) : null}
+          </Marker>
+        ) : null}
+        {!modoCliente && ponto ? <Marker position={ponto} label="A" title="Agente" /> : null}
       </GoogleMap>
+    </div>
+  );
+}
+
+function AndamentoCliente({
+  origem,
+  destino,
+  ponto,
+  velocidade,
+}: {
+  origem: Ponto | null;
+  destino: Ponto | null;
+  ponto: Ponto | null;
+  velocidade: number | null;
+}) {
+  const falta = origem && destino && ponto ? haversineMeters(ponto, destino) : null;
+  const andou = origem && destino && ponto ? haversineMeters(origem, ponto) : null;
+  const total = falta != null && andou != null ? falta + andou : 0;
+  const pct = total > 0 && andou != null ? Math.max(0, Math.min(100, Math.round((andou / total) * 100))) : 0;
+  const previsao = falta != null && velocidade && velocidade > 0.5 ? textoPrevisao(falta / velocidade) : null;
+  return (
+    <div className="rounded-2xl bg-white/5 p-3" data-testid="live-track-progresso">
+      <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-300">
+        <span>Andamento</span>
+        <span>{origem && destino && ponto ? `${pct}%` : '—'}</span>
+      </div>
+      <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-2 text-xs text-slate-200">
+        {falta == null ? 'Aguardando origem, destino e a posição do agente.' : `Faltam ${textoDistancia(falta)} em linha reta.`}
+      </p>
+      <p className="mt-1 text-xs text-slate-300">
+        {previsao ? `Previsão ${previsao}` : 'Previsão aguardando a velocidade do GPS.'}
+      </p>
     </div>
   );
 }
@@ -128,6 +230,9 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const [origem, setOrigem] = useState<Ponto | null>(null);
   const [destino, setDestino] = useState<Ponto | null>(null);
   const [trilha, setTrilha] = useState<PontoTrilha[]>([]);
+  const [endereco, setEndereco] = useState('');
+  const [quando, setQuando] = useState<string | null>(null);
+  const [velocidade, setVelocidade] = useState<number | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -145,8 +250,14 @@ function ClientLiveMap({ credential }: { credential: string }) {
         ? j.trail.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng), at: p.recorded_at ? String(p.recorded_at) : undefined })).filter((p: PontoTrilha) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
         : [];
       setTrilha(pts);
-      if (j.position?.lat != null && j.position?.lng != null) setPonto({ lat: Number(j.position.lat), lng: Number(j.position.lng) });
-      else if (pts.length) setPonto(pts[pts.length - 1]);
+      const ultima = j.position?.lat != null && j.position?.lng != null
+        ? { lat: Number(j.position.lat), lng: Number(j.position.lng) }
+        : (pts.length ? pts[pts.length - 1] : null);
+      setPonto(ultima);
+      setEndereco(typeof j.position?.address === 'string' ? j.position.address : '');
+      setQuando(j.position?.at ? String(j.position.at) : (pts.length ? pts[pts.length - 1].at || null : null));
+      const vel = Number(j.position?.speed);
+      setVelocidade(Number.isFinite(vel) && vel > 0 ? vel : null);
       setPhase(j.ended ? 'ended' : 'watching');
     } catch {
       setError('Falha ao acompanhar. Verifique a internet.');
@@ -180,8 +291,18 @@ function ClientLiveMap({ credential }: { credential: string }) {
             <p className="rounded-xl bg-white/5 p-3 col-span-2"><span className="block text-[9px] uppercase text-slate-400">Destino</span>{ficha.destination || '—'}</p>
           </div>
         )}
-        <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={ficha?.ativa ? ativaLogo : tmsegLogo} />
-        <p className="text-[11px] text-slate-400">O origem · D destino · A localização do agente. O ponto do agente entra quando ele compartilha a posição.</p>
+        {(phase === 'watching' || phase === 'ended') && (
+          <>
+            <div className="rounded-2xl bg-white/5 p-3" data-testid="live-track-ultima">
+              <p className="text-[9px] uppercase text-slate-400 font-black">Última posição</p>
+              <p className="mt-1 text-sm font-bold leading-snug">{endereco || (ponto ? `${ponto.lat.toFixed(5)}, ${ponto.lng.toFixed(5)}` : 'Aguardando o agente compartilhar a posição.')}</p>
+              <p className="mt-1 text-xs text-slate-300">{quando ? formatDateTimeBR(quando) : 'Sem horário gravado'}</p>
+            </div>
+            <AndamentoCliente origem={origem} destino={destino} ponto={ponto} velocidade={velocidade} />
+            <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={ficha?.ativa ? ativaLogo : tmsegLogo} modoCliente enderecoAtual={endereco} quando={quando} />
+            <p className="text-[11px] text-slate-400">A origem · B agente, com GPS verde e a logo da escolta · C destino. O mapa acompanha a última posição sem reenquadrar a rota.</p>
+          </>
+        )}
       </main>
     </div>
   );
