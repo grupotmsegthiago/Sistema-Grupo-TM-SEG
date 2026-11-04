@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. Cada mudança de posição do agente (25 metros ou mais) fica com o pino vermelho no mapa, sem fundo, até a missão acabar. O clique abre a ficha com mapa, latitude, longitude, data e hora de Brasília e o endereço. A timeline usa os mesmos ícones do mapa: pino de origem, pino da posição, GPS verde no ponto atual e bandeira no destino. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. No card da OS velada aparecem Copiar Agente e Copiar Cliente, com o link real de rastreio. Copiar Parceiro ATIVA só aparece quando o fornecedor é ATIVA e o cliente é Intermodal. Fora da velada os três ficam ocultos. No formulário de monitoramento do WhatsApp, a velada da Intermodal troca a localização e o link do Google pelo link de acompanhamento do cliente daquela OS. As outras operações continuam com o Google. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. No link do cliente, o card mostra AGENTE LOGADO em verde quando a posição chega, e AGUARDANDO POSIÇÃO DO AGENTE em âmbar quando o agente ainda não compartilhou ou o sinal parou. A aba oculta envia a cada 1 minuto, então o verde permanece por 2 minutos e meio. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

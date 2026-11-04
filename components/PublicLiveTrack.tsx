@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, CheckCircle2, EyeOff, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
 } from 'lucide-react';
-import { GoogleMap, InfoWindow, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
+import { GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
 import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
@@ -20,6 +20,16 @@ const PING_OCULTO_MS = 60000;
 const GPS_VERDE = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#16a34a" stroke="#ffffff" stroke-width="4"/><circle cx="32" cy="32" r="10" fill="#ffffff"/><path d="M32 6 v10 M32 48 v10 M6 32 h10 M48 32 h10" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg>')}`;
 const PIN_ORIGEM = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="52" viewBox="0 0 40 52"><path d="M20 0C9 0 2 8 2 18c0 12 18 34 18 34s18-22 18-34C38 8 31 0 20 0z" fill="#dc2626"/><circle cx="20" cy="18" r="6" fill="#fff"/></svg>')}`;
 const BANDEIRA_DESTINO = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="44" height="48" viewBox="0 0 44 48"><rect x="4" y="2" width="3" height="44" fill="#111"/><rect x="8" y="4" width="8" height="8" fill="#111"/><rect x="16" y="4" width="8" height="8" fill="#fff"/><rect x="24" y="4" width="8" height="8" fill="#111"/><rect x="32" y="4" width="8" height="8" fill="#fff"/><rect x="8" y="12" width="8" height="8" fill="#fff"/><rect x="16" y="12" width="8" height="8" fill="#111"/><rect x="24" y="12" width="8" height="8" fill="#fff"/><rect x="32" y="12" width="8" height="8" fill="#111"/></svg>')}`;
+const PIN_POSICAO = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="84" viewBox="0 0 64 84"><path fill="#e10600" fill-rule="evenodd" d="M32 2C18 2 8 13 8 26c0 16 24 42 24 42s24-26 24-42C56 13 46 2 32 2zM32 26m-8 0a8 8 0 1 0 16 0a8 8 0 1 0-16 0z"/><ellipse cx="32" cy="76" rx="18" ry="5" fill="none" stroke="#e10600" stroke-width="2.5"/><ellipse cx="32" cy="76" rx="11" ry="3.2" fill="none" stroke="#e10600" stroke-width="2.5"/><ellipse cx="32" cy="76" rx="5" ry="1.6" fill="none" stroke="#e10600" stroke-width="2.2"/></svg>')}`;
+
+function pinsDaRota(trilha: PontoTrilha[]): PontoTrilha[] {
+  const kept: PontoTrilha[] = [];
+  for (const p of trilha) {
+    const prev = kept[kept.length - 1];
+    if (!prev || haversineMeters(prev, p) >= 25) kept.push(p);
+  }
+  return kept;
+}
 
 function textoDistancia(metros: number): string {
   const total = Math.max(0, Math.round(metros));
@@ -106,12 +116,10 @@ function LiveMapBox({
 }) {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [mapa, setMapa] = useState<google.maps.Map | null>(null);
-  const [aberto, setAberto] = useState<number | null>(null);
+  const [selecionado, setSelecionado] = useState<PontoTrilha | null>(null);
+  const [enderecoPonto, setEnderecoPonto] = useState('');
   const centroInicial = useRef<Ponto>({ lat: -15.78, lng: -47.93 });
   const cameraPronta = useRef(false);
-  const icone = isLoaded && marca
-    ? { url: marca, scaledSize: new google.maps.Size(32, 32), anchor: new google.maps.Point(16, 46) }
-    : undefined;
   const iconeGps = isLoaded
     ? { url: GPS_VERDE, scaledSize: new google.maps.Size(42, 42), anchor: new google.maps.Point(21, 21) }
     : undefined;
@@ -124,6 +132,27 @@ function LiveMapBox({
   const escudo = isLoaded && marca
     ? { url: marca, scaledSize: new google.maps.Size(18, 18), anchor: new google.maps.Point(9, 9) }
     : undefined;
+  const iconePosicao = isLoaded
+    ? { url: PIN_POSICAO, scaledSize: new google.maps.Size(36, 48), anchor: new google.maps.Point(18, 39) }
+    : undefined;
+  const pins = pinsDaRota(trilha);
+
+  useEffect(() => {
+    if (!selecionado) return;
+    const igualAtual = ponto && haversineMeters(ponto, selecionado) < 25 && enderecoAtual;
+    if (igualAtual) {
+      setEnderecoPonto(enderecoAtual);
+      return;
+    }
+    let vivo = true;
+    setEnderecoPonto('');
+    const q = new URLSearchParams({ lat: String(selecionado.lat), lng: String(selecionado.lng) });
+    fetch(`/api/geocode-address?${q.toString()}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((j) => { if (vivo) setEnderecoPonto(String(j?.address || '').trim()); })
+      .catch(() => { if (vivo) setEnderecoPonto(''); });
+    return () => { vivo = false; };
+  }, [selecionado, ponto, enderecoAtual]);
 
   useEffect(() => {
     if (!mapa || modoCliente) return;
@@ -160,36 +189,39 @@ function LiveMapBox({
           <Polyline path={[origem, ponto, destino].filter((p): p is Ponto => !!p)} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} />
         ) : null}
         {!modoCliente && trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
-        {!modoCliente && trilha.map((p, i) => (
-          <Marker key={`${p.at || i}-${p.lat}-${p.lng}`} position={p} icon={icone} title="Posição gravada" onClick={() => setAberto(i)}>
-            {aberto === i ? (
-              <InfoWindow onCloseClick={() => setAberto(null)}>
-                <div style={{ color: '#0f172a', fontFamily: 'sans-serif', minWidth: 140 }}>
-                  <p style={{ margin: 0, fontWeight: 800 }}>{p.at ? formatDateTimeBR(p.at) : 'Sem horário'}</p>
-                  <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: 12 }}>{p.lat.toFixed(5)}, {p.lng.toFixed(5)}</p>
-                </div>
-              </InfoWindow>
-            ) : null}
-          </Marker>
+        {pins.map((p, i) => (
+          <Marker key={`${p.at || i}-${p.lat}-${p.lng}`} position={p} icon={iconePosicao} zIndex={2} title="Posição do agente" onClick={() => setSelecionado(p)} />
         ))}
         {origem ? <Marker position={origem} label={modoCliente ? undefined : 'O'} icon={modoCliente ? iconeOrigem : undefined} title="Origem" /> : null}
         {destino ? <Marker position={destino} label={modoCliente ? undefined : 'D'} icon={modoCliente ? iconeDestino : undefined} title="Destino" /> : null}
         {modoCliente && ponto && escudo ? <Marker position={ponto} icon={escudo} zIndex={4} title="TM SEG" /> : null}
         {modoCliente && ponto ? (
-          <Marker position={ponto} icon={iconeGps} zIndex={3} title="Última posição" onClick={() => setAberto(-1)}>
-            {aberto === -1 ? (
-              <InfoWindow onCloseClick={() => setAberto(null)}>
-                <div style={{ color: '#0f172a', fontFamily: 'sans-serif', minWidth: 180 }}>
-                  <p style={{ margin: 0, fontWeight: 800 }}>Última posição</p>
-                  <p style={{ margin: '4px 0 0' }}>{enderecoAtual || `${ponto.lat.toFixed(5)}, ${ponto.lng.toFixed(5)}`}</p>
-                  <p style={{ margin: '4px 0 0' }}>{quando ? formatDateTimeBR(quando) : 'Sem horário'}</p>
-                </div>
-              </InfoWindow>
-            ) : null}
-          </Marker>
+          <Marker position={ponto} icon={iconeGps} zIndex={3} title="Última posição" onClick={() => setSelecionado({ ...ponto, at: quando || undefined })} />
         ) : null}
         {!modoCliente && ponto ? <Marker position={ponto} label="A" title="Agente" /> : null}
       </GoogleMap>
+      {selecionado ? (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4" onClick={() => setSelecionado(null)} data-testid="live-track-ponto">
+          <div className="bg-white text-slate-900 rounded-2xl w-full max-w-md p-4 space-y-3 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-black">Posição do agente</p>
+              <button type="button" className="text-xs font-black uppercase text-slate-500" onClick={() => setSelecionado(null)}>Fechar</button>
+            </div>
+            <GoogleMap
+              mapContainerClassName="w-full h-40 rounded-xl"
+              center={selecionado}
+              zoom={16}
+              options={{ disableDefaultUI: true, gestureHandling: 'none' }}
+            >
+              <Marker position={selecionado} icon={iconePosicao} />
+            </GoogleMap>
+            <p className="text-sm"><span className="text-slate-500">Latitude: </span><span className="font-mono">{selecionado.lat.toFixed(6)}</span></p>
+            <p className="text-sm"><span className="text-slate-500">Longitude: </span><span className="font-mono">{selecionado.lng.toFixed(6)}</span></p>
+            <p className="text-sm"><span className="text-slate-500">Data e hora: </span>{selecionado.at ? formatDateTimeBR(selecionado.at) : 'Sem horário gravado'}</p>
+            <p className="text-sm"><span className="text-slate-500">Endereço: </span>{enderecoPonto || 'Endereço não encontrado para este ponto.'}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -255,7 +287,7 @@ function TimelineCliente({
       <p className="text-sm font-black">Timeline da viagem</p>
       <ol className="mt-4 space-y-3">
         <li className="flex gap-3">
-          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-red-600 text-[10px] font-black">A</span>
+          <img src={PIN_ORIGEM} alt="Origem" className="mt-0.5 h-8 w-6 shrink-0 object-contain" />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm font-semibold">Origem</p>
@@ -271,7 +303,7 @@ function TimelineCliente({
           const local = etapa.endereco || `${etapa.lat.toFixed(5)}, ${etapa.lng.toFixed(5)}`;
           return (
             <li key={`${etapa.at}-${etapa.lat}`} className="flex gap-3">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-black">{i + 1}</span>
+              <img src={i === etapas.length - 1 ? GPS_VERDE : PIN_POSICAO} alt="Posição do agente" className="mt-0.5 h-8 w-8 shrink-0 object-contain" />
               <div className="min-w-0 flex-1">
                 {minutos != null && metros != null ? (
                   <p className="mb-1 text-[11px] font-semibold text-emerald-300">{textoMinutos(Math.max(0, minutos))} · {textoDistancia(metros)}</p>
@@ -285,7 +317,7 @@ function TimelineCliente({
           );
         })}
         <li className="flex gap-3">
-          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-black text-slate-950">C</span>
+          <img src={BANDEIRA_DESTINO} alt="Destino" className="mt-0.5 h-8 w-8 shrink-0 object-contain" />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <p className="text-sm font-semibold">Destino</p>
@@ -428,6 +460,7 @@ function AgentLiveTrack() {
   const [accepted, setAccepted] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [ponto, setPonto] = useState<{ lat: number; lng: number } | null>(null);
+  const [trilha, setTrilha] = useState<PontoTrilha[]>([]);
   const [lastPingAt, setLastPingAt] = useState<number | null>(null);
   const [hiddenWarn, setHiddenWarn] = useState(false);
   const [wakeOk, setWakeOk] = useState(false);
@@ -520,6 +553,12 @@ function AgentLiveTrack() {
         return;
       }
       lastSentRef.current = Date.now();
+      const gravado = { lat: coords.latitude, lng: coords.longitude, at: new Date().toISOString() };
+      setTrilha((prev) => {
+        const ultimo = prev[prev.length - 1];
+        if (ultimo && haversineMeters(ultimo, gravado) < 25) return prev;
+        return [...prev, gravado];
+      });
       setAccuracy(typeof coords.accuracy === 'number' ? coords.accuracy : null);
       setLastPingAt(Date.now());
       setError('');
@@ -604,6 +643,9 @@ function AgentLiveTrack() {
         setAtiva(ehAtiva);
         setOriginPoint(pontoValido(j.mission?.originPoint));
         setDestinationPoint(pontoValido(j.mission?.destinationPoint));
+        if (Array.isArray(j.trail)) {
+          setTrilha(j.trail.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng), at: p.recorded_at ? String(p.recorded_at) : undefined })).filter((p: PontoTrilha) => Number.isFinite(p.lat) && Number.isFinite(p.lng)));
+        }
         if (ehAtiva) document.title = 'ATIVA Pronta Resposta';
         if (j.ended || j.status === 'ended') {
           setPhase('ended');
@@ -881,7 +923,7 @@ function AgentLiveTrack() {
                   : 'Segundo plano ativo. Pode usar o WhatsApp. O GPS só para se você fechar esta página.'}
               </div>
             )}
-            <LiveMapBox ponto={ponto} trilha={ponto ? [ponto] : []} origem={originPoint} destino={destinationPoint} />
+            <LiveMapBox ponto={ponto} trilha={trilha} origem={originPoint} destino={destinationPoint} />
             {(origin || destination) && (
               <p className="text-xs text-slate-300 leading-relaxed">
                 {origin ? <>Origem: {origin}<br /></> : null}

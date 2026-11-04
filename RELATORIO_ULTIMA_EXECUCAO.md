@@ -1,5 +1,13 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
+Objetivo: cada posição do agente fica no mapa com o pino vermelho, e a timeline usa os mesmos ícones.
+
+O pino não tem fundo. Um novo só entra quando o agente anda 25 metros ou mais. O anterior permanece até o fim da missão. O clique abre a ficha com o mapa daquele ponto, latitude, longitude, data e hora de Brasília e o endereço. A origem usa o pino de partida, o ponto atual o GPS verde e o destino a bandeira. Esses três, mais o pino da posição, são os ícones da timeline. O motor da OS não mudou. Sem tabela nova. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 14 passaram.
+
 Executado em 04/11/2026 na `dev`, depois de "pode publicar".
 
 Objetivo: copiar o WhatsApp da velada com o link real daquela OS, e trocar o formulário de monitoramento da Intermodal velada pelo acompanhamento ao vivo.
@@ -108,6 +116,53 @@ Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a suge
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
 
 # Próxima Execução Proposta
+
+## Um link por OS e aviso quando o agente desconecta
+
+**Status:** Aguardando aprovação. Sem alteração de código.
+
+### Objetivo da Tarefa
+
+A OS velada fica com um único link de rastreio. Um segundo clique não cria outro. Se o agente desconectar, os operadores veem um aviso e o status passa a "Aguardando posição do agente". Quando a posição volta, o aviso some e o mesmo link continua valendo.
+
+### Passo a Passo Sequencial
+
+1. Em `generateLiveTrack`, buscar o rastreio já gravado da OS, inclusive o encerrado. Se existir, devolver o mesmo `url` e o mesmo `clientUrl`. Não chamar `newToken()`.
+2. Se a OS ainda estiver aberta e o rastreio tiver sido encerrado à mão, reabrir a mesma linha. O agente volta a transmitir no endereço antigo. OS concluída, cancelada ou recusada não ganha link novo e não reabre.
+3. No card, depois que o link existe, os botões passam a "Copiar link do agente" e "Copiar link do cliente". Eles só copiam.
+4. A desconexão usa a janela de 2 minutos e meio, a mesma do link do cliente, porque a aba oculta envia a cada 1 minuto. Antes disso o aviso não aparece.
+5. O aviso só entra depois que o agente já enviou posição e o sinal parou. Quem ainda não abriu o link continua como "Aguardando o agente abrir o link".
+6. Uma consulta só, na rota de rastreio que já existe, lista essas OS. Um aviso no topo, para operador e avançado, e uma faixa âmbar no card: "Aguardando posição do agente". Posição nova apaga o aviso.
+7. O texto do cliente, no link público, já mostra essa frase. O rótulo do operador deixa de usar os 12 segundos, que disparava alarme falso entre os envios de 1 minuto.
+8. Testes do rastreio e health em `http://localhost:5000/`. Sem publicação até o pedido.
+
+### Ficheiros Afetados
+
+- `lib/liveTrack/service.ts`
+- `api/_live-track-core.cjs` (regenerado no build, porque o serviço muda)
+- `lib/liveTrack/pure.ts`
+- `lib/liveTrack/useLiveTrackWatch.ts`
+- `components/LiveTrackPanel.tsx`
+- `components/AlertaAgenteDesconectado.tsx` (novo, aviso único no topo)
+- `App.tsx` (montar o aviso ao lado do monitor que o operador já vê)
+- `components/MissionCard.tsx` (faixa âmbar no card)
+- `scripts/live-track-velada.test.ts`
+
+### Garantias de Não Impacto
+
+O motor oficial da OS (`lib/financialUtils.ts`) não muda. Contratos DHL/IBL, Asaas, NF, comissão e TORRES não mudam. Não entra função nova na Vercel: a lista usa `/api/live-track`. Não há migration. Horário continua em Brasília, 24 horas. O link do cliente e o do agente permanecem `/rastreio?c=` e `/rastreio?token=`.
+
+### Nove pontos
+
+1. Objetivo: um link permanente por OS e aviso operacional na desconexão.
+2. Já existe reutilização só do rastreio ativo. Rastreio encerrado abre caminho para outro token.
+3. Fonte única: `mission_live_tracks`, uma linha por OS.
+4. Quem grava: `generateLiveTrack`. Quem lê: card, modal, página pública e os botões de copiar WhatsApp.
+5. Teste em `scripts/live-track-velada.test.ts`.
+6. OS, financeiro, Asaas, NF, TORRES e WhatsApp Z-API não mudam de regra.
+7. Estende o rastreio e o aviso que o operador já tem. Não cria tabela nem API nova.
+8. O arquivo novo é só o aviso visual. A regra fica em `lib/liveTrack`.
+9. Muda o comportamento do botão Gerar Link e do status visto pelo operador. Por isso para aqui até a aprovação.
 
 ## Sinal do agente no link do cliente
 

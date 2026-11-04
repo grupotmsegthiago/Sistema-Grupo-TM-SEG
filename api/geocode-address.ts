@@ -89,6 +89,21 @@ export default async function handler(req: any, res: any) {
   }
 
   const address = String(req.query?.address || "").trim();
+  const lat = Number(req.query?.lat);
+  const lng = Number(req.query?.lng);
+  if (address.length < 3 && Number.isFinite(lat) && Number.isFinite(lng)) {
+    try {
+      const texto = await reverseGeocode(lat, lng);
+      if (!texto) {
+        res.status(404).json({ success: false, error: "Nenhum resultado encontrado" });
+        return;
+      }
+      res.status(200).json({ success: true, address: texto, location: { lat, lng }, source: "reverse" });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message || "Erro ao geocodificar endereço" });
+    }
+    return;
+  }
   if (address.length < 3) {
     res.status(400).json({ success: false, error: "address obrigatório" });
     return;

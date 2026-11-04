@@ -440,16 +440,16 @@ export async function publicGetLiveTrack(opts: {
   let trail: Array<{ lat: number; lng: number; recorded_at: string }> = [];
   let ficha = null;
   const pontos = await pontosDaRota(mission);
+  const { data: pts } = await sb
+    .from('mission_live_positions')
+    .select('lat, lng, recorded_at')
+    .eq('track_id', track.id)
+    .order('recorded_at', { ascending: false })
+    .limit(800);
+  trail = (pts || []).slice().reverse();
   if (papel === 'cliente') {
     const viatura = await viaturaDaMissao(mission.client_vehicle);
     ficha = { ...fichaDoCliente(mission, viatura), ...pontos };
-    const { data: pts } = await sb
-      .from('mission_live_positions')
-      .select('lat, lng, recorded_at')
-      .eq('track_id', track.id)
-      .order('recorded_at', { ascending: false })
-      .limit(250);
-    trail = (pts || []).slice().reverse();
   }
 
   let endereco: string | null = null;
