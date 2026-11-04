@@ -191,6 +191,10 @@
           var reason = ev.reason;
           var detail = reason instanceof Error ? reason.message + '\n' + reason.stack : String(reason);
           if (detail.indexOf('WebSocket') !== -1 || detail.indexOf('@vite') !== -1 || detail.indexOf('vite/client') !== -1) return;
+          if (/failed to start the audio device|audiocontext|not allowed to start/i.test(detail)) {
+            ev.preventDefault();
+            return;
+          }
           showIosError('Promise Rejeitada', detail);
         });
         window.showIosError = function(title, detail) {

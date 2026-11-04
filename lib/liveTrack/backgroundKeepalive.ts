@@ -35,7 +35,7 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
     const AC = window.AudioContext || (window as any).webkitAudioContext;
     if (AC) {
       ctx = new AC();
-      if (ctx.state === 'suspended') await ctx.resume();
+      if (ctx.state === 'suspended') void ctx.resume().catch(() => {});
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       g.gain.value = 0.0006;
@@ -55,7 +55,7 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
     audioEl.loop = true;
     audioEl.volume = 0.02;
     audioEl.setAttribute('playsinline', 'true');
-    await audioEl.play();
+    void audioEl.play().catch(() => {});
   } catch {
     /* play() precisa de gesto do usuário — o chamador já veio do clique */
   }
@@ -102,8 +102,8 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
 
   const resume = () => {
     if (stopped) return;
-    void ctx?.resume?.();
-    void audioEl?.play?.().catch(() => {});
+    try { void ctx?.resume?.().catch(() => {}); } catch { /* ignore */ }
+    try { void audioEl?.play?.().catch(() => {}); } catch { /* ignore */ }
     try {
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     } catch { /* ignore */ }
@@ -124,7 +124,7 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
       window.removeEventListener('focus', resume);
       window.removeEventListener('pagehide', resume);
       try { osc?.stop(); } catch { /* já parado */ }
-      try { void ctx?.close(); } catch { /* já fechado */ }
+      try { void ctx?.close?.().catch(() => {}); } catch { /* já fechado */ }
       try {
         if (audioEl) {
           audioEl.pause();
@@ -135,9 +135,9 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
       osc = null;
       ctx = null;
       try {
-        navigator.serviceWorker?.ready.then((reg) => reg.getNotifications({ tag: 'tmseg-live-track' }).then((list) => {
+        void navigator.serviceWorker?.ready.then((reg) => reg.getNotifications({ tag: 'tmseg-live-track' }).then((list) => {
           list.forEach((n) => n.close());
-        }));
+        })).catch(() => {});
       } catch { /* ignore */ }
     },
   };

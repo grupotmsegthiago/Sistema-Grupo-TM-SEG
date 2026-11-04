@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. No celular, a falha "Failed to start the audio device" deixa de derrubar a página do rastreio. O som só tenta ligar no toque de compartilhar, e a recusa do navegador não vira a tela de erro. O mapa e o GPS seguem. Ainda não foi publicado.
+
+Atualizado em 2026-11-04. O mapa do cliente passa a marcar origem, destino e a posição do agente. A posição do agente só entra depois que ele compartilha o GPS. O mapa deixa de abrir no mundo inteiro quando a rota tem coordenadas. Ainda não foi publicado.
+
 Atualizado em 2026-11-04. Na OS velada, os botões Gerar Link do agente e Gerar Link do cliente ficam separados. Eles aparecem da criação até a execução e somem em pendente, concluída, cancelada e recusada. Se o fornecedor contém ATIVA, o link do agente abre só com a marca ATIVA Pronta Resposta, avisa o redirecionamento, pede o aceite LGPD e mostra o mapa com origem, destino e a posição do agente. Com a aba oculta, o envio passa a 1 vez por minuto. Fornecedor que não é ATIVA continua com a marca TM SEG. O motor da OS não mudou. Ainda não foi publicado.
 
 Atualizado em 2026-11-04. Na Nova OS, a tabela e o pedágio saem só da última OS com `billing_approved = true` da mesma cidade, do mesmo tipo e, com fornecedor, do mesmo par. OS para conferir não entra. Rua, número e acento não derrubam a cidade. A lista de rotas cadastradas continua filtrada pela cidade quando o endereço muda. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

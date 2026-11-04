@@ -178,6 +178,10 @@
         window.addEventListener('unhandledrejection', function(ev) {
           var reason = ev.reason;
           var detail = reason instanceof Error ? reason.message + '\n' + reason.stack : String(reason);
+          if (/failed to start the audio device|audiocontext|not allowed to start/i.test(detail)) {
+            ev.preventDefault();
+            return;
+          }
           showIosError('Promise Rejeitada', detail);
         });
         window.showIosError = function(title, detail) {

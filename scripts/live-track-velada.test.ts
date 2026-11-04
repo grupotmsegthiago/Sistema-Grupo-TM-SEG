@@ -147,6 +147,11 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /Você será redirecionado para os dados da missão/);
   assert.match(page, /ativa-pronta-resposta/);
   assert.match(page, /PING_OCULTO_MS = 60000/);
+  assert.match(page, /origem=\{origem\}/);
+  assert.match(page, /O origem/);
+  const svcMapa = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');
+  assert.match(svcMapa, /pontosDaRota/);
+  assert.doesNotMatch(svcMapa, /pontosDaRotaAtiva/);
   assert.match(page, /ATIVA Pronta Resposta/);
   const svc = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');
   assert.match(svc, /fornecedorAtiva/);
@@ -159,6 +164,8 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(keep, /mediaSession/);
   assert.match(keep, /tmseg-live-track/);
   assert.match(keep, /setInterval\(resume/);
+  assert.match(keep, /ctx\?\.resume\?\.\(\)\.catch/);
+  assert.match(fs.readFileSync('index.html', 'utf8'), /failed to start the audio device/);
   const sw = fs.readFileSync('client/public/sw.js', 'utf8');
   assert.match(sw, /\/rastreio/);
   const vercel = fs.readFileSync('vercel.json', 'utf8');

@@ -47,6 +47,19 @@ function pontoValido(p: any): Ponto | null {
   return { lat, lng };
 }
 
+function enquadrarMapa(map: google.maps.Map, origem?: Ponto | null, destino?: Ponto | null, ponto?: Ponto | null) {
+  const pts = [origem, destino, ponto].filter((p): p is Ponto => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+  if (!pts.length) return;
+  if (pts.length === 1) {
+    map.setCenter(pts[0]);
+    map.setZoom(15);
+    return;
+  }
+  const bounds = new google.maps.LatLngBounds();
+  pts.forEach((p) => bounds.extend(p));
+  map.fitBounds(bounds, 48);
+}
+
 function LiveMapBox({
   ponto,
   trilha,
@@ -59,23 +72,13 @@ function LiveMapBox({
   destino?: Ponto | null;
 }) {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const centro = ponto || trilha[trilha.length - 1] || origem || destino || { lat: -15.78, lng: -47.93 };
+  const [mapa, setMapa] = useState<google.maps.Map | null>(null);
+  const centroInicial = useRef<Ponto>({ lat: -15.78, lng: -47.93 });
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isLoaded) return;
-    const pts = [origem, destino, ponto].filter((p): p is Ponto => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
-    if (!pts.length) return;
-    if (pts.length === 1) {
-      map.setCenter(pts[0]);
-      map.setZoom(15);
-      return;
-    }
-    const bounds = new google.maps.LatLngBounds();
-    pts.forEach((p) => bounds.extend(p));
-    map.fitBounds(bounds, 48);
-  }, [isLoaded, origem, destino, ponto]);
+    if (!mapa) return;
+    enquadrarMapa(mapa, origem, destino, ponto);
+  }, [mapa, origem, destino, ponto]);
 
   if (loadError) return <p className="text-sm text-amber-200">Mapa indisponível neste navegador.</p>;
   if (!isLoaded) return <div className="h-72 rounded-2xl bg-white/5 animate-pulse" data-testid="live-track-map" />;
@@ -83,9 +86,9 @@ function LiveMapBox({
     <div data-testid="live-track-map">
       <GoogleMap
         mapContainerClassName="w-full h-72 rounded-2xl"
-        center={centro}
-        zoom={ponto ? 15 : 4}
-        onLoad={(map) => { mapRef.current = map; }}
+        center={centroInicial.current}
+        zoom={4}
+        onLoad={(map) => { setMapa(map); enquadrarMapa(map, origem, destino, ponto); }}
         options={{ disableDefaultUI: true, zoomControl: true }}
       >
         {trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
@@ -102,6 +105,8 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const [error, setError] = useState('');
   const [ficha, setFicha] = useState<any>(null);
   const [ponto, setPonto] = useState<{ lat: number; lng: number } | null>(null);
+  const [origem, setOrigem] = useState<Ponto | null>(null);
+  const [destino, setDestino] = useState<Ponto | null>(null);
   const [trilha, setTrilha] = useState<{ lat: number; lng: number }[]>([]);
 
   const carregar = useCallback(async () => {
@@ -114,6 +119,8 @@ function ClientLiveMap({ credential }: { credential: string }) {
         return;
       }
       setFicha(j.mission || null);
+      setOrigem(pontoValido(j.mission?.originPoint));
+      setDestino(pontoValido(j.mission?.destinationPoint));
       const pts = Array.isArray(j.trail)
         ? j.trail.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng) })).filter((p: { lat: number; lng: number }) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
         : [];
@@ -153,8 +160,8 @@ function ClientLiveMap({ credential }: { credential: string }) {
             <p className="rounded-xl bg-white/5 p-3 col-span-2"><span className="block text-[9px] uppercase text-slate-400">Destino</span>{ficha.destination || '—'}</p>
           </div>
         )}
-        <LiveMapBox ponto={ponto} trilha={trilha} />
-        <p className="text-[11px] text-slate-400">A posição e o caminho atualizam sozinhos enquanto a missão não for concluída.</p>
+        <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} />
+        <p className="text-[11px] text-slate-400">O origem · D destino · A localização do agente. O ponto do agente entra quando ele compartilha a posição.</p>
       </main>
     </div>
   );
@@ -297,18 +304,6 @@ function AgentLiveTrack() {
       return;
     }
     await requestWake();
-    try {
-      keepaliveRef.current = await startLiveTrackKeepalive(ativa ? {
-        title: 'ATIVA — rastreio ao vivo',
-        artist: 'ATIVA Pronta Resposta',
-        album: 'Acompanhamento da missão',
-        body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. A posição segue de 1 em 1 minuto.',
-        icon: ativaLogo,
-      } : {});
-      setBgOk(true);
-    } catch {
-      setBgOk(false);
-    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setPhase('sharing');
@@ -336,7 +331,7 @@ function AgentLiveTrack() {
       },
       GEO_OPTS,
     );
-  }, [ativa, pollOnce, requestWake, sendPing, stopKeepalive]);
+  }, [pollOnce, requestWake, sendPing, stopKeepalive]);
 
   useEffect(() => {
     if (!token) {
@@ -462,6 +457,18 @@ function AgentLiveTrack() {
     }
     setBusy(true);
     setError('');
+    if (!keepaliveRef.current) {
+      void startLiveTrackKeepalive(ativa ? {
+        title: 'ATIVA — rastreio ao vivo',
+        artist: 'ATIVA Pronta Resposta',
+        album: 'Acompanhamento da missão',
+        body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. A posição segue de 1 em 1 minuto.',
+        icon: ativaLogo,
+      } : {}).then((k) => {
+        keepaliveRef.current = k;
+        setBgOk(true);
+      }).catch(() => setBgOk(false));
+    }
     try {
       const r = await fetch(`/api/live-track?op=public-consent&token=${encodeURIComponent(token)}`, {
         method: 'POST',
