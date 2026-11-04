@@ -97,6 +97,10 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
+## Visão do cliente só com a marca TM SEG
+
+Executado em 04/11/2026 na `dev` e publicado nesta entrega, no projeto sistema-grupo-tm-seg. No link do cliente a logo e o nome da ATIVA saem. A escolta aparece como TM SEG. O card reúne os dados, o mapa fica embaixo e a timeline lista origem, locais da viagem e destino, com tempo e distância de cada trecho. O link do agente da ATIVA não muda.
+
 ## Mapa do cliente estável na última posição, com endereço
 
 **Status:** Executado em 04/11/2026 na `dev` e publicado nesta entrega, no projeto sistema-grupo-tm-seg.

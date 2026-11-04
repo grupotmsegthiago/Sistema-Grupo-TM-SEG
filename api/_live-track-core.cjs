@@ -195,6 +195,27 @@ function haversineMeters(a, b) {
   const h = s1 * s1 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * s2 * s2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
+function etapasDaTrilha(trail) {
+  const pts = trail.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng), at: String(p.recorded_at || p.at || "") })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.at);
+  if (!pts.length) return [];
+  const kept = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const prev = kept[kept.length - 1];
+    const cur = pts[i];
+    const ultimo = i === pts.length - 1;
+    const dt = new Date(cur.at).getTime() - new Date(prev.at).getTime();
+    const dist = haversineMeters(prev, cur);
+    if (ultimo || dist >= 2e3 || dt >= 10 * 60 * 1e3) {
+      if (cur.at !== prev.at || dist >= 30) kept.push(cur);
+    }
+  }
+  const max = 12;
+  if (kept.length <= max) return kept;
+  const meio = kept.slice(1, -1);
+  const passo = Math.ceil(meio.length / (max - 2));
+  const amostra = meio.filter((_, i) => i % passo === 0).slice(0, max - 2);
+  return [kept[0], ...amostra, kept[kept.length - 1]];
+}
 function buildLiveTrackPublicPath(token) {
   return `${LIVE_TRACK_PUBLIC_PATH}?token=${encodeURIComponent(token)}`;
 }
@@ -756,8 +777,14 @@ async function publicGetLiveTrack(opts) {
     trail = (pts || []).slice().reverse();
   }
   let endereco = null;
+  let etapas = [];
   if (papel === "cliente" && track.last_lat != null && track.last_lng != null) {
     endereco = await enderecoDaPosicao(Number(track.last_lat), Number(track.last_lng));
+  }
+  if (papel === "cliente" && trail.length) {
+    for (const etapa of etapasDaTrilha(trail)) {
+      etapas.push({ ...etapa, endereco: await enderecoDaPosicao(etapa.lat, etapa.lng) });
+    }
   }
   return {
     status: 200,
@@ -778,7 +805,8 @@ async function publicGetLiveTrack(opts) {
         at: track.last_seen_at,
         address: endereco
       } : null,
-      trail
+      trail,
+      etapas
     }
   };
 }

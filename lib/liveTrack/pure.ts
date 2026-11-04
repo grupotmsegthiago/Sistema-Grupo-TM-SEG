@@ -30,6 +30,33 @@ export function haversineMeters(a: { lat: number; lng: number }, b: { lat: numbe
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** Etapas da timeline: origem do GPS, paradas relevantes e a última posição. */
+export function etapasDaTrilha(
+  trail: Array<{ lat: number; lng: number; recorded_at?: string; at?: string }>,
+): Array<{ lat: number; lng: number; at: string }> {
+  const pts = trail
+    .map((p) => ({ lat: Number(p.lat), lng: Number(p.lng), at: String(p.recorded_at || p.at || '') }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.at);
+  if (!pts.length) return [];
+  const kept: Array<{ lat: number; lng: number; at: string }> = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const prev = kept[kept.length - 1];
+    const cur = pts[i];
+    const ultimo = i === pts.length - 1;
+    const dt = new Date(cur.at).getTime() - new Date(prev.at).getTime();
+    const dist = haversineMeters(prev, cur);
+    if (ultimo || dist >= 2000 || dt >= 10 * 60 * 1000) {
+      if (cur.at !== prev.at || dist >= 30) kept.push(cur);
+    }
+  }
+  const max = 12;
+  if (kept.length <= max) return kept;
+  const meio = kept.slice(1, -1);
+  const passo = Math.ceil(meio.length / (max - 2));
+  const amostra = meio.filter((_, i) => i % passo === 0).slice(0, max - 2);
+  return [kept[0], ...amostra, kept[kept.length - 1]];
+}
+
 export function shouldInsertTrailPoint(opts: {
   lastTrail: { lat: number; lng: number; at: number } | null;
   next: { lat: number; lng: number };

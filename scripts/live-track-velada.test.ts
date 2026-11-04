@@ -7,6 +7,7 @@ import {
   buildLiveTrackClientUrl,
   buildLiveTrackPublicUrl,
   buildLiveTrackWhatsappText,
+  etapasDaTrilha,
   haversineMeters,
   isLiveTrackStale,
   LIVE_TRACK_STALE_MS,
@@ -62,6 +63,23 @@ test('valida coordenadas GPS', () => {
   assert.equal(validateCoords(0, 0), null);
   assert.equal(validateCoords(91, 0), null);
   assert.equal(validateCoords('abc', 1), null);
+});
+
+test('timeline junta a saída, as paradas e a última posição', () => {
+  const inicio = '2026-11-04T18:00:00.000Z';
+  const perto = '2026-11-04T18:01:00.000Z';
+  const longe = '2026-11-04T18:20:00.000Z';
+  const fim = '2026-11-04T19:00:00.000Z';
+  const etapas = etapasDaTrilha([
+    { lat: -3.1, lng: -60.0, recorded_at: inicio },
+    { lat: -3.101, lng: -60.001, recorded_at: perto },
+    { lat: -3.15, lng: -60.05, recorded_at: longe },
+    { lat: -3.2, lng: -60.1, recorded_at: fim },
+  ]);
+  assert.equal(etapas[0].at, inicio);
+  assert.equal(etapas[etapas.length - 1].at, fim);
+  assert.equal(etapas.some((e) => e.at === perto), false);
+  assert.ok(etapas.length >= 3 && etapas.length <= 12);
 });
 
 test('trilha só grava com deslocamento ou intervalo', () => {
@@ -148,16 +166,21 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /ativa-pronta-resposta/);
   assert.match(page, /PING_OCULTO_MS = 60000/);
   assert.match(page, /origem=\{origem\}/);
-  assert.match(page, /A origem/);
+  assert.match(page, /marca=\{tmsegLogo\}/);
+  assert.match(page, /Rastreamento/);
+  assert.match(page, /PIN_ORIGEM/);
+  assert.match(page, /BANDEIRA_DESTINO/);
   assert.match(page, /live-track-ultima/);
   assert.match(page, /live-track-progresso/);
   assert.match(page, /GPS_VERDE/);
+  assert.match(page, /live-track-timeline/);
   assert.match(page, /live-track-keep-open/);
   assert.match(page, /formatDateTimeBR/);
   assert.match(page, /InfoWindow/);
   const svcMapa = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');
   assert.match(svcMapa, /pontosDaRota/);
   assert.match(svcMapa, /reverseGeocode/);
+  assert.match(svcMapa, /etapasDaTrilha/);
   assert.doesNotMatch(svcMapa, /pontosDaRotaAtiva/);
   assert.match(page, /ATIVA Pronta Resposta/);
   const svc = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');

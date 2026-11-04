@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. O link do cliente ganhou a timeline da viagem: origem, os locais por onde passou (com o tempo e a distância de cada trecho) e o destino. No computador a timeline fica ao lado. No celular, abaixo do mapa. A marca da ATIVA continua só no link do agente. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. No link do cliente, o mapa deixa de reenquadrar a rota inteira a cada consulta e acompanha a última posição do agente. O ponto B é o GPS verde com a logo da escolta. A origem é A e o destino é C. O painel mostra o endereço dessa posição, a data e a hora de Brasília, o percentual percorrido e a distância que falta, em linha reta. A previsão de tempo só aparece quando o GPS envia velocidade. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. No mapa do cliente, cada posição gravada vira um ponto com a logo da ATIVA quando o fornecedor é ATIVA, e com a logo da TM SEG nos demais. O toque mostra data, hora de Brasília e as coordenadas. O link do agente traz a faixa para manter a página aberta. Fechar a aba continua parando o GPS. O painel interno, o financeiro e a NF não mudaram de marca. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

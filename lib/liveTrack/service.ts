@@ -9,6 +9,7 @@ import {
   buildLiveTrackWhatsappText,
   clampAccuracy,
   clampOptionalNumber,
+  etapasDaTrilha,
   haversineMeters,
   LIVE_TRACK_PING_MIN_MS,
   LIVE_TRACK_TRAIL_MIN_METERS,
@@ -452,8 +453,14 @@ export async function publicGetLiveTrack(opts: {
   }
 
   let endereco: string | null = null;
+  let etapas: Array<{ lat: number; lng: number; at: string; endereco: string | null }> = [];
   if (papel === 'cliente' && track.last_lat != null && track.last_lng != null) {
     endereco = await enderecoDaPosicao(Number(track.last_lat), Number(track.last_lng));
+  }
+  if (papel === 'cliente' && trail.length) {
+    for (const etapa of etapasDaTrilha(trail)) {
+      etapas.push({ ...etapa, endereco: await enderecoDaPosicao(etapa.lat, etapa.lng) });
+    }
   }
 
   return {
@@ -476,6 +483,7 @@ export async function publicGetLiveTrack(opts: {
         address: endereco,
       } : null,
       trail,
+      etapas,
     },
   };
 }
