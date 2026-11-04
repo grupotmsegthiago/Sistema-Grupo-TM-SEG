@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: o acompanhamento velado ganha o topo curvado e o rodapé de painel.
+
+O fundo segue grafite, com brilho vermelho. O título OPERAÇÕES ACOMPANHAMENTO VELADO permanece. O rodapé traz Grupo TM SEG, www.grupotmseg.com.br e o Instagram. A rota, o GPS e a chegada a 500 metros não mudaram. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 16 passaram.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: o link do cliente fica com a cara de painel tático da TM SEG.
 
 O topo traz o logotipo e OPERAÇÕES ACOMPANHAMENTO VELADO. Os dados, o mapa e a timeline ficam em alto relevo, com fundo grafite, borda vermelha e texto prata. O mapa ocupa o centro. O rodapé traz Grupo TM SEG, www.grupotmseg.com.br e o Instagram @grupotmseg. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

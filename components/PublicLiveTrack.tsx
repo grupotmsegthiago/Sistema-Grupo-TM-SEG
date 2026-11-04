@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, EyeOff, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
+  AlertTriangle, CheckCircle2, EyeOff, Globe, Instagram, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
 } from 'lucide-react';
 import { GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
@@ -339,7 +339,7 @@ function AndamentoCliente({
   );
 }
 
-const PAINEL_TATICO = 'rounded-2xl border border-[#C50000]/45 bg-[#12141a]/95 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.1)]';
+const PAINEL_TATICO = 'rounded-2xl border border-[#C50000]/55 bg-[#12141a]/95 shadow-[0_10px_30px_rgba(0,0,0,0.8),0_0_24px_rgba(197,0,0,0.12),inset_0_1px_1px_rgba(255,255,255,0.1)]';
 
 type Etapa = { lat: number; lng: number; at: string; endereco?: string | null };
 
@@ -476,10 +476,17 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const painelAberto = Boolean(ficha) && (phase === 'watching' || phase === 'ended');
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-[#0B0C10] text-white" data-testid="live-track-client-view">
-      <header className="flex items-center gap-4 border-b border-[#C50000] bg-[#0B0C10] px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.08)]" data-testid="live-track-topo">
-        <img src={tmsegLogo} alt="TM SEG" className="h-20 w-20 rounded-2xl border border-[#C5C6C7]/35 bg-[#1F2833] object-contain p-1.5 shadow-[0_8px_18px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.18)]" />
-        <p className="text-sm font-black tracking-[0.18em] text-[#C5C6C7] sm:text-base">OPERAÇÕES ACOMPANHAMENTO VELADO</p>
+    <div className="flex min-h-[100dvh] flex-col bg-[#0B0C10] bg-[radial-gradient(ellipse_at_top,rgba(197,0,0,0.22),transparent_52%)] text-white" data-testid="live-track-client-view">
+      <header className="relative mx-3 mt-3 flex items-center gap-4 overflow-hidden rounded-b-[2rem] border border-[#C50000]/60 bg-gradient-to-r from-[#3a080c] via-[#0B0C10] to-[#14080b] px-5 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.14)]" data-testid="live-track-topo">
+        <span className="pointer-events-none absolute inset-x-10 -bottom-5 h-8 rounded-full bg-[#C50000]/50 blur-2xl" />
+        <img src={tmsegLogo} alt="TM SEG" className="relative h-20 w-20 rounded-2xl border border-[#C5C6C7]/40 bg-[#1F2833] object-contain p-1.5 shadow-[0_8px_18px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.18)]" />
+        <div className="relative min-w-0">
+          <p className="flex items-center gap-2 text-[10px] font-black tracking-[0.28em] text-[#E60000]">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#C50000] shadow-[0_0_12px_rgba(197,0,0,0.9)]" />
+            AO VIVO
+          </p>
+          <p className="text-sm font-black tracking-[0.18em] text-[#C5C6C7] drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] sm:text-base">OPERAÇÕES ACOMPANHAMENTO VELADO</p>
+        </div>
       </header>
       <div className={painelAberto
         ? 'grid flex-1 gap-3 px-3 py-3 lg:min-h-0 lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)_minmax(18rem,24rem)] lg:grid-rows-[minmax(0,1fr)]'
@@ -538,12 +545,21 @@ function ClientLiveMap({ credential }: { credential: string }) {
           </section>
         )}
       </div>
-      <footer className="mt-auto border-t border-[#C5C6C7]/25 bg-[#0B0C10] px-4 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" data-testid="live-track-rodape">
-        <p className="text-sm font-black tracking-[0.14em] text-white">Grupo TM SEG</p>
-        <p className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-[#C5C6C7]">
-          <a href="https://www.grupotmseg.com.br" target="_blank" rel="noopener noreferrer" className="underline decoration-[#C50000] underline-offset-2">www.grupotmseg.com.br</a>
-          <a href="https://instagram.com/grupotmseg" target="_blank" rel="noopener noreferrer" className="underline decoration-[#C50000] underline-offset-2">Instagram @grupotmseg</a>
-        </p>
+      <footer className="relative mt-auto bg-[#0B0C10] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" data-testid="live-track-rodape">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#C50000] to-transparent" />
+        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
+          <p className="text-sm font-black tracking-[0.22em] text-white">Grupo TM SEG</p>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#C5C6C7]">
+            <a href="https://www.grupotmseg.com.br" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-[#C5C6C7]/25 bg-[#1F2833]/80 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#C50000] hover:text-white">
+              <Globe size={14} className="text-[#C50000]" />
+              www.grupotmseg.com.br
+            </a>
+            <a href="https://instagram.com/grupotmseg" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-[#C5C6C7]/25 bg-[#1F2833]/80 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#C50000] hover:text-white">
+              <Instagram size={14} className="text-[#C50000]" />
+              @grupotmseg
+            </a>
+          </div>
+        </div>
       </footer>
     </div>
   );
