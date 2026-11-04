@@ -1,5 +1,15 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 04/11/2026 na `dev`, depois de "Fluxo aprovado, pode executar".
+
+Objetivo: a tabela nomeada da praça não cai na faixa genérica de outra região, e a GTM-9085 volta ao contrato de Palhoça.
+
+O bloco `Faixa KM Corrigida` em `lib/financialUtils.ts` conserva a tabela quando ela já cita a cidade da origem ou do destino. A troca dos 3× continua para franquia larga sem essa cidade. Nessa troca, a faixa escolhida é da mesma região; outra região só entra se não houver faixa local que cubra a distância.
+
+A GTM-9085, Intermodal, Torres, status Origem, não aprovada e sem ajuste manual, passou de receita R$ 1.057 para R$ 1.800. O custo gravado permanece R$ 1.200. Lucro R$ 600. Nenhuma outra OS foi regravada. O card de 04/11/2026 ficou com zero OS em prejuízo. As 27 missões do dia usam valor gravado.
+
+Testes: `npx tsx --test scripts/faixa-km-praca.test.ts scripts/auto-master-fallback.test.ts` — 7 passaram. `npm run build` terminou sem erro. Ainda não foi publicado.
+
 Executado em 03/11/2026. A reemissão de `TMSEG-20261103-162641-WVPS` respondia "Fatura não encontrada". A fatura existe, está pausada e com o erro do código antigo. A busca pedia `due_date` e `description`, que não existem em `financial_invoices`. Essas colunas saíram da consulta. O teste novo T18 passou. O T14 segue falhando como antes.
 
 Executado em 03/11/2026, depois da rejeição "Código de tributação inválido" na nota da TM Segurança. O Portal Nacional não aceita o 07930 no código de serviço. O payload Asaas desse serviço passa a enviar `11.05.01`, com código nacional `110501` e NBS `1.1802.30.00`. A troca vale também para escolta e Amazon quando o código resolvido é 07930, porque o portal recusa o código antigo. O 06298 não muda. ISS segue 2%, sem retenção. Testes da nota: 46 passaram. O T14 do reenvio em lote já falhava antes. Build sem erro. A nota já enviada com 07930 precisa ser reemitida depois do deploy.
@@ -13,6 +23,8 @@ Arquivos: `server/asaasService.ts`, `lib/billing/municipalServiceOptions.ts`, `l
 O municipal 07930 permanece. Escolta, código 06298 e a regra da Amazon não recebem 110501 nem NBS. A alíquota Asaas das três empresas passou a 2%, inclusive na escolta e no 06298, porque a taxa é da empresa e o pedido foi manter todos em 2% sem desconto na nota. A PlugNotas continua com a alíquota que já tinha. Não houve Focus, não houve banco e não houve publicação.
 
 O teste T14 de `scripts/nf-retry-individual.test.ts` já falha nesta `dev`: o Controle de Faturas não contém `/api/nf/retry-now?limit=10&reopen=1`. Esse arquivo não entrou nesta alteração.
+
+Executado em 30/10/2026 no banco `ajhmmjuewdsukecaimik`. O KM excedente da DHL Supply Chain estava zero desde a inclusão das rotas em 03/06/2026, não por uma alteração posterior. A tarifa saiu do próprio acionamento: R$ 6,90, R$ 7,30 na faixa de MG e R$ 7,35 no Sul. 222 linhas atualizadas. Nenhuma OS foi recalculada. Sem código novo.
 
 Executado em 30/10/2026 na `dev`. A aba Tabela de Preços voltou a mostrar as linhas de 2026, com a marca 2026 (ANTIGA). A cotação nova e a proposta comercial continuam na Tabela 2027. Arquivos: `components/ClientForm.tsx` e `scripts/trechos-proposta.test.ts`. Sem banco, sem motor da OS e sem função nova na Vercel.
 

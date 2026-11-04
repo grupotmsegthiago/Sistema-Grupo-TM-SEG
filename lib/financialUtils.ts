@@ -1261,20 +1261,41 @@ export const calculateMissionFinancials = (
         if (appliedClientTable && !isFranchiseN(appliedClientTable.operation_type || '')) {
             const selectedFranchiseKm = appliedClientTable.franchise_km || 0;
             if (selectedFranchiseKm > clientDistReference * 3 && clientDistReference > 0) {
-                const franchiseCandidates = clientTablesFiltered.filter(t => {
-                    if (!isFranchiseN(t.operation_type || '')) return false;
-                    if ((t.franchise_km || 0) < clientDistReference) return false;
-                    const op = normalize(t.operation_type || '');
-                    if (op.includes('EXCETO')) {
-                        if (originUF === 'MG' && op.includes('EXCETO MG')) return false;
-                        if (originUF === 'ES' && op.includes('EXCETO MG') && op.includes('ES')) return false;
-                    }
-                    return true;
+                const vinculoDaPraca = evaluateRegionalTableConstraint(appliedClientTable.operation_type || '', {
+                    originCity,
+                    destCity,
+                    originRegion: detectedRegion,
+                    originUF,
+                    originAddress: mission.origin || '',
                 });
-                if (franchiseCandidates.length > 0) {
-                    const bestFranchise = franchiseCandidates.sort((a, b) => (a.franchise_km || 0) - (b.franchise_km || 0))[0];
-                    appliedClientTable = bestFranchise;
-                    clientLog = `Faixa KM Corrigida → ${bestFranchise.operation_type}`;
+                // Tabela que já cita a cidade da viagem (Palhoça, Florianópolis etc.) é o contrato da praça.
+                // A troca dos 3× segue só quando a franquia larga não nomeia essa cidade.
+                const conservaPraca = !vinculoDaPraca.blocked && !!vinculoDaPraca.matchedCity;
+                if (!conservaPraca) {
+                    const gateDaFaixa = (operationType: string) => evaluateRegionalTableConstraint(operationType, {
+                        originCity,
+                        destCity,
+                        originRegion: detectedRegion,
+                        originUF,
+                        originAddress: mission.origin || '',
+                    });
+                    const franchiseCandidates = clientTablesFiltered.filter(t => {
+                        if (!isFranchiseN(t.operation_type || '')) return false;
+                        if ((t.franchise_km || 0) < clientDistReference) return false;
+                        const op = normalize(t.operation_type || '');
+                        if (op.includes('EXCETO')) {
+                            if (originUF === 'MG' && op.includes('EXCETO MG')) return false;
+                            if (originUF === 'ES' && op.includes('EXCETO MG') && op.includes('ES')) return false;
+                        }
+                        return true;
+                    });
+                    const daMesmaRegiao = franchiseCandidates.filter((t) => !gateDaFaixa(t.operation_type || '').blocked);
+                    const pool = daMesmaRegiao.length > 0 ? daMesmaRegiao : franchiseCandidates;
+                    if (pool.length > 0) {
+                        const bestFranchise = [...pool].sort((a, b) => (a.franchise_km || 0) - (b.franchise_km || 0))[0];
+                        appliedClientTable = bestFranchise;
+                        clientLog = `Faixa KM Corrigida → ${bestFranchise.operation_type}`;
+                    }
                 }
             }
         }
