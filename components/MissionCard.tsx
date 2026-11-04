@@ -23,9 +23,6 @@ import { useNotification } from '../lib/NotificationContext';
 import { applyRegionSuffix, calculateMissionFinancials, auditMissionFinancials, hasPersistedProviderCost, resolveDisplayedProviderCost } from '../lib/financialUtils';
 import { formatProviderName, resolveLocationDisplay, extractCoordinates } from '../lib/utils';
 import { isMissionOpsIncomplete, getMissionOpsMissingFields, isOpsAlertRecipient } from '../lib/missionOpsIncomplete';
-import LiveTrackPanel from './LiveTrackPanel';
-import MensagensAtivaIntermodal from './MensagensAtivaIntermodal';
-import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
 import { isVeladaFinalKmPending } from '../lib/veladaClosureAlert';
 import { isOsNegativeMarginLocked } from '../lib/osNegativeMarginLock';
 import { missionHasOccurrence, OCCURRENCE_BANNER } from '../lib/missionOccurrence';
@@ -36,6 +33,7 @@ import Vehicle3DCard from './os/Vehicle3DCard';
 import PainelSuspensoOs, { FichaOs } from './os/FichaSuspensaOs';
 import { resolverLogoCliente } from '../lib/os/visualCaminhao';
 import EscortCinematic3DCard from './os/EscortCinematic3DCard';
+import MensagensAtivaIntermodal from './MensagensAtivaIntermodal';
 import MapaNoturnoOs from './os/MapaNoturnoOs';
 import './os/cardOsPremium.css';
 
@@ -1051,6 +1049,7 @@ Qualquer dúvida, estamos a disposição.
                         onCobrar={!hideProviderInfo ? handleCopyChargeUpdate : undefined}
                         cobrado={chargeCopied}
                         testId={`button-cobrar-atualizacao-${mission.id}`}
+                        links={!hideProviderInfo ? <MensagensAtivaIntermodal mission={mission} /> : undefined}
                     />
                     </PainelSuspensoOs>
                 </div>
@@ -1196,8 +1195,6 @@ Qualquer dúvida, estamos a disposição.
                     <div className="grid grid-cols-3 gap-1.5 w-fit justify-items-center"><button onClick={() => onViewMap(mission)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 transition-all duration-200 hover:bg-blue-600 hover:text-white hover:shadow-sm active:scale-95" title="Abrir Status (Modal Interno)"><Map size={14} /></button>
                         {!hideProviderInfo && (<>
                         <button onClick={(e) => { e.stopPropagation(); if (mission.mapLink) window.open(mission.mapLink, '_blank'); else alert('Nenhuma localização salva nesta OS.'); }} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${mission.mapLink ? 'bg-orange-50 text-orange-600 border-orange-100 hover:bg-orange-600 hover:text-white' : 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed'}`} title={mission.mapLink ? "Abrir Última Localização (Google Maps)" : "Sem localização salva"}><MapPin size={14} /></button>
-                        {isVeladaMission(mission) && <LiveTrackPanel mission={mission} compact />}
-                        <MensagensAtivaIntermodal mission={mission} />
                         <button onClick={() => onUpdate(mission)} className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all duration-200 hover:shadow-sm active:scale-95 ${canEditMission ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white' : 'bg-gray-50 text-gray-400 border-gray-100 hover:bg-gray-200 hover:text-gray-600'}`} title={canEditMission ? "Editar Missão" : "Visualizar Detalhes"}>{canEditMission ? <Pencil size={14}/> : <Eye size={14}/>}</button>
                         <button type="button" onClick={() => setOccurrenceOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-orange-50 text-orange-700 border border-orange-200 transition-all duration-200 hover:bg-orange-600 hover:text-white hover:shadow-sm active:scale-95" title="Registrar ocorrência desta OS" data-testid={`button-occurrence-${mission.id}`}><AlertTriangle size={14} /></button>
                         <MissionHandoverNoteButton missionId={mission.id} note={handoverNote} onSaved={(saved) => onHandoverNoteSaved?.(saved)} />

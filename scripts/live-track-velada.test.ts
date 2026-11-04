@@ -130,7 +130,12 @@ test('LGPD tem controlador, finalidade e retenção', () => {
 
 test('botão gerar link só existe no fluxo velada', () => {
   const card = fs.readFileSync('components/MissionCard.tsx', 'utf8');
-  assert.match(card, /isVeladaMission\(mission\) && <LiveTrackPanel/);
+  assert.match(card, /MensagensAtivaIntermodal/);
+  assert.doesNotMatch(card, /LiveTrackPanel/);
+  const botoes = fs.readFileSync('components/MensagensAtivaIntermodal.tsx', 'utf8');
+  assert.match(botoes, /botoesWhatsAppDaOs/);
+  const regra = fs.readFileSync('lib/ativaIntermodalWhatsApp.ts', 'utf8');
+  assert.match(regra, /isVeladaMission/);
   const modal = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
   assert.match(modal, /LiveTrackPanel/);
   const panel = fs.readFileSync('components/LiveTrackPanel.tsx', 'utf8');
@@ -181,6 +186,9 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /BANDEIRA_DESTINO/);
   assert.match(page, /live-track-ultima/);
   assert.match(page, /live-track-progresso/);
+  assert.match(page, /DirectionsService/);
+  assert.match(page, /TravelMode.DRIVING/);
+  assert.doesNotMatch(page, /em linha reta/);
   assert.match(page, /GPS_VERDE/);
   assert.match(page, /live-track-timeline/);
   assert.match(page, /AGENTE LOGADO/);

@@ -39,6 +39,23 @@ function textoDistancia(metros: number): string {
   return `${km} km ${resto} m`;
 }
 
+type RotaRodoviaria = {
+  totalMetros: number | null;
+  faltaMetros: number | null;
+  duracaoSegundos: number | null;
+  erro: boolean;
+};
+
+function pedirDirecao(origem: Ponto, destino: Ponto): Promise<google.maps.DirectionsResult | null> {
+  return new Promise((resolve) => {
+    const svc = new google.maps.DirectionsService();
+    svc.route(
+      { origin: origem, destination: destino, travelMode: google.maps.TravelMode.DRIVING },
+      (result, status) => resolve(status === google.maps.DirectionsStatus.OK && result ? result : null),
+    );
+  });
+}
+
 function textoPrevisao(segundos: number): string {
   const total = Math.max(0, Math.round(segundos));
   const h = Math.floor(total / 3600);
@@ -103,6 +120,7 @@ function LiveMapBox({
   enderecoAtual,
   quando,
   alto,
+  onRota,
 }: {
   ponto: Ponto | null;
   trilha: PontoTrilha[];
@@ -113,6 +131,7 @@ function LiveMapBox({
   enderecoAtual?: string;
   quando?: string | null;
   alto?: boolean;
+  onRota?: (parte: Partial<RotaRodoviaria>) => void;
 }) {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [mapa, setMapa] = useState<google.maps.Map | null>(null);
@@ -120,6 +139,13 @@ function LiveMapBox({
   const [enderecoPonto, setEnderecoPonto] = useState('');
   const centroInicial = useRef<Ponto>({ lat: -15.78, lng: -47.93 });
   const cameraPronta = useRef(false);
+  const onRotaRef = useRef(onRota);
+  const rendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+  const rotaPedida = useRef('');
+  const rotaSeq = useRef(0);
+  const faltaPedida = useRef<Ponto | null>(null);
+  const faltaSeq = useRef(0);
+  onRotaRef.current = onRota;
   const iconeGps = isLoaded
     ? { url: GPS_VERDE, scaledSize: new google.maps.Size(42, 42), anchor: new google.maps.Point(21, 21) }
     : undefined;
@@ -155,6 +181,55 @@ function LiveMapBox({
   }, [selecionado, ponto, enderecoAtual]);
 
   useEffect(() => {
+    if (!mapa || !modoCliente || !origem || !destino) return;
+    const chave = `${origem.lat.toFixed(4)},${origem.lng.toFixed(4)}>${destino.lat.toFixed(4)},${destino.lng.toFixed(4)}`;
+    if (rotaPedida.current === chave) return;
+    rotaPedida.current = chave;
+    const seq = ++rotaSeq.current;
+    void pedirDirecao(origem, destino).then((result) => {
+      if (rotaSeq.current !== seq) return;
+      if (!result) {
+        onRotaRef.current?.({ erro: true });
+        return;
+      }
+      if (!rendererRef.current) {
+        rendererRef.current = new google.maps.DirectionsRenderer({
+          suppressMarkers: true,
+          preserveViewport: true,
+          polylineOptions: { strokeColor: '#ef4444', strokeWeight: 4 },
+        });
+      }
+      rendererRef.current.setMap(mapa);
+      rendererRef.current.setDirections(result);
+      const total = (result.routes[0]?.legs || []).reduce((soma, trecho) => soma + (trecho.distance?.value || 0), 0);
+      onRotaRef.current?.({ totalMetros: total, erro: false });
+    });
+  }, [mapa, modoCliente, origem, destino]);
+
+  useEffect(() => {
+    if (!modoCliente || !ponto || !destino) return;
+    const anterior = faltaPedida.current;
+    if (anterior && haversineMeters(anterior, ponto) < 200) return;
+    faltaPedida.current = { lat: ponto.lat, lng: ponto.lng };
+    const seq = ++faltaSeq.current;
+    void pedirDirecao(ponto, destino).then((result) => {
+      if (faltaSeq.current !== seq) return;
+      const trecho = result?.routes[0]?.legs[0];
+      if (!trecho?.distance || trecho.duration?.value == null) {
+        onRotaRef.current?.({ erro: true });
+        return;
+      }
+      onRotaRef.current?.({
+        faltaMetros: trecho.distance.value,
+        duracaoSegundos: trecho.duration.value,
+        erro: false,
+      });
+    });
+  }, [modoCliente, ponto, destino]);
+
+  useEffect(() => () => { rendererRef.current?.setMap(null); }, []);
+
+  useEffect(() => {
     if (!mapa || modoCliente) return;
     enquadrarMapa(mapa, origem, destino, ponto, trilha);
   }, [mapa, modoCliente, origem, destino, ponto, trilha]);
@@ -185,9 +260,6 @@ function LiveMapBox({
         onLoad={(map) => { setMapa(map); if (!modoCliente) enquadrarMapa(map, origem, destino, ponto, trilha); }}
         options={{ disableDefaultUI: true, zoomControl: true }}
       >
-        {modoCliente && [origem, ponto, destino].filter(Boolean).length > 1 ? (
-          <Polyline path={[origem, ponto, destino].filter((p): p is Ponto => !!p)} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} />
-        ) : null}
         {!modoCliente && trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
         {pins.map((p, i) => (
           <Marker key={`${p.at || i}-${p.lat}-${p.lng}`} position={p} icon={iconePosicao} zIndex={2} title="Posição do agente" onClick={() => setSelecionado(p)} />
@@ -230,32 +302,33 @@ function AndamentoCliente({
   origem,
   destino,
   ponto,
-  velocidade,
+  rota,
 }: {
   origem: Ponto | null;
   destino: Ponto | null;
   ponto: Ponto | null;
-  velocidade: number | null;
+  rota: RotaRodoviaria;
 }) {
-  const falta = origem && destino && ponto ? haversineMeters(ponto, destino) : null;
-  const andou = origem && destino && ponto ? haversineMeters(origem, ponto) : null;
-  const total = falta != null && andou != null ? falta + andou : 0;
-  const pct = total > 0 && andou != null ? Math.max(0, Math.min(100, Math.round((andou / total) * 100))) : 0;
-  const previsao = falta != null && velocidade && velocidade > 0.5 ? textoPrevisao(falta / velocidade) : null;
+  const falta = rota.faltaMetros;
+  const total = rota.totalMetros;
+  const andou = falta != null && total != null ? Math.max(0, total - falta) : null;
+  const pct = total && andou != null && total > 0 ? Math.max(0, Math.min(100, Math.round((andou / total) * 100))) : 0;
+  const previsao = rota.duracaoSegundos != null ? textoPrevisao(rota.duracaoSegundos) : null;
+  const texto = !origem || !destino || !ponto
+    ? 'Aguardando origem, destino e a posição do agente.'
+    : falta == null
+      ? (rota.erro ? 'A rota pelas ruas não foi encontrada.' : 'Calculando a rota pelas ruas.')
+      : `Faltam ${textoDistancia(falta)}. ${previsao ? `Previsão: ${previsao}` : 'Previsão indisponível.'}`;
   return (
     <div className="pt-3 border-t border-white/10" data-testid="live-track-progresso">
       <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wide text-slate-300">
         <span>Andamento</span>
-        <span>{origem && destino && ponto ? `${pct}% concluído` : '—'}</span>
+        <span>{falta != null && total != null ? `${pct}% concluído` : '—'}</span>
       </div>
       <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
         <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
       </div>
-      <p className="mt-2 text-xs text-slate-200">
-        {falta == null
-          ? 'Aguardando origem, destino e a posição do agente.'
-          : `Faltam ${textoDistancia(falta)} em linha reta. ${previsao ? `Previsão: ${previsao}` : 'Previsão aguardando a velocidade do GPS.'}`}
-      </p>
+      <p className="mt-2 text-xs text-slate-200">{texto}</p>
     </div>
   );
 }
@@ -342,7 +415,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const [etapas, setEtapas] = useState<Etapa[]>([]);
   const [endereco, setEndereco] = useState('');
   const [quando, setQuando] = useState<string | null>(null);
-  const [velocidade, setVelocidade] = useState<number | null>(null);
+  const [rota, setRota] = useState<RotaRodoviaria>({ totalMetros: null, faltaMetros: null, duracaoSegundos: null, erro: false });
   const [statusRastreio, setStatusRastreio] = useState('');
   const [vistoEm, setVistoEm] = useState<string | null>(null);
 
@@ -368,8 +441,6 @@ function ClientLiveMap({ credential }: { credential: string }) {
       setPonto(ultima);
       setEndereco(typeof j.position?.address === 'string' ? j.position.address : '');
       setQuando(j.position?.at ? String(j.position.at) : (pts.length ? pts[pts.length - 1].at || null : null));
-      const vel = Number(j.position?.speed);
-      setVelocidade(Number.isFinite(vel) && vel > 0 ? vel : null);
       setEtapas(Array.isArray(j.etapas)
         ? j.etapas.map((e: any) => ({ lat: Number(e.lat), lng: Number(e.lng), at: String(e.at || ''), endereco: e.endereco ? String(e.endereco) : null })).filter((e: Etapa) => Number.isFinite(e.lat) && Number.isFinite(e.lng) && e.at)
         : []);
@@ -425,13 +496,13 @@ function ClientLiveMap({ credential }: { credential: string }) {
               <div className="border-t border-white/10 pt-3" data-testid="live-track-ultima">
                 <p><span className="text-slate-400">Última posição: </span>{endereco || (ponto ? `${ponto.lat.toFixed(5)}, ${ponto.lng.toFixed(5)}` : 'Aguardando o agente.')}</p>
                 <p className="mt-1"><span className="text-slate-400">Data/Hora: </span>{quando ? formatDateTimeBR(quando) : 'Sem horário gravado'}</p>
-                <AndamentoCliente origem={origem} destino={destino} ponto={ponto} velocidade={velocidade} />
+                <AndamentoCliente origem={origem} destino={destino} ponto={ponto} rota={rota} />
               </div>
             )}
           </div>
         )}
         {(phase === 'watching' || phase === 'ended') && (
-          <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={tmsegLogo} modoCliente alto enderecoAtual={endereco} quando={quando} />
+          <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={tmsegLogo} modoCliente alto enderecoAtual={endereco} quando={quando} onRota={(parte) => setRota((atual) => ({ ...atual, ...parte }))} />
         )}
       </main>
       {ficha && (phase === 'watching' || phase === 'ended') && (

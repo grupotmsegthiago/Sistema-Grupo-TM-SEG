@@ -18,6 +18,7 @@ interface Props {
   onCobrar?: () => void;
   cobrado?: boolean;
   testId?: string;
+  links?: React.ReactNode;
 }
 
 /** Cena ilustrativa genérica. Não representa os agentes cadastrados. */
@@ -32,6 +33,7 @@ const EscortCinematic3DCard: React.FC<Props> = ({
   onCobrar,
   cobrado,
   testId,
+  links,
 }) => {
   const cenaConfirmada = Boolean(tipo) && !velada;
   const foto = velada
@@ -67,6 +69,11 @@ const EscortCinematic3DCard: React.FC<Props> = ({
             </span>
           ) : null}
         </div>
+        {links ? (
+          <div className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-1 max-w-[46%]">
+            {links}
+          </div>
+        ) : null}
       </div>
       {agentes.length > 0 ? (
         <div className="os-escolta-agentes">

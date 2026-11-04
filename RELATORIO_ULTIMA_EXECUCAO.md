@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: a rota do cliente segue as ruas, e os botões de link saem da coluna de ícones e vão para a foto.
+
+No mapa do cliente, a linha reta foi trocada pela rota de carro do Google, da origem ao destino. O painel mostra a distância e o tempo que ainda faltam a partir da posição do agente. Esse trecho é pedido de novo quando o agente anda cerca de 200 metros.
+
+No card, Gerar link do agente e Gerar link do cliente ficam no canto inferior direito da foto da escolta. O clique copia a mensagem de WhatsApp e o rótulo passa a Link agente - gerado ou Link cliente - gerado. Com o mouse em cima, oferece copiar de novo. O parceiro ATIVA só entra na velada desse fornecedor com cliente Intermodal. Fora da velada os botões não aparecem. O motor da OS não mudou. Sem tabela nova. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: cada posição do agente fica no mapa com o pino vermelho, e a timeline usa os mesmos ícones.
 
 O pino não tem fundo. Um novo só entra quando o agente anda 25 metros ou mais. O anterior permanece até o fim da missão. O clique abre a ficha com o mapa daquele ponto, latitude, longitude, data e hora de Brasília e o endereço. A origem usa o pino de partida, o ponto atual o GPS verde e o destino a bandeira. Esses três, mais o pino da posição, são os ícones da timeline. O motor da OS não mudou. Sem tabela nova. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

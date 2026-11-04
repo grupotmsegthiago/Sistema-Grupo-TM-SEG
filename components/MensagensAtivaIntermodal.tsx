@@ -31,7 +31,8 @@ async function linksDaMissao(missionId: string): Promise<{ url: string; clientUr
 
 export default function MensagensAtivaIntermodal({ mission }: { mission: Mission }) {
   const [busy, setBusy] = useState<Qual | null>(null);
-  const [copiado, setCopiado] = useState<Qual | null>(null);
+  const [gerado, setGerado] = useState<Partial<Record<Qual, boolean>>>({});
+  const [sobre, setSobre] = useState<Qual | null>(null);
   const quais = botoesWhatsAppDaOs(mission);
   if (!quais.agente && !quais.cliente && !quais.parceiro) return null;
 
@@ -61,30 +62,39 @@ export default function MensagensAtivaIntermodal({ mission }: { mission: Mission
         alert('Não foi possível copiar. Tente novamente.');
         return;
       }
-      setCopiado(qual);
-      setTimeout(() => setCopiado(null), 2000);
+      setGerado((atual) => ({ ...atual, [qual]: true }));
     } finally {
       setBusy(null);
     }
   };
 
-  const botao = (qual: Qual, rotulo: string, classe: string) => (
+  const rotulo = (qual: Qual, inicial: string, pronto: string) => {
+    if (busy === qual) return 'Copiando';
+    if (gerado[qual] && sobre === qual) return 'Copiar de novo';
+    if (gerado[qual]) return pronto;
+    return inicial;
+  };
+
+  const botao = (qual: Qual, inicial: string, pronto: string) => (
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); void copiar(qual); }}
+      onMouseEnter={() => setSobre(qual)}
+      onMouseLeave={() => setSobre((atual) => atual === qual ? null : atual)}
       disabled={busy !== null}
+      title={gerado[qual] ? 'Copiar a mensagem de novo' : inicial}
       data-testid={`btn-wa-ativa-${qual}-${mission.id}`}
-      className={`px-2 py-1 text-white text-[9px] font-bold rounded-md leading-tight ${classe}`}
+      className="px-2 py-1 rounded-md bg-slate-950/80 text-white text-[8px] font-black uppercase leading-tight shadow-lg border border-white/25 backdrop-blur-sm"
     >
-      {busy === qual ? <Loader2 size={12} className="animate-spin mx-auto" /> : copiado === qual ? 'Copiado' : rotulo}
+      {busy === qual ? <Loader2 size={11} className="animate-spin mx-auto" /> : rotulo(qual, inicial, pronto)}
     </button>
   );
 
   return (
-    <div className="col-span-3 flex flex-wrap gap-1 w-full" onClick={(e) => e.stopPropagation()} data-testid={`wa-ativa-intermodal-${mission.id}`}>
-      {quais.agente && botao('agente', 'Copiar Agente', 'bg-green-600 hover:bg-green-700')}
-      {quais.cliente && botao('cliente', 'Copiar Cliente', 'bg-blue-600 hover:bg-blue-700')}
-      {quais.parceiro && botao('parceiro', 'Copiar Parceiro ATIVA', 'bg-emerald-700 hover:bg-emerald-800')}
+    <div className="flex flex-col items-end gap-1" onClick={(e) => e.stopPropagation()} data-testid={`wa-ativa-intermodal-${mission.id}`}>
+      {quais.agente && botao('agente', 'Gerar link do agente', 'Link agente - gerado')}
+      {quais.cliente && botao('cliente', 'Gerar link do cliente', 'Link cliente - gerado')}
+      {quais.parceiro && botao('parceiro', 'Gerar link parceiro', 'Link parceiro - gerado')}
     </div>
   );
 }

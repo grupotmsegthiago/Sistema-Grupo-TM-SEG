@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   botoesWhatsAppDaOs,
   textoAgenteAtiva,
@@ -45,4 +46,14 @@ test('textos saem no modelo do WhatsApp com negrito e o link real', () => {
   assert.match(cliente, /rastreio\?c=xyz/);
   assert.doesNotMatch(cliente, /\/cliente\/rastreio\//);
   assert.match(cliente, /⏱️ \*Status Atual:\* Aguardando sinal do agente \/ Trânsito monitorado/);
+});
+
+test('os links ficam na foto e somem da coluna de ícones', () => {
+  const card = fs.readFileSync('components/MissionCard.tsx', 'utf8');
+  const botoes = fs.readFileSync('components/MensagensAtivaIntermodal.tsx', 'utf8');
+  assert.match(card, /links=\{!hideProviderInfo \? <MensagensAtivaIntermodal/);
+  assert.doesNotMatch(card, /LiveTrackPanel/);
+  assert.match(botoes, /Gerar link do agente/);
+  assert.match(botoes, /Link agente - gerado/);
+  assert.match(botoes, /Copiar de novo/);
 });
