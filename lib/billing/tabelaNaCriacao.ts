@@ -6,7 +6,7 @@
 import { calculateMissionFinancials } from '../financialUtils';
 import { resolveStoredProviderToll } from '../toll/clientTollBilling';
 import { computeRouteDistanceKm } from '../routeDistance';
-import { osEstaNaRota, quilometragemRegistrada, resolverSugestaoTop1, resolverSugestaoUltimaAprovada, rotaDaOs, type OsRotaAprovada, type SugestaoTabelas } from '../rotaAprovadaTabela';
+import { curingaDaCidade, osEstaNaRota, quilometragemRegistrada, resolverSugestaoTop1, resolverSugestaoUltimaAprovada, rotaDaOs, type OsRotaAprovada, type SugestaoTabelas } from '../rotaAprovadaTabela';
 
 type Consulta = { from: (tabela: string) => any };
 
@@ -28,6 +28,15 @@ function lerIds(snapshot: unknown): { clientTableId: string | null; providerTabl
 }
 
 const COLUNAS_HISTORICO = 'id,origin,destination,client,provider,snapshot_data,created_at,total_distance,start_km,end_km';
+
+/** O LIKE da cidade ignora acento. Rua, número e bairro não entram no filtro. */
+function likeDaCidade(cidade: string): string {
+  return `%${curingaDaCidade(cidade)}%`;
+}
+
+function soAprovada(row: { billing_approved?: boolean | null }): boolean {
+  return row?.billing_approved === true;
+}
 
 function mapearHistorico(data: any[]): OsRotaAprovada[] {
   return data.map((row: any) => {
@@ -159,8 +168,8 @@ export async function fetchTopTabelasSugestao(
     .select(`${COLUNAS_HISTORICO},billing_approved`)
     .eq('billing_approved', true)
     .ilike('client', `%${token}%`)
-    .ilike('origin', `%${rota.origem}%`)
-    .ilike('destination', `%${rota.destino}%`)
+    .ilike('origin', likeDaCidade(rota.origem))
+    .ilike('destination', likeDaCidade(rota.destino))
     .not('snapshot_data', 'is', null)
     .order('created_at', { ascending: false })
     .limit(80);
@@ -169,7 +178,7 @@ export async function fetchTopTabelasSugestao(
   if (signal?.aborted) return SUGESTAO_VAZIA;
   if (error || !Array.isArray(data)) return SUGESTAO_VAZIA;
 
-  const historico = mapearHistorico(data.filter((row: { billing_approved?: boolean }) => row?.billing_approved === true))
+  const historico = mapearHistorico(data.filter(soAprovada))
     .filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino))
     .slice(0, 10);
   return resolverSugestaoTop1({
@@ -206,8 +215,8 @@ export async function fetchUltimaTabelaAprovada(
     .select(`${COLUNAS_HISTORICO},billing_approved,mission_type,toll_value,toll_value_provider`)
     .eq('billing_approved', true)
     .ilike('client', `%${token}%`)
-    .ilike('origin', `%${rota.origem}%`)
-    .ilike('destination', `%${rota.destino}%`)
+    .ilike('origin', likeDaCidade(rota.origem))
+    .ilike('destination', likeDaCidade(rota.destino))
     .not('snapshot_data', 'is', null)
     .order('created_at', { ascending: false })
     .limit(80);
@@ -216,7 +225,7 @@ export async function fetchUltimaTabelaAprovada(
   if (signal?.aborted) return SUGESTAO_VAZIA;
   if (error || !Array.isArray(data)) return SUGESTAO_VAZIA;
 
-  const historico = mapearHistorico(data.filter((row: { billing_approved?: boolean }) => row?.billing_approved === true))
+  const historico = mapearHistorico(data.filter(soAprovada))
     .filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino));
   return resolverSugestaoUltimaAprovada({
     cliente: clienteId,

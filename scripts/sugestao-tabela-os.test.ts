@@ -286,3 +286,48 @@ test('consulta da última aprovada ignora tipo diferente e OS não aprovada', as
   assert.equal(escolha.pedagioReal, 48.5);
   assert.equal(consulta.filtros.some((item) => item[0] === 'eq' && item[1] === 'billing_approved' && item[2] === true), true);
 });
+
+test('rua e número diferentes ainda acham a cidade, e a OS para conferir fica de fora', async () => {
+  const linhas = [
+    {
+      id: 'GTM-CONFERIR',
+      client: 'DHL SUPPLY CHAIN (BRASIL) LTDA',
+      origin: 'RUA NOVA, 50, FLORIANÓPOLIS - SC',
+      destination: 'AV. NOVA, 80, GUARULHOS - SP',
+      provider: 'TORRES VIGILANCIA PATRIMONIAL LTDA',
+      mission_type: 'Caracterizada',
+      created_at: '2026-11-04T20:00:00.000Z',
+      billing_approved: false,
+      toll_value_provider: 10,
+      snapshot_data: { clientTableId: 'tab-conferir', providerTableId: 'custo-conferir' },
+    },
+    {
+      id: 'GTM-FLN',
+      client: 'DHL SUPPLY CHAIN (BRASIL) LTDA',
+      origin: 'RUA A, 10, FLORIANÓPOLIS - SC',
+      destination: 'AV. B, 20, GUARULHOS - SP',
+      provider: 'TORRES VIGILANCIA PATRIMONIAL LTDA',
+      mission_type: 'Caracterizada',
+      created_at: '2026-11-01T12:00:00.000Z',
+      billing_approved: true,
+      toll_value_provider: 120,
+      snapshot_data: { clientTableId: 'tab-fln', providerTableId: 'custo-fln' },
+    },
+  ];
+  const consulta = consultaFalsa(linhas);
+  const escolha = await fetchUltimaTabelaAprovada(
+    consulta.sb,
+    'DHL SUPPLY CHAIN (BRASIL) LTDA',
+    'TORRES VIGILANCIA PATRIMONIAL LTDA',
+    'RODOVIA BR-101, 1000, FLORIANÓPOLIS, SC',
+    'RUA Y, 200, GUARULHOS, SP',
+    'Caracterizada',
+  );
+  assert.equal(escolha.tabelaClienteSugeridaId, 'tab-fln');
+  assert.equal(escolha.tabelaFornecedorSugeridaId, 'custo-fln');
+  assert.equal(escolha.osOrigemId, 'GTM-FLN');
+  assert.equal(escolha.pedagioReal, 120);
+  const origemFiltro = consulta.filtros.find((item) => item[0] === 'ilike' && item[1] === 'origin');
+  assert.match(String(origemFiltro?.[2]), /_/);
+  assert.equal(consulta.filtros.some((item) => item[0] === 'eq' && item[1] === 'billing_approved' && item[2] === true), true);
+});

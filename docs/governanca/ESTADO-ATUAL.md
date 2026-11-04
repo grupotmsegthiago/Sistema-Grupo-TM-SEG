@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-11-04. Na Nova OS, a tabela do cliente, a do fornecedor e o pedágio real saem da última OS aprovada da mesma cidade, do mesmo tipo (Velada ou Caracterizada) e, quando o fornecedor já está escolhido, do mesmo par. O campo recebe o valor real (`toll_value_provider`), e o acréscimo do cliente continua na gravação. O QualP não substitui esse valor. A troca no seletor ou no pedágio continua livre. Portal e modal financeiro continuam na tabela mais repetida das 10 aprovadas. O motor da OS não mudou. Ainda não foi publicado.
+Atualizado em 2026-11-04. Na Nova OS, a tabela e o pedágio saem só da última OS com `billing_approved = true` da mesma cidade, do mesmo tipo e, com fornecedor, do mesmo par. OS para conferir não entra. Rua, número e acento não derrubam a cidade. A lista de rotas cadastradas continua filtrada pela cidade quando o endereço muda. O motor da OS não mudou. Ainda não foi publicado.
 
 Atualizado em 2026-11-04. O cancelamento no Controle de NF passa a fechar o título em Contas a Receber, o boleto no Asaas e a NFS-e autorizada. Fatura paga não entra. O valor original do título permanece; o em aberto zera. Four `TMSEG-20261002-172535-MKAM` e Sankyu `TMSEG-20261002-171920-LH6K` não foram reprocessadas. O motor da OS não mudou. Ainda não foi publicado.
 

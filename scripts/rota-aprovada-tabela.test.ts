@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   algumaTabelaCobreCidade,
   cidadeNoEndereco,
+  curingaDaCidade,
   escolherTabelaProxima,
   escolherTabelasDaRotaAprovada,
   osEstaNaRota,
@@ -12,6 +13,16 @@ import {
 
 const origemBelem = 'PASSAGEM BARTOLOMEU DE GUSMÃO, 625 - CURIÓ-UTINGA, BELÉM - PA, 66610-190';
 const destinoBelem = 'ROD. ENG. AUGUSTO MEIRA FILHO, PARÁ, 66923-120';
+
+test('curinga da cidade aceita o acento no meio do nome', () => {
+  const padrao = curingaDaCidade('FLORIANÓPOLIS');
+  assert.equal(padrao.includes('_'), true);
+  assert.notEqual(padrao, 'FLORIANOPOLIS');
+  const re = new RegExp(padrao.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/_/g, '.'));
+  assert.equal(re.test('FLORIANÓPOLIS'), true);
+  assert.equal(re.test('FLORIANOPOLIS'), true);
+  assert.equal(re.test('GUARULHOS'), false);
+});
 
 test('endereço completo de Guarulhos para Serra continua na mesma rota', () => {
   const origem = 'AV. JÚLIA GAIOLI, 740 - ÁGUA CHATA, GUARULHOS - SP, 07251-500';

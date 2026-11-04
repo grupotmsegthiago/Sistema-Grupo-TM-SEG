@@ -99,7 +99,7 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 ## Nova OS: a última missão aprovada da rota preenche as tabelas
 
-Executado em 04/11/2026 na `dev`, com "Pode seguir com o ajuste" e o pedido de trazer o pedágio da mesma OS. A Nova OS herda as duas tabelas e o valor real do pedágio da OS aprovada mais recente da mesma cidade, do mesmo tipo e, com fornecedor, do mesmo par. O campo usa `toll_value_provider`, para o acréscimo do cliente não entrar duas vezes. Sem pedágio gravado, o QualP segue. A troca manual segura a tabela até cliente, fornecedor, origem, destino ou tipo mudarem. O id do formulário segue no snapshot. Portal e modal financeiro continuam na frequência das 10. O motor `calculateMissionFinancials` não foi alterado. Ainda não foi publicado.
+Executado em 04/11/2026 na `dev`, depois do "sim" para corrigir a troca de origem e destino. A herança continua só em `billing_approved = true`: OS para conferir fica de fora. A cidade entra no LIKE com curinga de vogal, então Florianópolis com ou sem acento, e com rua ou número diferentes, acha a mesma OS. A lista de rotas cadastradas filtra pela cidade e não volta ao catálogo inteiro. Enquanto o cálculo da rota anterior termina, o endereço novo digitado permanece. Portal e modal financeiro continuam na frequência das 10. O motor `calculateMissionFinancials` não foi alterado. Ainda não foi publicado.
 
 ### Objetivo da Tarefa
 

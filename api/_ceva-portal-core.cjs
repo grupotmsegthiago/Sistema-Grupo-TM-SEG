@@ -4186,6 +4186,11 @@ var init_routeDistance = __esm({
 function normalizar(valor) {
   return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 }
+function curingaDaCidade(cidade) {
+  const base = normalizar(cidade);
+  if (!base) return "";
+  return base.replace(/[AEIOU]/g, "_");
+}
 function pedacoDeCidade(pedaco) {
   const limpo = pedaco.replace(/\s*-\s*[A-Z]{2}$/, "").trim();
   if (limpo.length <= 3 || limpo.length > 40 || /^\d/.test(limpo) || PREFIXO_LOGRADOURO.test(limpo) || NOME_DE_ESTADO.has(limpo)) return "";
@@ -4354,6 +4359,12 @@ function lerIds(snapshot) {
     providerTableId: obj.providerTableId ? String(obj.providerTableId) : null
   };
 }
+function likeDaCidade(cidade) {
+  return `%${curingaDaCidade(cidade)}%`;
+}
+function soAprovada(row) {
+  return row?.billing_approved === true;
+}
 function mapearHistorico(data) {
   return data.map((row) => {
     const ids = lerIds(row.snapshot_data);
@@ -4408,12 +4419,12 @@ async function fetchTopTabelasSugestao(sb, clienteId, fornecedorId, rotaOrigem, 
   const rota = rotaDaOs(rotaOrigem, rotaDestino);
   const token = tokenDoCliente(clienteId);
   if (!rota || token.length < 4 || !String(rotaOrigem || "").trim()) return SUGESTAO_VAZIA;
-  let consulta = sb.from("missions").select(`${COLUNAS_HISTORICO},billing_approved`).eq("billing_approved", true).ilike("client", `%${token}%`).ilike("origin", `%${rota.origem}%`).ilike("destination", `%${rota.destino}%`).not("snapshot_data", "is", null).order("created_at", { ascending: false }).limit(80);
+  let consulta = sb.from("missions").select(`${COLUNAS_HISTORICO},billing_approved`).eq("billing_approved", true).ilike("client", `%${token}%`).ilike("origin", likeDaCidade(rota.origem)).ilike("destination", likeDaCidade(rota.destino)).not("snapshot_data", "is", null).order("created_at", { ascending: false }).limit(80);
   if (signal && typeof consulta.abortSignal === "function") consulta = consulta.abortSignal(signal);
   const { data, error } = await consulta;
   if (signal?.aborted) return SUGESTAO_VAZIA;
   if (error || !Array.isArray(data)) return SUGESTAO_VAZIA;
-  const historico = mapearHistorico(data.filter((row) => row?.billing_approved === true)).filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino)).slice(0, 10);
+  const historico = mapearHistorico(data.filter(soAprovada)).filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino)).slice(0, 10);
   return resolverSugestaoTop1({
     cliente: clienteId,
     fornecedor: fornecedorId,

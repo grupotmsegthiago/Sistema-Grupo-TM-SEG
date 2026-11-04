@@ -24,6 +24,7 @@ import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFit
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { destinoBloqueiaSugestao, SEM_TABELA_CUSTO_SUGERIDA } from '../lib/billing/tabelaNaCriacao';
+import { cidadeNoEndereco, enderecoNaCidade } from '../lib/rotaAprovadaTabela';
 import { calcularValoresOficiais, janelaZeradaNaCriacao } from '../lib/billing/sincronizarValoresOs';
 import { deveAplicarSugestao, useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
@@ -1219,13 +1220,19 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               cost = oficial.custoServico;
           }
 
-          setFormData(prev => ({
+          setFormData(prev => {
+              const mesmaOrigem = normalizeStr(prev.origin) === normalizeStr(route.origin);
+              const mesmoDestino = normalizeStr(prev.destination) === normalizeStr(route.destination);
+              return {
               ...prev, provider: activeProvider,
               revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
               costValue: manualOverrides.cost ? prev.costValue : cost.toFixed(2),
-              totalDistance: displayDist.toString(), origin: route.origin, destination: finalDestination,
+              totalDistance: displayDist.toString(),
+              origin: mesmaOrigem ? route.origin : prev.origin,
+              destination: mesmoDestino ? finalDestination : prev.destination,
               estimatedTime: isSpecialRuleActive ? (currentFlags.vtc02h ? '2 horas' : isLogitech ? '3 horas' : '4 horas') : (googleDurationMin ? (googleDurationMin < 60 ? `${googleDurationMin} min` : `${Math.floor(googleDurationMin / 60)}h${googleDurationMin % 60 > 0 ? `${googleDurationMin % 60}min` : ''}`) : `${Math.max(2, Math.ceil(realDist / 45))} horas`)
-          }));
+              };
+          });
           setCalcDetails(details.join(' | '));
           if (revTable) setManualRevenueTableId(revTable.id.toString());
           if (cstTable) setManualCostTableId(cstTable.id.toString());
@@ -1804,22 +1811,37 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
   const routesFilteredByOrigin = (() => {
       if (!formData.origin) return clientRoutes;
-      const parts = formData.origin.split(',').map(p => p.trim());
-      const candidates: string[] = [];
-      for (const part of parts) {
-          const clean = normalizeStr(part).replace(/\d+/g, '').replace(/-/g, ' ').trim();
-          if (clean.length >= 3 && !clean.match(/^(SP|RJ|MG|PR|SC|RS|BA|CE|PE|GO|MT|MS|ES|DF|PA|AM|MA|PI|RN|PB|AL|SE|TO|RO|RR|AP|AC|BRASIL|BRAZIL)$/))
-              candidates.push(clean);
+      const cidadeOrigem = cidadeNoEndereco(formData.origin);
+      const ufOrigem = extractUF(formData.origin);
+      let originPool = clientRoutes;
+      if (cidadeOrigem) {
+          originPool = clientRoutes.filter((rota) => enderecoNaCidade(rota.origin || '', cidadeOrigem, ufOrigem) || enderecoNaCidade(rota.name || '', cidadeOrigem, ufOrigem));
+      } else {
+          const parts = formData.origin.split(',').map(p => p.trim());
+          const candidates: string[] = [];
+          for (const part of parts) {
+              const clean = normalizeStr(part).replace(/\d+/g, '').replace(/-/g, ' ').trim();
+              if (clean.length >= 3 && !clean.match(/^(SP|RJ|MG|PR|SC|RS|BA|CE|PE|GO|MT|MS|ES|DF|PA|AM|MA|PI|RN|PB|AL|SE|TO|RO|RR|AP|AC|BRASIL|BRAZIL)$/))
+                  candidates.push(clean);
+          }
+          if (candidates.length === 0) return clientRoutes;
+          const byOrigin = clientRoutes.filter(r => {
+              const rOrigin = normalizeStr(r.origin);
+              return candidates.some(c => rOrigin.includes(c));
+          });
+          originPool = byOrigin.length > 0 ? byOrigin : clientRoutes;
       }
-      if (candidates.length === 0) return clientRoutes;
-      const byOrigin = clientRoutes.filter(r => {
-          const rOrigin = normalizeStr(r.origin);
-          return candidates.some(c => rOrigin.includes(c));
-      });
-      const originPool = byOrigin.length > 0 ? byOrigin : clientRoutes;
-      const destCity = normalizeStr(extractCityFromAddress(formData.destination || ''));
-      if (destCity.length < 4) return originPool;
-      return originPool.filter((route) => registeredRouteFitsOs(route, formData.destination));
+      const cidadeDestino = cidadeNoEndereco(formData.destination || '');
+      if (!cidadeDestino) {
+          const destCity = normalizeStr(extractCityFromAddress(formData.destination || ''));
+          if (destCity.length < 4) return originPool;
+          return originPool.filter((route) => registeredRouteFitsOs(route, formData.destination));
+      }
+      const ufDestino = extractUF(formData.destination || '');
+      return originPool.filter((route) => (
+          enderecoNaCidade(route.destination || '', cidadeDestino, ufDestino)
+          || enderecoNaCidade(route.name || '', cidadeDestino, ufDestino)
+      ));
   })();
 
   const filteredRoutes = routesFilteredByOrigin.filter(r => 
@@ -2933,7 +2955,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       }}
                                       options={{ componentRestrictions: { country: 'br' } }}
                                   >
-                                      <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de origem..." data-testid="input-origin" />
+                                      <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de origem..." data-testid="input-origin" onChange={e => { setBuscaImediata(false); setFormData(prev => ({ ...prev, origin: e.target.value })); }} />
                                   </Autocomplete>
                               ) : (
                                   <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Rua das Flores, 100 - São Paulo, SP" value={formData.origin} onChange={e => { setBuscaImediata(false); setFormData(prev => ({...prev, origin: e.target.value})); }} data-testid="input-origin" />
@@ -2956,7 +2978,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       }}
                                       options={{ componentRestrictions: { country: 'br' } }}
                                   >
-                                      <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de destino..." data-testid="input-destination" />
+                                      <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Digite o endereço de destino..." data-testid="input-destination" onChange={e => { setBuscaImediata(false); setFormData(prev => ({ ...prev, destination: e.target.value })); }} />
                                   </Autocomplete>
                               ) : (
                                   <input type="text" className={`${INPUT_CLASS} font-bold uppercase`} placeholder="Ex: Av. Brasil, 500 - Jundiaí, SP" value={formData.destination} onChange={e => { setBuscaImediata(false); setFormData(prev => ({...prev, destination: e.target.value})); }} data-testid="input-destination" />
@@ -3075,7 +3097,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
                   {formData.origin && routesFilteredByOrigin.length < clientRoutes.length && (
                       <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-[9px] font-black text-amber-700 uppercase tracking-wider">
-                          <Search size={12} /> Rotas filtradas pela origem{formData.destination ? ' e pelo destino' : ''}: {formData.origin.split(',')[0]}{formData.destination ? ` → ${formData.destination.split(',')[0]}` : ''} ({routesFilteredByOrigin.length} de {clientRoutes.length})
+                          <Search size={12} /> Rotas filtradas pela origem{formData.destination ? ' e pelo destino' : ''}: {cidadeNoEndereco(formData.origin) || formData.origin.split(',')[0]}{formData.destination ? ` → ${cidadeNoEndereco(formData.destination) || formData.destination.split(',')[0]}` : ''} ({routesFilteredByOrigin.length} de {clientRoutes.length})
                       </div>
                   )}
 

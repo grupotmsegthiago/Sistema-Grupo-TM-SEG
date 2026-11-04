@@ -52,13 +52,13 @@ export function useTabelaSuggestion(entrada: {
   const [estado, setEstado] = useState<TabelaSuggestion>(VAZIO);
   const chaveAtual = `${entrada.clienteId}|${entrada.origem}|${entrada.destino}|${entrada.fornecedorId || ''}|${entrada.tipoMissao || ''}|${entrada.isRotaPredefinida}`;
   const chaveVista = useRef<string | null>(null);
+  let exibicao = estado;
   if (chaveVista.current !== chaveAtual) {
     chaveVista.current = chaveAtual;
-    if (podeDispararSugestao(entrada.clienteId, entrada.origem, entrada.destino)) {
-      setEstado({ ...VAZIO, loadingSugestao: true });
-    } else {
-      setEstado((prev) => (prev.loadingSugestao || prev.tabelaClienteSugeridaId || prev.tabelaFornecedorSugeridaId ? VAZIO : prev));
-    }
+    exibicao = podeDispararSugestao(entrada.clienteId, entrada.origem, entrada.destino)
+      ? { ...VAZIO, loadingSugestao: true }
+      : VAZIO;
+    setEstado(exibicao);
   }
   const anterior = useRef({
     clienteId: entrada.clienteId,
@@ -126,5 +126,5 @@ export function useTabelaSuggestion(entrada: {
     };
   }, [entrada.clienteId, entrada.fornecedorId, entrada.origem, entrada.destino, entrada.tipoMissao, entrada.isRotaPredefinida]);
 
-  return estado;
+  return exibicao;
 }

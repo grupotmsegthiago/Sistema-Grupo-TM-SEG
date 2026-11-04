@@ -49,6 +49,16 @@ function normalizar(valor: string): string {
     .trim();
 }
 
+/**
+ * Curinga do LIKE. A vogal vira _, então FLORIANÓPOLIS e FLORIANOPOLIS
+ * passam no mesmo filtro. A conferência fina continua em osEstaNaRota.
+ */
+export function curingaDaCidade(cidade: string): string {
+  const base = normalizar(cidade);
+  if (!base) return '';
+  return base.replace(/[AEIOU]/g, '_');
+}
+
 const PREFIXO_LOGRADOURO = /^(RUA|AV|AVENIDA|ROD|RODOVIA|PASSAGEM|TRAVESSA|TV|ALAMEDA|ESTRADA|EST|PRACA|PCA)\b/;
 
 const NOME_DE_ESTADO = new Set([
