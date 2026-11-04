@@ -8,7 +8,7 @@ O bloco `Faixa KM Corrigida` em `lib/financialUtils.ts` conserva a tabela quando
 
 A GTM-9085, Intermodal, Torres, status Origem, não aprovada e sem ajuste manual, passou de receita R$ 1.057 para R$ 1.800. O custo gravado permanece R$ 1.200. Lucro R$ 600. Nenhuma outra OS foi regravada. O card de 04/11/2026 ficou com zero OS em prejuízo. As 27 missões do dia usam valor gravado.
 
-Testes: `npx tsx --test scripts/faixa-km-praca.test.ts scripts/auto-master-fallback.test.ts` — 7 passaram. `npm run build` terminou sem erro. Ainda não foi publicado.
+Testes: `npx tsx --test scripts/faixa-km-praca.test.ts scripts/auto-master-fallback.test.ts` — 7 passaram. `npm run build` terminou sem erro. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Executado em 03/11/2026. A reemissão de `TMSEG-20261103-162641-WVPS` respondia "Fatura não encontrada". A fatura existe, está pausada e com o erro do código antigo. A busca pedia `due_date` e `description`, que não existem em `financial_invoices`. Essas colunas saíram da consulta. O teste novo T18 passou. O T14 segue falhando como antes.
 
