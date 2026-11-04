@@ -2,6 +2,20 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: o link do cliente fica com a cara de painel tático da TM SEG.
+
+O topo traz o logotipo e OPERAÇÕES ACOMPANHAMENTO VELADO. Os dados, o mapa e a timeline ficam em alto relevo, com fundo grafite, borda vermelha e texto prata. O mapa ocupa o centro. O rodapé traz Grupo TM SEG, www.grupotmseg.com.br e o Instagram @grupotmseg. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
+Objetivo: a viagem marca chegada quando o agente entra no raio de 500 metros do destino.
+
+A distância é em linha reta entre o GPS e o ponto do destino. O primeiro horário dentro desse raio fica no rastreio, na timeline do cliente e acima dos links da foto. O status oficial da OS não muda para Concluída. Ocorrência, localização de monitoramento e o motor financeiro ficam como estavam.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 16 passaram. Ponto a mais de 500 metros não marca. O primeiro ponto dentro do raio é o horário gravado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: a página do agente força a leitura do GPS enquanto estiver aberta.
 
 O watchPosition pede alta precisão, sem cache, com tempo de 5 segundos, e recomeça se a antena falhar. Uma batida sai a cada 15 segundos. A tela acesa é pedida de novo se o celular soltar o bloqueio. O selo Sinal em pausa só entra depois de 10 minutos sem batida. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

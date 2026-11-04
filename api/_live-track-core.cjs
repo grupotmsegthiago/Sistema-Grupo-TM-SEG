@@ -175,6 +175,7 @@ function rastreioOsAberta(status) {
 
 // lib/liveTrack/pure.ts
 var LIVE_TRACK_PING_MIN_MS = 2e3;
+var LIVE_TRACK_SINAL_FRESCO_MS = 10 * 60 * 1e3;
 var LIVE_TRACK_TRAIL_MIN_METERS = 25;
 var LIVE_TRACK_TRAIL_MIN_MS = 8e3;
 var LIVE_TRACK_PUBLIC_PATH = "/rastreio";
@@ -194,6 +195,19 @@ function haversineMeters(a, b) {
   const s2 = Math.sin(dLng / 2);
   const h = s1 * s1 + Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) * s2 * s2;
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+var RAIO_CHEGADA_METROS = 500;
+function instanteChegada(pontos, destino) {
+  if (!destino || !Number.isFinite(destino.lat) || !Number.isFinite(destino.lng)) return null;
+  let quando = null;
+  for (const p of pontos) {
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    if (haversineMeters(p, destino) > RAIO_CHEGADA_METROS) continue;
+    const at = String(p.at || "").trim();
+    if (!at) continue;
+    if (!quando || at < quando) quando = at;
+  }
+  return quando;
 }
 function etapasDaTrilha(trail) {
   const pts = trail.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng), at: String(p.recorded_at || p.at || "") })).filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.at);
@@ -235,7 +249,7 @@ function buildLiveTrackWhatsappText(opts) {
     `OS: ${os}`,
     "",
     "Abra o link e clique para compartilhar sua localiza\xE7\xE3o em tempo real at\xE9 o fim da miss\xE3o.",
-    "Depois toque em *Ocultar* para usar o WhatsApp. O GPS segue em segundo plano enquanto esta p\xE1gina existir. S\xF3 para se voc\xEA fechar a aba ou encerrar o Chrome/Safari.",
+    "Deixe a tela acesa e a p\xE1gina em primeiro plano. Se o celular bloquear ou voc\xEA abrir o WhatsApp, o GPS pode pausar. Fechar esta p\xE1gina interrompe o rastreio.",
     "",
     opts.url
   ].join("\n");
@@ -583,6 +597,29 @@ ${destino}`;
     return { originPoint: null, destinationPoint: null };
   }
 }
+var cacheChegada = /* @__PURE__ */ new Map();
+function listaParaChegada(trail, track) {
+  const lista = trail.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng), at: p.recorded_at || null }));
+  if (track.last_lat != null && track.last_lng != null && track.last_seen_at) {
+    lista.push({ lat: Number(track.last_lat), lng: Number(track.last_lng), at: track.last_seen_at });
+  }
+  return lista;
+}
+async function chegadaDoRastreio(sb, track, destino, trail) {
+  if (!destino) return null;
+  const guardado = cacheChegada.get(track.id);
+  if (guardado) return guardado;
+  let pontos = trail ? listaParaChegada(trail, track) : [];
+  if (!trail) {
+    if (track.last_lat == null || track.last_lng == null) return null;
+    if (haversineMeters({ lat: Number(track.last_lat), lng: Number(track.last_lng) }, destino) > RAIO_CHEGADA_METROS) return null;
+    const { data } = await sb.from("mission_live_positions").select("lat, lng, recorded_at").eq("track_id", track.id).order("recorded_at", { ascending: true }).limit(800);
+    pontos = listaParaChegada(data || [], track);
+  }
+  const quando = instanteChegada(pontos, destino);
+  if (quando) cacheChegada.set(track.id, quando);
+  return quando;
+}
 async function generateLiveTrack(opts) {
   await ensureLiveTrackSchema();
   const missionId = String(opts.missionId || "").trim();
@@ -698,6 +735,8 @@ async function watchLiveTrack(opts) {
   }
   const origin = resolvePublicAppUrl();
   const links = linksDoRastreio(track, origin, mission.id);
+  const pontos = await pontosDaRota(mission);
+  const chegadaEm = await chegadaDoRastreio(sb, track, pontos.destinationPoint);
   return {
     status: 200,
     body: {
@@ -722,7 +761,8 @@ async function watchLiveTrack(opts) {
         ended_at: track.ended_at,
         ended_reason: track.ended_reason
       },
-      trail
+      trail,
+      chegadaEm
     }
   };
 }
@@ -806,7 +846,8 @@ async function publicGetLiveTrack(opts) {
         address: endereco
       } : null,
       trail,
-      etapas
+      etapas,
+      chegadaEm: await chegadaDoRastreio(sb, track, pontos.destinationPoint, trail)
     }
   };
 }

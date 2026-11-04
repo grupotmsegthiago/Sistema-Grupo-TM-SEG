@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { copyTextAsync } from '../lib/clipboard';
+import { formatTimeBR } from '../lib/dateUtils';
 import { estadoDoSinal, type EstadoDoSinal } from '../lib/liveTrack/pure';
 import {
   botoesWhatsAppDaOs,
@@ -30,8 +31,9 @@ async function linksDaMissao(missionId: string): Promise<{ url: string; clientUr
   return { url: String(criado.url), clientUrl: String(criado.clientUrl) };
 }
 
-function useEstadoDoSinal(missionId: string, ativo: boolean): EstadoDoSinal | null {
+function useEstadoDoSinal(missionId: string, ativo: boolean): { estado: EstadoDoSinal | null; chegadaEm: string | null } {
   const [estado, setEstado] = useState<EstadoDoSinal | null>(null);
+  const [chegadaEm, setChegadaEm] = useState<string | null>(null);
   useEffect(() => {
     if (!ativo) return;
     let vivo = true;
@@ -46,6 +48,7 @@ function useEstadoDoSinal(missionId: string, ativo: boolean): EstadoDoSinal | nu
           ended: track?.status === 'ended' || Boolean(track?.ended_at),
           vistoEm: track?.last_seen_at,
         }));
+        setChegadaEm(j?.chegadaEm ? String(j.chegadaEm) : null);
       } catch {
         // Mantém o último estado lido.
       }
@@ -57,13 +60,13 @@ function useEstadoDoSinal(missionId: string, ativo: boolean): EstadoDoSinal | nu
       window.clearInterval(id);
     };
   }, [missionId, ativo]);
-  return estado;
+  return { estado, chegadaEm };
 }
 
 export default function MensagensAtivaIntermodal({ mission }: { mission: Mission }) {
   const quais = botoesWhatsAppDaOs(mission);
   const ativo = Boolean(quais.agente || quais.cliente || quais.parceiro);
-  const estado = useEstadoDoSinal(mission.id, ativo);
+  const { estado, chegadaEm } = useEstadoDoSinal(mission.id, ativo);
   const [busy, setBusy] = useState<Qual | null>(null);
   const [gerado, setGerado] = useState<Partial<Record<Qual, boolean>>>({});
   const [sobre, setSobre] = useState<Qual | null>(null);
@@ -125,6 +128,14 @@ export default function MensagensAtivaIntermodal({ mission }: { mission: Mission
 
   return (
     <div className="flex flex-col items-end gap-1" onClick={(e) => e.stopPropagation()} data-testid={`wa-ativa-intermodal-${mission.id}`}>
+      {chegadaEm && (
+        <p
+          data-testid={`wa-chegada-${mission.id}`}
+          className="px-2 py-1 rounded-md bg-emerald-500 text-slate-950 text-[8px] font-black uppercase leading-tight shadow-lg border border-emerald-200"
+        >
+          Chegada no destino {formatTimeBR(chegadaEm)}
+        </p>
+      )}
       {estado !== null && (
         <p
           data-testid={`wa-agente-sinal-${mission.id}`}

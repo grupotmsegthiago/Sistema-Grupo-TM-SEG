@@ -61,6 +61,25 @@ export function haversineMeters(a: { lat: number; lng: number }, b: { lat: numbe
   return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+export const RAIO_CHEGADA_METROS = 500;
+
+/** Primeiro horário em que o GPS ficou a 500 m ou menos do destino. Não conclui a OS. */
+export function instanteChegada(
+  pontos: Array<{ lat: number; lng: number; at?: string | null }>,
+  destino: { lat: number; lng: number } | null | undefined,
+): string | null {
+  if (!destino || !Number.isFinite(destino.lat) || !Number.isFinite(destino.lng)) return null;
+  let quando: string | null = null;
+  for (const p of pontos) {
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    if (haversineMeters(p, destino) > RAIO_CHEGADA_METROS) continue;
+    const at = String(p.at || '').trim();
+    if (!at) continue;
+    if (!quando || at < quando) quando = at;
+  }
+  return quando;
+}
+
 /** Etapas da timeline: origem do GPS, paradas relevantes e a última posição. */
 export function etapasDaTrilha(
   trail: Array<{ lat: number; lng: number; recorded_at?: string; at?: string }>,

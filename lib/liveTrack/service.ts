@@ -11,7 +11,9 @@ import {
   clampOptionalNumber,
   etapasDaTrilha,
   haversineMeters,
+  instanteChegada,
   LIVE_TRACK_PING_MIN_MS,
+  RAIO_CHEGADA_METROS,
   LIVE_TRACK_TRAIL_MIN_METERS,
   LIVE_TRACK_TRAIL_MIN_MS,
   type LiveTrackStatus,
@@ -192,6 +194,45 @@ async function pontosDaRota(mission: any): Promise<{ originPoint: { lat: number;
   }
 }
 
+const cacheChegada = new Map<string, string>();
+
+function listaParaChegada(
+  trail: Array<{ lat: number; lng: number; recorded_at?: string | null }>,
+  track: { last_lat?: number | null; last_lng?: number | null; last_seen_at?: string | null },
+) {
+  const lista = trail.map((p) => ({ lat: Number(p.lat), lng: Number(p.lng), at: p.recorded_at || null }));
+  if (track.last_lat != null && track.last_lng != null && track.last_seen_at) {
+    lista.push({ lat: Number(track.last_lat), lng: Number(track.last_lng), at: track.last_seen_at });
+  }
+  return lista;
+}
+
+async function chegadaDoRastreio(
+  sb: { from: (tabela: string) => any },
+  track: { id: string; last_lat?: number | null; last_lng?: number | null; last_seen_at?: string | null },
+  destino: { lat: number; lng: number } | null,
+  trail?: Array<{ lat: number; lng: number; recorded_at?: string | null }>,
+): Promise<string | null> {
+  if (!destino) return null;
+  const guardado = cacheChegada.get(track.id);
+  if (guardado) return guardado;
+  let pontos = trail ? listaParaChegada(trail, track) : [];
+  if (!trail) {
+    if (track.last_lat == null || track.last_lng == null) return null;
+    if (haversineMeters({ lat: Number(track.last_lat), lng: Number(track.last_lng) }, destino) > RAIO_CHEGADA_METROS) return null;
+    const { data } = await sb
+      .from('mission_live_positions')
+      .select('lat, lng, recorded_at')
+      .eq('track_id', track.id)
+      .order('recorded_at', { ascending: true })
+      .limit(800);
+    pontos = listaParaChegada(data || [], track);
+  }
+  const quando = instanteChegada(pontos, destino);
+  if (quando) cacheChegada.set(track.id, quando);
+  return quando;
+}
+
 export async function generateLiveTrack(opts: {
   missionId: string;
   createdBy?: string;
@@ -351,6 +392,8 @@ export async function watchLiveTrack(opts: {
 
   const origin = resolvePublicAppUrl();
   const links = linksDoRastreio(track, origin, mission.id);
+  const pontos = await pontosDaRota(mission);
+  const chegadaEm = await chegadaDoRastreio(sb, track, pontos.destinationPoint);
   return {
     status: 200,
     body: {
@@ -376,6 +419,7 @@ export async function watchLiveTrack(opts: {
         ended_reason: track.ended_reason,
       },
       trail,
+      chegadaEm,
     },
   };
 }
@@ -484,6 +528,7 @@ export async function publicGetLiveTrack(opts: {
       } : null,
       trail,
       etapas,
+      chegadaEm: await chegadaDoRastreio(sb, track, pontos.destinationPoint, trail),
     },
   };
 }

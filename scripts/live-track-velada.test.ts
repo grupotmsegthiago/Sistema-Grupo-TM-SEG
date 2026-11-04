@@ -10,6 +10,7 @@ import {
   etapasDaTrilha,
   agenteEstaLogado,
   estadoDoSinal,
+  instanteChegada,
   haversineMeters,
   isLiveTrackStale,
   LIVE_TRACK_STALE_MS,
@@ -24,6 +25,17 @@ test('previsão de chegada soma o tempo que falta ao horário de Brasília', () 
   assert.equal(previsaoChegadaBR(14 * 60 + 2, agora), '19:16');
   const noite = new Date('2026-11-05T01:30:00.000Z');
   assert.equal(previsaoChegadaBR(3 * 3600, noite), '05/11/2026 01:30');
+});
+
+test('chegada no destino grava o primeiro horário dentro de 500 metros', () => {
+  const destino = { lat: -3.73, lng: -38.52 };
+  const longe = { lat: -3.74, lng: -38.52, at: '2026-11-04T21:00:00.000Z' };
+  const perto = { lat: -3.731, lng: -38.52, at: '2026-11-04T21:10:00.000Z' };
+  const maisPerto = { lat: -3.7302, lng: -38.52, at: '2026-11-04T21:12:00.000Z' };
+  assert.ok(haversineMeters(longe, destino) > 500);
+  assert.ok(haversineMeters(perto, destino) <= 500);
+  assert.equal(instanteChegada([longe], destino), null);
+  assert.equal(instanteChegada([longe, maisPerto, perto], destino), perto.at);
 });
 
 test('só missão velada gera rastreio ao vivo', () => {
@@ -199,7 +211,10 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /wakeLock\?\.request\?\.\('screen'\)/);
   assert.match(page, /origem=\{origem\}/);
   assert.match(page, /marca=\{tmsegLogo\}/);
-  assert.match(page, /Rastreamento/);
+  assert.match(page, /OPERAÇÕES ACOMPANHAMENTO VELADO/);
+  assert.match(page, /www\.grupotmseg\.com\.br/);
+  assert.match(page, /instagram\.com\/grupotmseg/);
+  assert.match(page, /Grupo TM SEG/);
   assert.match(page, /PIN_ORIGEM/);
   assert.match(page, /BANDEIRA_DESTINO/);
   assert.match(page, /live-track-ultima/);
@@ -212,7 +227,10 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /GPS_VERDE/);
   assert.match(page, /live-track-timeline/);
   assert.match(page, /AGENTE LOGADO/);
+  assert.match(page, /CHEGADA NO DESTINO/);
+  assert.match(page, /live-track-chegada/);
   assert.match(page, /SINAL EM PAUSA/);
+  assert.match(page, /live-track-chegada/);
   assert.match(page, /live-track-pausa/);
   assert.match(page, /tela acesa/);
   assert.match(page, /live-track-keep-open/);

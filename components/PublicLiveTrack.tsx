@@ -124,6 +124,7 @@ function LiveMapBox({
   enderecoAtual,
   quando,
   alto,
+  classeAltura,
   onRota,
 }: {
   ponto: Ponto | null;
@@ -135,6 +136,7 @@ function LiveMapBox({
   enderecoAtual?: string;
   quando?: string | null;
   alto?: boolean;
+  classeAltura?: string;
   onRota?: (parte: Partial<RotaRodoviaria>) => void;
 }) {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
@@ -253,11 +255,11 @@ function LiveMapBox({
   }, [mapa, modoCliente, ponto, origem, destino]);
 
   if (loadError) return <p className="text-sm text-amber-200">Mapa indisponível neste navegador.</p>;
-  if (!isLoaded) return <div className="h-72 rounded-2xl bg-white/5 animate-pulse" data-testid="live-track-map" />;
+  if (!isLoaded) return <div className={classeAltura || 'h-72 rounded-2xl bg-white/5 animate-pulse'} data-testid="live-track-map" />;
   return (
-    <div data-testid="live-track-map">
+    <div className={classeAltura ? 'h-full' : undefined} data-testid="live-track-map">
       <GoogleMap
-        mapContainerClassName={alto ? 'w-full h-[48vh] min-h-[280px] rounded-2xl' : 'w-full h-72 rounded-2xl'}
+        mapContainerClassName={classeAltura || (alto ? 'w-full h-[48vh] min-h-[280px] rounded-2xl' : 'w-full h-72 rounded-2xl')}
         center={centroInicial.current}
         zoom={4}
         onLoad={(map) => { setMapa(map); if (!modoCliente) enquadrarMapa(map, origem, destino, ponto, trilha); }}
@@ -329,13 +331,15 @@ function AndamentoCliente({
         <span>Andamento</span>
         <span>{falta != null && total != null ? `${pct}% concluído` : '—'}</span>
       </div>
-      <div className="mt-2 h-2 rounded-full bg-white/10 overflow-hidden">
-        <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#1F2833] shadow-[inset_0_1px_2px_rgba(0,0,0,0.8)]">
+        <div className="h-full bg-[#E60000]" style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-2 text-xs text-slate-200">{texto}</p>
     </div>
   );
 }
+
+const PAINEL_TATICO = 'rounded-2xl border border-[#C50000]/45 bg-[#12141a]/95 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_1px_rgba(255,255,255,0.1)]';
 
 type Etapa = { lat: number; lng: number; at: string; endereco?: string | null };
 
@@ -352,16 +356,18 @@ function TimelineCliente({
   destinoTexto,
   etapas,
   encerrada,
+  chegadaEm,
 }: {
   origemTexto: string;
   destinoTexto: string;
   etapas: Etapa[];
   encerrada: boolean;
+  chegadaEm?: string | null;
 }) {
   const saida = etapas[0]?.at;
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#111827] p-4" data-testid="live-track-timeline">
-      <p className="text-sm font-black">Timeline da viagem</p>
+    <div className={`${PAINEL_TATICO} h-full p-4`} data-testid="live-track-timeline">
+      <p className="text-sm font-black tracking-[0.16em] text-[#C5C6C7]">TIMELINE DA VIAGEM</p>
       <ol className="mt-4 space-y-3">
         <li className="flex gap-3">
           <img src={PIN_ORIGEM} alt="Origem" className="mt-0.5 h-8 w-6 shrink-0 object-contain" />
@@ -397,8 +403,8 @@ function TimelineCliente({
           <img src={BANDEIRA_DESTINO} alt="Destino" className="mt-0.5 h-8 w-8 shrink-0 object-contain" />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-semibold">Destino</p>
-              <p className="text-xs text-slate-400">{encerrada && etapas.length ? formatTimeBR(etapas[etapas.length - 1].at) : 'A caminho'}</p>
+              <p className="text-sm font-semibold">{chegadaEm ? 'Chegada no destino' : 'Destino'}</p>
+              <p className="text-xs text-slate-400">{chegadaEm ? formatTimeBR(chegadaEm) : encerrada && etapas.length ? formatTimeBR(etapas[etapas.length - 1].at) : 'A caminho'}</p>
             </div>
             <p className="text-xs text-slate-300 leading-snug">{destinoTexto || '—'}</p>
           </div>
@@ -422,6 +428,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const [rota, setRota] = useState<RotaRodoviaria>({ totalMetros: null, faltaMetros: null, duracaoSegundos: null, erro: false });
   const [statusRastreio, setStatusRastreio] = useState('');
   const [vistoEm, setVistoEm] = useState<string | null>(null);
+  const [chegadaEm, setChegadaEm] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -450,6 +457,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
         : []);
       setStatusRastreio(String(j.status || ''));
       setVistoEm(j.position?.at ? String(j.position.at) : null);
+      setChegadaEm(j.chegadaEm ? String(j.chegadaEm) : null);
       setPhase(j.ended ? 'ended' : 'watching');
     } catch {
       setError('Falha ao acompanhar. Verifique a internet.');
@@ -465,63 +473,78 @@ function ClientLiveMap({ credential }: { credential: string }) {
 
   const sinal = estadoDoSinal({ status: statusRastreio, ended: phase === 'ended', vistoEm });
 
+  const painelAberto = Boolean(ficha) && (phase === 'watching' || phase === 'ended');
+
   return (
-    <div className="min-h-[100dvh] bg-slate-950 text-white" data-testid="live-track-client-view">
-      <header className="px-4 pt-5 pb-3 border-b border-white/10">
-        <p className="text-lg font-black">Rastreamento</p>
+    <div className="flex min-h-[100dvh] flex-col bg-[#0B0C10] text-white" data-testid="live-track-client-view">
+      <header className="flex items-center gap-4 border-b border-[#C50000] bg-[#0B0C10] px-4 py-3 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.08)]" data-testid="live-track-topo">
+        <img src={tmsegLogo} alt="TM SEG" className="h-20 w-20 rounded-2xl border border-[#C5C6C7]/35 bg-[#1F2833] object-contain p-1.5 shadow-[0_8px_18px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.18)]" />
+        <p className="text-sm font-black tracking-[0.18em] text-[#C5C6C7] sm:text-base">OPERAÇÕES ACOMPANHAMENTO VELADO</p>
       </header>
-      <div className="mx-auto w-full max-w-5xl lg:grid lg:grid-cols-[minmax(0,32rem)_22rem] lg:items-start lg:gap-4 lg:px-4">
-      <main className="px-3 py-3 max-w-lg mx-auto w-full space-y-3 lg:max-w-none lg:px-0">
-        {phase === 'loading' && <p className="text-sm text-slate-300">Abrindo o mapa…</p>}
-        {phase === 'error' && <p className="text-sm text-red-300">{error}</p>}
-        {phase === 'ended' && <p className="text-sm text-emerald-200">A missão foi concluída. O rastreio encerrou.</p>}
-        {ficha && (
-          <div className="rounded-2xl border border-white/10 bg-[#111827] p-3.5 space-y-3 text-sm" data-testid="live-track-resumo">
-            <div className="space-y-1">
-              <p><span className="text-slate-400">Cliente: </span>{ficha.client || '—'}</p>
-              <p><span className="text-slate-400">Agente: </span>{ficha.agent || '—'}</p>
-              <p><span className="text-slate-400">Viatura: </span>{[ficha.plate, ficha.vehicleModel].filter(Boolean).join(' · ') || '—'}</p>
-              <p className="flex items-center gap-2">
-                <span className="text-slate-400">Escolta: </span>
-                <img src={tmsegLogo} alt="TM SEG" className="h-5 w-auto" />
-                <span>TM SEG</span>
-              </p>
-            </div>
-            <p
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black tracking-wide ${sinal === 'logado' ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}`}
-              data-testid="live-track-sinal"
-            >
-              <span className="h-2.5 w-2.5 rounded-full bg-current" />
-              {sinal === 'logado' ? 'AGENTE LOGADO' : sinal === 'pausa' ? 'SINAL EM PAUSA' : 'AGUARDANDO POSIÇÃO DO AGENTE'}
-            </p>
-            {sinal === 'pausa' && (
-              <p className="text-xs text-amber-100 leading-snug" data-testid="live-track-pausa">
-                A página pode continuar aberta. O celular pausa o GPS quando a tela bloqueia, o navegador vai para segundo plano ou a permissão é só durante o uso. Peça para deixar a tela acesa, desligar a economia de bateria do navegador e permitir a localização o tempo todo.
-              </p>
-            )}
-            <div className="space-y-1 border-t border-white/10 pt-3">
-              <p><span className="text-slate-400">Origem: </span>{ficha.origin || '—'}</p>
-              <p><span className="text-slate-400">Destino: </span>{ficha.destination || '—'}</p>
-            </div>
-            {(phase === 'watching' || phase === 'ended') && (
-              <div className="border-t border-white/10 pt-3" data-testid="live-track-ultima">
-                <p><span className="text-slate-400">Última posição: </span>{endereco || (ponto ? `${ponto.lat.toFixed(5)}, ${ponto.lng.toFixed(5)}` : 'Aguardando o agente.')}</p>
-                <p className="mt-1"><span className="text-slate-400">Data/Hora: </span>{quando ? formatDateTimeBR(quando) : 'Sem horário gravado'}</p>
-                <AndamentoCliente origem={origem} destino={destino} ponto={ponto} rota={rota} />
+      <div className={painelAberto
+        ? 'grid flex-1 gap-3 px-3 py-3 lg:min-h-0 lg:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)_minmax(18rem,24rem)] lg:grid-rows-[minmax(0,1fr)]'
+        : 'flex flex-1 flex-col gap-3 px-3 py-3'}>
+        <section className={`${PAINEL_TATICO} space-y-3 p-3.5 text-sm lg:overflow-auto`}>
+          {phase === 'loading' && <p className="text-sm text-[#C5C6C7]">Abrindo o mapa…</p>}
+          {phase === 'error' && <p className="text-sm text-[#E60000]">{error}</p>}
+          {phase === 'ended' && <p className="text-sm text-[#C5C6C7]">A missão foi concluída. O rastreio encerrou.</p>}
+          {ficha && (
+            <div className="space-y-3" data-testid="live-track-resumo">
+              <div className="space-y-1.5">
+                <p><span className="text-[#C5C6C7]">Cliente: </span>{ficha.client || '—'}</p>
+                <p><span className="text-[#C5C6C7]">Agente: </span>{ficha.agent || '—'}</p>
+                <p><span className="text-[#C5C6C7]">Viatura: </span>{[ficha.plate, ficha.vehicleModel].filter(Boolean).join(' · ') || '—'}</p>
+                <p><span className="text-[#C5C6C7]">Escolta: </span>TM SEG</p>
               </div>
-            )}
-          </div>
+              <p
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black tracking-wide shadow-[0_6px_16px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.28)] ${sinal === 'logado' ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}`}
+                data-testid="live-track-sinal"
+              >
+                <span className="h-2.5 w-2.5 rounded-full bg-current" />
+                {sinal === 'logado' ? 'AGENTE LOGADO' : sinal === 'pausa' ? 'SINAL EM PAUSA' : 'AGUARDANDO POSIÇÃO DO AGENTE'}
+              </p>
+              {chegadaEm && (
+                <p className="inline-flex items-center gap-2 rounded-full bg-[#E60000] px-3 py-1 text-[11px] font-black tracking-wide text-white shadow-[0_6px_16px_rgba(197,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.28)]" data-testid="live-track-chegada">
+                  CHEGADA NO DESTINO · {formatDateTimeBR(chegadaEm)}
+                </p>
+              )}
+              {sinal === 'pausa' && (
+                <p className="text-xs leading-snug text-amber-100" data-testid="live-track-pausa">
+                  A página pode continuar aberta. O celular pausa o GPS quando a tela bloqueia, o navegador vai para segundo plano ou a permissão é só durante o uso. Peça para deixar a tela acesa, desligar a economia de bateria do navegador e permitir a localização o tempo todo.
+                </p>
+              )}
+              <div className="space-y-1.5 border-t border-[#C5C6C7]/20 pt-3">
+                <p><span className="text-[#C5C6C7]">Origem: </span>{ficha.origin || '—'}</p>
+                <p><span className="text-[#C5C6C7]">Destino: </span>{ficha.destination || '—'}</p>
+              </div>
+              {painelAberto && (
+                <div className="border-t border-[#C5C6C7]/20 pt-3" data-testid="live-track-ultima">
+                  <p><span className="text-[#C5C6C7]">Última posição: </span>{endereco || (ponto ? `${ponto.lat.toFixed(5)}, ${ponto.lng.toFixed(5)}` : 'Aguardando o agente.')}</p>
+                  <p className="mt-1"><span className="text-[#C5C6C7]">Data/Hora: </span>{quando ? formatDateTimeBR(quando) : 'Sem horário gravado'}</p>
+                  <AndamentoCliente origem={origem} destino={destino} ponto={ponto} rota={rota} />
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+        {painelAberto && (
+          <section className={`${PAINEL_TATICO} h-[52vh] min-h-[320px] overflow-hidden p-1.5 lg:h-full lg:min-h-0`}>
+            <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={tmsegLogo} modoCliente enderecoAtual={endereco} quando={quando} classeAltura="h-full min-h-[300px] w-full rounded-xl lg:min-h-0" onRota={(parte) => setRota((atual) => ({ ...atual, ...parte }))} />
+          </section>
         )}
-        {(phase === 'watching' || phase === 'ended') && (
-          <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={tmsegLogo} modoCliente alto enderecoAtual={endereco} quando={quando} onRota={(parte) => setRota((atual) => ({ ...atual, ...parte }))} />
+        {painelAberto && (
+          <section className="lg:min-h-0 lg:overflow-auto">
+            <TimelineCliente origemTexto={ficha.origin || ''} destinoTexto={ficha.destination || ''} etapas={etapas} encerrada={phase === 'ended'} chegadaEm={chegadaEm} />
+          </section>
         )}
-      </main>
-      {ficha && (phase === 'watching' || phase === 'ended') && (
-        <div className="px-3 pb-6 lg:px-0 lg:py-3">
-          <TimelineCliente origemTexto={ficha.origin || ''} destinoTexto={ficha.destination || ''} etapas={etapas} encerrada={phase === 'ended'} />
-        </div>
-      )}
       </div>
+      <footer className="mt-auto border-t border-[#C5C6C7]/25 bg-[#0B0C10] px-4 py-3 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" data-testid="live-track-rodape">
+        <p className="text-sm font-black tracking-[0.14em] text-white">Grupo TM SEG</p>
+        <p className="mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-[#C5C6C7]">
+          <a href="https://www.grupotmseg.com.br" target="_blank" rel="noopener noreferrer" className="underline decoration-[#C50000] underline-offset-2">www.grupotmseg.com.br</a>
+          <a href="https://instagram.com/grupotmseg" target="_blank" rel="noopener noreferrer" className="underline decoration-[#C50000] underline-offset-2">Instagram @grupotmseg</a>
+        </p>
+      </footer>
     </div>
   );
 }

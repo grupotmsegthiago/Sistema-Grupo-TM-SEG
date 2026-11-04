@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-11-04. A página do agente pede GPS sem cache, recomeça a leitura se a antena falhar e manda batida a cada 15 segundos. A tela permanece acesa enquanto o rastreio está na frente. O selo Sinal em pausa só aparece depois de 10 minutos sem batida. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+Atualizado em 04/11/2026. O link do cliente abre em painel tático: topo com a marca e OPERAÇÕES ACOMPANHAMENTO VELADO, mapa no centro, dados e timeline em alto relevo, rodapé com Grupo TM SEG, site e Instagram. A chegada a 500 metros continua no mesmo painel. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. Quando o agente já enviou posição e o celular pausa o GPS, o link do cliente mostra Sinal em pausa e pede tela acesa, sem economia de bateria e localização o tempo todo. A página do agente deixa de dizer que ocultar a tela mantém o GPS. Na foto da velada o selo usa o mesmo estado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
