@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. A distância e o traçado do link do cliente vêm do servidor, pela rota de carro. O painel deixa de ficar preso em "Calculando a rota pelas ruas." Na foto da velada, acima dos links, aparece Agente conectado ou Agente desconectado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. A rota pelas ruas que o Google recusa deixa de derrubar o link do cliente. O mapa continua aberto e o painel avisa que a rota não foi encontrada. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. No link do cliente, a linha do mapa segue as ruas entre a origem e o destino. O painel mostra a distância e o tempo que o Google calcula para o trecho que ainda falta, a partir da posição do agente. No card da OS velada, Gerar link do agente e Gerar link do cliente ficam no canto inferior direito da foto. O clique copia o WhatsApp e o botão passa a dizer que o link foi gerado. O do parceiro ATIVA só aparece com fornecedor ATIVA e cliente Intermodal. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

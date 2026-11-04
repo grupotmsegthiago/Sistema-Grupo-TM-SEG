@@ -134,6 +134,9 @@ test('botão gerar link só existe no fluxo velada', () => {
   assert.doesNotMatch(card, /LiveTrackPanel/);
   const botoes = fs.readFileSync('components/MensagensAtivaIntermodal.tsx', 'utf8');
   assert.match(botoes, /botoesWhatsAppDaOs/);
+  assert.match(botoes, /agenteEstaLogado/);
+  assert.match(botoes, /Agente conectado/);
+  assert.match(botoes, /Agente desconectado/);
   const regra = fs.readFileSync('lib/ativaIntermodalWhatsApp.ts', 'utf8');
   assert.match(regra, /isVeladaMission/);
   const modal = fs.readFileSync('components/UpdateMissionModal.tsx', 'utf8');
@@ -186,9 +189,9 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /BANDEIRA_DESTINO/);
   assert.match(page, /live-track-ultima/);
   assert.match(page, /live-track-progresso/);
-  assert.match(page, /DirectionsService/);
-  assert.match(page, /TravelMode.DRIVING/);
-  assert.match(page, /new google.maps.LatLng/);
+  assert.match(page, /route: '1'/);
+  assert.match(page, /linha.length > 1/);
+  assert.doesNotMatch(page, /DirectionsService/);
   assert.doesNotMatch(page, /em linha reta/);
   assert.match(page, /GPS_VERDE/);
   assert.match(page, /live-track-timeline/);

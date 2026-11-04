@@ -46,23 +46,105 @@ async function tryDistanceMatrix(origin: string, destination: string, key: strin
   return null;
 }
 
-async function tryDirectionsApi(origin: string, destination: string, key: string): Promise<RouteDistanceResult | null> {
+type CorpoDirecao = {
+  status?: string;
+  routes?: Array<{
+    overview_polyline?: { points?: string };
+    legs?: Array<{ distance?: { value?: number }; duration?: { value?: number } }>;
+  }>;
+};
+
+async function corpoDaDirecao(origin: string, destination: string, key: string): Promise<CorpoDirecao | null> {
   const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=driving&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
   const resp = await fetch(url);
-  const data: any = await resp.json();
-  if (data?.status !== 'OK' || !Array.isArray(data.routes) || !data.routes.length) {
-    return null;
+  const data = await resp.json() as CorpoDirecao;
+  if (data?.status !== 'OK' || !Array.isArray(data.routes) || !data.routes.length) return null;
+  return data;
+}
+
+function totaisDaRota(data: CorpoDirecao): { metros: number; segundos: number } | null {
+  const legs = data.routes?.[0]?.legs || [];
+  const metros = legs.reduce((acc, leg) => acc + (leg?.distance?.value || 0), 0);
+  const segundos = legs.reduce((acc, leg) => acc + (leg?.duration?.value || 0), 0);
+  if (metros <= 0) return null;
+  return { metros, segundos };
+}
+
+/** Lê a polyline do Google. Não chama a rede. */
+export function pontosDaPolyline(encoded: string): Array<{ lat: number; lng: number }> {
+  const texto = String(encoded || '');
+  const pontos: Array<{ lat: number; lng: number }> = [];
+  let indice = 0;
+  let lat = 0;
+  let lng = 0;
+  while (indice < texto.length && pontos.length < 800) {
+    let resultado = 0;
+    let deslocamento = 0;
+    let byte = 0;
+    do {
+      if (indice >= texto.length) return pontos;
+      byte = texto.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 0x1f) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 0x20);
+    lat += (resultado & 1) ? ~(resultado >> 1) : (resultado >> 1);
+    resultado = 0;
+    deslocamento = 0;
+    do {
+      if (indice >= texto.length) return pontos;
+      byte = texto.charCodeAt(indice) - 63;
+      indice += 1;
+      resultado |= (byte & 0x1f) << deslocamento;
+      deslocamento += 5;
+    } while (byte >= 0x20);
+    lng += (resultado & 1) ? ~(resultado >> 1) : (resultado >> 1);
+    pontos.push({ lat: lat / 1e5, lng: lng / 1e5 });
   }
-  const legs = data.routes[0]?.legs || [];
-  const totalMeters = legs.reduce((acc: number, leg: any) => acc + (leg?.distance?.value || 0), 0);
-  const totalSeconds = legs.reduce((acc: number, leg: any) => acc + (leg?.duration?.value || 0), 0);
-  if (totalMeters <= 0) return null;
+  return pontos;
+}
+
+async function tryDirectionsApi(origin: string, destination: string, key: string): Promise<RouteDistanceResult | null> {
+  const data = await corpoDaDirecao(origin, destination, key);
+  if (!data) return null;
+  const totais = totaisDaRota(data);
+  if (!totais) return null;
   return {
     success: true,
-    distanceKm: Math.round((totalMeters / 1000) * 100) / 100,
-    durationMin: totalSeconds > 0 ? Math.round(totalSeconds / 60) : null,
+    distanceKm: Math.round((totais.metros / 1000) * 100) / 100,
+    durationMin: totais.segundos > 0 ? Math.round(totais.segundos / 60) : null,
     source: 'directions',
   };
+}
+
+export type RotaRodoviariaServidor = {
+  success: boolean;
+  metros?: number;
+  segundos?: number;
+  pontos?: Array<{ lat: number; lng: number }>;
+  error?: string;
+};
+
+/** Rota de carro com distância, duração e o traçado. A linha reta não entra no lugar. */
+export async function computeDrivingRoute(originRaw: string, destinationRaw: string, comPontos = true): Promise<RotaRodoviariaServidor> {
+  const origin = normalizeRouteAddress(originRaw);
+  const destination = normalizeRouteAddress(destinationRaw);
+  if (!origin || !destination) return { success: false, error: 'origin e destination são obrigatórios' };
+  let lastError = 'NO_RESULT';
+  for (const key of googleMapsKeys()) {
+    try {
+      const data = await corpoDaDirecao(origin, destination, key);
+      const totais = data ? totaisDaRota(data) : null;
+      if (data && totais) {
+        const pontos = comPontos ? pontosDaPolyline(String(data.routes?.[0]?.overview_polyline?.points || '')) : [];
+        if (comPontos && pontos.length < 2) return { success: false, error: 'ROTA_SEM_TRACADO' };
+        return { success: true, metros: totais.metros, segundos: totais.segundos, pontos };
+      }
+    } catch (e: any) {
+      lastError = e?.message || lastError;
+    }
+  }
+  return { success: false, error: lastError };
 }
 
 /** Calcula KM rodoviário origem→destino. Prefere Directions (Distance Matrix legado costuma estar desligado). */

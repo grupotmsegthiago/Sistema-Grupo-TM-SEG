@@ -5,6 +5,7 @@ import {
   computeRouteProgressKm,
   looksLikeLatLngPair,
   normalizeRouteAddress,
+  pontosDaPolyline,
   progressFromRouteLegs,
 } from '../lib/routeDistance.ts';
 
@@ -17,6 +18,13 @@ describe('routeDistance', () => {
   it('não anexa Brasil em coordenadas lat,lng', () => {
     assert.equal(looksLikeLatLngPair('-22.9,-47.0'), true);
     assert.equal(normalizeRouteAddress('-22.9056, -47.0608'), '-22.9056,-47.0608');
+  });
+
+  it('lê a polyline do Google sem chamar a rede', () => {
+    const pontos = pontosDaPolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@');
+    assert.equal(pontos.length, 3);
+    assert.ok(Math.abs(pontos[0].lat - 38.5) < 0.001);
+    assert.ok(Math.abs(pontos[2].lng - -126.453) < 0.001);
   });
 
   it('progressFromRouteLegs: 25% / 50% / 75% / 100%', () => {

@@ -46,30 +46,26 @@ type RotaRodoviaria = {
   erro: boolean;
 };
 
-function coordenadaValida(p: Ponto | null | undefined): p is Ponto {
-  return !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
+function chavePonto(p: Ponto | null | undefined, casas: number): string {
+  if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return '';
+  if (Math.abs(p.lat) > 90 || Math.abs(p.lng) > 180) return '';
+  return `${p.lat.toFixed(casas)},${p.lng.toFixed(casas)}`;
 }
 
-function pedirDirecao(origem: Ponto, destino: Ponto): Promise<google.maps.DirectionsResult | null> {
-  if (!coordenadaValida(origem) || !coordenadaValida(destino)) return Promise.resolve(null);
-  if (haversineMeters(origem, destino) < 30) return Promise.resolve(null);
-  try {
-    const svc = new google.maps.DirectionsService();
-    const pedido = svc.route({
-      origin: new google.maps.LatLng(origem.lat, origem.lng),
-      destination: new google.maps.LatLng(destino.lat, destino.lng),
-      travelMode: google.maps.TravelMode.DRIVING,
-    });
-    if (pedido && typeof (pedido as Promise<google.maps.DirectionsResult>).then === 'function') {
-      return (pedido as Promise<google.maps.DirectionsResult>).then(
-        (result) => (result?.routes?.length ? result : null),
-        () => null,
-      );
-    }
-  } catch {
-    return Promise.resolve(null);
-  }
-  return Promise.resolve(null);
+function buscarRota(origem: string, destino: string, comLinha: boolean, signal: AbortSignal): Promise<{ metros: number; segundos: number; pontos: Ponto[] } | null> {
+  const q = new URLSearchParams({ route: '1', origin: origem, destination: destino, linha: comLinha ? '1' : '0' });
+  return fetch(`/api/geocode-address?${q.toString()}`, { cache: 'no-store', signal })
+    .then((r) => r.json().then((j) => ({ ok: r.ok, j })))
+    .then(({ ok, j }) => {
+      const metros = Number(j?.metros);
+      if (!ok || !j?.success || !Number.isFinite(metros) || metros <= 0) return null;
+      const pontos = Array.isArray(j.pontos)
+        ? j.pontos.map((p: any) => ({ lat: Number(p?.lat), lng: Number(p?.lng) })).filter((p: Ponto) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+        : [];
+      if (comLinha && pontos.length < 2) return null;
+      return { metros, segundos: Number(j.segundos) || 0, pontos };
+    })
+    .catch(() => null);
 }
 
 function textoPrevisao(segundos: number): string {
@@ -153,13 +149,11 @@ function LiveMapBox({
   const [mapa, setMapa] = useState<google.maps.Map | null>(null);
   const [selecionado, setSelecionado] = useState<PontoTrilha | null>(null);
   const [enderecoPonto, setEnderecoPonto] = useState('');
+  const [linha, setLinha] = useState<Ponto[]>([]);
   const centroInicial = useRef<Ponto>({ lat: -15.78, lng: -47.93 });
   const cameraPronta = useRef(false);
   const onRotaRef = useRef(onRota);
-  const rendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
-  const rotaPedida = useRef('');
   const rotaSeq = useRef(0);
-  const faltaPedida = useRef<Ponto | null>(null);
   const faltaSeq = useRef(0);
   onRotaRef.current = onRota;
   const iconeGps = isLoaded
@@ -196,58 +190,55 @@ function LiveMapBox({
     return () => { vivo = false; };
   }, [selecionado, ponto, enderecoAtual]);
 
+  const chaveOrigem = chavePonto(origem, 4);
+  const chaveDestino = chavePonto(destino, 4);
+  const chaveAgente = chavePonto(ponto, 3);
+
   useEffect(() => {
-    if (!mapa || !modoCliente || !origem || !destino) return;
-    const chave = `${origem.lat.toFixed(4)},${origem.lng.toFixed(4)}>${destino.lat.toFixed(4)},${destino.lng.toFixed(4)}`;
-    if (rotaPedida.current === chave) return;
-    rotaPedida.current = chave;
+    if (!modoCliente || !chaveOrigem || !chaveDestino) return;
     const seq = ++rotaSeq.current;
-    void pedirDirecao(origem, destino).then((result) => {
-      if (rotaSeq.current !== seq) return;
-      if (!result) {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 15000);
+    void buscarRota(chaveOrigem, chaveDestino, true, ctrl.signal).then((rota) => {
+      if (ctrl.signal.aborted || rotaSeq.current !== seq) return;
+      if (!rota) {
+        setLinha([]);
         onRotaRef.current?.({ erro: true });
         return;
       }
-      if (!rendererRef.current) {
-        rendererRef.current = new google.maps.DirectionsRenderer({
-          suppressMarkers: true,
-          preserveViewport: true,
-          polylineOptions: { strokeColor: '#ef4444', strokeWeight: 4 },
-        });
-      }
-      rendererRef.current.setMap(mapa);
-      rendererRef.current.setDirections(result);
-      const total = (result.routes[0]?.legs || []).reduce((soma, trecho) => soma + (trecho.distance?.value || 0), 0);
-      onRotaRef.current?.({ totalMetros: total, erro: false });
-    }).catch(() => {
-      if (rotaSeq.current === seq) onRotaRef.current?.({ erro: true });
-    });
-  }, [mapa, modoCliente, origem, destino]);
+      setLinha(rota.pontos);
+      onRotaRef.current?.({ totalMetros: rota.metros, erro: false });
+    }).finally(() => window.clearTimeout(timer));
+    return () => {
+      rotaSeq.current += 1;
+      ctrl.abort();
+      window.clearTimeout(timer);
+    };
+  }, [modoCliente, chaveOrigem, chaveDestino]);
 
   useEffect(() => {
-    if (!modoCliente || !ponto || !destino) return;
-    const anterior = faltaPedida.current;
-    if (anterior && haversineMeters(anterior, ponto) < 200) return;
-    faltaPedida.current = { lat: ponto.lat, lng: ponto.lng };
+    if (!modoCliente || !chaveAgente || !chaveDestino) return;
     const seq = ++faltaSeq.current;
-    void pedirDirecao(ponto, destino).then((result) => {
-      if (faltaSeq.current !== seq) return;
-      const trecho = result?.routes[0]?.legs[0];
-      if (!trecho?.distance || trecho.duration?.value == null) {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 15000);
+    void buscarRota(chaveAgente, chaveDestino, false, ctrl.signal).then((rota) => {
+      if (ctrl.signal.aborted || faltaSeq.current !== seq) return;
+      if (!rota) {
         onRotaRef.current?.({ erro: true });
         return;
       }
       onRotaRef.current?.({
-        faltaMetros: trecho.distance.value,
-        duracaoSegundos: trecho.duration.value,
+        faltaMetros: rota.metros,
+        duracaoSegundos: rota.segundos,
         erro: false,
       });
-    }).catch(() => {
-      if (faltaSeq.current === seq) onRotaRef.current?.({ erro: true });
-    });
-  }, [modoCliente, ponto, destino]);
-
-  useEffect(() => () => { rendererRef.current?.setMap(null); }, []);
+    }).finally(() => window.clearTimeout(timer));
+    return () => {
+      faltaSeq.current += 1;
+      ctrl.abort();
+      window.clearTimeout(timer);
+    };
+  }, [modoCliente, chaveAgente, chaveDestino]);
 
   useEffect(() => {
     if (!mapa || modoCliente) return;
@@ -281,6 +272,7 @@ function LiveMapBox({
         options={{ disableDefaultUI: true, zoomControl: true }}
       >
         {!modoCliente && trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
+        {modoCliente && linha.length > 1 ? <Polyline path={linha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
         {pins.map((p, i) => (
           <Marker key={`${p.at || i}-${p.lat}-${p.lng}`} position={p} icon={iconePosicao} zIndex={2} title="Posição do agente" onClick={() => setSelecionado(p)} />
         ))}

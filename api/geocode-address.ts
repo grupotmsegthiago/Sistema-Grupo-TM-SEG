@@ -1,3 +1,5 @@
+import { computeDrivingRoute } from "../lib/routeDistance.js";
+
 type GeoResult = {
   success: boolean;
   address?: string;
@@ -85,6 +87,18 @@ export async function geocodeAddress(address: string): Promise<{ lat: number; ln
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     res.status(405).json({ success: false, error: "method_not_allowed" });
+    return;
+  }
+
+  if (String(req.query?.route || "") === "1") {
+    const origin = String(req.query?.origin || "").trim();
+    const destination = String(req.query?.destination || "").trim();
+    try {
+      const rota = await computeDrivingRoute(origin, destination, String(req.query?.linha || "1") !== "0");
+      res.status(rota.success ? 200 : 404).json(rota);
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message || "Erro ao calcular a rota" });
+    }
     return;
   }
 

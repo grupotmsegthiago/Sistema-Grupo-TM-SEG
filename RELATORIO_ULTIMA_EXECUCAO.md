@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: o painel do cliente deixa de ficar preso em "Calculando a rota pelas ruas." Na foto da velada, o estado do agente fica acima dos links.
+
+A distância, o tempo e o traçado vêm do servidor, pela rota de carro já usada no sistema. A linha reta não entra no lugar. `GET /api/geocode-address?route=1` no localhost devolveu Campinas até Barueri com 89838 metros, 4287 segundos e 315 pontos. Acima de Gerar link do agente, a foto mostra Agente conectado ou Agente desconectado, com a mesma regra do link do cliente. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts scripts/route-distance.test.ts` — 20 passaram.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: a recusa da rota do Google deixa de cobrir o link do cliente com a tela de erro.
 
 A chamada de direções devolve nulo quando a origem é inválida ou o Google recusa o pedido. A promessa não fica solta. O mapa permanece e o painel diz que a rota pelas ruas não foi encontrada. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
