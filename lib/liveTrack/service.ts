@@ -123,6 +123,7 @@ function fichaDoCliente(mission: any, viatura: { plate: string; model: string })
     agent2: mission.agent2 || '',
     plate: viatura.plate,
     vehicleModel: viatura.model,
+    ativa: fornecedorAtiva(mission.provider),
   };
 }
 

@@ -483,7 +483,8 @@ function fichaDoCliente(mission, viatura) {
     agent: mission.agent1 || mission.driver_name || "",
     agent2: mission.agent2 || "",
     plate: viatura.plate,
-    vehicleModel: viatura.model
+    vehicleModel: viatura.model,
+    ativa: fornecedorAtiva(mission.provider)
   };
 }
 function linksDoRastreio(track, origin, osNumber) {
@@ -506,14 +507,27 @@ function publicMissionView(mission, pontos) {
     destinationPoint: pontos?.destinationPoint || null
   };
 }
-async function pontosDaRotaAtiva(mission) {
-  if (!fornecedorAtiva(mission?.provider)) return { originPoint: null, destinationPoint: null };
+var cacheRota = /* @__PURE__ */ new Map();
+function enderecoParaMapa(valor) {
+  return String(valor || "").replace(/\([^)]*\)/g, " ").replace(/\([^)]*$/g, " ").replace(/\s+/g, " ").trim();
+}
+async function pontosDaRota(mission) {
+  const origem = enderecoParaMapa(mission?.origin);
+  const destino = enderecoParaMapa(mission?.destination);
+  const chave = `${origem}
+${destino}`;
+  const salvo = cacheRota.get(chave);
+  if (salvo && Date.now() - salvo.at < 30 * 60 * 1e3) {
+    return { originPoint: salvo.originPoint, destinationPoint: salvo.destinationPoint };
+  }
   try {
     const [originPoint, destinationPoint] = await Promise.all([
-      geocodeAddress(String(mission.origin || "")),
-      geocodeAddress(String(mission.destination || ""))
+      geocodeAddress(origem),
+      geocodeAddress(destino)
     ]);
-    return { originPoint, destinationPoint };
+    const pontos = { originPoint, destinationPoint };
+    cacheRota.set(chave, { at: Date.now(), ...pontos });
+    return pontos;
   } catch {
     return { originPoint: null, destinationPoint: null };
   }
@@ -704,9 +718,10 @@ async function publicGetLiveTrack(opts) {
   }
   let trail = [];
   let ficha = null;
+  const pontos = await pontosDaRota(mission);
   if (papel === "cliente") {
     const viatura = await viaturaDaMissao(mission.client_vehicle);
-    ficha = fichaDoCliente(mission, viatura);
+    ficha = { ...fichaDoCliente(mission, viatura), ...pontos };
     const { data: pts } = await sb.from("mission_live_positions").select("lat, lng, recorded_at").eq("track_id", track.id).order("recorded_at", { ascending: false }).limit(250);
     trail = (pts || []).slice().reverse();
   }
@@ -720,7 +735,7 @@ async function publicGetLiveTrack(opts) {
       lgpdVersion: LIVE_TRACK_LGPD_VERSION,
       lgpdSummary: LIVE_TRACK_LGPD_SUMMARY,
       lgpdFull: LIVE_TRACK_LGPD_FULL,
-      mission: papel === "cliente" ? ficha : publicMissionView(mission, papel === "agente" ? await pontosDaRotaAtiva(mission) : void 0),
+      mission: papel === "cliente" ? ficha : publicMissionView(mission, pontos),
       position: track.last_lat != null ? { lat: track.last_lat, lng: track.last_lng, accuracy: track.last_accuracy, at: track.last_seen_at } : null,
       trail
     }

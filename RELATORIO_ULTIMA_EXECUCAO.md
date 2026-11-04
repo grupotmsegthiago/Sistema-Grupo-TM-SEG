@@ -97,6 +97,50 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
+## Trilha no mapa, aviso para não fechar e marca ATIVA
+
+Executado em 04/11/2026 na `dev`, no pedido de publicar. Cada ponto gravado entra no mapa com a logo da missão. O toque mostra data, hora de Brasília e coordenadas. A ficha do cliente traz `ativa`. A página do agente mostra a faixa para não fechar a aba. O motor da OS não mudou.
+
+### Objetivo da Tarefa
+
+No acompanhamento, cada posição gravada vira um ponto no mapa. O clique mostra data, hora de Brasília e a coordenada daquele momento. O marcador usa o logotipo da ATIVA quando o fornecedor contém ATIVA, e o da TM SEG nos demais. Na tela do agente, um aviso fixo pede para manter a página aberta. O celular não esconde o navegador como um aplicativo nativo e o GPS para se a aba for fechada.
+
+### Passo a Passo Sequencial
+
+1. A trilha já está em `mission_live_positions` (`lat`, `lng`, `recorded_at`). O link do cliente já recebe esses pontos. Passar também a hora para o mapa e desenhar um marcador por ponto, além da linha.
+2. No clique do ponto, mostrar `DD/MM/AAAA HH:mm` em `America/Sao_Paulo` e a latitude/longitude. Sem endereço inventado quando a geocodificação daquele instante não existir.
+3. O ícone do ponto é o logotipo da ATIVA se `fornecedorAtiva` for verdadeiro. Nos outros fornecedores, o logotipo da TM SEG.
+4. Na página do agente, faixa fixa: manter a página aberta em segundo plano; fechar a aba interrompe o rastreio. O aviso que o navegador já dispara ao tentar fechar permanece. No celular, o sistema pode fechar a aba sozinho e esse aviso nem sempre aparece.
+5. Onde a página pública do rastreio ainda escrever TM SEG numa OS ATIVA, trocar pela marca ATIVA. O painel interno, o financeiro, a NF e o e-mail da empresa não entram.
+6. Teste do rastreio e health em `http://localhost:5000/`. Sem publicação até o pedido.
+
+### Ficheiros Afetados
+
+- `components/PublicLiveTrack.tsx`
+- `lib/liveTrack/service.ts` (a ficha do cliente passa a dizer se o fornecedor é ATIVA)
+- `scripts/live-track-velada.test.ts`
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md` (só depois da execução)
+
+### Garantias de Não Impacto
+
+- `calculateMissionFinancials` não muda. Tabela, pedágio, DHL, IBL, Asaas, NF, Torres e WhatsApp não mudam.
+- Nenhuma tabela, coluna ou migration. Os pontos já gravados são os que aparecem.
+- Nenhuma entrada nova em `functions` do `vercel.json`.
+- Datas em `America/Sao_Paulo`, 24 horas, `DD/MM/AAAA`.
+
+### Nove pontos
+
+1. Objetivo: o cliente vê por onde o agente passou, e o agente é avisado para não fechar a página.
+2. O que já existe: `mission_live_positions`, o envio de 1 em 1 minuto com a aba oculta e o `beforeunload`.
+3. Fonte única: as posições já gravadas no rastreio.
+4. Quem grava: o ping do agente. Quem lê: a página pública.
+5. Teste: `scripts/live-track-velada.test.ts` e health local.
+6. OS, financeiro, Asaas, NF, Torres e WhatsApp não entram.
+7. Reutiliza a trilha que o link do cliente já consulta.
+8. Nenhum arquivo novo.
+9. Para na aprovação. Fechar o navegador continua interrompendo o GPS.
+
 ## Link do agente ATIVA: logotipo e mapa da missão
 
 Executado em 04/11/2026 na `dev`, depois de "Fluxo aprovado, pode executar". No link do agente, fornecedor com ATIVA no nome abre a marca ATIVA Pronta Resposta, sem logo nem texto da TM SEG. A tela avisa o redirecionamento, segue o aceite LGPD e mostra origem, destino e a posição do agente. Com a aba oculta, o envio é de 1 em 1 minuto. No painel, os dois botões ficam só na velada aberta. O motor da OS não mudou. Ainda não foi publicado. Fechar o navegador interrompe o GPS.

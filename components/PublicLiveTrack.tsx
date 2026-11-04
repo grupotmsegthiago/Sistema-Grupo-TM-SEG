@@ -2,15 +2,17 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, CheckCircle2, EyeOff, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
 } from 'lucide-react';
-import { GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
+import { GoogleMap, InfoWindow, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
 import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
+import { formatDateTimeBR } from '../lib/dateUtils';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
 type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error';
 type Ponto = { lat: number; lng: number };
+type PontoTrilha = Ponto & { at?: string };
 
 const PING_VISIVEL_MS = 1800;
 const PING_OCULTO_MS = 60000;
@@ -47,8 +49,8 @@ function pontoValido(p: any): Ponto | null {
   return { lat, lng };
 }
 
-function enquadrarMapa(map: google.maps.Map, origem?: Ponto | null, destino?: Ponto | null, ponto?: Ponto | null) {
-  const pts = [origem, destino, ponto].filter((p): p is Ponto => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+function enquadrarMapa(map: google.maps.Map, origem?: Ponto | null, destino?: Ponto | null, ponto?: Ponto | null, trilha: Ponto[] = []) {
+  const pts = [origem, destino, ponto, ...trilha].filter((p): p is Ponto => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
   if (!pts.length) return;
   if (pts.length === 1) {
     map.setCenter(pts[0]);
@@ -65,20 +67,26 @@ function LiveMapBox({
   trilha,
   origem,
   destino,
+  marca,
 }: {
   ponto: Ponto | null;
-  trilha: Ponto[];
+  trilha: PontoTrilha[];
   origem?: Ponto | null;
   destino?: Ponto | null;
+  marca?: string;
 }) {
   const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
   const [mapa, setMapa] = useState<google.maps.Map | null>(null);
+  const [aberto, setAberto] = useState<number | null>(null);
   const centroInicial = useRef<Ponto>({ lat: -15.78, lng: -47.93 });
+  const icone = isLoaded && marca
+    ? { url: marca, scaledSize: new google.maps.Size(32, 32) }
+    : undefined;
 
   useEffect(() => {
     if (!mapa) return;
-    enquadrarMapa(mapa, origem, destino, ponto);
-  }, [mapa, origem, destino, ponto]);
+    enquadrarMapa(mapa, origem, destino, ponto, trilha);
+  }, [mapa, origem, destino, ponto, trilha]);
 
   if (loadError) return <p className="text-sm text-amber-200">Mapa indisponível neste navegador.</p>;
   if (!isLoaded) return <div className="h-72 rounded-2xl bg-white/5 animate-pulse" data-testid="live-track-map" />;
@@ -88,10 +96,22 @@ function LiveMapBox({
         mapContainerClassName="w-full h-72 rounded-2xl"
         center={centroInicial.current}
         zoom={4}
-        onLoad={(map) => { setMapa(map); enquadrarMapa(map, origem, destino, ponto); }}
+        onLoad={(map) => { setMapa(map); enquadrarMapa(map, origem, destino, ponto, trilha); }}
         options={{ disableDefaultUI: true, zoomControl: true }}
       >
         {trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
+        {trilha.map((p, i) => (
+          <Marker key={`${p.at || i}-${p.lat}-${p.lng}`} position={p} icon={icone} title="Posição gravada" onClick={() => setAberto(i)}>
+            {aberto === i ? (
+              <InfoWindow onCloseClick={() => setAberto(null)}>
+                <div style={{ color: '#0f172a', fontFamily: 'sans-serif', minWidth: 140 }}>
+                  <p style={{ margin: 0, fontWeight: 800 }}>{p.at ? formatDateTimeBR(p.at) : 'Sem horário'}</p>
+                  <p style={{ margin: '4px 0 0', fontFamily: 'monospace', fontSize: 12 }}>{p.lat.toFixed(5)}, {p.lng.toFixed(5)}</p>
+                </div>
+              </InfoWindow>
+            ) : null}
+          </Marker>
+        ))}
         {origem ? <Marker position={origem} label="O" title="Origem" /> : null}
         {destino ? <Marker position={destino} label="D" title="Destino" /> : null}
         {ponto ? <Marker position={ponto} label="A" title="Agente" /> : null}
@@ -107,7 +127,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const [ponto, setPonto] = useState<{ lat: number; lng: number } | null>(null);
   const [origem, setOrigem] = useState<Ponto | null>(null);
   const [destino, setDestino] = useState<Ponto | null>(null);
-  const [trilha, setTrilha] = useState<{ lat: number; lng: number }[]>([]);
+  const [trilha, setTrilha] = useState<PontoTrilha[]>([]);
 
   const carregar = useCallback(async () => {
     try {
@@ -122,7 +142,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
       setOrigem(pontoValido(j.mission?.originPoint));
       setDestino(pontoValido(j.mission?.destinationPoint));
       const pts = Array.isArray(j.trail)
-        ? j.trail.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng) })).filter((p: { lat: number; lng: number }) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+        ? j.trail.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng), at: p.recorded_at ? String(p.recorded_at) : undefined })).filter((p: PontoTrilha) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
         : [];
       setTrilha(pts);
       if (j.position?.lat != null && j.position?.lng != null) setPonto({ lat: Number(j.position.lat), lng: Number(j.position.lng) });
@@ -144,7 +164,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
     <div className="min-h-[100dvh] bg-slate-950 text-white" data-testid="live-track-client-view">
       <header className="px-5 pt-8 pb-4 border-b border-white/10">
         <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Acompanhamento do cliente</p>
-        <p className="text-lg font-black">{ficha?.osNumber ? `OS ${ficha.osNumber}` : 'Missão TM SEG'}</p>
+        <p className="text-lg font-black">{ficha?.osNumber ? `OS ${ficha.osNumber}` : (ficha?.ativa ? 'Missão ATIVA' : 'Missão TM SEG')}</p>
       </header>
       <main className="px-5 py-5 max-w-lg mx-auto space-y-4">
         {phase === 'loading' && <p className="text-sm text-slate-300">Abrindo o mapa…</p>}
@@ -160,7 +180,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
             <p className="rounded-xl bg-white/5 p-3 col-span-2"><span className="block text-[9px] uppercase text-slate-400">Destino</span>{ficha.destination || '—'}</p>
           </div>
         )}
-        <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} />
+        <LiveMapBox ponto={ponto} trilha={trilha} origem={origem} destino={destino} marca={ficha?.ativa ? ativaLogo : tmsegLogo} />
         <p className="text-[11px] text-slate-400">O origem · D destino · A localização do agente. O ponto do agente entra quando ele compartilha a posição.</p>
       </main>
     </div>
@@ -410,7 +430,7 @@ function AgentLiveTrack() {
     const tick = window.setInterval(() => { pollOnce(); }, 2500);
     const onHide = (e: BeforeUnloadEvent) => {
       e.preventDefault();
-      e.returnValue = 'Se fechar esta página o rastreio GPS para. Ocultar ou ir ao WhatsApp mantém o segundo plano.';
+      e.returnValue = 'Fechar a aba interrompe o rastreio da missão. Mantenha esta página aberta em segundo plano.';
     };
     const onPageHide = (e: PageTransitionEvent) => {
       if (e.persisted) {
@@ -509,9 +529,17 @@ function AgentLiveTrack() {
     );
   }
 
+  const avisoAberto = (
+    <p className="bg-amber-400 text-slate-950 px-4 py-3 text-sm font-black leading-snug" data-testid="live-track-keep-open">
+      Atenção: mantenha esta página aberta em segundo plano. Fechar a aba interrompe o rastreio da missão.
+    </p>
+  );
+
   if (phase === 'marca') {
     return (
-      <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center px-6 text-center" data-testid="live-track-ativa-marca">
+      <div className="min-h-[100dvh] bg-black text-white flex flex-col" data-testid="live-track-ativa-marca">
+        {avisoAberto}
+        <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
         <img src={ativaLogo} alt="ATIVA Pronta Resposta" className="w-56 h-56 object-contain" />
         <p className="mt-8 text-lg font-black leading-snug max-w-xs">Você será redirecionado para os dados da missão.</p>
         <button
@@ -521,12 +549,14 @@ function AgentLiveTrack() {
         >
           Continuar
         </button>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white flex flex-col">
+      {avisoAberto}
       <header className="px-5 pt-8 pb-4 flex items-center gap-3 border-b border-white/10">
         {phase === 'loading' ? (
           <p className="text-sm font-bold text-slate-300">Abrindo missão…</p>

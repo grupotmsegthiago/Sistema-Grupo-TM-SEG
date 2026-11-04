@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. No mapa do cliente, cada posição gravada vira um ponto com a logo da ATIVA quando o fornecedor é ATIVA, e com a logo da TM SEG nos demais. O toque mostra data, hora de Brasília e as coordenadas. O link do agente traz a faixa para manter a página aberta. Fechar a aba continua parando o GPS. O painel interno, o financeiro e a NF não mudaram de marca. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. No celular, a falha "Failed to start the audio device" deixa de derrubar a página do rastreio. O som só tenta ligar no toque de compartilhar, e a recusa do navegador não vira a tela de erro. O mapa e o GPS seguem. Ainda não foi publicado.
 
 Atualizado em 2026-11-04. O mapa do cliente passa a marcar origem, destino e a posição do agente. A posição do agente só entra depois que ele compartilha o GPS. O mapa deixa de abrir no mundo inteiro quando a rota tem coordenadas. Ainda não foi publicado.

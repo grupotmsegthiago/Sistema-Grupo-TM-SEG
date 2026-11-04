@@ -149,6 +149,9 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /PING_OCULTO_MS = 60000/);
   assert.match(page, /origem=\{origem\}/);
   assert.match(page, /O origem/);
+  assert.match(page, /live-track-keep-open/);
+  assert.match(page, /formatDateTimeBR/);
+  assert.match(page, /InfoWindow/);
   const svcMapa = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');
   assert.match(svcMapa, /pontosDaRota/);
   assert.doesNotMatch(svcMapa, /pontosDaRotaAtiva/);
