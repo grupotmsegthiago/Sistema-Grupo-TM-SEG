@@ -8,7 +8,23 @@ const SILENT_WAV =
 
 export type LiveTrackKeepalive = { stop: () => void };
 
-export async function startLiveTrackKeepalive(): Promise<LiveTrackKeepalive> {
+export type LiveTrackKeepaliveMarca = {
+  title: string;
+  artist: string;
+  album: string;
+  body: string;
+  icon?: string;
+};
+
+const MARCA_PADRAO: LiveTrackKeepaliveMarca = {
+  title: 'TM SEG — rastreio ao vivo',
+  artist: 'Grupo TM SEG',
+  album: 'Acompanhamento de missão',
+  body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. Só para se fechar esta página.',
+};
+
+export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveMarca> = {}): Promise<LiveTrackKeepalive> {
+  const aviso = { ...MARCA_PADRAO, ...marca };
   let stopped = false;
   let ctx: AudioContext | null = null;
   let osc: OscillatorNode | null = null;
@@ -47,9 +63,9 @@ export async function startLiveTrackKeepalive(): Promise<LiveTrackKeepalive> {
   try {
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: 'TM SEG — rastreio ao vivo',
-        artist: 'Grupo TM SEG',
-        album: 'Acompanhamento de missão',
+        title: aviso.title,
+        artist: aviso.artist,
+        album: aviso.album,
       });
       navigator.mediaSession.playbackState = 'playing';
     }
@@ -64,9 +80,9 @@ export async function startLiveTrackKeepalive(): Promise<LiveTrackKeepalive> {
       }
       if (Notification.permission === 'granted') {
         const opts: NotificationOptions = {
-          body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. Só para se fechar esta página.',
-          icon: '/favicon.png',
-          badge: '/favicon.png',
+          body: aviso.body,
+          icon: aviso.icon || '/favicon.png',
+          badge: aviso.icon || '/favicon.png',
           tag: 'tmseg-live-track',
           requireInteraction: true,
           silent: true,
@@ -74,9 +90,9 @@ export async function startLiveTrackKeepalive(): Promise<LiveTrackKeepalive> {
         };
         const reg = await navigator.serviceWorker?.ready.catch(() => null);
         if (reg?.showNotification) {
-          await reg.showNotification('TM SEG — rastreio ao vivo', opts);
+          await reg.showNotification(aviso.title, opts);
         } else {
-          new Notification('TM SEG — rastreio ao vivo', opts);
+          new Notification(aviso.title, opts);
         }
       }
     }

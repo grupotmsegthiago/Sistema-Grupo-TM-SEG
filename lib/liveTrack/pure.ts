@@ -56,6 +56,12 @@ export function buildLiveTrackPublicUrl(token: string, origin = CANONICAL_PUBLIC
   return `${String(origin || CANONICAL_PUBLIC_ORIGIN).replace(/\/$/, '')}${buildLiveTrackPublicPath(token)}`;
 }
 
+/** Link só de leitura. A credencial não é o token com que o agente transmite. */
+export function buildLiveTrackClientUrl(credential: string, origin = CANONICAL_PUBLIC_ORIGIN): string {
+  const base = String(origin || CANONICAL_PUBLIC_ORIGIN).replace(/\/$/, '');
+  return `${base}${LIVE_TRACK_PUBLIC_PATH}?c=${encodeURIComponent(credential)}`;
+}
+
 export function buildLiveTrackWhatsappText(opts: { osNumber: string; url: string }): string {
   const os = String(opts.osNumber || '').trim() || '—';
   return [

@@ -97,6 +97,106 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
+## Link do agente ATIVA: logotipo e mapa da missão
+
+Executado em 04/11/2026 na `dev`, depois de "Fluxo aprovado, pode executar". No link do agente, fornecedor com ATIVA no nome abre a marca ATIVA Pronta Resposta, sem logo nem texto da TM SEG. A tela avisa o redirecionamento, segue o aceite LGPD e mostra origem, destino e a posição do agente. Com a aba oculta, o envio é de 1 em 1 minuto. No painel, os dois botões ficam só na velada aberta. O motor da OS não mudou. Ainda não foi publicado. Fechar o navegador interrompe o GPS.
+
+### Objetivo da Tarefa
+
+Quando o fornecedor da OS contém ATIVA, o link do agente abre primeiro a marca ATIVA Pronta Resposta, avisa que ele será levado aos dados da missão e, depois do aceite LGPD, mostra o mapa com origem, destino e a posição dele. Se ele sair da tela, o envio de evidência segue de 1 em 1 minuto enquanto a página existir.
+
+### Passo a Passo Sequencial
+
+1. Guardar o logotipo enviado em `attached_assets/ativa-pronta-resposta.png`.
+2. No `public-get` do agente, marcar `ativa` quando `missions.provider` contém ATIVA, a mesma leitura já usada no formulário. Devolver latitude e longitude de origem e de destino, chamando por dentro a geocodificação que já existe em `api/geocode-address.ts`. Sem rota nova e sem entrada nova no `vercel.json`.
+3. Na página do agente, se `ativa` for verdadeiro: tela cheia com o logotipo e o texto "Você será redirecionado para os dados da missão." Em seguida permanece o aceite LGPD. O GPS só liga no toque em compartilhar.
+4. No mapa, três marcas: origem, destino e a posição do agente. Se a geocodificação falhar, o mapa segue só com a posição dele e os endereços em texto.
+5. Com a aba visível, o envio continua no ritmo atual. Com a aba oculta ou o aplicativo em segundo plano, o envio passa a 1 vez por minuto. O keepalive já existente permanece.
+6. Fornecedor que não é ATIVA, link do cliente e missão que não é velada ficam como estão.
+7. Teste do rastreio, build e `/api/health` em `http://localhost:5000/`. Sem publicação.
+
+### Ficheiros Afetados
+
+- `attached_assets/ativa-pronta-resposta.png` (novo, a imagem enviada)
+- `lib/liveTrack/isVeladaMission.ts` (leitura do nome ATIVA)
+- `lib/liveTrack/service.ts` (marca e coordenadas no `public-get` do agente)
+- `components/PublicLiveTrack.tsx` (tela da marca, mapa e intervalo oculto)
+- `scripts/live-track-velada.test.ts`
+- `api/_live-track-core.cjs` (gerado no build)
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md` (só depois da execução)
+
+### Garantias de Não Impacto
+
+- `calculateMissionFinancials` não muda. Tabela, pedágio, DHL, IBL, Asaas, NF, Torres e WhatsApp não mudam.
+- Nenhuma tabela, coluna ou migration.
+- O link do cliente e o botão da velada que não é ATIVA permanecem.
+- Nenhuma entrada nova em `functions` do `vercel.json`.
+- Datas continuam em `America/Sao_Paulo`, 24 horas.
+
+### Nove pontos
+
+1. Objetivo: o agente da ATIVA vê a marca e o mapa da missão, e a posição segue como evidência em segundo plano.
+2. O que já existe: o link `/rastreio?token=`, o aceite LGPD, o `watchPosition` e o keepalive em `lib/liveTrack/backgroundKeepalive.ts`.
+3. Fonte única: `missions.provider` e as posições em `mission_live_tracks` / `mission_live_positions`.
+4. Quem grava: o ping do agente. Quem lê: a página pública e o painel.
+5. Teste: `scripts/live-track-velada.test.ts`, build e health local.
+6. OS, financeiro, Asaas, NF, Torres e WhatsApp não entram.
+7. Reutiliza o link do agente e a geocodificação já existente.
+8. O arquivo novo é só a imagem do logotipo.
+9. Para na aprovação. O navegador não envia GPS depois que a página deixa de existir; o minuto a minuto vale com a aba oculta.
+
+## Rastreio ao vivo: link do agente e link do cliente
+
+Executado em 04/11/2026 na `dev`. Cada OS velada ganha dois acessos no painel. O link do agente (`/rastreio?token=`) abre o mapa e transmite a posição depois do aceite LGPD. O link do cliente (`/rastreio?c=`) é só leitura: agente, viatura, cliente, origem, destino, mapa e o caminho já percorrido. A credencial do cliente é uma assinatura do identificador do rastreio e não transmite GPS. Os botões aparecem da criação (Solicitada, Documentação, Agendada, Origem, Em Viagem) e somem em Pendente, Concluída, Cancelada e Recusada. A API responde o mesmo: pendente fica inacessível; concluída encerra o rastreio. O pacote `api/_live-track-core.cjs` permanece, para a Vercel não voltar a responder `Cannot find module` de `lib/publicAppUrl`. O motor da OS não mudou. Ainda não foi publicado. Fechar a aba do agente interrompe o GPS.
+
+### Objetivo da Tarefa
+
+O botão que já existe passa a gerar o link de novo. A função da Vercel deixa de importar os arquivos soltos de `lib/liveTrack` e passa a carregar um pacote único, no mesmo formato das outras rotas leves.
+
+### Passo a Passo Sequencial
+
+1. Gerar `api/_live-track-core.cjs` no `build-server.mjs`, a partir de `lib/liveTrack/httpHandler.ts`, com esbuild.
+2. Em `api/live-track.ts`, trocar o `import()` dinâmico por `require` estático desse pacote.
+3. Não criar função nova no `vercel.json`. O arquivo com `_` não conta no limite de 50.
+4. Testar localmente `GET /api/live-track?op=public-get&token=teste`: a resposta deixa de ser o módulo ausente.
+5. Build. Sem publicação até o pedido.
+
+### Ficheiros Afetados
+
+- `build-server.mjs`
+- `api/live-track.ts`
+- `api/_live-track-core.cjs` (gerado no build)
+- `lib/liveTrack/isVeladaMission.ts`
+- `lib/liveTrack/pure.ts`
+- `lib/liveTrack/service.ts`
+- `lib/liveTrack/httpHandler.ts`
+- `lib/liveTrack/useLiveTrackWatch.ts`
+- `components/LiveTrackPanel.tsx`
+- `components/PublicLiveTrack.tsx`
+- `scripts/live-track-velada.test.ts`
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md`
+
+### Garantias de Não Impacto
+
+- `calculateMissionFinancials` não muda. Tabela, pedágio, DHL, IBL, Asaas, NF, Torres e WhatsApp não mudam.
+- Nenhuma tabela, coluna ou migration.
+- O botão, o texto de consentimento e o envio de latitude e longitude continuam os que já existem.
+- Nenhuma entrada nova em `functions` do `vercel.json`.
+
+### Nove pontos
+
+1. Objetivo: o link de localização da velada volta a ser gerado.
+2. O que já existe: `api/live-track.ts`, `lib/liveTrack/httpHandler.ts` e o botão em `components/LiveTrackPanel.tsx`.
+3. Fonte única: o mesmo handler. Só muda a forma de empacotar.
+4. Quem grava e quem lê: o serviço de rastreio que já está em `lib/liveTrack/service.ts`.
+5. Teste: a rota pública responde sem `Cannot find module`.
+6. OS, financeiro, Asaas, NF, Torres e WhatsApp não entram.
+7. Reutiliza o pacote CJS já usado nas outras rotas leves.
+8. O arquivo novo é o pacote gerado, porque a Vercel não leva `lib/publicAppUrl` junto do import solto.
+9. Para na aprovação. Sem o "pode seguir", nenhum arquivo de código é alterado.
+
 ## Nova OS: a última missão aprovada da rota preenche as tabelas
 
 Executado em 04/11/2026 na `dev`, depois do "sim" para corrigir a troca de origem e destino. A herança continua só em `billing_approved = true`: OS para conferir fica de fora. A cidade entra no LIKE com curinga de vogal, então Florianópolis com ou sem acento, e com rua ou número diferentes, acha a mesma OS. A lista de rotas cadastradas filtra pela cidade e não volta ao catálogo inteiro. Enquanto o cálculo da rota anterior termina, o endereço novo digitado permanece. Portal e modal financeiro continuam na frequência das 10. O motor `calculateMissionFinancials` não foi alterado. Ainda não foi publicado.

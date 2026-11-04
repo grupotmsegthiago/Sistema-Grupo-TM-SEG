@@ -31,7 +31,9 @@ export async function handleLiveTrackHttp(req: any, res: any): Promise<void> {
   try {
     if (op === 'public-get' && method === 'GET') {
       const token = String(req.query?.token || '').trim();
-      const result = await publicGetLiveTrack({ token, req });
+      const clientCredential = String(req.query?.c || '').trim();
+      const contarAbertura = String(req.query?.watch || '') !== '1';
+      const result = await publicGetLiveTrack({ token, clientCredential, contarAbertura, req });
       res.status(result.status).json(result.body);
       return;
     }

@@ -1,8 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { isTerminalMissionStatus, isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { fornecedorAtiva, isTerminalMissionStatus, isVeladaMission, rastreioOsAberta } from '../lib/liveTrack/isVeladaMission';
+import { credencialDoCliente, idPeloLinkDoCliente } from '../lib/liveTrack/service';
 import {
+  buildLiveTrackClientUrl,
   buildLiveTrackPublicUrl,
   buildLiveTrackWhatsappText,
   haversineMeters,
@@ -19,6 +21,33 @@ test('só missão velada gera rastreio ao vivo', () => {
   assert.equal(isVeladaMission({ mission_type: 'Caracterizada' }), false);
   assert.equal(isVeladaMission({ mission_type: 'Pronta Resposta' }), false);
   assert.equal(isVeladaMission(null), false);
+});
+
+test('fornecedor ATIVA é a marca, e inativa não entra', () => {
+  assert.equal(fornecedorAtiva('ATIVA SEGURANÇA'), true);
+  assert.equal(fornecedorAtiva('ativa pronta resposta'), true);
+  assert.equal(fornecedorAtiva('TORRES'), false);
+  assert.equal(fornecedorAtiva('FILIAL INATIVA'), false);
+  assert.equal(fornecedorAtiva(''), false);
+});
+
+test('link abre da criação até a conclusão e fecha em pendente ou encerrada', () => {
+  assert.equal(rastreioOsAberta('Solicitada'), true);
+  assert.equal(rastreioOsAberta('Agendada'), true);
+  assert.equal(rastreioOsAberta('Origem'), true);
+  assert.equal(rastreioOsAberta('Em Viagem'), true);
+  assert.equal(rastreioOsAberta('Pendente'), false);
+  assert.equal(rastreioOsAberta('Concluída'), false);
+  assert.equal(rastreioOsAberta('Cancelada'), false);
+  assert.equal(rastreioOsAberta(''), false);
+});
+
+test('credencial do cliente não serve para transmitir', () => {
+  const c = credencialDoCliente('11111111-1111-1111-1111-111111111111');
+  assert.equal(idPeloLinkDoCliente(c), '11111111-1111-1111-1111-111111111111');
+  assert.equal(idPeloLinkDoCliente(`${c}x`), null);
+  assert.match(buildLiveTrackClientUrl(c, 'https://sistema.grupotmseg.com.br'), /\/rastreio\?c=/);
+  assert.doesNotMatch(buildLiveTrackClientUrl(c, 'https://sistema.grupotmseg.com.br'), /token=/);
 });
 
 test('OS terminal encerra o rastreio', () => {
@@ -80,6 +109,9 @@ test('botão gerar link só existe no fluxo velada', () => {
   const panel = fs.readFileSync('components/LiveTrackPanel.tsx', 'utf8');
   assert.match(panel, /if \(!enabled\) return null/);
   assert.match(panel, /isVeladaMission\(mission\)/);
+  assert.match(panel, /rastreioOsAberta/);
+  assert.match(panel, /Link do agente/);
+  assert.match(panel, /Link do cliente/);
 });
 
 test('rota pública /rastreio e API no Express existem', () => {
@@ -90,18 +122,35 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(routes, /\/api\/live-track/);
   const api = fs.readFileSync('api/live-track.ts', 'utf8');
   assert.match(api, /handleLiveTrackHttp/);
+  assert.match(api, /require\('\.\/_live-track-core\.cjs'\)/);
+  assert.doesNotMatch(api, /import\('\.\.\/lib\/liveTrack\/httpHandler/);
+  const build = fs.readFileSync('build-server.mjs', 'utf8');
+  assert.match(build, /lib\/liveTrack\/httpHandler\.ts/);
+  assert.match(build, /api\/_live-track-core\.cjs/);
   const http = fs.readFileSync('lib/liveTrack/httpHandler.ts', 'utf8');
   assert.match(http, /public-ping/);
   assert.match(http, /Não autorizado/);
   const page = fs.readFileSync('components/PublicLiveTrack.tsx', 'utf8');
   assert.match(page, /enableHighAccuracy: true/);
+  assert.match(page, /maximumAge: 0/);
+  assert.match(page, /watchPosition/);
+  assert.match(page, /será reenviada automaticamente/);
   assert.match(page, /wakeLock/);
   assert.match(page, /Compartilhar localização em tempo real/);
   assert.match(page, /live-track-lgpd-check/);
   assert.match(page, /live-track-minimize/);
+  assert.match(page, /live-track-client-view/);
+  assert.match(page, /live-track-map/);
   assert.match(page, /startLiveTrackKeepalive/);
   assert.match(page, /keepalive: true/);
   assert.match(page, /fechar esta página/);
+  assert.match(page, /Você será redirecionado para os dados da missão/);
+  assert.match(page, /ativa-pronta-resposta/);
+  assert.match(page, /PING_OCULTO_MS = 60000/);
+  assert.match(page, /ATIVA Pronta Resposta/);
+  const svc = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');
+  assert.match(svc, /fornecedorAtiva/);
+  assert.match(svc, /geocodeAddress/);
   const idx = fs.readFileSync('index.tsx', 'utf8');
   assert.match(idx, /\/rastreio/);
   const apiSrc = fs.readFileSync('lib/liveTrack/service.ts', 'utf8');

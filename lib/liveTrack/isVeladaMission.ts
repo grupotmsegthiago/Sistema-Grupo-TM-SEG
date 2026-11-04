@@ -24,3 +24,16 @@ export function isTerminalMissionStatus(status: string | null | undefined): bool
   const s = String(status || '').trim();
   return (TERMINAL_MISSION_STATUSES as readonly string[]).includes(s);
 }
+
+/** Fornecedor ATIVA. "INATIVA" não entra. */
+export function fornecedorAtiva(nome: string | null | undefined): boolean {
+  const n = String(nome || '').toUpperCase();
+  return /(^|[^A-Z])ATIVA([^A-Z]|$)/.test(n);
+}
+
+/** O link existe da criação até a conclusão. Pendente, concluída, cancelada e recusada ficam fechadas. */
+export function rastreioOsAberta(status: string | null | undefined): boolean {
+  const s = String(status || '').trim();
+  if (!s || s === 'Pendente') return false;
+  return !isTerminalMissionStatus(s);
+}

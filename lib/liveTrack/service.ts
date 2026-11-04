@@ -1,7 +1,10 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { resolvePublicAppUrl } from '../publicAppUrl.js';
 import { LIVE_TRACK_LGPD_FULL, LIVE_TRACK_LGPD_SUMMARY, LIVE_TRACK_LGPD_VERSION } from './lgpd.js';
-import { isTerminalMissionStatus, isVeladaMission } from './isVeladaMission.js';
+import { geocodeAddress } from '../../api/geocode-address.js';
+import { isTerminalMissionStatus, isVeladaMission, fornecedorAtiva, rastreioOsAberta } from './isVeladaMission.js';
 import {
+  buildLiveTrackClientUrl,
   buildLiveTrackPublicUrl,
   buildLiveTrackWhatsappText,
   clampAccuracy,
@@ -16,6 +19,31 @@ import {
 import { ensureLiveTrackSchema, getLiveTrackSupabase } from './schema.js';
 
 const ACTIVE_STATUSES: LiveTrackStatus[] = ['pending', 'consented', 'sharing', 'paused'];
+
+function segredoDoCliente(): string {
+  return String(process.env.LIVE_TRACK_CLIENT_SECRET || 'tmseg-rastreio-cliente-v1');
+}
+
+function assinarCliente(trackId: string): string {
+  return createHmac('sha256', segredoDoCliente()).update(String(trackId)).digest('base64url').slice(0, 32);
+}
+
+export function credencialDoCliente(trackId: string): string {
+  return `${trackId}.${assinarCliente(trackId)}`;
+}
+
+export function idPeloLinkDoCliente(credencial: string): string | null {
+  const bruto = String(credencial || '').trim();
+  const ponto = bruto.lastIndexOf('.');
+  if (ponto <= 0) return null;
+  const id = bruto.slice(0, ponto);
+  const assinatura = bruto.slice(ponto + 1);
+  const esperada = assinarCliente(id);
+  const a = Buffer.from(assinatura);
+  const b = Buffer.from(esperada);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+  return id;
+}
 
 function newToken(): string {
   const bytes = new Uint8Array(24);
@@ -39,7 +67,7 @@ async function loadMission(missionId: string) {
   const sb = await getLiveTrackSupabase();
   const { data, error } = await sb
     .from('missions')
-    .select('id, client, provider, origin, destination, status, mission_type, agent1, agent2')
+    .select('id, client, provider, origin, destination, status, mission_type, agent1, agent2, driver_name, client_vehicle')
     .eq('id', missionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -71,14 +99,66 @@ async function getTrackByToken(token: string) {
   return data;
 }
 
-function publicMissionView(mission: any) {
+async function viaturaDaMissao(vehicleId: unknown): Promise<{ plate: string; model: string }> {
+  const id = Number(vehicleId);
+  if (!Number.isFinite(id) || id <= 0) return { plate: '', model: '' };
+  try {
+    const sb = await getLiveTrackSupabase();
+    const { data } = await sb.from('client_vehicles').select('plate, model').eq('id', id).maybeSingle();
+    return { plate: String(data?.plate || ''), model: String(data?.model || '') };
+  } catch {
+    return { plate: '', model: '' };
+  }
+}
+
+function fichaDoCliente(mission: any, viatura: { plate: string; model: string }) {
+  return {
+    osNumber: mission.id,
+    client: mission.client || '',
+    provider: mission.provider || '',
+    origin: mission.origin || '',
+    destination: mission.destination || '',
+    status: mission.status || '',
+    agent: mission.agent1 || mission.driver_name || '',
+    agent2: mission.agent2 || '',
+    plate: viatura.plate,
+    vehicleModel: viatura.model,
+  };
+}
+
+function linksDoRastreio(track: { id: string; token: string }, origin: string, osNumber: string) {
+  const url = buildLiveTrackPublicUrl(track.token, origin);
+  return {
+    url,
+    clientUrl: buildLiveTrackClientUrl(credencialDoCliente(track.id), origin),
+    whatsappText: buildLiveTrackWhatsappText({ osNumber, url }),
+  };
+}
+
+function publicMissionView(mission: any, pontos?: { originPoint: { lat: number; lng: number } | null; destinationPoint: { lat: number; lng: number } | null }) {
   return {
     osNumber: mission.id,
     origin: mission.origin || '',
     destination: mission.destination || '',
     status: mission.status || '',
     agentHint: mission.agent1 ? String(mission.agent1).split(' ')[0] : '',
+    ativa: fornecedorAtiva(mission.provider),
+    originPoint: pontos?.originPoint || null,
+    destinationPoint: pontos?.destinationPoint || null,
   };
+}
+
+async function pontosDaRotaAtiva(mission: any): Promise<{ originPoint: { lat: number; lng: number } | null; destinationPoint: { lat: number; lng: number } | null }> {
+  if (!fornecedorAtiva(mission?.provider)) return { originPoint: null, destinationPoint: null };
+  try {
+    const [originPoint, destinationPoint] = await Promise.all([
+      geocodeAddress(String(mission.origin || '')),
+      geocodeAddress(String(mission.destination || '')),
+    ]);
+    return { originPoint, destinationPoint };
+  } catch {
+    return { originPoint: null, destinationPoint: null };
+  }
 }
 
 export async function generateLiveTrack(opts: {
@@ -95,22 +175,24 @@ export async function generateLiveTrack(opts: {
   if (!isVeladaMission(mission)) {
     return { status: 400, body: { error: 'Link de localização ao vivo só está disponível para missão velada.' } };
   }
-  if (isTerminalMissionStatus(mission.status)) {
-    return { status: 409, body: { error: 'A OS já foi encerrada. Não é possível gerar rastreio ao vivo.' } };
+  if (!rastreioOsAberta(mission.status)) {
+    const erro = isTerminalMissionStatus(mission.status)
+      ? 'A OS já foi encerrada. O link de rastreio parou.'
+      : 'O link fica indisponível enquanto a OS está pendente.';
+    return { status: 409, body: { error: erro } };
   }
 
   const existing = await getActiveTrack(missionId);
   const origin = resolvePublicAppUrl(opts.req);
   if (existing) {
-    const url = buildLiveTrackPublicUrl(existing.token, origin);
+    const links = linksDoRastreio(existing, origin, mission.id);
     return {
       status: 200,
       body: {
         reused: true,
         trackId: existing.id,
         token: existing.token,
-        url,
-        whatsappText: buildLiveTrackWhatsappText({ osNumber: mission.id, url }),
+        ...links,
         trackStatus: existing.status,
         osNumber: mission.id,
       },
@@ -133,15 +215,14 @@ export async function generateLiveTrack(opts: {
     if (/duplicate|unique/i.test(error.message)) {
       const raced = await getActiveTrack(missionId);
       if (raced) {
-        const url = buildLiveTrackPublicUrl(raced.token, origin);
+        const links = linksDoRastreio(raced, origin, mission.id);
         return {
           status: 200,
           body: {
             reused: true,
             trackId: raced.id,
             token: raced.token,
-            url,
-            whatsappText: buildLiveTrackWhatsappText({ osNumber: mission.id, url }),
+            ...links,
             trackStatus: raced.status,
             osNumber: mission.id,
           },
@@ -150,15 +231,14 @@ export async function generateLiveTrack(opts: {
     }
     throw new Error(error.message);
   }
-  const url = buildLiveTrackPublicUrl(token, origin);
+  const links = linksDoRastreio(data, origin, mission.id);
   return {
     status: 201,
     body: {
       reused: false,
       trackId: data.id,
       token,
-      url,
-      whatsappText: buildLiveTrackWhatsappText({ osNumber: mission.id, url }),
+      ...links,
       trackStatus: 'pending',
       osNumber: mission.id,
     },
@@ -239,7 +319,7 @@ export async function watchLiveTrack(opts: {
   }
 
   const origin = resolvePublicAppUrl();
-  const url = buildLiveTrackPublicUrl(track.token, origin);
+  const links = linksDoRastreio(track, origin, mission.id);
   return {
     status: 200,
     body: {
@@ -247,8 +327,7 @@ export async function watchLiveTrack(opts: {
       hasTrack: true,
       osNumber: mission.id,
       missionStatus: mission.status,
-      url,
-      whatsappText: buildLiveTrackWhatsappText({ osNumber: mission.id, url }),
+      ...links,
       track: {
         id: track.id,
         status: track.status,
@@ -270,47 +349,90 @@ export async function watchLiveTrack(opts: {
   };
 }
 
+async function getTrackById(id: string) {
+  const sb = await getLiveTrackSupabase();
+  const { data, error } = await sb.from('mission_live_tracks').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 export async function publicGetLiveTrack(opts: {
-  token: string;
+  token?: string;
+  clientCredential?: string;
+  contarAbertura?: boolean;
   req?: { headers?: Record<string, unknown> } | null;
 }): Promise<{ status: number; body: any }> {
   await ensureLiveTrackSchema();
+  const credencial = String(opts.clientCredential || '').trim();
   const token = String(opts.token || '').trim();
-  if (!token) return { status: 400, body: { error: 'token é obrigatório' } };
-  const track = await getTrackByToken(token);
+  const papel = credencial ? 'cliente' : 'agente';
+  let track = null;
+  if (credencial) {
+    const id = idPeloLinkDoCliente(credencial);
+    if (!id) return { status: 404, body: { error: 'Link inválido ou expirado.' } };
+    track = await getTrackById(id);
+  } else if (token) {
+    track = await getTrackByToken(token);
+  } else {
+    return { status: 400, body: { error: 'token é obrigatório' } };
+  }
   if (!track) return { status: 404, body: { error: 'Link inválido ou expirado.' } };
 
   const mission = await loadMission(track.mission_id);
   if (!mission) return { status: 404, body: { error: 'OS não encontrada.' } };
 
-  if (isTerminalMissionStatus(mission.status) && track.status !== 'ended') {
-    const sb = await getLiveTrackSupabase();
-    await sb
-      .from('mission_live_tracks')
-      .update({ status: 'ended', ended_at: new Date().toISOString(), ended_reason: 'mission_terminal' })
-      .eq('id', track.id);
-    track.status = 'ended';
+  if (!rastreioOsAberta(mission.status)) {
+    if (isTerminalMissionStatus(mission.status) && track.status !== 'ended') {
+      const sbFim = await getLiveTrackSupabase();
+      await sbFim
+        .from('mission_live_tracks')
+        .update({ status: 'ended', ended_at: new Date().toISOString(), ended_reason: 'mission_terminal' })
+        .eq('id', track.id);
+      track.status = 'ended';
+    }
+    if (track.status !== 'ended') {
+      return { status: 403, body: { error: 'O link fica indisponível enquanto a OS está pendente.' } };
+    }
   }
 
   const sb = await getLiveTrackSupabase();
-  await sb
-    .from('mission_live_tracks')
-    .update({
-      opened_at: track.opened_at || new Date().toISOString(),
-      open_count: Number(track.open_count || 0) + 1,
-    })
-    .eq('id', track.id);
+  if (opts.contarAbertura !== false) {
+    await sb
+      .from('mission_live_tracks')
+      .update({
+        opened_at: track.opened_at || new Date().toISOString(),
+        open_count: Number(track.open_count || 0) + 1,
+      })
+      .eq('id', track.id);
+  }
+
+  let trail: Array<{ lat: number; lng: number; recorded_at: string }> = [];
+  let ficha = null;
+  if (papel === 'cliente') {
+    const viatura = await viaturaDaMissao(mission.client_vehicle);
+    ficha = fichaDoCliente(mission, viatura);
+    const { data: pts } = await sb
+      .from('mission_live_positions')
+      .select('lat, lng, recorded_at')
+      .eq('track_id', track.id)
+      .order('recorded_at', { ascending: false })
+      .limit(250);
+    trail = (pts || []).slice().reverse();
+  }
 
   return {
     status: 200,
     body: {
       ok: true,
+      papel,
       status: track.status,
       ended: track.status === 'ended',
       lgpdVersion: LIVE_TRACK_LGPD_VERSION,
       lgpdSummary: LIVE_TRACK_LGPD_SUMMARY,
       lgpdFull: LIVE_TRACK_LGPD_FULL,
-      mission: publicMissionView(mission),
+      mission: papel === 'cliente' ? ficha : publicMissionView(mission, papel === 'agente' ? await pontosDaRotaAtiva(mission) : undefined),
+      position: track.last_lat != null ? { lat: track.last_lat, lng: track.last_lng, accuracy: track.last_accuracy, at: track.last_seen_at } : null,
+      trail,
     },
   };
 }
@@ -331,8 +453,11 @@ export async function publicConsentLiveTrack(opts: {
 
   const mission = await loadMission(track.mission_id);
   if (!mission) return { status: 404, body: { error: 'OS não encontrada.' } };
-  if (isTerminalMissionStatus(mission.status)) {
-    return { status: 410, body: { error: 'A missão já foi encerrada. O rastreio não é mais necessário.' } };
+  if (!rastreioOsAberta(mission.status)) {
+    const erro = isTerminalMissionStatus(mission.status)
+      ? 'A missão já foi encerrada. O rastreio não é mais necessário.'
+      : 'O link fica indisponível enquanto a OS está pendente.';
+    return { status: isTerminalMissionStatus(mission.status) ? 410 : 403, body: { error: erro } };
   }
 
   const sb = await getLiveTrackSupabase();
@@ -378,6 +503,9 @@ export async function publicPingLiveTrack(opts: {
       .update({ status: 'ended', ended_at: new Date().toISOString(), ended_reason: 'mission_terminal' })
       .eq('id', track.id);
     return { status: 410, body: { ok: false, ended: true, error: 'A missão foi encerrada. O rastreio parou.' } };
+  }
+  if (!rastreioOsAberta(mission.status)) {
+    return { status: 403, body: { error: 'O link fica indisponível enquanto a OS está pendente.' } };
   }
 
   const coords = validateCoords(opts.body?.lat, opts.body?.lng);

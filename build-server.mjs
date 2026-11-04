@@ -134,6 +134,14 @@ execSync(
 );
 console.log('Password reset core bundle: api/_password-reset-core.cjs');
 
+// Rastreio ao vivo. O import solto de lib/liveTrack/pure.js na Vercel não leva
+// lib/publicAppUrl e o botão responde Cannot find module.
+execSync(
+  'npx esbuild lib/liveTrack/httpHandler.ts --bundle --platform=node --format=cjs --outfile=api/_live-track-core.cjs --packages=external',
+  { stdio: 'inherit' },
+);
+console.log('Live track core bundle: api/_live-track-core.cjs');
+
 // Bundle leve para api/index.ts na Vercel (carregado sob demanda, não no top-level).
 execSync(
   'npx esbuild server/vercelAppEntry.ts --bundle --platform=node --format=cjs --outfile=dist/vercelApp.cjs --packages=external',

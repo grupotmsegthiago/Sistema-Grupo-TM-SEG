@@ -10,6 +10,7 @@ export type LiveTrackWatchBody = {
   osNumber?: string;
   missionStatus?: string;
   url?: string;
+  clientUrl?: string;
   whatsappText?: string;
   trail?: Array<{ lat: number; lng: number; recorded_at: string }>;
   track?: {

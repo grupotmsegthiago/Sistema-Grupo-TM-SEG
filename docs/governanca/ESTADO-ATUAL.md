@@ -1,6 +1,8 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 2026-11-04. Na Nova OS, a tabela e o pedágio saem só da última OS com `billing_approved = true` da mesma cidade, do mesmo tipo e, com fornecedor, do mesmo par. OS para conferir não entra. Rua, número e acento não derrubam a cidade. A lista de rotas cadastradas continua filtrada pela cidade quando o endereço muda. O motor da OS não mudou. Ainda não foi publicado.
+Atualizado em 2026-11-04. Na OS velada, os botões Gerar Link do agente e Gerar Link do cliente ficam separados. Eles aparecem da criação até a execução e somem em pendente, concluída, cancelada e recusada. Se o fornecedor contém ATIVA, o link do agente abre só com a marca ATIVA Pronta Resposta, avisa o redirecionamento, pede o aceite LGPD e mostra o mapa com origem, destino e a posição do agente. Com a aba oculta, o envio passa a 1 vez por minuto. Fornecedor que não é ATIVA continua com a marca TM SEG. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 2026-11-04. Na Nova OS, a tabela e o pedágio saem só da última OS com `billing_approved = true` da mesma cidade, do mesmo tipo e, com fornecedor, do mesmo par. OS para conferir não entra. Rua, número e acento não derrubam a cidade. A lista de rotas cadastradas continua filtrada pela cidade quando o endereço muda. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. O cancelamento no Controle de NF passa a fechar o título em Contas a Receber, o boleto no Asaas e a NFS-e autorizada. Fatura paga não entra. O valor original do título permanece; o em aberto zera. Four `TMSEG-20261002-172535-MKAM` e Sankyu `TMSEG-20261002-171920-LH6K` não foram reprocessadas. O motor da OS não mudou. Ainda não foi publicado.
 

@@ -51,6 +51,16 @@ async function geocodeWithNominatim(address: string): Promise<GeoResult | null> 
   };
 }
 
+export async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  const q = String(address || '').trim();
+  if (q.length < 3) return null;
+  const result = await geocodeWithGoogle(q) || await geocodeWithNominatim(q);
+  const lat = Number(result?.location?.lat);
+  const lng = Number(result?.location?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "GET") {
     res.status(405).json({ success: false, error: "method_not_allowed" });

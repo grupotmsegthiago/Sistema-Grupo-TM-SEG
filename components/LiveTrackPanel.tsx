@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Check, Copy, Link2, Loader2, Radio, Share2, Square } from 'lucide-react';
+import { Check, Copy, Loader2, Radio, Share2, Square, Users } from 'lucide-react';
 import { authFetch } from '../lib/authFetch';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
-import { isVeladaMission } from '../lib/liveTrack/isVeladaMission';
+import { isVeladaMission, rastreioOsAberta } from '../lib/liveTrack/isVeladaMission';
 import { liveTrackOperatorLabel, useLiveTrackWatch } from '../lib/liveTrack/useLiveTrackWatch';
 import type { Mission } from '../types';
 
@@ -12,17 +12,18 @@ type Props = {
 };
 
 export default function LiveTrackPanel({ mission, compact }: Props) {
-  const enabled = isVeladaMission(mission);
+  const enabled = isVeladaMission(mission) && rastreioOsAberta(mission.status);
   const { data, error, reload } = useLiveTrackWatch(enabled ? mission.id : null, enabled && !compact, !compact);
   const [busy, setBusy] = useState<'gen' | 'end' | null>(null);
   const [copied, setCopied] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
   const label = liveTrackOperatorLabel(data);
   const url = data?.url || '';
+  const clientUrl = data?.clientUrl || '';
 
   if (!enabled) return null;
 
-  const generate = async () => {
+  const generate = async (qual: 'agente' | 'cliente') => {
     setBusy('gen');
     setLocalErr(null);
     try {
@@ -31,22 +32,26 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
         body: JSON.stringify({ missionId: mission.id }),
       });
       const j = await parseJsonResponse(r);
-      if (!r.ok || !j?.url) {
+      const link = qual === 'cliente' ? j?.clientUrl : j?.url;
+      if (!r.ok || !link) {
         setLocalErr(j?.error || 'Falha ao gerar o link');
         if (compact) alert(j?.error || 'Falha ao gerar o link de localização ao vivo.');
         return;
       }
       try {
-        await navigator.clipboard.writeText(j.url);
+        await navigator.clipboard.writeText(link);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       } catch {}
       if (compact) {
-        alert(`Link copiado. Envie ao agente:\n\n${j.url}`);
+        const titulo = qual === 'cliente' ? 'Link do cliente copiado' : 'Link do agente copiado';
+        alert(`${titulo}. Envie a quem for acompanhar:\n\n${link}`);
       }
       await reload();
+      return link as string;
     } catch (e: any) {
       setLocalErr(e?.message || 'Falha de rede');
+      return '';
     } finally {
       setBusy(null);
     }
@@ -54,7 +59,7 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
 
   const copy = async () => {
     if (!url) {
-      await generate();
+      await generate('agente');
       return;
     }
     try {
@@ -67,7 +72,7 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
   const shareWa = async () => {
     let text = data?.whatsappText;
     if (!text) {
-      await generate();
+      await generate('agente');
       return;
     }
     const wa = `https://wa.me/?text=${encodeURIComponent(text)}`;
@@ -96,20 +101,28 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
 
   if (compact) {
     return (
-      <button
-        type="button"
-        onClick={(e) => { e.stopPropagation(); void generate(); }}
-        disabled={busy === 'gen'}
-        title="Gerar link de localização ao vivo (velada)"
-        data-testid={`btn-live-track-${mission.id}`}
-        className={`w-7 h-7 flex items-center justify-center rounded-md border transition-all duration-200 hover:shadow-sm active:scale-95 ${
-          label.tone === 'live'
-            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white animate-pulse'
-            : 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-600 hover:text-white'
-        }`}
-      >
-        {busy === 'gen' ? <Loader2 size={14} className="animate-spin" /> : copied ? <Check size={14} /> : <Radio size={14} />}
-      </button>
+      <div className="col-span-3 flex flex-col gap-1 w-full" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={() => { void generate('agente'); }}
+          disabled={busy === 'gen'}
+          title="Gerar Link do agente — mapa e transmissão ao vivo"
+          data-testid={`btn-live-track-agent-${mission.id}`}
+          className="h-8 px-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-[8px] font-black uppercase leading-tight"
+        >
+          {busy === 'gen' ? <Loader2 size={12} className="animate-spin mx-auto" /> : 'Gerar Link do agente'}
+        </button>
+        <button
+          type="button"
+          onClick={() => { void generate('cliente'); }}
+          disabled={busy === 'gen'}
+          title="Gerar Link do cliente — ficha, viatura e histórico"
+          data-testid={`btn-live-track-client-${mission.id}`}
+          className="h-8 px-1.5 rounded-xl border border-indigo-200 bg-white text-indigo-700 text-[8px] font-black uppercase leading-tight"
+        >
+          Gerar Link do cliente
+        </button>
+      </div>
     );
   }
 
@@ -129,21 +142,36 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
 
       {url && (
         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
-          <Link2 size={14} className="text-slate-400 shrink-0" />
+          <Radio size={14} className="text-slate-400 shrink-0" />
           <input readOnly value={url} className="flex-1 bg-transparent text-[11px] font-mono text-slate-700 outline-none" data-testid="live-track-url" />
+        </div>
+      )}
+      {clientUrl && (
+        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+          <Users size={14} className="text-slate-400 shrink-0" />
+          <input readOnly value={clientUrl} className="flex-1 bg-transparent text-[11px] font-mono text-slate-700 outline-none" data-testid="live-track-client-url" />
         </div>
       )}
 
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={() => void generate()}
+          onClick={() => void generate('agente')}
           disabled={busy === 'gen'}
           data-testid="live-track-generate"
           className="h-10 px-4 rounded-xl bg-indigo-600 text-white text-[11px] font-black uppercase tracking-wide flex items-center gap-2 disabled:opacity-60"
         >
           {busy === 'gen' ? <Loader2 size={14} className="animate-spin" /> : <Radio size={14} />}
-          {url ? 'Copiar / reutilizar link' : 'Gerar link'}
+          Gerar Link do agente
+        </button>
+        <button
+          type="button"
+          onClick={() => void generate('cliente')}
+          disabled={busy === 'gen'}
+          data-testid="live-track-client"
+          className="h-10 px-4 rounded-xl border border-indigo-200 text-indigo-700 text-[11px] font-black uppercase tracking-wide flex items-center gap-2 disabled:opacity-60"
+        >
+          <Users size={14} /> Gerar Link do cliente
         </button>
         <button
           type="button"

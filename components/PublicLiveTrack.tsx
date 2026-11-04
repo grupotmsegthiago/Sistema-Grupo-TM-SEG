@@ -2,16 +2,34 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle, CheckCircle2, EyeOff, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
 } from 'lucide-react';
+import { GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
+import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
+import { googleMapsLoadConfig } from '../lib/maps';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
-type Phase = 'loading' | 'consent' | 'sharing' | 'ended' | 'error';
+type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error';
+type Ponto = { lat: number; lng: number };
+
+const PING_VISIVEL_MS = 1800;
+const PING_OCULTO_MS = 60000;
+
+const ATIVA_LGPD_SUMMARY =
+  'A ATIVA Pronta Resposta acompanha a sua missão. Ao compartilhar, você autoriza o tratamento da sua localização em tempo real até o encerramento da OS.';
+
+const ATIVA_LGPD_FULL = [
+  'Finalidade: segurança e acompanhamento operacional da missão vinculada a esta OS. A equipe precisa saber onde você está até o fim da missão.',
+  'Base legal (LGPD): execução do contrato de prestação de serviço e legítimo interesse de proteção à vida, à carga e à operação (arts. 7º, V e IX, e 11 da Lei 13.709/2018).',
+  'Dados tratados: coordenadas GPS, precisão, velocidade, rumo, horário e o registro do seu consentimento.',
+  'Retenção: enquanto a missão estiver ativa e, após o encerramento, pelo prazo de auditoria operacional.',
+  'Como funciona: o GPS continua em segundo plano enquanto esta página existir. Com a tela oculta, a posição é enviada de 1 em 1 minuto. O rastreio para se você fechar esta página ou se a OS for finalizada.',
+].join('\n\n');
 
 const GEO_OPTS: PositionOptions = {
   enableHighAccuracy: true,
-  maximumAge: 1000,
-  timeout: 15000,
+  maximumAge: 0,
+  timeout: 10000,
 };
 
 function tokenFromUrl(): string {
@@ -22,7 +40,127 @@ function vis(): 'visible' | 'hidden' {
   return document.visibilityState === 'visible' ? 'visible' : 'hidden';
 }
 
-export default function PublicLiveTrack() {
+function pontoValido(p: any): Ponto | null {
+  const lat = Number(p?.lat);
+  const lng = Number(p?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function LiveMapBox({
+  ponto,
+  trilha,
+  origem,
+  destino,
+}: {
+  ponto: Ponto | null;
+  trilha: Ponto[];
+  origem?: Ponto | null;
+  destino?: Ponto | null;
+}) {
+  const { isLoaded, loadError } = useLoadScript(googleMapsLoadConfig);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const centro = ponto || trilha[trilha.length - 1] || origem || destino || { lat: -15.78, lng: -47.93 };
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isLoaded) return;
+    const pts = [origem, destino, ponto].filter((p): p is Ponto => !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng));
+    if (!pts.length) return;
+    if (pts.length === 1) {
+      map.setCenter(pts[0]);
+      map.setZoom(15);
+      return;
+    }
+    const bounds = new google.maps.LatLngBounds();
+    pts.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds, 48);
+  }, [isLoaded, origem, destino, ponto]);
+
+  if (loadError) return <p className="text-sm text-amber-200">Mapa indisponível neste navegador.</p>;
+  if (!isLoaded) return <div className="h-72 rounded-2xl bg-white/5 animate-pulse" data-testid="live-track-map" />;
+  return (
+    <div data-testid="live-track-map">
+      <GoogleMap
+        mapContainerClassName="w-full h-72 rounded-2xl"
+        center={centro}
+        zoom={ponto ? 15 : 4}
+        onLoad={(map) => { mapRef.current = map; }}
+        options={{ disableDefaultUI: true, zoomControl: true }}
+      >
+        {trilha.length > 1 ? <Polyline path={trilha} options={{ strokeColor: '#ef4444', strokeWeight: 4 }} /> : null}
+        {origem ? <Marker position={origem} label="O" title="Origem" /> : null}
+        {destino ? <Marker position={destino} label="D" title="Destino" /> : null}
+        {ponto ? <Marker position={ponto} label="A" title="Agente" /> : null}
+      </GoogleMap>
+    </div>
+  );
+}
+
+function ClientLiveMap({ credential }: { credential: string }) {
+  const [phase, setPhase] = useState<'loading' | 'watching' | 'ended' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [ficha, setFicha] = useState<any>(null);
+  const [ponto, setPonto] = useState<{ lat: number; lng: number } | null>(null);
+  const [trilha, setTrilha] = useState<{ lat: number; lng: number }[]>([]);
+
+  const carregar = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/live-track?op=public-get&watch=1&c=${encodeURIComponent(credential)}`, { cache: 'no-store' });
+      const j = await parseJsonResponse(r);
+      if (!r.ok) {
+        setError(j?.error || 'Link indisponível');
+        setPhase('error');
+        return;
+      }
+      setFicha(j.mission || null);
+      const pts = Array.isArray(j.trail)
+        ? j.trail.map((p: any) => ({ lat: Number(p.lat), lng: Number(p.lng) })).filter((p: { lat: number; lng: number }) => Number.isFinite(p.lat) && Number.isFinite(p.lng))
+        : [];
+      setTrilha(pts);
+      if (j.position?.lat != null && j.position?.lng != null) setPonto({ lat: Number(j.position.lat), lng: Number(j.position.lng) });
+      else if (pts.length) setPonto(pts[pts.length - 1]);
+      setPhase(j.ended ? 'ended' : 'watching');
+    } catch {
+      setError('Falha ao acompanhar. Verifique a internet.');
+      setPhase('error');
+    }
+  }, [credential]);
+
+  useEffect(() => {
+    void carregar();
+    const t = window.setInterval(() => { void carregar(); }, 3000);
+    return () => window.clearInterval(t);
+  }, [carregar]);
+
+  return (
+    <div className="min-h-[100dvh] bg-slate-950 text-white" data-testid="live-track-client-view">
+      <header className="px-5 pt-8 pb-4 border-b border-white/10">
+        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Acompanhamento do cliente</p>
+        <p className="text-lg font-black">{ficha?.osNumber ? `OS ${ficha.osNumber}` : 'Missão TM SEG'}</p>
+      </header>
+      <main className="px-5 py-5 max-w-lg mx-auto space-y-4">
+        {phase === 'loading' && <p className="text-sm text-slate-300">Abrindo o mapa…</p>}
+        {phase === 'error' && <p className="text-sm text-red-300">{error}</p>}
+        {phase === 'ended' && <p className="text-sm text-emerald-200">A missão foi concluída. O rastreio encerrou.</p>}
+        {ficha && (
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <p className="rounded-xl bg-white/5 p-3"><span className="block text-[9px] uppercase text-slate-400">Cliente</span>{ficha.client || '—'}</p>
+            <p className="rounded-xl bg-white/5 p-3"><span className="block text-[9px] uppercase text-slate-400">Agente</span>{ficha.agent || '—'}</p>
+            <p className="rounded-xl bg-white/5 p-3"><span className="block text-[9px] uppercase text-slate-400">Viatura</span>{[ficha.plate, ficha.vehicleModel].filter(Boolean).join(' · ') || '—'}</p>
+            <p className="rounded-xl bg-white/5 p-3"><span className="block text-[9px] uppercase text-slate-400">Escolta</span>{ficha.provider || '—'}</p>
+            <p className="rounded-xl bg-white/5 p-3 col-span-2"><span className="block text-[9px] uppercase text-slate-400">Origem</span>{ficha.origin || '—'}</p>
+            <p className="rounded-xl bg-white/5 p-3 col-span-2"><span className="block text-[9px] uppercase text-slate-400">Destino</span>{ficha.destination || '—'}</p>
+          </div>
+        )}
+        <LiveMapBox ponto={ponto} trilha={trilha} />
+        <p className="text-[11px] text-slate-400">A posição e o caminho atualizam sozinhos enquanto a missão não for concluída.</p>
+      </main>
+    </div>
+  );
+}
+
+function AgentLiveTrack() {
   const token = tokenFromUrl();
   const [phase, setPhase] = useState<Phase>('loading');
   const [error, setError] = useState('');
@@ -31,9 +169,13 @@ export default function PublicLiveTrack() {
   const [osNumber, setOsNumber] = useState('');
   const [origin, setOrigin] = useState('');
   const [destination, setDestination] = useState('');
+  const [ativa, setAtiva] = useState(false);
+  const [originPoint, setOriginPoint] = useState<Ponto | null>(null);
+  const [destinationPoint, setDestinationPoint] = useState<Ponto | null>(null);
   const [showFullLgpd, setShowFullLgpd] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [ponto, setPonto] = useState<{ lat: number; lng: number } | null>(null);
   const [lastPingAt, setLastPingAt] = useState<number | null>(null);
   const [hiddenWarn, setHiddenWarn] = useState(false);
   const [wakeOk, setWakeOk] = useState(false);
@@ -45,6 +187,7 @@ export default function PublicLiveTrack() {
   const watchIdRef = useRef<number | null>(null);
   const wakeRef = useRef<any>(null);
   const lastSentRef = useRef(0);
+  const sendingRef = useRef(false);
   const lastPosRef = useRef<GeolocationPosition | null>(null);
   const endedRef = useRef(false);
   const keepaliveRef = useRef<LiveTrackKeepalive | null>(null);
@@ -84,10 +227,12 @@ export default function PublicLiveTrack() {
 
   const sendPing = useCallback(async (pos: GeolocationPosition, visibility: 'visible' | 'hidden') => {
     if (endedRef.current) return;
-    const now = Date.now();
-    if (now - lastSentRef.current < 1800) return;
-    lastSentRef.current = now;
     lastPosRef.current = pos;
+    setPonto({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    const now = Date.now();
+    const intervalo = visibility === 'hidden' ? PING_OCULTO_MS : PING_VISIVEL_MS;
+    if (sendingRef.current || now - lastSentRef.current < intervalo) return;
+    sendingRef.current = true;
     const coords = pos.coords;
     const batt = (navigator as any).getBattery ? await (navigator as any).getBattery().catch(() => null) : null;
     const tok = tokenRef.current;
@@ -122,11 +267,14 @@ export default function PublicLiveTrack() {
         setError(j?.error || 'Falha ao enviar localização');
         return;
       }
+      lastSentRef.current = Date.now();
       setAccuracy(typeof coords.accuracy === 'number' ? coords.accuracy : null);
       setLastPingAt(Date.now());
       setError('');
     } catch {
-      setError('Sem conexão — tentando de novo automaticamente');
+      setError('Sem conexão — a última posição será reenviada automaticamente');
+    } finally {
+      sendingRef.current = false;
     }
   }, [stopWatch]);
 
@@ -150,7 +298,13 @@ export default function PublicLiveTrack() {
     }
     await requestWake();
     try {
-      keepaliveRef.current = await startLiveTrackKeepalive();
+      keepaliveRef.current = await startLiveTrackKeepalive(ativa ? {
+        title: 'ATIVA — rastreio ao vivo',
+        artist: 'ATIVA Pronta Resposta',
+        album: 'Acompanhamento da missão',
+        body: 'Rastreio ativo em segundo plano. Pode ocultar a tela. A posição segue de 1 em 1 minuto.',
+        icon: ativaLogo,
+      } : {});
       setBgOk(true);
     } catch {
       setBgOk(false);
@@ -182,7 +336,7 @@ export default function PublicLiveTrack() {
       },
       GEO_OPTS,
     );
-  }, [pollOnce, requestWake, sendPing, stopKeepalive]);
+  }, [ativa, pollOnce, requestWake, sendPing, stopKeepalive]);
 
   useEffect(() => {
     if (!token) {
@@ -206,11 +360,16 @@ export default function PublicLiveTrack() {
         setOsNumber(j.mission?.osNumber || '');
         setOrigin(j.mission?.origin || '');
         setDestination(j.mission?.destination || '');
+        const ehAtiva = j.mission?.ativa === true;
+        setAtiva(ehAtiva);
+        setOriginPoint(pontoValido(j.mission?.originPoint));
+        setDestinationPoint(pontoValido(j.mission?.destinationPoint));
+        if (ehAtiva) document.title = 'ATIVA Pronta Resposta';
         if (j.ended || j.status === 'ended') {
           setPhase('ended');
           return;
         }
-        setPhase('consent');
+        setPhase(ehAtiva ? 'marca' : 'consent');
       } catch {
         if (!cancelled) {
           setError('Falha ao abrir o acompanhamento. Verifique a internet e tente de novo.');
@@ -220,6 +379,12 @@ export default function PublicLiveTrack() {
     })();
     return () => { cancelled = true; };
   }, [token]);
+
+  useEffect(() => {
+    if (phase !== 'marca') return;
+    const t = window.setTimeout(() => setPhase('consent'), 2800);
+    return () => window.clearTimeout(t);
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== 'sharing') return;
@@ -233,6 +398,13 @@ export default function PublicLiveTrack() {
       const hidden = document.visibilityState !== 'visible';
       setHiddenWarn(hidden);
       if (!hidden) void requestWake();
+      if (watchIdRef.current == null && navigator.geolocation && !endedRef.current) {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (next) => { void sendPing(next, vis()); },
+          () => { pollOnce(); },
+          GEO_OPTS,
+        );
+      }
       pollOnce();
     };
     const onFreeze = () => { pollOnce(); };
@@ -279,7 +451,7 @@ export default function PublicLiveTrack() {
       window.removeEventListener('beforeunload', onHide);
       window.removeEventListener('pagehide', onPageHide);
     };
-  }, [phase, pollOnce, requestWake]);
+  }, [phase, pollOnce, requestWake, sendPing]);
 
   useEffect(() => () => stopWatch(), [stopWatch]);
 
@@ -322,9 +494,25 @@ export default function PublicLiveTrack() {
           <span className="w-3 h-3 rounded-full bg-slate-950 animate-pulse shrink-0" />
           <span className="text-left flex-1">
             <span className="block text-[10px] font-black uppercase tracking-widest">Segundo plano ativo</span>
-            <span className="block text-sm font-bold">TM SEG rastreando{osNumber ? ` · OS ${osNumber}` : ''}</span>
+            <span className="block text-sm font-bold">{ativa ? 'ATIVA rastreando' : 'TM SEG rastreando'}{osNumber ? ` · OS ${osNumber}` : ''}</span>
           </span>
           <span className="text-[10px] font-black uppercase">Abrir</span>
+        </button>
+      </div>
+    );
+  }
+
+  if (phase === 'marca') {
+    return (
+      <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center px-6 text-center" data-testid="live-track-ativa-marca">
+        <img src={ativaLogo} alt="ATIVA Pronta Resposta" className="w-56 h-56 object-contain" />
+        <p className="mt-8 text-lg font-black leading-snug max-w-xs">Você será redirecionado para os dados da missão.</p>
+        <button
+          type="button"
+          onClick={() => setPhase('consent')}
+          className="mt-8 h-12 px-6 rounded-2xl bg-red-600 text-white text-sm font-black uppercase tracking-wide"
+        >
+          Continuar
         </button>
       </div>
     );
@@ -333,11 +521,25 @@ export default function PublicLiveTrack() {
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white flex flex-col">
       <header className="px-5 pt-8 pb-4 flex items-center gap-3 border-b border-white/10">
-        <img src={tmsegLogo} alt="TM SEG" className="h-10 w-auto" />
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Grupo TM SEG</p>
-          <p className="text-sm font-bold">Acompanhamento em tempo real</p>
-        </div>
+        {phase === 'loading' ? (
+          <p className="text-sm font-bold text-slate-300">Abrindo missão…</p>
+        ) : ativa ? (
+          <>
+            <img src={ativaLogo} alt="ATIVA Pronta Resposta" className="h-14 w-14 rounded-full object-cover" />
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">ATIVA Pronta Resposta</p>
+              <p className="text-sm font-bold">Dados da missão</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <img src={tmsegLogo} alt="TM SEG" className="h-10 w-auto" />
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Grupo TM SEG</p>
+              <p className="text-sm font-bold">Acompanhamento em tempo real</p>
+            </div>
+          </>
+        )}
       </header>
 
       <main className="flex-1 px-5 py-6 max-w-lg mx-auto w-full">
@@ -369,7 +571,7 @@ export default function PublicLiveTrack() {
           <div className="space-y-5">
             <div className="rounded-2xl bg-red-600 p-5 shadow-xl shadow-red-900/40">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/70">Você está em acompanhamento</p>
-              <h1 className="text-2xl font-black leading-tight mt-1">A Central TM SEG está acompanhando esta missão</h1>
+              <h1 className="text-2xl font-black leading-tight mt-1">{ativa ? 'A ATIVA Pronta Resposta está acompanhando esta missão' : 'A Central TM SEG está acompanhando esta missão'}</h1>
               {osNumber ? <p className="mt-3 font-mono text-sm bg-black/20 inline-block px-2 py-1 rounded">OS {osNumber}</p> : null}
             </div>
             {(origin || destination) && (
@@ -378,7 +580,7 @@ export default function PublicLiveTrack() {
                 {destination ? <>Destino: {destination}</> : null}
               </p>
             )}
-            <p className="text-sm text-slate-200 leading-relaxed">{lgpdSummary}</p>
+            <p className="text-sm text-slate-200 leading-relaxed">{ativa ? ATIVA_LGPD_SUMMARY : lgpdSummary}</p>
             <label className="flex items-start gap-3 text-sm bg-white/5 rounded-xl p-4 border border-white/10">
               <input type="checkbox" className="mt-1" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} data-testid="live-track-lgpd-check" />
               <span>Li e autorizo o tratamento da minha localização em tempo real, inclusive em segundo plano (tela oculta), até o fim da missão.</span>
@@ -391,7 +593,7 @@ export default function PublicLiveTrack() {
               {showFullLgpd ? 'Ocultar texto LGPD' : 'Ver garantias LGPD completas'}
             </button>
             {showFullLgpd && (
-              <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300 bg-black/40 rounded-xl p-4 border border-white/10">{lgpdFull}</pre>
+              <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300 bg-black/40 rounded-xl p-4 border border-white/10">{ativa ? ATIVA_LGPD_FULL : lgpdFull}</pre>
             )}
             {error && <p className="text-sm text-red-300">{error}</p>}
             <button
@@ -412,15 +614,24 @@ export default function PublicLiveTrack() {
           <div className="space-y-5">
             {hiddenWarn && (
               <div className="rounded-2xl bg-emerald-400 text-slate-950 p-4 font-bold text-sm">
-                Segundo plano ativo. Pode usar o WhatsApp. O GPS só para se você fechar esta página.
+                {ativa
+                  ? 'Segundo plano ativo. A posição segue de 1 em 1 minuto. O GPS só para se você fechar esta página.'
+                  : 'Segundo plano ativo. Pode usar o WhatsApp. O GPS só para se você fechar esta página.'}
               </div>
+            )}
+            <LiveMapBox ponto={ponto} trilha={ponto ? [ponto] : []} origem={originPoint} destino={destinationPoint} />
+            {(origin || destination) && (
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {origin ? <>Origem: {origin}<br /></> : null}
+                {destination ? <>Destino: {destination}</> : null}
+              </p>
             )}
             <div className="rounded-3xl bg-emerald-500 text-slate-950 p-6 text-center shadow-2xl">
               <div className="mx-auto w-16 h-16 rounded-full bg-white/30 flex items-center justify-center mb-3 animate-pulse">
                 <MapPin size={32} />
               </div>
               <p className="text-[10px] font-black uppercase tracking-[0.25em]">Transmitindo ao vivo</p>
-              <p className="text-2xl font-black mt-1">Central TM SEG acompanhando</p>
+              <p className="text-2xl font-black mt-1">{ativa ? 'ATIVA acompanhando' : 'Central TM SEG acompanhando'}</p>
               {osNumber ? <p className="font-mono text-sm mt-2">OS {osNumber}</p> : null}
             </div>
             <button
@@ -460,4 +671,10 @@ export default function PublicLiveTrack() {
       </main>
     </div>
   );
+}
+
+export default function PublicLiveTrack() {
+  const credencial = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).get('c') || '';
+  if (credencial) return <ClientLiveMap credential={credencial} />;
+  return <AgentLiveTrack />;
 }
