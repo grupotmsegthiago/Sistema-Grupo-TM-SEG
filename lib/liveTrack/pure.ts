@@ -3,8 +3,8 @@ import { CANONICAL_PUBLIC_ORIGIN } from '../publicAppUrl';
 export const LIVE_TRACK_PING_MIN_MS = 2000;
 export const LIVE_TRACK_WATCH_MS = 2000;
 export const LIVE_TRACK_STALE_MS = 12000;
-/** Aba oculta envia a cada 60s. Abaixo disso o cliente marcaria o agente como ausente mesmo com a página aberta. */
-export const LIVE_TRACK_SINAL_FRESCO_MS = 150000;
+/** A página do agente força o GPS e manda batida a cada 15s. A pausa só aparece se o celular cortar o sinal por 10 minutos. */
+export const LIVE_TRACK_SINAL_FRESCO_MS = 10 * 60 * 1000;
 
 export function agenteEstaLogado(opts: {
   status?: string | null;

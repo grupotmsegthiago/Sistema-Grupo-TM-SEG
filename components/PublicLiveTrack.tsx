@@ -16,7 +16,8 @@ type Ponto = { lat: number; lng: number };
 type PontoTrilha = Ponto & { at?: string };
 
 const PING_VISIVEL_MS = 1800;
-const PING_OCULTO_MS = 60000;
+const PING_HEARTBEAT_MS = 15000;
+const PING_OCULTO_MS = PING_HEARTBEAT_MS;
 const GPS_VERDE = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="28" fill="#16a34a" stroke="#ffffff" stroke-width="4"/><circle cx="32" cy="32" r="10" fill="#ffffff"/><path d="M32 6 v10 M32 48 v10 M6 32 h10 M48 32 h10" stroke="#ffffff" stroke-width="4" stroke-linecap="round"/></svg>')}`;
 const PIN_ORIGEM = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="52" viewBox="0 0 40 52"><path d="M20 0C9 0 2 8 2 18c0 12 18 34 18 34s18-22 18-34C38 8 31 0 20 0z" fill="#dc2626"/><circle cx="20" cy="18" r="6" fill="#fff"/></svg>')}`;
 const BANDEIRA_DESTINO = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="44" height="48" viewBox="0 0 44 48"><rect x="4" y="2" width="3" height="44" fill="#111"/><rect x="8" y="4" width="8" height="8" fill="#111"/><rect x="16" y="4" width="8" height="8" fill="#fff"/><rect x="24" y="4" width="8" height="8" fill="#111"/><rect x="32" y="4" width="8" height="8" fill="#fff"/><rect x="8" y="12" width="8" height="8" fill="#fff"/><rect x="16" y="12" width="8" height="8" fill="#111"/><rect x="24" y="12" width="8" height="8" fill="#fff"/><rect x="32" y="12" width="8" height="8" fill="#111"/></svg>')}`;
@@ -82,7 +83,7 @@ const ATIVA_LGPD_FULL = [
 const GEO_OPTS: PositionOptions = {
   enableHighAccuracy: true,
   maximumAge: 0,
-  timeout: 10000,
+  timeout: 5000,
 };
 
 function tokenFromUrl(): string {
@@ -585,7 +586,13 @@ function AgentLiveTrack() {
       }
       wakeRef.current = lock;
       setWakeOk(true);
-      lock.addEventListener?.('release', () => setWakeOk(false));
+      lock.addEventListener?.('release', () => {
+        wakeRef.current = null;
+        setWakeOk(false);
+        if (!endedRef.current && document.visibilityState === 'visible') {
+          window.setTimeout(() => { void requestWake(); }, 500);
+        }
+      });
     } catch {
       setWakeOk(false);
     }
@@ -662,6 +669,26 @@ function AgentLiveTrack() {
     );
   }, [sendPing]);
 
+  const armWatch = useCallback(() => {
+    if (!navigator.geolocation || endedRef.current) return;
+    if (watchIdRef.current != null) {
+      navigator.geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (next) => { void sendPing(next, vis()); },
+      (err) => {
+        if (err.code === err.PERMISSION_DENIED) {
+          setError('Permissão de localização negada. Ative o GPS de alta precisão e recarregue esta página.');
+          return;
+        }
+        pollOnce();
+        window.setTimeout(() => { if (!endedRef.current) armWatch(); }, 1000);
+      },
+      GEO_OPTS,
+    );
+  }, [pollOnce, sendPing]);
+
   const startGps = useCallback(async () => {
     if (!navigator.geolocation) {
       setError('Este aparelho não oferece GPS no navegador. Abra o link no Chrome ou Safari do celular.');
@@ -673,17 +700,7 @@ function AgentLiveTrack() {
       (pos) => {
         setPhase('sharing');
         void sendPing(pos, vis());
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (next) => { void sendPing(next, vis()); },
-          (err) => {
-            if (err.code === err.PERMISSION_DENIED) {
-              setError('Permissão de localização negada. Ative o GPS de alta precisão e recarregue esta página.');
-            } else {
-              pollOnce();
-            }
-          },
-          GEO_OPTS,
-        );
+        armWatch();
       },
       (err) => {
         if (err.code === err.PERMISSION_DENIED) {
@@ -696,7 +713,7 @@ function AgentLiveTrack() {
       },
       GEO_OPTS,
     );
-  }, [pollOnce, requestWake, sendPing, stopKeepalive]);
+  }, [armWatch, pollOnce, requestWake, sendPing, stopKeepalive]);
 
   useEffect(() => {
     if (!token) {
@@ -761,13 +778,7 @@ function AgentLiveTrack() {
       const hidden = document.visibilityState !== 'visible';
       setHiddenWarn(hidden);
       if (!hidden) void requestWake();
-      if (watchIdRef.current == null && navigator.geolocation && !endedRef.current) {
-        watchIdRef.current = navigator.geolocation.watchPosition(
-          (next) => { void sendPing(next, vis()); },
-          () => { pollOnce(); },
-          GEO_OPTS,
-        );
-      }
+      if (watchIdRef.current == null) armWatch();
       pollOnce();
     };
     const onFreeze = () => { pollOnce(); };
@@ -776,6 +787,10 @@ function AgentLiveTrack() {
     window.addEventListener('freeze', onFreeze);
     window.addEventListener('resume', onVis as EventListener);
     const tick = window.setInterval(() => { pollOnce(); }, 2500);
+    const batida = window.setInterval(() => {
+      pollOnce();
+      if (document.visibilityState === 'visible' && !wakeRef.current) void requestWake();
+    }, PING_HEARTBEAT_MS);
     const onHide = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = 'Fechar a aba interrompe o rastreio da missão. Mantenha esta página aberta em segundo plano.';
@@ -811,10 +826,11 @@ function AgentLiveTrack() {
       window.removeEventListener('freeze', onFreeze);
       window.removeEventListener('resume', onVis as EventListener);
       window.clearInterval(tick);
+      window.clearInterval(batida);
       window.removeEventListener('beforeunload', onHide);
       window.removeEventListener('pagehide', onPageHide);
     };
-  }, [phase, pollOnce, requestWake, sendPing]);
+  }, [armWatch, phase, pollOnce, requestWake, sendPing]);
 
   useEffect(() => () => stopWatch(), [stopWatch]);
 

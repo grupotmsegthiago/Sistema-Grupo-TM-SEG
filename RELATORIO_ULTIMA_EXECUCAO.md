@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: a página do agente força a leitura do GPS enquanto estiver aberta.
+
+O watchPosition pede alta precisão, sem cache, com tempo de 5 segundos, e recomeça se a antena falhar. Uma batida sai a cada 15 segundos. A tela acesa é pedida de novo se o celular soltar o bloqueio. O selo Sinal em pausa só entra depois de 10 minutos sem batida. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 15 passaram. Três minutos sem posição ainda contam como logado. Dez minutos seguem como pausa.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: o painel deixa de tratar a pausa do celular como se o agente nunca tivesse conectado.
 
 Se já houve posição e o envio parou, o selo fica Sinal em pausa. O texto pede tela acesa, economia de bateria desligada no navegador e localização o tempo todo. A página do agente e o texto do WhatsApp deixam de prometer GPS com a tela oculta. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

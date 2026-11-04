@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. A página do agente pede GPS sem cache, recomeça a leitura se a antena falhar e manda batida a cada 15 segundos. A tela permanece acesa enquanto o rastreio está na frente. O selo Sinal em pausa só aparece depois de 10 minutos sem batida. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. Quando o agente já enviou posição e o celular pausa o GPS, o link do cliente mostra Sinal em pausa e pede tela acesa, sem economia de bateria e localização o tempo todo. A página do agente deixa de dizer que ocultar a tela mantém o GPS. Na foto da velada o selo usa o mesmo estado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. A previsão do link do cliente é o horário de chegada em Brasília: a hora atual mais o tempo que falta. No mesmo dia aparece HH:mm, como 19:16. Se a chegada cair no dia seguinte, entra a data. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

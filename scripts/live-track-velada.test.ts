@@ -81,7 +81,7 @@ test('cliente vê agente logado só com envio recente', () => {
   assert.equal(agenteEstaLogado({ status: 'sharing', vistoEm: '2026-11-04T20:50:00.000Z', now }), false);
   assert.equal(agenteEstaLogado({ status: 'pending', vistoEm: '2026-11-04T20:59:00.000Z', now }), false);
   assert.equal(agenteEstaLogado({ status: 'sharing', ended: true, vistoEm: '2026-11-04T20:59:00.000Z', now }), false);
-  assert.equal(estadoDoSinal({ status: 'sharing', vistoEm: '2026-11-04T20:59:00.000Z', now }), 'logado');
+  assert.equal(estadoDoSinal({ status: 'sharing', vistoEm: '2026-11-04T20:57:00.000Z', now }), 'logado');
   assert.equal(estadoDoSinal({ status: 'sharing', vistoEm: '2026-11-04T20:50:00.000Z', now }), 'pausa');
   assert.equal(estadoDoSinal({ status: 'pending', vistoEm: null, now }), 'aguardando');
 });
@@ -194,7 +194,9 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /fechar esta página/);
   assert.match(page, /Você será redirecionado para os dados da missão/);
   assert.match(page, /ativa-pronta-resposta/);
-  assert.match(page, /PING_OCULTO_MS = 60000/);
+  assert.match(page, /PING_HEARTBEAT_MS = 15000/);
+  assert.match(page, /timeout: 5000/);
+  assert.match(page, /wakeLock\?\.request\?\.\('screen'\)/);
   assert.match(page, /origem=\{origem\}/);
   assert.match(page, /marca=\{tmsegLogo\}/);
   assert.match(page, /Rastreamento/);
