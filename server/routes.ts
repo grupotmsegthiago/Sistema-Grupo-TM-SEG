@@ -5998,6 +5998,27 @@ RESPONDA EXCLUSIVAMENTE no JSON abaixo, sem markdown, sem texto adicional:
     }
   });
 
+  app.post("/api/nf/cancel/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
+    try {
+      const sb = createSupabaseAdminClient();
+      if (!sb) return res.status(500).json({ ok: false, error: 'Supabase indisponível' });
+      const { cancelFinancialInvoice } = await import('../lib/invoiceCancelCore.js');
+      const { cancelInvoice } = await import('./asaasService');
+      const { cancelNfse } = await import('./plugnotasService');
+      const result = await cancelFinancialInvoice({
+        sb: sb as any,
+        invoiceId: String(req.params.invoiceId || ''),
+        getPayment: (paymentId, company) => getPayment(paymentId, company),
+        deletePayment: (paymentId, company) => deletePayment(paymentId, company),
+        cancelAsaasNf: (asaasInvoiceId, company) => cancelInvoice(asaasInvoiceId, company),
+        cancelPlugnotasNf: (plugnotasId) => cancelNfse(plugnotasId, 'Cancelamento da fatura no sistema'),
+      });
+      res.status(result.httpStatus).json(result);
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   app.post("/api/nf/retry/:invoiceId", requireAuth, requireRole('administrador', 'diretoria', 'financeiro'), async (req: Request, res: Response) => {
     try {
       const { invoiceId } = req.params;

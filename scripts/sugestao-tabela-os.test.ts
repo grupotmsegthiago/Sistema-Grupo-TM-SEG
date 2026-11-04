@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchTopTabelasSugestao, destinoBloqueiaSugestao } from '../lib/billing/tabelaNaCriacao.ts';
-import { atrasoDaSugestao, podeDispararSugestao } from '../lib/billing/useTabelaSuggestion.ts';
-import { getTopTabelaId, resolverSugestaoTop1 } from '../lib/rotaAprovadaTabela.ts';
+import { fetchTopTabelasSugestao, fetchUltimaTabelaAprovada, destinoBloqueiaSugestao } from '../lib/billing/tabelaNaCriacao.ts';
+import { atrasoDaSugestao, deveAplicarSugestao, podeDispararSugestao } from '../lib/billing/useTabelaSuggestion.ts';
+import { getTopTabelaId, resolverSugestaoTop1, resolverSugestaoUltimaAprovada } from '../lib/rotaAprovadaTabela.ts';
 
 const cliente = 'CEVA LOGISTICS LTDA';
 const origem = 'GUARULHOS - SP';
@@ -172,4 +172,117 @@ test('consulta só OS aprovadas e fica nas 10 mais novas com tabela', async () =
   assert.equal(escolha.tabelaFornecedorSugeridaId, 'custo-nova');
   assert.deepEqual(consulta.filtros.find((item) => item[0] === 'eq'), ['eq', 'billing_approved', true]);
   assert.equal(consulta.filtros.some((item) => item[0] === 'order' && item[1] === 'created_at'), true);
+});
+
+test('a última OS aprovada vence a tabela mais repetida', () => {
+  const historico = [
+    os({ id: 'GTM-1', clientTableId: 'tab-antiga', providerTableId: 'custo-antiga', aprovadaEm: '2026-01-01T00:00:00.000Z', tipoMissao: 'Caracterizada', fornecedor: 'ALFA ESCOLTA' }),
+    os({ id: 'GTM-2', clientTableId: 'tab-antiga', providerTableId: 'custo-antiga', aprovadaEm: '2026-02-01T00:00:00.000Z', tipoMissao: 'Caracterizada', fornecedor: 'ALFA ESCOLTA' }),
+    os({ id: 'GTM-3', clientTableId: 'tab-antiga', providerTableId: 'custo-antiga', aprovadaEm: '2026-03-01T00:00:00.000Z', tipoMissao: 'Caracterizada', fornecedor: 'ALFA ESCOLTA' }),
+    os({ id: 'GTM-9', clientTableId: 'tab-ultima', providerTableId: 'custo-ultima', aprovadaEm: '2026-11-04T16:00:00.000Z', tipoMissao: 'Caracterizada', fornecedor: 'ALFA ESCOLTA', pedagioReal: 48.5 }),
+    os({ id: 'GTM-8', clientTableId: 'tab-velada', providerTableId: 'custo-velada', aprovadaEm: '2026-12-01T00:00:00.000Z', tipoMissao: 'Velada', fornecedor: 'ALFA ESCOLTA' }),
+  ];
+  const escolha = resolverSugestaoUltimaAprovada({
+    cliente, fornecedor: 'ALFA ESCOLTA', origem, destino, tipoMissao: 'Caracterizada', historico,
+  });
+  assert.equal(escolha.tabelaClienteSugeridaId, 'tab-ultima');
+  assert.equal(escolha.tabelaFornecedorSugeridaId, 'custo-ultima');
+  assert.equal(escolha.osOrigemId, 'GTM-9');
+  assert.equal(escolha.pedagioReal, 48.5);
+});
+
+test('sem o par do fornecedor a última aprovada não empresta tabela de outro', () => {
+  const escolha = resolverSugestaoUltimaAprovada({
+    cliente,
+    fornecedor: 'GAMA ESCOLTA',
+    origem,
+    destino,
+    tipoMissao: 'Caracterizada',
+    historico: [
+      os({ id: 'GTM-9', clientTableId: 'tab-alfa', providerTableId: 'custo-alfa', aprovadaEm: '2026-11-04T16:00:00.000Z', tipoMissao: 'Caracterizada', fornecedor: 'ALFA ESCOLTA' }),
+    ],
+  });
+  assert.equal(escolha.tabelaClienteSugeridaId, null);
+  assert.equal(escolha.tabelaFornecedorSugeridaId, null);
+});
+
+test('sem fornecedor a última aprovada só traz a tabela do cliente', () => {
+  const escolha = resolverSugestaoUltimaAprovada({
+    cliente,
+    origem,
+    destino,
+    tipoMissao: 'Velada',
+    historico: [
+      os({ id: 'GTM-4', clientTableId: 'tab-velada', providerTableId: 'custo-velada', aprovadaEm: '2026-08-01T00:00:00.000Z', tipoMissao: 'Velada', fornecedor: 'ALFA ESCOLTA' }),
+    ],
+  });
+  assert.equal(escolha.tabelaClienteSugeridaId, 'tab-velada');
+  assert.equal(escolha.tabelaFornecedorSugeridaId, null);
+  assert.equal(escolha.osOrigemId, 'GTM-4');
+});
+
+test('pedágio zero permanece e pedágio ausente não vira zero', () => {
+  const zero = resolverSugestaoUltimaAprovada({
+    cliente, origem, destino, tipoMissao: 'Caracterizada',
+    historico: [os({ id: 'GTM-0', aprovadaEm: '2026-11-01T00:00:00.000Z', tipoMissao: 'Caracterizada', pedagioReal: 0 })],
+  });
+  assert.equal(zero.pedagioReal, 0);
+  const ausente = resolverSugestaoUltimaAprovada({
+    cliente, origem, destino, tipoMissao: 'Caracterizada',
+    historico: [os({ id: 'GTM-A', aprovadaEm: '2026-11-01T00:00:00.000Z', tipoMissao: 'Caracterizada' })],
+  });
+  assert.equal(ausente.pedagioReal, null);
+});
+
+test('troca manual segura a tabela até o campo-chave mudar', () => {
+  assert.equal(deveAplicarSugestao(true, false), false);
+  assert.equal(deveAplicarSugestao(true, true), true);
+  assert.equal(deveAplicarSugestao(false, false), true);
+});
+
+test('consulta da última aprovada ignora tipo diferente e OS não aprovada', async () => {
+  const linhas = [
+    {
+      id: 'GTM-NOVA-VELADA',
+      client: cliente,
+      origin: origem,
+      destination: destino,
+      provider: 'ALFA ESCOLTA',
+      mission_type: 'Velada',
+      created_at: '2026-11-04T18:00:00.000Z',
+      billing_approved: true,
+      snapshot_data: { clientTableId: 'tab-velada', providerTableId: 'custo-velada' },
+    },
+    {
+      id: 'GTM-ULTIMA-CARACT',
+      client: cliente,
+      origin: origem,
+      destination: destino,
+      provider: 'ALFA ESCOLTA',
+      mission_type: 'Caracterizada',
+      created_at: '2026-11-04T15:00:00.000Z',
+      billing_approved: true,
+      toll_value: 58.2,
+      toll_value_provider: 48.5,
+      snapshot_data: { clientTableId: 'tab-caract', providerTableId: 'custo-caract' },
+    },
+    {
+      id: 'GTM-NAO-APROVADA',
+      client: cliente,
+      origin: origem,
+      destination: destino,
+      provider: 'ALFA ESCOLTA',
+      mission_type: 'Caracterizada',
+      created_at: '2026-11-04T19:00:00.000Z',
+      billing_approved: false,
+      snapshot_data: { clientTableId: 'tab-errada', providerTableId: 'custo-errada' },
+    },
+  ];
+  const consulta = consultaFalsa(linhas);
+  const escolha = await fetchUltimaTabelaAprovada(consulta.sb, cliente, 'ALFA ESCOLTA', origem, destino, 'Caracterizada');
+  assert.equal(escolha.tabelaClienteSugeridaId, 'tab-caract');
+  assert.equal(escolha.tabelaFornecedorSugeridaId, 'custo-caract');
+  assert.equal(escolha.osOrigemId, 'GTM-ULTIMA-CARACT');
+  assert.equal(escolha.pedagioReal, 48.5);
+  assert.equal(consulta.filtros.some((item) => item[0] === 'eq' && item[1] === 'billing_approved' && item[2] === true), true);
 });

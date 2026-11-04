@@ -1,18 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabase';
-import { destinoBloqueiaSugestao, fetchTopTabelasSugestao } from './tabelaNaCriacao';
+import { destinoBloqueiaSugestao, fetchUltimaTabelaAprovada } from './tabelaNaCriacao';
 
 export interface TabelaSuggestion {
   tabelaClienteSugeridaId: string | null;
   tabelaFornecedorSugeridaId: string | null;
+  osOrigemId: string | null;
+  osOrigemEm: string | null;
+  pedagioReal: number | null;
   loadingSugestao: boolean;
 }
 
 const VAZIO: TabelaSuggestion = {
   tabelaClienteSugeridaId: null,
   tabelaFornecedorSugeridaId: null,
+  osOrigemId: null,
+  osOrigemEm: null,
+  pedagioReal: null,
   loadingSugestao: false,
 };
+
+/** A herança volta quando cliente, fornecedor, rota ou tipo mudam. A troca manual segura a tabela. */
+export function deveAplicarSugestao(operadorAlterouTabela: boolean, camposChaveMudaram: boolean): boolean {
+  if (camposChaveMudaram) return true;
+  return !operadorAlterouTabela;
+}
 
 export function podeDispararSugestao(clienteId: string, origem: string, destino: string): boolean {
   if (!String(clienteId || '').trim() || !String(origem || '').trim()) return false;
@@ -34,15 +46,16 @@ export function useTabelaSuggestion(entrada: {
   fornecedorId?: string | null;
   origem: string;
   destino: string;
+  tipoMissao?: string | null;
   isRotaPredefinida: boolean;
 }): TabelaSuggestion {
   const [estado, setEstado] = useState<TabelaSuggestion>(VAZIO);
-  const chaveAtual = `${entrada.clienteId}|${entrada.origem}|${entrada.destino}|${entrada.fornecedorId || ''}|${entrada.isRotaPredefinida}`;
+  const chaveAtual = `${entrada.clienteId}|${entrada.origem}|${entrada.destino}|${entrada.fornecedorId || ''}|${entrada.tipoMissao || ''}|${entrada.isRotaPredefinida}`;
   const chaveVista = useRef<string | null>(null);
   if (chaveVista.current !== chaveAtual) {
     chaveVista.current = chaveAtual;
     if (podeDispararSugestao(entrada.clienteId, entrada.origem, entrada.destino)) {
-      setEstado({ tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null, loadingSugestao: true });
+      setEstado({ ...VAZIO, loadingSugestao: true });
     } else {
       setEstado((prev) => (prev.loadingSugestao || prev.tabelaClienteSugeridaId || prev.tabelaFornecedorSugeridaId ? VAZIO : prev));
     }
@@ -59,6 +72,7 @@ export function useTabelaSuggestion(entrada: {
     const origem = String(entrada.origem || '');
     const destino = String(entrada.destino || '');
     const fornecedorId = String(entrada.fornecedorId || '');
+    const tipoMissao = String(entrada.tipoMissao || '');
     const rotaMudou = anterior.current.clienteId !== clienteId
       || anterior.current.origem !== origem
       || anterior.current.destino !== destino;
@@ -82,12 +96,21 @@ export function useTabelaSuggestion(entrada: {
     });
     const ac = new AbortController();
     let cancelado = false;
-    setEstado({ tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null, loadingSugestao: true });
+    setEstado({ ...VAZIO, loadingSugestao: true });
     const timer = setTimeout(() => {
-      fetchTopTabelasSugestao(supabase, clienteId, fornecedorId, origem, destino, ac.signal)
+      fetchUltimaTabelaAprovada(supabase, clienteId, fornecedorId, origem, destino, tipoMissao, ac.signal)
         .then((resultado) => {
           if (cancelado || ac.signal.aborted) return;
-          setEstado({ ...resultado, loadingSugestao: false });
+          setEstado({
+            tabelaClienteSugeridaId: resultado.tabelaClienteSugeridaId,
+            tabelaFornecedorSugeridaId: resultado.tabelaFornecedorSugeridaId,
+            osOrigemId: resultado.osOrigemId || null,
+            osOrigemEm: resultado.osOrigemEm || null,
+            pedagioReal: resultado.pedagioReal == null || !Number.isFinite(Number(resultado.pedagioReal))
+              ? null
+              : Number(resultado.pedagioReal),
+            loadingSugestao: false,
+          });
         })
         .catch((erro: unknown) => {
           if (cancelado || ac.signal.aborted) return;
@@ -101,7 +124,7 @@ export function useTabelaSuggestion(entrada: {
       clearTimeout(timer);
       ac.abort();
     };
-  }, [entrada.clienteId, entrada.fornecedorId, entrada.origem, entrada.destino, entrada.isRotaPredefinida]);
+  }, [entrada.clienteId, entrada.fornecedorId, entrada.origem, entrada.destino, entrada.tipoMissao, entrada.isRotaPredefinida]);
 
   return estado;
 }

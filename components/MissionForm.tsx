@@ -25,7 +25,7 @@ import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
 import { destinoBloqueiaSugestao, SEM_TABELA_CUSTO_SUGERIDA } from '../lib/billing/tabelaNaCriacao';
 import { calcularValoresOficiais, janelaZeradaNaCriacao } from '../lib/billing/sincronizarValoresOs';
-import { useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
+import { deveAplicarSugestao, useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
@@ -166,6 +166,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     fornecedorId: formData.provider,
     origem: formData.origin,
     destino: formData.destination,
+    tipoMissao: formData.missionType,
     isRotaPredefinida: buscaImediata,
   });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
@@ -1330,7 +1331,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const applyTollForRoute = async (origin: string, destination: string, opts?: { notify?: boolean; force?: boolean }): Promise<number | null> => {
-      if (manualOverrides.toll) return parseFloat(formData.tollValue) || 0;
+      if (opts?.force) pedagioHerdadoRef.current = false;
+      if (!opts?.force && (manualOverrides.toll || pedagioHerdadoRef.current)) return parseFloat(formData.tollValue) || 0;
       const originT = (origin || '').trim();
       const destT = (destination || '').trim();
       if (!originT || !destT) return null;
@@ -1360,6 +1362,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const apiResult = await calculateTollFromAPI(originT, destT);
       if (isAutoTollResult(apiResult)) {
+          if (!opts?.force && pedagioHerdadoRef.current) return null;
           applyDistanceFromToll(apiResult.distance, destT);
           setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
           setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
@@ -1408,6 +1411,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const lastAutoRouteRef = useRef('');
+  const camposSugestaoRef = useRef('');
+  const operadorEscolheuTabelaRef = useRef(false);
+  const pedagioHerdadoRef = useRef(false);
   const handleRouteSelect = (route: ClientRoute) => {
       const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
       setBuscaImediata(true);
@@ -1430,13 +1436,33 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       const origin = (formData.origin || '').trim();
       const destination = (formData.destination || '').trim();
       if (!origin || !destination || destinoBloqueiaSugestao(destination)) return;
+      const camposChave = `${formData.client}|${formData.provider}|${origin}|${destination}|${formData.missionType}`;
+      const camposChaveMudaram = camposSugestaoRef.current !== camposChave;
+      if (camposChaveMudaram) {
+          camposSugestaoRef.current = camposChave;
+          operadorEscolheuTabelaRef.current = false;
+          pedagioHerdadoRef.current = false;
+          setManualOverrides((prev) => (prev.toll ? { ...prev, toll: false } : prev));
+          setTollFetchDone(false);
+      }
       if (sugestaoTabela.loadingSugestao) return;
+      if (!deveAplicarSugestao(operadorEscolheuTabelaRef.current, camposChaveMudaram)) return;
 
       const rev = sugestaoTabela.tabelaClienteSugeridaId || '';
       const cst = sugestaoTabela.tabelaFornecedorSugeridaId || '';
-      const key = `${formData.client}|||${origin}|||${destination}|||${formData.provider}|||${rev}|||${cst}|||${clientPriceTables.length}|||${providerCostTables.length}`;
+      const pedagioHistorico = sugestaoTabela.pedagioReal;
+      const temPedagioHistorico = pedagioHistorico != null && Number.isFinite(pedagioHistorico);
+      const key = `${formData.client}|||${origin}|||${destination}|||${formData.provider}|||${formData.missionType}|||${rev}|||${cst}|||${temPedagioHistorico ? pedagioHistorico.toFixed(2) : ''}|||${clientPriceTables.length}|||${providerCostTables.length}`;
       if (lastAutoRouteRef.current === key) return;
       lastAutoRouteRef.current = key;
+      if (temPedagioHistorico) {
+          pedagioHerdadoRef.current = true;
+          setManualOverrides((prev) => ({ ...prev, toll: true }));
+          setTollFetchDone(true);
+          setTollDetails(null);
+          setTollZeroConfirmed(pedagioHistorico === 0);
+          setFormData((prev) => ({ ...prev, tollValue: pedagioHistorico.toFixed(2) }));
+      }
 
       let cancelado = false;
       (async () => {
@@ -1466,14 +1492,14 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               ? undefined
               : (tabelaCliente ? (sugestaoTabela.tabelaFornecedorSugeridaId || SEM_TABELA_CUSTO_SUGERIDA) : undefined);
           await calculatePricing(virtualRoute, undefined, tabelaCliente, tabelaCusto);
-          if (cancelado) return;
+          if (cancelado || pedagioHerdadoRef.current) return;
           await applyTollForRoute(origin, catalogo ? getTollDestination(destination) : destination);
       })();
       return () => {
           cancelado = true;
           lastAutoRouteRef.current = '';
       };
-  }, [formData.origin, formData.destination, formData.client, formData.provider, sugestaoTabela.loadingSugestao, sugestaoTabela.tabelaClienteSugeridaId, sugestaoTabela.tabelaFornecedorSugeridaId, clientPriceTables.length, providerCostTables.length]);
+  }, [formData.origin, formData.destination, formData.client, formData.provider, formData.missionType, sugestaoTabela.loadingSugestao, sugestaoTabela.tabelaClienteSugeridaId, sugestaoTabela.tabelaFornecedorSugeridaId, sugestaoTabela.pedagioReal, clientPriceTables.length, providerCostTables.length]);
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
@@ -1513,6 +1539,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const handleManualTableChange = (type: 'rev' | 'cst', val: string) => {
+      operadorEscolheuTabelaRef.current = true;
       setOperatorConfirmedCalc(false);
       if (type === 'rev') setManualOverrides(prev => ({ ...prev, revenue: false }));
       else setManualOverrides(prev => ({ ...prev, cost: false }));
@@ -1653,7 +1680,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 snapshot_data: manualRevenueTableId
                     ? snapshotTabelaNaCriacao({
                         clientTableId: manualRevenueTableId,
-                        providerTableId: formData.provider ? manualCostTableId : null,
+                        providerTableId: formData.provider && manualCostTableId && manualCostTableId !== SEM_TABELA_CUSTO_SUGERIDA ? manualCostTableId : null,
                     })
                     : null,
                 snapshot_approved_by: null, snapshot_approved_at: null,
@@ -3134,6 +3161,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                       {`Pedágio (valor real): R$ ${parseFloat(formData.tollValue || '0').toFixed(2)}`}
                                   </p>
                               </div>
+                              {manualOverrides.toll && sugestaoTabela.pedagioReal != null && Math.abs((parseFloat(formData.tollValue) || 0) - sugestaoTabela.pedagioReal) < 0.02 && <span className="text-[8px] font-black text-emerald-700 uppercase" data-testid="toll-herdado-historico">Histórico</span>}
                               {tollDetails?.provider === 'qualp' && !manualOverrides.toll && <span className="text-[8px] font-black text-blue-600 uppercase">QualP</span>}
                               {tollDetails?.provider === 'fixed' && !manualOverrides.toll && <span className="text-[8px] font-black text-orange-600 uppercase">Regra fixa</span>}
                           </div>
@@ -3263,6 +3291,16 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                                   {!ocultaFinanceiro && manualCostTableId && !formData.isSameOs && (() => { const t = providerCostTables.find(pt => pt.id.toString() === manualCostTableId); return t ? <p className="text-[8px] font-bold text-red-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.cost_per_extra_km || 0} | Extra Hora: R${t.cost_per_extra_hour || 0}</p> : null; })()}
                               </div>
                           </div>
+
+                          {sugestaoTabela.osOrigemId && manualRevenueTableId === sugestaoTabela.tabelaClienteSugeridaId && (!formData.provider || (manualCostTableId || '') === (sugestaoTabela.tabelaFornecedorSugeridaId || '')) && (
+                              <p className="text-[10px] font-bold text-emerald-700" data-testid="heranca-tabela-historico">
+                                  Herdada da {sugestaoTabela.osOrigemId}{sugestaoTabela.osOrigemEm ? ` em ${formatDateTimeBR(sugestaoTabela.osOrigemEm)}` : ''}.
+                                  {sugestaoTabela.pedagioReal != null && Math.abs((parseFloat(formData.tollValue) || 0) - sugestaoTabela.pedagioReal) < 0.02
+                                    ? ` Pedágio real R$ ${sugestaoTabela.pedagioReal.toFixed(2)} da mesma OS.`
+                                    : ''}
+                                  {' '}O seletor e o pedágio continuam editáveis.
+                              </p>
+                          )}
 
                           {(revenueRouteQuestion || costRouteQuestion) && (
                               <div className={`p-4 rounded-xl border-2 space-y-2 ${tableRouteMismatch ? 'bg-amber-50 border-amber-400' : 'bg-emerald-50 border-emerald-300'}`} data-testid="table-route-question">

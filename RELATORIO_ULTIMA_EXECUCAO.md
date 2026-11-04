@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "Fluxo aprovado, pode executar".
 
+Objetivo: cancelar a fatura também cancela o título em Contas a Receber, o boleto no Asaas e a NFS-e autorizada.
+
+O botão do Controle de NF chama `POST /api/nf/cancel/:id`. A rota recusa fatura `PAGA`. Grava `CANCELADA`, pausa a retentativa da nota, marca o título `CANCELLED` com valor em aberto zero (o valor original fica) e cancela comissão em aberto. O título é achado pela observação `Fatura {número}` ou pelo id do Asaas. O erro do Asaas volta na tela. Nota autorizada só muda para `CANCELED` se o emissor aceitar. A sincronização de cobrança aberta usa o mesmo filtro. Four `TMSEG-20261002-172535-MKAM` e Sankyu `TMSEG-20261002-171920-LH6K` não foram reprocessadas. A fatura paga `TMSEG-20261008-114910-G91M` não entra.
+
+Testes: `npx tsx --test scripts/invoice-cancel.test.ts` — 7 passaram. `npm run build` terminou sem erro. O T14 do reenvio em lote e o teste de sync com `?limit=${limit}` já falhavam antes. Não publicado.
+
+Executado em 04/11/2026 na `dev`, depois de "Fluxo aprovado, pode executar".
+
 Objetivo: a tabela nomeada da praça não cai na faixa genérica de outra região, e a GTM-9085 volta ao contrato de Palhoça.
 
 O bloco `Faixa KM Corrigida` em `lib/financialUtils.ts` conserva a tabela quando ela já cita a cidade da origem ou do destino. A troca dos 3× continua para franquia larga sem essa cidade. Nessa troca, a faixa escolhida é da mesma região; outra região só entra se não houver faixa local que cubra a distância.
@@ -88,6 +96,104 @@ Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a suge
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
 
 # Próxima Execução Proposta
+
+## Nova OS: a última missão aprovada da rota preenche as tabelas
+
+Executado em 04/11/2026 na `dev`, com "Pode seguir com o ajuste" e o pedido de trazer o pedágio da mesma OS. A Nova OS herda as duas tabelas e o valor real do pedágio da OS aprovada mais recente da mesma cidade, do mesmo tipo e, com fornecedor, do mesmo par. O campo usa `toll_value_provider`, para o acréscimo do cliente não entrar duas vezes. Sem pedágio gravado, o QualP segue. A troca manual segura a tabela até cliente, fornecedor, origem, destino ou tipo mudarem. O id do formulário segue no snapshot. Portal e modal financeiro continuam na frequência das 10. O motor `calculateMissionFinancials` não foi alterado. Ainda não foi publicado.
+
+### Objetivo da Tarefa
+
+Na Nova Missão, ao preencher cliente, fornecedor, origem, destino e o tipo (Velada ou Caracterizada), as tabelas de preço do cliente e de custo do fornecedor passam a sair da OS aprovada mais recente dessa mesma combinação. O operador continua podendo trocar a tabela no seletor. Sem histórico, permanece a escolha que o formulário já faz hoje.
+
+### Passo a Passo Sequencial
+
+1. Ler de novo `lib/billing/tabelaNaCriacao.ts`, `lib/billing/useTabelaSuggestion.ts`, `lib/rotaAprovadaTabela.ts` e o efeito em `components/MissionForm.tsx` que aplica a sugestão.
+2. Criar a escolha “última aprovada” ao lado da escolha por frequência. A Nova OS passa a usar só a primeira. Portal (`lib/portalCliente/registrarOs.ts`) e o modal financeiro (`components/MissionFinancialModal.tsx`) continuam na regra das 10.
+3. A consulta segue em `missions`, com `billing_approved = true`, ordenada por `created_at` descendente. Cliente e fornecedor continuam pelo nome gravado na OS. A rota continua pela cidade, com `osEstaNaRota`. O tipo entra por `mission_type`.
+4. Com fornecedor, cliente e custo saem dessa única OS. Sem fornecedor, só a tabela do cliente entra; o custo espera o fornecedor. Tipo diferente não herda a tabela do outro tipo.
+5. O seletor da Nova OS mostra a OS de origem e a data em `DD/MM/AAAA`. O seletor permanece editável.
+6. Atualizar `scripts/sugestao-tabela-os.test.ts`. Rodar esse teste e `scripts/rota-aprovada-tabela.test.ts`. Build local. Sem publicação.
+
+### Ficheiros Afetados
+
+- `lib/rotaAprovadaTabela.ts`
+- `lib/billing/tabelaNaCriacao.ts`
+- `lib/billing/useTabelaSuggestion.ts`
+- `components/MissionForm.tsx`
+- `scripts/sugestao-tabela-os.test.ts`
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md` (só depois da execução)
+
+### Garantias de Não Impacto
+
+- `calculateMissionFinancials` não muda. DHL, IBL, pedágio, Asaas, NF, Torres e WhatsApp não mudam.
+- Nenhuma tabela, coluna, migration ou função nova na Vercel.
+- Datas em `America/Sao_Paulo`, 24 horas, `DD/MM/AAAA`.
+- OS já salva, aprovada ou com tabela manual não é reescrita.
+- Portal e modal financeiro permanecem na frequência das 10 OS aprovadas.
+
+### Nove pontos
+
+1. Objetivo: a Nova OS herda as tabelas da última OS aprovada da mesma combinação, e o operador ainda troca se quiser.
+2. Já existe: `useTabelaSuggestion` e `fetchTopTabelasSugestao`, disparados em cliente, fornecedor, origem e destino. A escolha atual é a tabela mais repetida nas 10 aprovadas. Empate fica com a mais recente.
+3. Fonte única: `missions.snapshot_data` (`clientTableId` e `providerTableId`) e `missions.billing_approved`. Não existe coluna `status = 'aprovada'` nem `cliente_id` / `fornecedor_id` na OS.
+4. Writers: nenhum. A gravação da OS nova continua no salvamento que já existe. Readers novos: só o formulário da Nova OS.
+5. Testes: `scripts/sugestao-tabela-os.test.ts` e `scripts/rota-aprovada-tabela.test.ts`.
+6. O motor da OS não muda. Muda qual id de tabela a Nova OS entrega ao motor. Portal, financeiro, Asaas, NF, Torres e WhatsApp ficam como estão.
+7. Reutiliza a consulta, o casamento de cidade e o seletor. Sem hook novo e sem rota de API.
+8. Sem arquivo novo.
+9. A troca da “mais repetida” para “a última” altera o valor sugerido quando o histórico recente divergir da maioria. Isso vale só na Nova OS. Portal e modal financeiro ficam na frequência das 10.
+
+## Cancelar fatura também cancela título, boleto e NFS-e
+
+Executado em 04/11/2026, com "Fluxo aprovado, pode executar". As duas faturas de outubro não foram reprocessadas.
+
+### Objetivo da Tarefa
+
+O botão Cancelar do Controle de NF grava `CANCELADA` em `financial_invoices` e para aí. O título em Contas a Receber fica pendente porque a busca olha a descrição, e o número `TMSEG-...` está na observação. O boleto no Asaas continua `PENDING` e a NFS-e autorizada não é cancelada. Four `TMSEG-20261002-172535-MKAM` (NF 378, `pay_oycdmhj1qssv396m`, `inv_000023333152`) e Sankyu `TMSEG-20261002-171920-LH6K` (NF 376, `pay_d2pm9bo0ccxadhum`, `inv_000023332802`) estão nesse estado. A Four já tem a fatura correta `TMSEG-20261008-114910-G91M`, paga, NF 392. Essa não entra.
+
+### Passo a Passo Sequencial
+
+1. Criar `lib/invoiceCancelCore.ts` com a orquestração. Sem RPC nova e sem tabela nova.
+2. A rota já existente no Express (`server/routes.ts`, função Vercel `api/index.ts`) ganha `POST /api/nf/cancel/:id`. O botão em `components/FinancialInvoiceControl.tsx` deixa de gravar direto no banco e chama essa rota.
+3. A rota recusa fatura `PAGA`.
+4. Grava a fatura como `CANCELADA` e pausa a retentativa de NF.
+5. Localiza o título por `receivableMatchFilter` (observação `Fatura {número}` ou id do Asaas). Status `CANCELLED` e `amount_open` zero. O `amount` original permanece, para o histórico.
+6. Cancela a comissão em aberto dessa fatura, a mesma regra que `markCancelled` já usa.
+7. `DELETE` da cobrança Asaas (`deletePayment`). Grava `asaas_status`. Erro do Asaas volta na resposta, sem ser engolido. Emissora vazia continua caindo em TM GESTÃO, que é o padrão atual do cliente Asaas.
+8. Se a NFS-e está `AUTHORIZED` e há `asaas_invoice_id`, chama o cancelamento que já existe no Asaas (`POST /invoices/{id}/cancel`). `nf_status` só vira `CANCELED` se o Asaas aceitar. PlugNotas usa `cancelNfse` já existente.
+9. `markCancelled` em `lib/asaasSyncOpenPaymentsCore.ts` passa a usar o mesmo filtro do título.
+10. Teste em `scripts/invoice-cancel.test.ts` com Asaas simulado. Sem chamada real. Sem aplicar nas duas faturas de outubro nesta etapa.
+
+### Ficheiros Afetados
+
+- `lib/invoiceCancelCore.ts` (novo)
+- `server/routes.ts`
+- `components/FinancialInvoiceControl.tsx`
+- `lib/asaasSyncOpenPaymentsCore.ts`
+- `scripts/invoice-cancel.test.ts` (novo)
+- `RELATORIO_ULTIMA_EXECUCAO.md`
+- `docs/governanca/ESTADO-ATUAL.md` (só depois da execução)
+
+### Garantias de Não Impacto
+
+- `calculateMissionFinancials` não entra. DHL, IBL, Torres e WhatsApp não mudam.
+- Nenhuma coluna, migration ou função nova na Vercel. A rota entra no Express que já está em `api/index.ts`.
+- Datas continuam em Brasília, 24 horas.
+- Fatura paga não é cancelada. A `TMSEG-20261008-114910-G91M` fica intocada.
+- O valor histórico do título (`amount`) não é apagado. Sai da lista de abertos pelo status `CANCELLED` e por `amount_open` zero.
+
+### Nove pontos
+
+1. Objetivo: um cancelamento no Controle de NF fecha título, boleto e NFS-e juntos.
+2. Já existe: `handleCancelInvoice`, `deletePayment`, `cancelInvoice` no Asaas, `cancelNfse` no PlugNotas e `receivableMatchFilter`.
+3. Fonte única: `financial_invoices` e `financial_transactions`. O vínculo é o número da fatura na observação e o `asaas_payment_id`.
+4. Writers: a rota nova no Express e o `markCancelled` da sincronização. Readers: Controle de NF e Contas a Receber.
+5. Testes: `scripts/invoice-cancel.test.ts`. Asaas real não é chamado no teste.
+6. OS, pedágio, comissão de cálculo, Torres e WhatsApp não mudam. Comissão em aberto da fatura cancelada segue a regra que a sincronização já tem.
+7. Reutiliza o filtro de título, o delete de cobrança e o cancelamento de NFS-e. Sem RPC `sp_cancel_invoice`.
+8. Arquivo novo: `lib/invoiceCancelCore.ts`, porque hoje o cancelamento está partido entre o botão e a sincronização, e os dois erram o campo de busca.
+9. As duas faturas de outubro não são reprocessadas nesta etapa. Cancelar a NF 378 e a 376 na prefeitura é outro passo, depois do código visto no localhost. O prazo municipal pode recusar nota de 02/10/2026.
 
 ## Tabela de Preços: mostrar 2026 (ANTIGA) sem cotação nova
 

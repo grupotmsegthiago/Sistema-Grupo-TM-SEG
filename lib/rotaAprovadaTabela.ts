@@ -25,6 +25,10 @@ export interface OsRotaAprovada {
   km?: number | null;
   /** Nota já emitida ou número de fatura preenchido. */
   faturada?: boolean;
+  /** Velada ou Caracterizada, como gravado em missions.mission_type. */
+  tipoMissao?: string | null;
+  /** Valor real do pedágio (o que o operador digitou). Nulo quando a OS não tinha o campo. */
+  pedagioReal?: number | null;
 }
 
 export interface EscolhaRotaAprovada {
@@ -302,6 +306,23 @@ export function getTopTabelaId(ordens: { tabela_id: string | null | undefined; c
 export interface SugestaoTabelas {
   tabelaClienteSugeridaId: string | null;
   tabelaFornecedorSugeridaId: string | null;
+  /** OS aprovada de onde saíram os dois ids. Só a Nova OS preenche. */
+  osOrigemId?: string | null;
+  osOrigemEm?: string | null;
+  /** Valor real do pedágio dessa OS. Nulo: o formulário segue o cálculo atual. */
+  pedagioReal?: number | null;
+}
+
+/** Velada não herda tabela de Caracterizada, e o contrário também vale. */
+export function mesmoTipoMissao(gravado: string | null | undefined, atual: string | null | undefined): boolean {
+  const a = normalizar(gravado || '');
+  const b = normalizar(atual || '');
+  if (!a || !b) return false;
+  const velada = (valor: string) => valor.includes('VELAD');
+  const caracterizada = (valor: string) => valor.includes('CARACTER');
+  if (velada(a) || velada(b)) return velada(a) && velada(b);
+  if (caracterizada(a) || caracterizada(b)) return caracterizada(a) && caracterizada(b);
+  return a === b;
 }
 
 /**
@@ -342,6 +363,59 @@ export function resolverSugestaoTop1(entrada: {
   return {
     tabelaClienteSugeridaId: getTopTabelaId(linhas(amostra, 'clientTableId')),
     tabelaFornecedorSugeridaId: null,
+  };
+}
+
+const SUGESTAO_ULTIMA_VAZIA: SugestaoTabelas = {
+  tabelaClienteSugeridaId: null,
+  tabelaFornecedorSugeridaId: null,
+  osOrigemId: null,
+  osOrigemEm: null,
+  pedagioReal: null,
+};
+
+/**
+ * A Nova OS herda as duas tabelas da OS aprovada mais recente da mesma
+ * combinação. Com fornecedor, o par tem de ser dessa OS. Sem fornecedor,
+ * só a tabela do cliente entra. A frequência das 10 continua em
+ * resolverSugestaoTop1, usada pelo portal e pelo modal financeiro.
+ */
+export function resolverSugestaoUltimaAprovada(entrada: {
+  cliente: string;
+  fornecedor?: string | null;
+  origem: string;
+  destino: string;
+  tipoMissao?: string | null;
+  historico: OsRotaAprovada[];
+}): SugestaoTabelas {
+  const rota = rotaDaOs(entrada.origem, entrada.destino);
+  const tipo = String(entrada.tipoMissao || '').trim();
+  if (!rota || !tipo) return SUGESTAO_ULTIMA_VAZIA;
+  const amostra = entrada.historico.filter((os) => (
+    !!os.clientTableId
+    && mesmoCliente(os.cliente, entrada.cliente)
+    && osEstaNaRota(os.origem, os.destino, entrada.origem, entrada.destino)
+    && mesmoTipoMissao(os.tipoMissao, tipo)
+  ));
+  if (!amostra.length) return SUGESTAO_ULTIMA_VAZIA;
+  const ordenada = [...amostra].sort((a, b) => {
+    const dataA = Date.parse(a.aprovadaEm || '') || 0;
+    const dataB = Date.parse(b.aprovadaEm || '') || 0;
+    return dataB - dataA;
+  });
+  const fornecedor = String(entrada.fornecedor || '').trim();
+  const escolhida = fornecedor
+    ? ordenada.find((os) => mesmoFornecedor(os.fornecedor || '', fornecedor))
+    : ordenada[0];
+  if (!escolhida?.clientTableId) return SUGESTAO_ULTIMA_VAZIA;
+  return {
+    tabelaClienteSugeridaId: String(escolhida.clientTableId),
+    tabelaFornecedorSugeridaId: fornecedor && escolhida.providerTableId ? String(escolhida.providerTableId) : null,
+    osOrigemId: String(escolhida.id),
+    osOrigemEm: escolhida.aprovadaEm || null,
+    pedagioReal: escolhida.pedagioReal == null || !Number.isFinite(Number(escolhida.pedagioReal))
+      ? null
+      : Math.round(Number(escolhida.pedagioReal) * 100) / 100,
   };
 }
 

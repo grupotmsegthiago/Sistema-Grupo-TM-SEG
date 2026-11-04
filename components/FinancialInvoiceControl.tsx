@@ -376,21 +376,16 @@ const FinancialInvoiceControl: React.FC<{ onNavigate?: (screen: string) => void 
   };
 
   const handleCancelInvoice = async (inv: Invoice) => {
-    if (!confirm(`Confirma o CANCELAMENTO da fatura NF ${inv.number}?\n\nIsso irá:\n- Alterar status para CANCELADA\n- Remover o título do Contas a Receber`)) return;
+    if (!confirm(`Confirma o CANCELAMENTO da fatura ${inv.number}?\n\nIsso irá:\n- Marcar a fatura como CANCELADA\n- Cancelar o título em Contas a Receber\n- Cancelar o boleto no Asaas\n- Cancelar a NFS-e, se estiver autorizada`)) return;
     setCancellingId(inv.id);
     try {
-      const { error: invErr } = await supabase.from('financial_invoices').update({ status: 'CANCELADA' }).eq('id', inv.id);
-      if (invErr) { alert('Erro ao cancelar fatura: ' + invErr.message); setCancellingId(null); return; }
-      const { error: txErr } = await supabase.from('financial_transactions')
-        .update({ status: 'CANCELLED' })
-        .ilike('description', `%${inv.number}%`)
-        .eq('status', 'PENDING');
-      if (txErr) console.error('Erro ao cancelar lançamento vinculado:', txErr);
-
-      if (inv.asaas_payment_id) {
-        try {
-          await authFetch(`/api/asaas/payment/${inv.asaas_payment_id}?company=${encodeURIComponent(inv.issuer_company || '')}`, { method: 'DELETE' });
-        } catch {}
+      const res = await authFetch(`/api/nf/cancel/${inv.id}`, { method: 'POST' });
+      let data: { ok?: boolean; error?: string | null } = {};
+      try { data = await res.json(); } catch { data = {}; }
+      if (!res.ok || data?.ok === false) {
+        alert(data?.error || 'Não foi possível concluir o cancelamento.');
+      } else {
+        alert('Fatura cancelada. O título, o boleto e a nota autorizada foram tratados.');
       }
       await fetchInvoices();
       setShowDetail(false);

@@ -4,8 +4,9 @@
  */
 
 import { calculateMissionFinancials } from '../financialUtils';
+import { resolveStoredProviderToll } from '../toll/clientTollBilling';
 import { computeRouteDistanceKm } from '../routeDistance';
-import { osEstaNaRota, quilometragemRegistrada, resolverSugestaoTop1, rotaDaOs, type OsRotaAprovada, type SugestaoTabelas } from '../rotaAprovadaTabela';
+import { osEstaNaRota, quilometragemRegistrada, resolverSugestaoTop1, resolverSugestaoUltimaAprovada, rotaDaOs, type OsRotaAprovada, type SugestaoTabelas } from '../rotaAprovadaTabela';
 
 type Consulta = { from: (tabela: string) => any };
 
@@ -40,6 +41,10 @@ function mapearHistorico(data: any[]): OsRotaAprovada[] {
       clientTableId: ids.clientTableId,
       providerTableId: ids.providerTableId,
       aprovadaEm: row.created_at,
+      tipoMissao: row.mission_type ? String(row.mission_type) : null,
+      pedagioReal: row.toll_value == null && row.toll_value_provider == null
+        ? null
+        : resolveStoredProviderToll(row.toll_value, row.toll_value_provider, false),
       km: quilometragemRegistrada(row.start_km, row.end_km, row.total_distance),
     };
   });
@@ -116,7 +121,13 @@ export async function receitaDaTabelaNaCriacao(
 /** A sugestão não escolheu tabela de custo. O cálculo da Nova OS não preenche sozinho. */
 export const SEM_TABELA_CUSTO_SUGERIDA = '__sem_tabela_custo_sugerida__';
 
-const SUGESTAO_VAZIA: SugestaoTabelas = { tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null };
+const SUGESTAO_VAZIA: SugestaoTabelas = {
+  tabelaClienteSugeridaId: null,
+  tabelaFornecedorSugeridaId: null,
+  osOrigemId: null,
+  osOrigemEm: null,
+  pedagioReal: null,
+};
 
 /** Destino em aberto não consulta histórico. */
 export function destinoBloqueiaSugestao(destino: string): boolean {
@@ -166,6 +177,53 @@ export async function fetchTopTabelasSugestao(
     fornecedor: fornecedorId,
     origem: rotaOrigem,
     destino: rotaDestino,
+    historico,
+  });
+}
+
+/**
+ * Nova OS: a OS aprovada mais recente da mesma cidade, do mesmo tipo e,
+ * quando houver fornecedor, do mesmo par. A janela de 80 só descarta cidade
+ * parecida. Quem vale é a primeira que passar no filtro, não a mais repetida.
+ * Portal e modal financeiro continuam em fetchTopTabelasSugestao.
+ */
+export async function fetchUltimaTabelaAprovada(
+  sb: Consulta,
+  clienteId: string,
+  fornecedorId: string | null | undefined,
+  rotaOrigem: string,
+  rotaDestino: string,
+  tipoMissao: string | null | undefined,
+  signal?: AbortSignal,
+): Promise<SugestaoTabelas> {
+  if (!String(tipoMissao || '').trim()) return SUGESTAO_VAZIA;
+  if (destinoBloqueiaSugestao(rotaDestino)) return SUGESTAO_VAZIA;
+  const rota = rotaDaOs(rotaOrigem, rotaDestino);
+  const token = tokenDoCliente(clienteId);
+  if (!rota || token.length < 4 || !String(rotaOrigem || '').trim()) return SUGESTAO_VAZIA;
+
+  let consulta = sb.from('missions')
+    .select(`${COLUNAS_HISTORICO},billing_approved,mission_type,toll_value,toll_value_provider`)
+    .eq('billing_approved', true)
+    .ilike('client', `%${token}%`)
+    .ilike('origin', `%${rota.origem}%`)
+    .ilike('destination', `%${rota.destino}%`)
+    .not('snapshot_data', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(80);
+  if (signal && typeof consulta.abortSignal === 'function') consulta = consulta.abortSignal(signal);
+  const { data, error } = await consulta;
+  if (signal?.aborted) return SUGESTAO_VAZIA;
+  if (error || !Array.isArray(data)) return SUGESTAO_VAZIA;
+
+  const historico = mapearHistorico(data.filter((row: { billing_approved?: boolean }) => row?.billing_approved === true))
+    .filter((os) => !!os.clientTableId && osEstaNaRota(os.origem, os.destino, rotaOrigem, rotaDestino));
+  return resolverSugestaoUltimaAprovada({
+    cliente: clienteId,
+    fornecedor: fornecedorId,
+    origem: rotaOrigem,
+    destino: rotaDestino,
+    tipoMissao,
     historico,
   });
 }

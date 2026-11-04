@@ -4366,6 +4366,8 @@ function mapearHistorico(data) {
       clientTableId: ids.clientTableId,
       providerTableId: ids.providerTableId,
       aprovadaEm: row.created_at,
+      tipoMissao: row.mission_type ? String(row.mission_type) : null,
+      pedagioReal: row.toll_value == null && row.toll_value_provider == null ? null : resolveStoredProviderToll(row.toll_value, row.toll_value_provider, false),
       km: quilometragemRegistrada(row.start_km, row.end_km, row.total_distance)
     };
   });
@@ -4425,10 +4427,17 @@ var init_tabelaNaCriacao = __esm({
   "lib/billing/tabelaNaCriacao.ts"() {
     "use strict";
     init_financialUtils();
+    init_clientTollBilling();
     init_routeDistance();
     init_rotaAprovadaTabela();
     COLUNAS_HISTORICO = "id,origin,destination,client,provider,snapshot_data,created_at,total_distance,start_km,end_km";
-    SUGESTAO_VAZIA = { tabelaClienteSugeridaId: null, tabelaFornecedorSugeridaId: null };
+    SUGESTAO_VAZIA = {
+      tabelaClienteSugeridaId: null,
+      tabelaFornecedorSugeridaId: null,
+      osOrigemId: null,
+      osOrigemEm: null,
+      pedagioReal: null
+    };
   }
 });
 

@@ -14,6 +14,7 @@ import {
   syncAsaasReceiptToReceivables,
   upsertAsaasReceiptNote,
 } from './asaasReceiptDetails.js';
+import { cancelLinkedReceivables } from './invoiceCancelCore.js';
 
 export type SyncOpenPaymentsResult = {
   success: true;
@@ -145,19 +146,21 @@ export async function runAsaasSyncOpenPayments(params: {
   const paidIds: string[] = [];
   const checkedIds: string[] = [];
 
-  const markCancelled = async (inv: { id: string; number?: string | null }, asaasStatus: string) => {
+  const markCancelled = async (
+    inv: { id: string; number?: string | null; asaas_payment_id?: string | null },
+    asaasStatus: string,
+  ) => {
     await supabase.from('financial_invoices').update({
       status: 'CANCELADA',
       asaas_status: asaasStatus,
       nf_retry_paused: true,
     }).eq('id', inv.id);
-    if (inv.number) {
-      await supabase
-        .from('financial_transactions')
-        .update({ status: 'CANCELLED' })
-        .ilike('description', `%${inv.number}%`)
-        .eq('status', 'PENDING');
-    }
+    const titles = await cancelLinkedReceivables(
+      supabase as unknown as Parameters<typeof cancelLinkedReceivables>[0],
+      inv.number,
+      inv.asaas_payment_id,
+    );
+    if (titles.error) throw new Error(titles.error);
     try {
       await supabase
         .from('comissoes')

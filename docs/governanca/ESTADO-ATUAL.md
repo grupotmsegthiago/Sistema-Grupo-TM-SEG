@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. Na Nova OS, a tabela do cliente, a do fornecedor e o pedágio real saem da última OS aprovada da mesma cidade, do mesmo tipo (Velada ou Caracterizada) e, quando o fornecedor já está escolhido, do mesmo par. O campo recebe o valor real (`toll_value_provider`), e o acréscimo do cliente continua na gravação. O QualP não substitui esse valor. A troca no seletor ou no pedágio continua livre. Portal e modal financeiro continuam na tabela mais repetida das 10 aprovadas. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 2026-11-04. O cancelamento no Controle de NF passa a fechar o título em Contas a Receber, o boleto no Asaas e a NFS-e autorizada. Fatura paga não entra. O valor original do título permanece; o em aberto zera. Four `TMSEG-20261002-172535-MKAM` e Sankyu `TMSEG-20261002-171920-LH6K` não foram reprocessadas. O motor da OS não mudou. Ainda não foi publicado.
+
 Atualizado em 2026-11-04. A faixa KM corrigida deixa de trocar uma tabela que já cita a cidade da viagem. Palhoça permanece na operação de R$ 1.800. Se a troca ainda ocorrer, a faixa nova fica na mesma região; outra região só entra quando não há faixa local que cubra a distância. A GTM-9085 teve a receita gravada de R$ 1.057 para R$ 1.800. O custo segue R$ 1.200. O card de hoje ficou sem prejuízo. DHL, pedágio, Asaas, NF e o custo da Torres não foram alterados. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-03. O botão Reemitir da fatura `TMSEG-20261103-162641-WVPS` respondia "Fatura não encontrada" porque a consulta pedia `due_date` e `description`, colunas que não existem em `financial_invoices`. A nota está pausada com o erro do código antigo. A busca foi corrigida. A reemissão manual ainda depende deste deploy.
