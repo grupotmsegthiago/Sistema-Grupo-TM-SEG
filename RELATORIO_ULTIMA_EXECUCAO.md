@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: a previsão do cliente passa a ser o horário de chegada, não a duração.
+
+O painel soma a hora atual de Brasília ao tempo que falta. Quatorze minutos deixam de aparecer como 00:14:02 e passam a aparecer como 19:16. Se a chegada for no dia seguinte, a data entra junto. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — a previsão 19:16 e a virada do dia passaram.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: o painel do cliente deixa de ficar preso em "Calculando a rota pelas ruas." Na foto da velada, o estado do agente fica acima dos links.
 
 A distância, o tempo e o traçado vêm do servidor, pela rota de carro já usada no sistema. A linha reta não entra no lugar. `GET /api/geocode-address?route=1` no localhost devolveu Campinas até Barueri com 89838 metros, 4287 segundos e 315 pontos. Acima de Gerar link do agente, a foto mostra Agente conectado ou Agente desconectado, com a mesma regra do link do cliente. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

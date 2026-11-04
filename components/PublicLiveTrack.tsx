@@ -6,7 +6,7 @@ import { GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/a
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
 import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
-import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
+import { formatDateTimeBR, formatTimeBR, previsaoChegadaBR } from '../lib/dateUtils';
 import { googleMapsLoadConfig } from '../lib/maps';
 import { agenteEstaLogado, haversineMeters } from '../lib/liveTrack/pure';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
@@ -66,15 +66,6 @@ function buscarRota(origem: string, destino: string, comLinha: boolean, signal: 
       return { metros, segundos: Number(j.segundos) || 0, pontos };
     })
     .catch(() => null);
-}
-
-function textoPrevisao(segundos: number): string {
-  const total = Math.max(0, Math.round(segundos));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(h)}:${p(m)}:${p(s)}`;
 }
 
 const ATIVA_LGPD_SUMMARY =
@@ -325,7 +316,7 @@ function AndamentoCliente({
   const total = rota.totalMetros;
   const andou = falta != null && total != null ? Math.max(0, total - falta) : null;
   const pct = total && andou != null && total > 0 ? Math.max(0, Math.min(100, Math.round((andou / total) * 100))) : 0;
-  const previsao = rota.duracaoSegundos != null ? textoPrevisao(rota.duracaoSegundos) : null;
+  const previsao = rota.duracaoSegundos != null ? previsaoChegadaBR(rota.duracaoSegundos) : null;
   const texto = !origem || !destino || !ponto
     ? 'Aguardando origem, destino e a posição do agente.'
     : falta == null

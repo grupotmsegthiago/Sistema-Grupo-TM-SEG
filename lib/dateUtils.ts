@@ -85,6 +85,14 @@ export const formatNowTimeBR = (date: Date = new Date()): string => {
   return date.toLocaleTimeString('pt-BR', TIME_HM);
 };
 
+/** Chegada em Brasília: agora mais o tempo que falta. Mesmo dia fica HH:mm. Outro dia leva a data. */
+export function previsaoChegadaBR(segundos: number, agora: Date = new Date()): string {
+  const total = Math.max(0, Math.round(Number(segundos) || 0));
+  const chegada = new Date(agora.getTime() + total * 1000);
+  const mesmoDia = formatIsoDateBR(chegada) === formatIsoDateBR(agora);
+  return mesmoDia ? formatTimeBR(chegada) : formatDateTimeBR(chegada);
+}
+
 /** Data ISO yyyy-mm-dd no fuso de Brasília. */
 export const formatIsoDateBR = (date: Date = new Date()): string => {
   return date.toLocaleDateString('en-CA', { timeZone: TZ });

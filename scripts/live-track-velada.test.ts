@@ -16,6 +16,14 @@ import {
   validateCoords,
 } from '../lib/liveTrack/pure';
 import { LIVE_TRACK_LGPD_FULL, LIVE_TRACK_LGPD_VERSION } from '../lib/liveTrack/lgpd';
+import { previsaoChegadaBR } from '../lib/dateUtils';
+
+test('previsão de chegada soma o tempo que falta ao horário de Brasília', () => {
+  const agora = new Date('2026-11-04T22:02:00.000Z');
+  assert.equal(previsaoChegadaBR(14 * 60 + 2, agora), '19:16');
+  const noite = new Date('2026-11-05T01:30:00.000Z');
+  assert.equal(previsaoChegadaBR(3 * 3600, noite), '05/11/2026 01:30');
+});
 
 test('só missão velada gera rastreio ao vivo', () => {
   assert.equal(isVeladaMission({ mission_type: 'Velada' }), true);
@@ -190,6 +198,7 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /live-track-ultima/);
   assert.match(page, /live-track-progresso/);
   assert.match(page, /route: '1'/);
+  assert.match(page, /previsaoChegadaBR/);
   assert.match(page, /linha.length > 1/);
   assert.doesNotMatch(page, /DirectionsService/);
   assert.doesNotMatch(page, /em linha reta/);

@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. A previsão do link do cliente é o horário de chegada em Brasília: a hora atual mais o tempo que falta. No mesmo dia aparece HH:mm, como 19:16. Se a chegada cair no dia seguinte, entra a data. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. A distância e o traçado do link do cliente vêm do servidor, pela rota de carro. O painel deixa de ficar preso em "Calculando a rota pelas ruas." Na foto da velada, acima dos links, aparece Agente conectado ou Agente desconectado. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. A rota pelas ruas que o Google recusa deixa de derrubar o link do cliente. O mapa continua aberto e o painel avisa que a rota não foi encontrada. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
