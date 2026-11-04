@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: a recusa da rota do Google deixa de cobrir o link do cliente com a tela de erro.
+
+A chamada de direções devolve nulo quando a origem é inválida ou o Google recusa o pedido. A promessa não fica solta. O mapa permanece e o painel diz que a rota pelas ruas não foi encontrada. O motor da OS não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 14 passaram.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: a rota do cliente segue as ruas, e os botões de link saem da coluna de ícones e vão para a foto.
 
 No mapa do cliente, a linha reta foi trocada pela rota de carro do Google, da origem ao destino. O painel mostra a distância e o tempo que ainda faltam a partir da posição do agente. Esse trecho é pedido de novo quando o agente anda cerca de 200 metros.

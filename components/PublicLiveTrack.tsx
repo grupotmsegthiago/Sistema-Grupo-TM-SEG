@@ -46,14 +46,30 @@ type RotaRodoviaria = {
   erro: boolean;
 };
 
+function coordenadaValida(p: Ponto | null | undefined): p is Ponto {
+  return !!p && Number.isFinite(p.lat) && Number.isFinite(p.lng) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180;
+}
+
 function pedirDirecao(origem: Ponto, destino: Ponto): Promise<google.maps.DirectionsResult | null> {
-  return new Promise((resolve) => {
+  if (!coordenadaValida(origem) || !coordenadaValida(destino)) return Promise.resolve(null);
+  if (haversineMeters(origem, destino) < 30) return Promise.resolve(null);
+  try {
     const svc = new google.maps.DirectionsService();
-    svc.route(
-      { origin: origem, destination: destino, travelMode: google.maps.TravelMode.DRIVING },
-      (result, status) => resolve(status === google.maps.DirectionsStatus.OK && result ? result : null),
-    );
-  });
+    const pedido = svc.route({
+      origin: new google.maps.LatLng(origem.lat, origem.lng),
+      destination: new google.maps.LatLng(destino.lat, destino.lng),
+      travelMode: google.maps.TravelMode.DRIVING,
+    });
+    if (pedido && typeof (pedido as Promise<google.maps.DirectionsResult>).then === 'function') {
+      return (pedido as Promise<google.maps.DirectionsResult>).then(
+        (result) => (result?.routes?.length ? result : null),
+        () => null,
+      );
+    }
+  } catch {
+    return Promise.resolve(null);
+  }
+  return Promise.resolve(null);
 }
 
 function textoPrevisao(segundos: number): string {
@@ -203,6 +219,8 @@ function LiveMapBox({
       rendererRef.current.setDirections(result);
       const total = (result.routes[0]?.legs || []).reduce((soma, trecho) => soma + (trecho.distance?.value || 0), 0);
       onRotaRef.current?.({ totalMetros: total, erro: false });
+    }).catch(() => {
+      if (rotaSeq.current === seq) onRotaRef.current?.({ erro: true });
     });
   }, [mapa, modoCliente, origem, destino]);
 
@@ -224,6 +242,8 @@ function LiveMapBox({
         duracaoSegundos: trecho.duration.value,
         erro: false,
       });
+    }).catch(() => {
+      if (faltaSeq.current === seq) onRotaRef.current?.({ erro: true });
     });
   }, [modoCliente, ponto, destino]);
 

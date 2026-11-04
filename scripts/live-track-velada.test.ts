@@ -188,6 +188,7 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /live-track-progresso/);
   assert.match(page, /DirectionsService/);
   assert.match(page, /TravelMode.DRIVING/);
+  assert.match(page, /new google.maps.LatLng/);
   assert.doesNotMatch(page, /em linha reta/);
   assert.match(page, /GPS_VERDE/);
   assert.match(page, /live-track-timeline/);
