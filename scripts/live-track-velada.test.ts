@@ -8,6 +8,7 @@ import {
   buildLiveTrackPublicUrl,
   buildLiveTrackWhatsappText,
   etapasDaTrilha,
+  agenteEstaLogado,
   haversineMeters,
   isLiveTrackStale,
   LIVE_TRACK_STALE_MS,
@@ -63,6 +64,14 @@ test('valida coordenadas GPS', () => {
   assert.equal(validateCoords(0, 0), null);
   assert.equal(validateCoords(91, 0), null);
   assert.equal(validateCoords('abc', 1), null);
+});
+
+test('cliente vê agente logado só com envio recente', () => {
+  const now = Date.parse('2026-11-04T21:00:00.000Z');
+  assert.equal(agenteEstaLogado({ status: 'sharing', vistoEm: '2026-11-04T20:59:00.000Z', now }), true);
+  assert.equal(agenteEstaLogado({ status: 'sharing', vistoEm: '2026-11-04T20:50:00.000Z', now }), false);
+  assert.equal(agenteEstaLogado({ status: 'pending', vistoEm: '2026-11-04T20:59:00.000Z', now }), false);
+  assert.equal(agenteEstaLogado({ status: 'sharing', ended: true, vistoEm: '2026-11-04T20:59:00.000Z', now }), false);
 });
 
 test('timeline junta a saída, as paradas e a última posição', () => {
@@ -174,6 +183,8 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /live-track-progresso/);
   assert.match(page, /GPS_VERDE/);
   assert.match(page, /live-track-timeline/);
+  assert.match(page, /AGENTE LOGADO/);
+  assert.match(page, /AGUARDANDO POSIÇÃO DO AGENTE/);
   assert.match(page, /live-track-keep-open/);
   assert.match(page, /formatDateTimeBR/);
   assert.match(page, /InfoWindow/);

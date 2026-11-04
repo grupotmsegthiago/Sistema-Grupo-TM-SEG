@@ -3,6 +3,21 @@ import { CANONICAL_PUBLIC_ORIGIN } from '../publicAppUrl';
 export const LIVE_TRACK_PING_MIN_MS = 2000;
 export const LIVE_TRACK_WATCH_MS = 2000;
 export const LIVE_TRACK_STALE_MS = 12000;
+/** Aba oculta envia a cada 60s. Abaixo disso o cliente marcaria o agente como ausente mesmo com a página aberta. */
+export const LIVE_TRACK_SINAL_FRESCO_MS = 150000;
+
+export function agenteEstaLogado(opts: {
+  status?: string | null;
+  ended?: boolean;
+  vistoEm?: string | number | null;
+  now?: number;
+}): boolean {
+  if (opts.ended) return false;
+  if (opts.status !== 'sharing') return false;
+  const t = typeof opts.vistoEm === 'number' ? opts.vistoEm : opts.vistoEm ? new Date(opts.vistoEm).getTime() : 0;
+  if (!Number.isFinite(t) || t <= 0) return false;
+  return (opts.now ?? Date.now()) - t < LIVE_TRACK_SINAL_FRESCO_MS;
+}
 export const LIVE_TRACK_TRAIL_MIN_METERS = 25;
 export const LIVE_TRACK_TRAIL_MIN_MS = 8000;
 export const LIVE_TRACK_PUBLIC_PATH = '/rastreio';

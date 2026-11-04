@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 2026-11-04. No link do cliente, o card mostra AGENTE LOGADO em verde quando a posição chega, e AGUARDANDO POSIÇÃO DO AGENTE em âmbar quando o agente ainda não compartilhou ou o sinal parou. A aba oculta envia a cada 1 minuto, então o verde permanece por 2 minutos e meio. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+
 Atualizado em 2026-11-04. O link do cliente ganhou a timeline da viagem: origem, os locais por onde passou (com o tempo e a distância de cada trecho) e o destino. No computador a timeline fica ao lado. No celular, abaixo do mapa. A marca da ATIVA continua só no link do agente. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 2026-11-04. No link do cliente, o mapa deixa de reenquadrar a rota inteira a cada consulta e acompanha a última posição do agente. O ponto B é o GPS verde com a logo da escolta. A origem é A e o destino é C. O painel mostra o endereço dessa posição, a data e a hora de Brasília, o percentual percorrido e a distância que falta, em linha reta. A previsão de tempo só aparece quando o GPS envia velocidade. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

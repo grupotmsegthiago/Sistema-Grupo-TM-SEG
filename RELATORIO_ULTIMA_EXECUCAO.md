@@ -97,6 +97,10 @@ Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada
 
 # Próxima Execução Proposta
 
+## Sinal do agente no link do cliente
+
+Executado em 04/11/2026 na `dev` e publicado nesta entrega, no projeto sistema-grupo-tm-seg. O card do cliente mostra AGENTE LOGADO em verde quando o status é `sharing` e a última posição tem menos de 2 minutos e meio. Fora disso, mostra AGUARDANDO POSIÇÃO DO AGENTE em âmbar. O link do agente não muda. O motor da OS não mudou.
+
 ## Visão do cliente só com a marca TM SEG
 
 Executado em 04/11/2026 na `dev` e publicado nesta entrega, no projeto sistema-grupo-tm-seg. No link do cliente a logo e o nome da ATIVA saem. A escolta aparece como TM SEG. O card reúne os dados, o mapa fica embaixo e a timeline lista origem, locais da viagem e destino, com tempo e distância de cada trecho. O link do agente da ATIVA não muda.

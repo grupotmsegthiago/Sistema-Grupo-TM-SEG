@@ -8,7 +8,7 @@ import ativaLogo from '../attached_assets/ativa-pronta-resposta.jpg';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { formatDateTimeBR, formatTimeBR } from '../lib/dateUtils';
 import { googleMapsLoadConfig } from '../lib/maps';
-import { haversineMeters } from '../lib/liveTrack/pure';
+import { agenteEstaLogado, haversineMeters } from '../lib/liveTrack/pure';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
 type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error';
@@ -311,6 +311,8 @@ function ClientLiveMap({ credential }: { credential: string }) {
   const [endereco, setEndereco] = useState('');
   const [quando, setQuando] = useState<string | null>(null);
   const [velocidade, setVelocidade] = useState<number | null>(null);
+  const [statusRastreio, setStatusRastreio] = useState('');
+  const [vistoEm, setVistoEm] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -339,6 +341,8 @@ function ClientLiveMap({ credential }: { credential: string }) {
       setEtapas(Array.isArray(j.etapas)
         ? j.etapas.map((e: any) => ({ lat: Number(e.lat), lng: Number(e.lng), at: String(e.at || ''), endereco: e.endereco ? String(e.endereco) : null })).filter((e: Etapa) => Number.isFinite(e.lat) && Number.isFinite(e.lng) && e.at)
         : []);
+      setStatusRastreio(String(j.status || ''));
+      setVistoEm(j.position?.at ? String(j.position.at) : null);
       setPhase(j.ended ? 'ended' : 'watching');
     } catch {
       setError('Falha ao acompanhar. Verifique a internet.');
@@ -374,6 +378,13 @@ function ClientLiveMap({ credential }: { credential: string }) {
                 <span>TM SEG</span>
               </p>
             </div>
+            <p
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-black tracking-wide ${agenteEstaLogado({ status: statusRastreio, ended: phase === 'ended', vistoEm }) ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'}`}
+              data-testid="live-track-sinal"
+            >
+              <span className="h-2.5 w-2.5 rounded-full bg-current" />
+              {agenteEstaLogado({ status: statusRastreio, ended: phase === 'ended', vistoEm }) ? 'AGENTE LOGADO' : 'AGUARDANDO POSIÇÃO DO AGENTE'}
+            </p>
             <div className="space-y-1 border-t border-white/10 pt-3">
               <p><span className="text-slate-400">Origem: </span>{ficha.origin || '—'}</p>
               <p><span className="text-slate-400">Destino: </span>{ficha.destination || '—'}</p>
