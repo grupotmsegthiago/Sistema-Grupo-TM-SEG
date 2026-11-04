@@ -13,6 +13,9 @@ export type LiveTrackWatchBody = {
   clientUrl?: string;
   whatsappText?: string;
   trail?: Array<{ lat: number; lng: number; recorded_at: string }>;
+  chegadaEm?: string | null;
+  reentradaBloqueada?: boolean;
+  reentradaLiberadaEm?: string | null;
   track?: {
     id: string;
     status: string;

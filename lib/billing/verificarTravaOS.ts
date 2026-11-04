@@ -159,6 +159,58 @@ export async function verificarTravaSegurancaOSWithClient(
   }
 }
 
+export async function faturasEmitidasDaOs(
+  sb: InvoiceLockClient,
+  missionId: string,
+): Promise<Array<{ number: string | null; client: string | null; cnpj: string | null; status: string }>> {
+  const id = String(missionId || '').trim();
+  if (!id) return [];
+  try {
+    const { data: vinculos, error } = await sb.from('financial_invoice_missions').select('invoice_id').eq('mission_id', id);
+    if (error || !vinculos?.length) return [];
+    const invoiceIds = [...new Set(vinculos.map((v: { invoice_id?: string }) => String(v.invoice_id || '')).filter(Boolean))];
+    if (!invoiceIds.length) return [];
+    const { data: faturas, error: fatErr } = await sb
+      .from('financial_invoices')
+      .select('id, status, number, client')
+      .in('id', invoiceIds);
+    if (fatErr || !faturas?.length) return [];
+    const abertas = faturas.filter((f: { status?: string }) => String(f.status || '').toUpperCase() !== 'CANCELADA');
+    const saida = [];
+    for (const fatura of abertas) {
+      const nome = String(fatura.client || '').trim();
+      let cnpj: string | null = null;
+      if (nome) {
+        const porNome = await sb.from('clients').select('cnpj').eq('name', nome);
+        const linha = porNome?.data?.[0] || (await sb.from('clients').select('cnpj').eq('trading_name', nome))?.data?.[0];
+        const digitos = String(linha?.cnpj || '').replace(/\D/g, '');
+        cnpj = digitos.length === 14
+          ? `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8, 12)}-${digitos.slice(12)}`
+          : (String(linha?.cnpj || '').trim() || null);
+      }
+      saida.push({
+        number: fatura.number || null,
+        client: nome || null,
+        cnpj,
+        status: String(fatura.status || ''),
+      });
+    }
+    return saida;
+  } catch {
+    return [];
+  }
+}
+
+export function mensagemValorSomenteDiretoria(
+  faturas: Array<{ number: string | null; client: string | null; cnpj: string | null }>,
+): string {
+  const linhas = faturas.map((fatura) => {
+    const cnpj = fatura.cnpj ? `CNPJ ${fatura.cnpj}` : 'CNPJ não cadastrado';
+    return `${fatura.number || 'fatura'} · ${fatura.client || 'cliente'} · ${cnpj}`;
+  });
+  return `Esta OS já está faturada. A auditoria fica bloqueada e nada é gravado.\nSó a Diretoria pode abrir e gravar.\n${linhas.join('\n')}`;
+}
+
 export async function verificarTravaSegurancaOS(missionId: string): Promise<StatusTravaOS> {
   return verificarTravaSegurancaOSWithClient(supabase, missionId);
 }

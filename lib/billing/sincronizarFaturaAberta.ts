@@ -28,7 +28,8 @@ export type SyncFaturaAcao =
   | 'skipped_frozen'
   | 'skipped_unchanged'
   | 'skipped_incomplete'
-  | 'skipped_unknown_status';
+  | 'skipped_unknown_status'
+  | 'skipped_split';
 
 export type SyncFaturaItem = {
   invoiceId: string;
@@ -36,7 +37,27 @@ export type SyncFaturaItem = {
   action: SyncFaturaAcao;
   valorAntigo?: number;
   valorNovo?: number;
+  faturaNumero?: string | null;
+  cliente?: string | null;
+  cnpj?: string | null;
 };
+
+/** Fatura dividida por CNPJ: -S1-, -S2- e assim por diante. O total da quinzena não entra de novo. */
+export function faturaNumeroEhSplit(number: string | null | undefined): boolean {
+  return /-S\d+-/i.test(String(number || ''));
+}
+
+export function textoSplitsPreservados(items: SyncFaturaItem[] | null | undefined): string {
+  const partes = (items || []).filter((item) => item.action === 'skipped_split');
+  if (!partes.length) return '';
+  return partes
+    .map((item) => {
+      const cnpj = item.cnpj ? `CNPJ ${item.cnpj}` : 'CNPJ não cadastrado';
+      const quem = item.cliente || 'cliente da parte';
+      return `${item.faturaNumero || item.invoiceId} · ${quem} · ${cnpj}`;
+    })
+    .join('\n');
+}
 
 export type SyncFaturaPorOSResult = {
   ok: boolean;
@@ -202,12 +223,16 @@ async function registrarLogSync(
     valorNovo: number;
     missionIds: string[];
     userName?: string;
+    motivo?: string;
+    cnpj?: string | null;
+    cliente?: string | null;
+    faturaNumero?: string | null;
   },
 ): Promise<void> {
   try {
     const { error } = await sb.from('system_logs').insert([{
       user_name: args.userName || 'Sistema',
-      action_type: 'BILLING_SYNC_OPEN_INVOICE',
+      action_type: args.motivo === 'split_cnpj' ? 'BILLING_SPLIT_PRESERVADO' : 'BILLING_SYNC_OPEN_INVOICE',
       entity: 'Invoice',
       entity_id: args.invoiceId,
       details: JSON.stringify({
@@ -216,6 +241,10 @@ async function registrarLogSync(
         missionIds: args.missionIds,
         valorAntigo: args.valorAntigo,
         valorNovo: args.valorNovo,
+        motivo: args.motivo || null,
+        cnpj: args.cnpj || null,
+        cliente: args.cliente || null,
+        faturaNumero: args.faturaNumero || null,
       }),
     }]);
     if (error) {
@@ -226,14 +255,58 @@ async function registrarLogSync(
   }
 }
 
+function formatarCnpj(valor: string | null | undefined): string | null {
+  const digitos = String(valor || '').replace(/\D/g, '');
+  if (digitos.length !== 14) return String(valor || '').trim() || null;
+  return `${digitos.slice(0, 2)}.${digitos.slice(2, 5)}.${digitos.slice(5, 8)}/${digitos.slice(8, 12)}-${digitos.slice(12)}`;
+}
+
+async function cnpjDoCliente(sb: InvoiceSyncClient, nome: string | null | undefined): Promise<string | null> {
+  const cliente = String(nome || '').trim();
+  if (!cliente) return null;
+  try {
+    const porNome = await sb.from('clients').select('cnpj').eq('name', cliente);
+    const linha = porNome?.data?.[0] || (await sb.from('clients').select('cnpj').eq('trading_name', cliente))?.data?.[0];
+    return formatarCnpj(linha?.cnpj);
+  } catch {
+    return null;
+  }
+}
+
 async function sincronizarUmaFatura(
   sb: InvoiceSyncClient,
-  invoice: { id: string; status?: string | null; amount?: number | null; number?: string | null; asaas_payment_id?: string | null },
+  invoice: { id: string; status?: string | null; amount?: number | null; number?: string | null; asaas_payment_id?: string | null; client?: string | null },
   triggerMissionId: string,
   userName?: string,
 ): Promise<SyncFaturaItem> {
   const invoiceId = String(invoice.id);
   const status = normStatus(invoice.status);
+
+  if (faturaNumeroEhSplit(invoice.number)) {
+    const cnpj = await cnpjDoCliente(sb, invoice.client);
+    const item: SyncFaturaItem = {
+      invoiceId,
+      status,
+      action: 'skipped_split',
+      valorAntigo: roundMoney(Number(invoice.amount) || 0),
+      faturaNumero: invoice.number || null,
+      cliente: invoice.client || null,
+      cnpj,
+    };
+    await registrarLogSync(sb, {
+      invoiceId,
+      missionId: triggerMissionId,
+      valorAntigo: item.valorAntigo || 0,
+      valorNovo: item.valorAntigo || 0,
+      missionIds: [],
+      userName,
+      motivo: 'split_cnpj',
+      cnpj,
+      cliente: invoice.client || null,
+      faturaNumero: invoice.number || null,
+    });
+    return item;
+  }
 
   if (statusFaturaCongelado(status)) {
     return { invoiceId, status, action: 'skipped_frozen' };
@@ -345,7 +418,7 @@ export async function sincronizarFaturaPorOS(
 
     const { data: faturas, error: fatErr } = await sb
       .from('financial_invoices')
-      .select('id, status, amount, number, asaas_payment_id')
+      .select('id, status, amount, number, asaas_payment_id, client')
       .in('id', invoiceIds);
 
     if (fatErr) {
@@ -366,10 +439,13 @@ export async function sincronizarFaturaPorOS(
 }
 
 /** Fail-soft para a UI: a OS já foi gravada; falha de rede só vai ao console. */
-export function dispararSyncFaturaPorOS(missionId: string, userName?: string): void {
+export async function dispararSyncFaturaPorOS(missionId: string, userName?: string): Promise<SyncFaturaPorOSResult> {
   const id = String(missionId || '').trim();
-  if (!id) return;
-  void sincronizarFaturaPorOS(id, { userName }).catch((err) => {
+  if (!id) return { ok: true, skipped: true, reason: 'sem_os' };
+  try {
+    return await sincronizarFaturaPorOS(id, { userName });
+  } catch (err) {
     console.warn('[BILLING_SYNC_OPEN_INVOICE] falha fail-soft (OS já gravada):', err);
-  });
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }

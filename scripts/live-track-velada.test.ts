@@ -213,7 +213,8 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /marca=\{tmsegLogo\}/);
   assert.match(page, /OPERAÇÕES ACOMPANHAMENTO VELADO/);
   assert.match(page, /www\.grupotmseg\.com\.br/);
-  assert.match(page, /instagram\.com\/grupotmseg/);
+  assert.match(page, /instagram\.com\/grupo_tmseg/);
+  assert.match(page, /live-track-reentrada-bloqueada/);
   assert.match(page, /Grupo TM SEG/);
   assert.match(page, /PIN_ORIGEM/);
   assert.match(page, /BANDEIRA_DESTINO/);

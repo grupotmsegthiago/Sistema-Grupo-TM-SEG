@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 04/11/2026. O topo do acompanhamento ficou curvado, com degradê vermelho e o indicador AO VIVO. O rodapé virou painel, com Grupo TM SEG, o site e o Instagram. GPS, rota e a chegada a 500 metros não mudaram. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
+Atualizado em 04/11/2026. Depois que a OS entra numa fatura, a auditoria de faturamento fica fechada. Só o perfil Diretoria abre e grava. Quem não é Diretoria não grava KM, horário nem valor. Fatura dividida por CNPJ não recebe a soma da quinzena. A trava está no código local e ainda não foi publicada.
 
 Atualizado em 04/11/2026. O link do cliente abre em painel tático: topo com a marca e OPERAÇÕES ACOMPANHAMENTO VELADO, mapa no centro, dados e timeline em alto relevo, rodapé com Grupo TM SEG, site e Instagram. A chegada a 500 metros continua no mesmo painel. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 

@@ -11,7 +11,7 @@ import { googleMapsLoadConfig } from '../lib/maps';
 import { estadoDoSinal, haversineMeters } from '../lib/liveTrack/pure';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
 
-type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error';
+type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error' | 'bloqueado';
 type Ponto = { lat: number; lng: number };
 type PontoTrilha = Ponto & { at?: string };
 
@@ -477,15 +477,18 @@ function ClientLiveMap({ credential }: { credential: string }) {
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-[#0B0C10] bg-[radial-gradient(ellipse_at_top,rgba(197,0,0,0.22),transparent_52%)] text-white" data-testid="live-track-client-view">
-      <header className="relative mx-3 mt-3 flex items-center gap-4 overflow-hidden rounded-b-[2rem] border border-[#C50000]/60 bg-gradient-to-r from-[#3a080c] via-[#0B0C10] to-[#14080b] px-5 py-4 shadow-[0_10px_30px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.14)]" data-testid="live-track-topo">
-        <span className="pointer-events-none absolute inset-x-10 -bottom-5 h-8 rounded-full bg-[#C50000]/50 blur-2xl" />
-        <img src={tmsegLogo} alt="TM SEG" className="relative h-20 w-20 rounded-2xl border border-[#C5C6C7]/40 bg-[#1F2833] object-contain p-1.5 shadow-[0_8px_18px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.18)]" />
-        <div className="relative min-w-0">
-          <p className="flex items-center gap-2 text-[10px] font-black tracking-[0.28em] text-[#E60000]">
-            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#C50000] shadow-[0_0_12px_rgba(197,0,0,0.9)]" />
-            AO VIVO
-          </p>
-          <p className="text-sm font-black tracking-[0.18em] text-[#C5C6C7] drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] sm:text-base">OPERAÇÕES ACOMPANHAMENTO VELADO</p>
+      <header className="relative mx-3 mt-3 overflow-hidden rounded-b-[3rem] border border-[#C50000]/70 bg-gradient-to-br from-[#5a0a10] via-[#1a0507] to-[#0B0C10] px-5 py-5 shadow-[0_18px_40px_rgba(0,0,0,0.85),0_0_32px_rgba(197,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.2)]" data-testid="live-track-topo">
+        <span className="pointer-events-none absolute -left-8 top-0 h-28 w-28 rounded-full bg-[#C50000]/40 blur-3xl" />
+        <span className="pointer-events-none absolute inset-x-16 -bottom-6 h-10 rounded-full bg-[#E60000]/50 blur-2xl" />
+        <div className="relative flex items-center gap-4">
+          <img src={tmsegLogo} alt="TM SEG" className="h-24 w-24 rounded-3xl border-2 border-[#E60000] bg-black object-contain p-1.5 shadow-[0_0_24px_rgba(197,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.25)]" />
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-[10px] font-black tracking-[0.32em] text-white">
+              <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#ff2a2a] shadow-[0_0_14px_#ff2a2a]" />
+              AO VIVO
+            </p>
+            <p className="mt-1 text-base font-black tracking-[0.14em] text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] sm:text-lg">OPERAÇÕES ACOMPANHAMENTO VELADO</p>
+          </div>
         </div>
       </header>
       <div className={painelAberto
@@ -545,18 +548,25 @@ function ClientLiveMap({ credential }: { credential: string }) {
           </section>
         )}
       </div>
-      <footer className="relative mt-auto bg-[#0B0C10] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]" data-testid="live-track-rodape">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#C50000] to-transparent" />
-        <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
-          <p className="text-sm font-black tracking-[0.22em] text-white">Grupo TM SEG</p>
-          <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-[#C5C6C7]">
-            <a href="https://www.grupotmseg.com.br" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-[#C5C6C7]/25 bg-[#1F2833]/80 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#C50000] hover:text-white">
-              <Globe size={14} className="text-[#C50000]" />
+      <footer className="relative mt-auto overflow-hidden bg-gradient-to-r from-[#2a0608] via-[#0B0C10] to-[#120406] px-4 py-5" data-testid="live-track-rodape">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#ff2a2a] to-transparent" />
+        <div className="pointer-events-none absolute left-1/2 top-0 h-16 w-64 -translate-x-1/2 bg-[#C50000]/30 blur-3xl" />
+        <div className="relative mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 sm:flex-row">
+          <div className="flex items-center gap-3">
+            <img src={tmsegLogo} alt="" className="h-12 w-12 rounded-2xl border border-[#E60000]/80 bg-black object-contain p-1 shadow-[0_0_16px_rgba(197,0,0,0.7)]" />
+            <div>
+              <p className="text-sm font-black tracking-[0.22em] text-white">GRUPO TM SEG</p>
+              <p className="text-[10px] font-semibold tracking-[0.18em] text-[#C5C6C7]">A CARGA PROTEGIDA</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <a href="https://www.grupotmseg.com.br" target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-2xl border border-[#C50000]/40 bg-black/50 px-4 py-2 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:-translate-y-0.5 hover:border-[#ff2a2a] hover:shadow-[0_8px_20px_rgba(197,0,0,0.35)]">
+              <Globe size={15} className="text-[#ff2a2a]" />
               www.grupotmseg.com.br
             </a>
-            <a href="https://instagram.com/grupotmseg" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-full border border-[#C5C6C7]/25 bg-[#1F2833]/80 px-3 py-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition hover:border-[#C50000] hover:text-white">
-              <Instagram size={14} className="text-[#C50000]" />
-              @grupotmseg
+            <a href="https://instagram.com/grupo_tmseg" target="_blank" rel="noopener noreferrer" className="group inline-flex items-center gap-2 rounded-2xl border border-[#C50000]/40 bg-black/50 px-4 py-2 text-xs font-bold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] transition hover:-translate-y-0.5 hover:border-[#ff2a2a] hover:shadow-[0_8px_20px_rgba(197,0,0,0.35)]">
+              <Instagram size={15} className="text-[#ff2a2a]" />
+              @grupo_tmseg
             </a>
           </div>
         </div>
@@ -675,6 +685,13 @@ function AgentLiveTrack() {
         setMinimized(false);
         return;
       }
+      if (j?.reentradaBloqueada) {
+        endedRef.current = true;
+        stopWatch();
+        setPhase('bloqueado');
+        setMinimized(false);
+        return;
+      }
       if (!r.ok) {
         setError(j?.error || 'Falha ao enviar localização');
         return;
@@ -786,6 +803,10 @@ function AgentLiveTrack() {
         if (ehAtiva) document.title = 'ATIVA Pronta Resposta';
         if (j.ended || j.status === 'ended') {
           setPhase('ended');
+          return;
+        }
+        if (j.reentradaBloqueada) {
+          setPhase('bloqueado');
           return;
         }
         setPhase(ehAtiva ? 'marca' : 'consent');
@@ -973,11 +994,11 @@ function AgentLiveTrack() {
           </>
         ) : (
           <>
-            <img src={tmsegLogo} alt="TM SEG" className="h-10 w-auto" />
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Grupo TM SEG</p>
-              <p className="text-sm font-bold">Acompanhamento em tempo real</p>
-            </div>
+        <img src={tmsegLogo} alt="TM SEG" className="h-10 w-auto" />
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Grupo TM SEG</p>
+          <p className="text-sm font-bold">Acompanhamento em tempo real</p>
+        </div>
           </>
         )}
       </header>
@@ -1004,6 +1025,15 @@ function AgentLiveTrack() {
             <p className="font-black uppercase tracking-wide">Missão encerrada</p>
             <p className="text-sm text-emerald-100/80">O acompanhamento GPS desta OS foi finalizado. Você já pode fechar esta tela.</p>
             {osNumber ? <p className="text-xs font-mono text-emerald-200">OS {osNumber}</p> : null}
+          </div>
+        )}
+
+        {phase === 'bloqueado' && (
+          <div className="rounded-2xl border border-[#C50000]/50 bg-[#1a0608] p-5 space-y-3 text-center" data-testid="live-track-reentrada-bloqueada">
+            <AlertTriangle className="mx-auto text-[#E60000]" size={40} />
+            <p className="font-black uppercase tracking-wide">Chegada no destino</p>
+            <p className="text-sm text-[#C5C6C7]">O acesso deste link foi encerrado na chegada. Peça a um operador para liberar a entrada de novo.</p>
+            {osNumber ? <p className="text-xs font-mono text-[#C5C6C7]">OS {osNumber}</p> : null}
           </div>
         )}
 

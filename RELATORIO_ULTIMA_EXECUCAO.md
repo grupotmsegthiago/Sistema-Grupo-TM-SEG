@@ -2,6 +2,22 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: com a OS faturada, a auditoria de faturamento fica fechada. Só a Diretoria abre e grava. A fatura dividida por CNPJ não volta a receber a soma da quinzena.
+
+A GTM-8005 manteve a receita de R$ 6.531,56 aprovada em 20/09/2026. Em 03/11/2026, às 19:42, a Giovanna Marsili gravou KM e horário. A sincronização somou as 124 OS e gravou R$ 300.536,53 nas duas partes da `TMSEG-20261009-165823-LKUJ`. Esses valores foram devolvidos: S1 Intermodal R$ 274.380,35 (CNPJ 03.558.055/0001-00) e S2 Logic Pharma R$ 26.156,18 (CNPJ 21.372.384/0001-43). O motor da OS não mudou.
+
+Testes: `npx tsx --test scripts/invoice-os-sync-open.test.ts` — 8 passaram.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
+Objetivo: o acompanhamento velado fica com a paleta vermelha e preta da TM SEG, e o agente só entra de novo depois da chegada se um operador liberar.
+
+O topo ficou mais curvado, com degradê vermelho para preto e o logotipo maior. O rodapé traz Grupo TM SEG, www.grupotmseg.com.br e Instagram @grupo_tmseg. A chegada a 500 metros continua sem concluir a OS. A partir dela, uma nova abertura do link do agente é recusada até o operador clicar em Liberar entrada do agente. O link do cliente permanece. A coluna `mission_live_tracks.reentrada_liberada_em` foi aplicada no Supabase TM SEG. O motor da OS não mudou.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 16 passaram.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: o acompanhamento velado ganha o topo curvado e o rodapé de painel.
 
 O fundo segue grafite, com brilho vermelho. O título OPERAÇÕES ACOMPANHAMENTO VELADO permanece. O rodapé traz Grupo TM SEG, www.grupotmseg.com.br e o Instagram. A rota, o GPS e a chegada a 500 metros não mudaram. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

@@ -620,6 +620,13 @@ async function chegadaDoRastreio(sb, track, destino, trail) {
   if (quando) cacheChegada.set(track.id, quando);
   return quando;
 }
+function reentradaBloqueada(track, chegadaEm) {
+  if (!chegadaEm) return false;
+  const liberada = String(track.reentrada_liberada_em || "").trim();
+  if (!liberada) return true;
+  return liberada < chegadaEm;
+}
+var SESSAO_AGENTE_VIVA_MS = 12e4;
 async function generateLiveTrack(opts) {
   await ensureLiveTrackSchema();
   const missionId = String(opts.missionId || "").trim();
@@ -762,7 +769,9 @@ async function watchLiveTrack(opts) {
         ended_reason: track.ended_reason
       },
       trail,
-      chegadaEm
+      chegadaEm,
+      reentradaBloqueada: reentradaBloqueada(track, chegadaEm),
+      reentradaLiberadaEm: track.reentrada_liberada_em || null
     }
   };
 }
@@ -826,6 +835,8 @@ async function publicGetLiveTrack(opts) {
       etapas.push({ ...etapa, endereco: await enderecoDaPosicao(etapa.lat, etapa.lng) });
     }
   }
+  const chegadaEm = await chegadaDoRastreio(sb, track, pontos.destinationPoint, trail);
+  const bloqueada = papel === "agente" && reentradaBloqueada(track, chegadaEm);
   return {
     status: 200,
     body: {
@@ -833,6 +844,7 @@ async function publicGetLiveTrack(opts) {
       papel,
       status: track.status,
       ended: track.status === "ended",
+      reentradaBloqueada: bloqueada,
       lgpdVersion: LIVE_TRACK_LGPD_VERSION,
       lgpdSummary: LIVE_TRACK_LGPD_SUMMARY,
       lgpdFull: LIVE_TRACK_LGPD_FULL,
@@ -847,7 +859,7 @@ async function publicGetLiveTrack(opts) {
       } : null,
       trail,
       etapas,
-      chegadaEm: await chegadaDoRastreio(sb, track, pontos.destinationPoint, trail)
+      chegadaEm
     }
   };
 }
@@ -866,6 +878,11 @@ async function publicConsentLiveTrack(opts) {
     return { status: isTerminalMissionStatus(mission.status) ? 410 : 403, body: { error: erro } };
   }
   const sb = await getLiveTrackSupabase();
+  const pontos = await pontosDaRota(mission);
+  const chegadaEm = await chegadaDoRastreio(sb, track, pontos.destinationPoint);
+  if (reentradaBloqueada(track, chegadaEm)) {
+    return { status: 403, body: { reentradaBloqueada: true, error: "Chegada no destino registrada. Um operador precisa liberar o acesso do agente de novo." } };
+  }
   const nextStatus = track.status === "sharing" ? "sharing" : "consented";
   const { error } = await sb.from("mission_live_tracks").update({
     status: nextStatus,
@@ -898,6 +915,16 @@ async function publicPingLiveTrack(opts) {
   }
   if (!rastreioOsAberta(mission.status)) {
     return { status: 403, body: { error: "O link fica indispon\xEDvel enquanto a OS est\xE1 pendente." } };
+  }
+  const sbPre = await getLiveTrackSupabase();
+  const pontosPing = await pontosDaRota(mission);
+  const chegadaPing = await chegadaDoRastreio(sbPre, track, pontosPing.destinationPoint);
+  if (reentradaBloqueada(track, chegadaPing)) {
+    const visto = track.last_seen_at ? new Date(track.last_seen_at).getTime() : 0;
+    const sessaoViva = visto > 0 && Date.now() - visto < SESSAO_AGENTE_VIVA_MS;
+    if (!sessaoViva) {
+      return { status: 403, body: { reentradaBloqueada: true, error: "Chegada no destino registrada. Um operador precisa liberar o acesso do agente de novo." } };
+    }
   }
   const coords = validateCoords(opts.body?.lat, opts.body?.lng);
   if (!coords) return { status: 400, body: { error: "Coordenadas GPS inv\xE1lidas." } };
@@ -957,6 +984,18 @@ async function publicPingLiveTrack(opts) {
       missionStatus: mission.status
     }
   };
+}
+async function liberarReentradaAgente(opts) {
+  await ensureLiveTrackSchema();
+  const missionId = String(opts.missionId || "").trim();
+  if (!missionId) return { status: 400, body: { error: "missionId \xE9 obrigat\xF3rio" } };
+  const track = await getActiveTrack(missionId);
+  if (!track) return { status: 404, body: { error: "N\xE3o h\xE1 rastreio ativo nesta OS." } };
+  const sb = await getLiveTrackSupabase();
+  const quando = (/* @__PURE__ */ new Date()).toISOString();
+  const { error } = await sb.from("mission_live_tracks").update({ reentrada_liberada_em: quando }).eq("id", track.id);
+  if (error) throw new Error(error.message);
+  return { status: 200, body: { ok: true, reentradaLiberadaEm: quando } };
 }
 
 // lib/liveTrack/httpHandler.ts
@@ -1027,6 +1066,14 @@ async function handleLiveTrackHttp(req, res) {
       const result = await endLiveTrack({
         missionId: String(body.missionId || req.query?.missionId || ""),
         reason: String(body.reason || "operator_end")
+      });
+      res.status(result.status).json(result.body);
+      return;
+    }
+    if (op === "liberar-reentrada" && method === "POST") {
+      const body = parseBody(req.body);
+      const result = await liberarReentradaAgente({
+        missionId: String(body.missionId || req.query?.missionId || "")
       });
       res.status(result.status).json(result.body);
       return;

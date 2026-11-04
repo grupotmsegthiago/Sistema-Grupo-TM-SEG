@@ -233,6 +233,16 @@ async function chegadaDoRastreio(
   return quando;
 }
 
+/** Chegou no destino e o operador ainda não liberou uma nova entrada do agente. */
+function reentradaBloqueada(track: { reentrada_liberada_em?: string | null }, chegadaEm: string | null): boolean {
+  if (!chegadaEm) return false;
+  const liberada = String(track.reentrada_liberada_em || '').trim();
+  if (!liberada) return true;
+  return liberada < chegadaEm;
+}
+
+const SESSAO_AGENTE_VIVA_MS = 120000;
+
 export async function generateLiveTrack(opts: {
   missionId: string;
   createdBy?: string;
@@ -420,6 +430,8 @@ export async function watchLiveTrack(opts: {
       },
       trail,
       chegadaEm,
+      reentradaBloqueada: reentradaBloqueada(track, chegadaEm),
+      reentradaLiberadaEm: track.reentrada_liberada_em || null,
     },
   };
 }
@@ -507,6 +519,9 @@ export async function publicGetLiveTrack(opts: {
     }
   }
 
+  const chegadaEm = await chegadaDoRastreio(sb, track, pontos.destinationPoint, trail);
+  const bloqueada = papel === 'agente' && reentradaBloqueada(track, chegadaEm);
+
   return {
     status: 200,
     body: {
@@ -514,6 +529,7 @@ export async function publicGetLiveTrack(opts: {
       papel,
       status: track.status,
       ended: track.status === 'ended',
+      reentradaBloqueada: bloqueada,
       lgpdVersion: LIVE_TRACK_LGPD_VERSION,
       lgpdSummary: LIVE_TRACK_LGPD_SUMMARY,
       lgpdFull: LIVE_TRACK_LGPD_FULL,
@@ -528,7 +544,7 @@ export async function publicGetLiveTrack(opts: {
       } : null,
       trail,
       etapas,
-      chegadaEm: await chegadaDoRastreio(sb, track, pontos.destinationPoint, trail),
+      chegadaEm,
     },
   };
 }
@@ -557,6 +573,11 @@ export async function publicConsentLiveTrack(opts: {
   }
 
   const sb = await getLiveTrackSupabase();
+  const pontos = await pontosDaRota(mission);
+  const chegadaEm = await chegadaDoRastreio(sb, track, pontos.destinationPoint);
+  if (reentradaBloqueada(track, chegadaEm)) {
+    return { status: 403, body: { reentradaBloqueada: true, error: 'Chegada no destino registrada. Um operador precisa liberar o acesso do agente de novo.' } };
+  }
   const nextStatus = track.status === 'sharing' ? 'sharing' : 'consented';
   const { error } = await sb
     .from('mission_live_tracks')
@@ -602,6 +623,17 @@ export async function publicPingLiveTrack(opts: {
   }
   if (!rastreioOsAberta(mission.status)) {
     return { status: 403, body: { error: 'O link fica indisponível enquanto a OS está pendente.' } };
+  }
+
+  const sbPre = await getLiveTrackSupabase();
+  const pontosPing = await pontosDaRota(mission);
+  const chegadaPing = await chegadaDoRastreio(sbPre, track, pontosPing.destinationPoint);
+  if (reentradaBloqueada(track, chegadaPing)) {
+    const visto = track.last_seen_at ? new Date(track.last_seen_at).getTime() : 0;
+    const sessaoViva = visto > 0 && Date.now() - visto < SESSAO_AGENTE_VIVA_MS;
+    if (!sessaoViva) {
+      return { status: 403, body: { reentradaBloqueada: true, error: 'Chegada no destino registrada. Um operador precisa liberar o acesso do agente de novo.' } };
+    }
   }
 
   const coords = validateCoords(opts.body?.lat, opts.body?.lng);
@@ -668,4 +700,17 @@ export async function publicPingLiveTrack(opts: {
       missionStatus: mission.status,
     },
   };
+}
+
+export async function liberarReentradaAgente(opts: { missionId: string }): Promise<{ status: number; body: any }> {
+  await ensureLiveTrackSchema();
+  const missionId = String(opts.missionId || '').trim();
+  if (!missionId) return { status: 400, body: { error: 'missionId é obrigatório' } };
+  const track = await getActiveTrack(missionId);
+  if (!track) return { status: 404, body: { error: 'Não há rastreio ativo nesta OS.' } };
+  const sb = await getLiveTrackSupabase();
+  const quando = new Date().toISOString();
+  const { error } = await sb.from('mission_live_tracks').update({ reentrada_liberada_em: quando }).eq('id', track.id);
+  if (error) throw new Error(error.message);
+  return { status: 200, body: { ok: true, reentradaLiberadaEm: quando } };
 }

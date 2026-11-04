@@ -4,10 +4,12 @@ import fs from 'node:fs';
 import { calcularComissao } from '../lib/comissao/comissaoCalc';
 import {
   deveSincronizarStatusFatura,
+  faturaNumeroEhSplit,
   receitaOsParaFatura,
   sincronizarFaturaPorOS,
   somarReceitasOs,
   statusFaturaCongelado,
+  textoSplitsPreservados,
 } from '../lib/billing/sincronizarFaturaAberta';
 
 type Row = Record<string, unknown>;
@@ -233,6 +235,28 @@ describe('sync fatura aberta — recálculo encadeado', () => {
     assert.equal(res.invoices?.[0]?.action, 'skipped_incomplete');
     assert.equal(db.financial_invoices.find((f) => f.id === 'inv-open')?.amount, 3000);
   });
+
+  it('fatura dividida por CNPJ não recebe a soma da quinzena', async () => {
+    const db = seedOpenInvoiceDb() as MemoryDb;
+    db.financial_invoices.push({
+      id: 'inv-s1',
+      status: 'EMITIDA',
+      amount: 274380.35,
+      number: 'TMSEG-X-S1-0100',
+      client: 'INTERMODAL BRASIL LOGISTICA S.A.',
+      asaas_payment_id: 'pay_s1',
+    });
+    db.financial_invoice_missions.push({ invoice_id: 'inv-s1', mission_id: 'GTM-A' });
+    db.clients = [{ name: 'INTERMODAL BRASIL LOGISTICA S.A.', cnpj: '03558055000100' }];
+    assert.equal(faturaNumeroEhSplit('TMSEG-X-S1-0100'), true);
+    const res = await sincronizarFaturaPorOS('GTM-A', { sb: createMemorySb(db), userName: 'teste' });
+    const parte = res.invoices?.find((item) => item.invoiceId === 'inv-s1');
+    assert.equal(parte?.action, 'skipped_split');
+    assert.equal(parte?.cnpj, '03.558.055/0001-00');
+    assert.equal(db.financial_invoices.find((f) => f.id === 'inv-s1')?.amount, 274380.35);
+    assert.match(textoSplitsPreservados(res.invoices), /03\.558\.055\/0001-00/);
+    assert.match(textoSplitsPreservados(res.invoices), /INTERMODAL BRASIL LOGISTICA S\.A\./);
+  });
 });
 
 describe('sync fatura aberta — acoplamento UI', () => {
@@ -242,7 +266,8 @@ describe('sync fatura aberta — acoplamento UI', () => {
     assert.match(update, /from 'react'/);
     assert.match(financial, /from 'react'/);
     assert.match(update, /dispararSyncFaturaPorOS/);
-    assert.match(financial, /dispararSyncFaturaPorOS/);
+    assert.match(financial, /auditoria-faturamento-bloqueada/);
+    assert.match(financial, /valorTravadoParaQuemNaoEDiretoria/);
     const service = fs.readFileSync('lib/billing/sincronizarFaturaAberta.ts', 'utf8');
     assert.match(service, /BILLING_SYNC_OPEN_INVOICE/);
     assert.match(service, /statusFaturaCongelado/);

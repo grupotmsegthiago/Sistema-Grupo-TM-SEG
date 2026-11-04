@@ -78,13 +78,16 @@ import {
 } from '../lib/osNegativeMarginLock';
 import {
   canUnlockPaidInvoiceLock,
+  faturasEmitidasDaOs,
+  mensagemValorSomenteDiretoria,
   registrarDesbloqueioAjusteOS,
   verificarTravaSegurancaOS,
   type StatusTravaOS,
 } from '../lib/billing/verificarTravaOS';
-import { dispararSyncFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
+import { dispararSyncFaturaPorOS, textoSplitsPreservados } from '../lib/billing/sincronizarFaturaAberta';
 import { hasPersistedBillingFreeze, shouldRecalcOnTableChange } from '../lib/billing/tableSwapPolicy';
 import { isClientValueLockedAfterFinanceApproval } from '../lib/billing/financeClientLock';
+import { isPerfilDiretoria } from '../lib/diretoriaAccess';
 import { describeMoneyChange, describeTableChange, formatHistoryAlteration } from '../lib/billing/billingHistoryText';
 import PaidInvoiceLockPanel from './PaidInvoiceLockPanel';
 import FilterableSelect, { type FilterableSelectOption } from './FilterableSelect';
@@ -838,6 +841,8 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const isDirectorAccess = userRoleLower === 'diretoria' || userRoleLower === 'administrador';
   const [unlockOverride, setUnlockOverride] = useState(false);
   const [paidInvoiceLock, setPaidInvoiceLock] = useState<StatusTravaOS>({ bloqueado: false });
+  const [faturasDaOs, setFaturasDaOs] = useState<Array<{ number: string | null; client: string | null; cnpj: string | null; status: string }>>([]);
+  const [faturasCarregadas, setFaturasCarregadas] = useState(false);
   const [paidUnlockOverride, setPaidUnlockOverride] = useState(false);
   const [paidUnlockReason, setPaidUnlockReason] = useState('');
   const [paidUnlocking, setPaidUnlocking] = useState(false);
@@ -885,9 +890,41 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     });
     return () => { cancelled = true; };
   }, [isOpen, mission?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !mission?.id) return;
+    let cancelled = false;
+    setFaturasCarregadas(false);
+    faturasEmitidasDaOs(supabase, mission.id).then((lista) => {
+      if (!cancelled) {
+        setFaturasDaOs(lista);
+        setFaturasCarregadas(true);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setFaturasDaOs([]);
+        setFaturasCarregadas(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, mission?.id]);
   const isEffectivelyLocked = negativeLockBlocks || (isBillingLocked && !unlockOverride && !isAdminFullAccess);
   const isPaidInvoiceEffectivelyLocked = paidInvoiceLock.bloqueado && !paidUnlockOverride;
   const canUnlockPaidLock = canUnlockPaidInvoiceLock({ role: userRoleLower, name: userNameLower });
+
+  const avisarSplitPreservado = (res: { invoices?: Parameters<typeof textoSplitsPreservados>[0] } | void) => {
+    const texto = textoSplitsPreservados(res?.invoices);
+    if (!texto) return;
+    showNotification('Separação por CNPJ preservada', `O valor de cada CNPJ permanece.\n${texto}`, 'warning');
+  };
+
+  const valorTravadoParaQuemNaoEDiretoria = async (): Promise<boolean> => {
+    if (!mission?.id || isPerfilDiretoria({ role: userRoleLower })) return false;
+    const faturas = await faturasEmitidasDaOs(supabase, mission.id);
+    if (!faturas.length) return false;
+    showNotification('Auditoria bloqueada', mensagemValorSomenteDiretoria(faturas), 'error');
+    return true;
+  };
 
   const handlePaidInvoiceUnlock = async () => {
     if (!mission?.id) return;
@@ -1977,6 +2014,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveOpsData = async () => {
       if (!mission) return;
+      if (await valorTravadoParaQuemNaoEDiretoria()) return;
       if (isSavingRef.current) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
@@ -2043,7 +2081,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
           showNotification('Salvo', updatePayload.status === 'Concluída' ? 'Dados salvos e missão concluída automaticamente.' : 'Dados do cliente atualizados com sucesso.', 'success');
           window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: confirmedRow }));
-          dispararSyncFaturaPorOS(mission.id);
+          dispararSyncFaturaPorOS(mission.id).then(avisarSplitPreservado);
           if (onUpdate) onUpdate();
       } catch (e: any) {
           showNotification('Erro', e.message || 'Falha ao salvar dados operacionais.', 'error');
@@ -2052,6 +2090,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleSaveProvOpsData = async () => {
       if (!mission) return;
+      if (await valorTravadoParaQuemNaoEDiretoria()) return;
       if (isSavingRef.current) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
@@ -2497,6 +2536,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleRecalculateClient = async () => {
       if (isSavingRef.current) return;
+      if (await valorTravadoParaQuemNaoEDiretoria()) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2567,7 +2607,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                   })
               }]);
               showNotification('Recalculado e Salvo', 'Valores do cliente atualizados na tabela e salvos no banco.', 'success');
-              dispararSyncFaturaPorOS(mission.id);
+              dispararSyncFaturaPorOS(mission.id).then(avisarSplitPreservado);
           } catch (e) {
               console.error('Erro ao salvar recálculo cliente:', e);
               showNotification('Recalculado', 'Valores restaurados na tela, mas houve erro ao salvar no banco.', 'error');
@@ -2580,6 +2620,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleRecalculateProvider = async () => {
       if (isSavingRef.current) return;
+      if (await valorTravadoParaQuemNaoEDiretoria()) return;
       if (isPaidInvoiceEffectivelyLocked) {
           showNotification('Bloqueado', paidInvoiceLock.motivo || 'OS vinculada a fatura PAGA.', 'error');
           return;
@@ -2783,6 +2824,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   const applyOfficialTableToDb = async () => {
       if (!mission || !financialData) return;
       if (isSavingRef.current) return;
+      if (await valorTravadoParaQuemNaoEDiretoria()) return;
       if (isProviderOnlyUser) {
           showNotification('Sem Permissão', 'A tabela oficial altera dados do cliente e não está disponível para o perfil controller/fornecedor.', 'error');
           return;
@@ -2836,7 +2878,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
           dbValuesLoadedRef.current = true;
           showNotification('Tabela Aplicada', 'Valores gravados conforme tabela oficial de franquia.', 'success');
-          dispararSyncFaturaPorOS(mission.id);
+          dispararSyncFaturaPorOS(mission.id).then(avisarSplitPreservado);
           broadcastMissionRefresh();
           onUpdate?.();
           await loadData();
@@ -2850,6 +2892,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
 
   const handleUpdate = async (approve: boolean, opts?: { negativeMarginLock?: boolean }) => {
       if (!mission || isSavingRef.current) return;
+      if (await valorTravadoParaQuemNaoEDiretoria()) return;
       const lockingNegative = !!opts?.negativeMarginLock;
       let lockActor = false;
       try {
@@ -3837,7 +3880,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           }
 
           window.dispatchEvent(new CustomEvent('tmseg:missao-gravada', { detail: result.data }));
-          dispararSyncFaturaPorOS(mission.id, userName);
+          dispararSyncFaturaPorOS(mission.id, userName).then(avisarSplitPreservado);
           if (onUpdate) onUpdate();
           window.dispatchEvent(new CustomEvent('refreshMissions'));
           if (!approve || isFullyApproved || lockingNegative) onClose();
@@ -4130,6 +4173,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
         <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
           <p className="text-sm font-black text-gray-900 uppercase">Sem acesso financeiro</p>
           <p className="text-xs text-gray-600 mt-2">O perfil Avançado não visualiza valores, pedágio nem aprovação de faturamento.</p>
+          <button type="button" onClick={onClose} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase">Fechar</button>
+        </div>
+      </div>
+    );
+  }
+
+  const diretoriaLiberada = isPerfilDiretoria({ role: userRoleLower });
+  if (!diretoriaLiberada && !faturasCarregadas) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
+        <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
+          <p className="text-sm font-black text-gray-900 uppercase">Conferindo a fatura</p>
+          <p className="text-xs text-gray-600 mt-2">A auditoria só abre depois de confirmar se esta OS já foi faturada.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!diretoriaLiberada && faturasDaOs.length > 0) {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" data-testid="auditoria-faturamento-bloqueada">
+        <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-center shadow-2xl">
+          <p className="text-sm font-black text-gray-900 uppercase">Auditoria bloqueada</p>
+          <p className="text-xs text-gray-600 mt-2 whitespace-pre-line">{mensagemValorSomenteDiretoria(faturasDaOs)}</p>
           <button type="button" onClick={onClose} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase">Fechar</button>
         </div>
       </div>

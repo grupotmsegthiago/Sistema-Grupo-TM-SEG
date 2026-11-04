@@ -49,13 +49,16 @@ import { refusedOsClearSnapshotFields } from '../lib/missionSnapshot';
 import { garantirAlertaDhl, resolverAlertaDhl } from '../lib/dhlViaturaDisponivel';
 import {
   canUnlockPaidInvoiceLock,
+  faturasEmitidasDaOs,
   kmHorasValoresSnapshotMudou,
+  mensagemValorSomenteDiretoria,
   registrarDesbloqueioAjusteOS,
   verificarTravaSegurancaOS,
   type KmHorasValoresSnapshot,
   type StatusTravaOS,
 } from '../lib/billing/verificarTravaOS';
-import { dispararSyncFaturaPorOS } from '../lib/billing/sincronizarFaturaAberta';
+import { dispararSyncFaturaPorOS, textoSplitsPreservados } from '../lib/billing/sincronizarFaturaAberta';
+import { isPerfilDiretoria } from '../lib/diretoriaAccess';
 import PaidInvoiceLockPanel from './PaidInvoiceLockPanel';
 import { 
   X, Activity, MapPin, Flag, Truck, Plus, Save, 
@@ -2154,6 +2157,14 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
         e.preventDefault();
         if (!mission || !currentUser) return;
 
+        if (!isPerfilDiretoria({ role: currentUser.role })) {
+            const faturas = await faturasEmitidasDaOs(supabase, mission.id);
+            if (faturas.length) {
+                showNotification('OS faturada', mensagemValorSomenteDiretoria(faturas), 'error');
+                return;
+            }
+        }
+
         if (isOsNegativeMarginLocked(mission) && !canEditNegativeMarginLockedOs(currentUser)) {
             showNotification('OS travada', `Prejuízo analisado por ${mission.negative_margin_locked_by || 'a equipe'}. Somente a Diretoria pode alterar.`, 'error');
             return;
@@ -2252,7 +2263,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                         : 'KM de deslocamento atualizado. Os demais campos estão travados porque a OS já foi aprovada.'),
                 'success',
             );
-            dispararSyncFaturaPorOS(mission.id, currentUser?.name);
+            dispararSyncFaturaPorOS(mission.id, currentUser?.name).then((res) => {
+              const texto = textoSplitsPreservados(res?.invoices);
+              if (texto) showNotification('Separação por CNPJ preservada', `O valor de cada CNPJ permanece.\n${texto}`, 'warning');
+            });
             return;
         }
 
@@ -2875,7 +2889,10 @@ const UpdateMissionModal: React.FC<UpdateMissionModalProps> = ({ isOpen, onClose
                 }
             }
 
-            dispararSyncFaturaPorOS(mission.id, currentUser?.name);
+            dispararSyncFaturaPorOS(mission.id, currentUser?.name).then((res) => {
+              const texto = textoSplitsPreservados(res?.invoices);
+              if (texto) showNotification('Separação por CNPJ preservada', `O valor de cada CNPJ permanece.\n${texto}`, 'warning');
+            });
 
             const observacaoControle = confirmedObservacaoRef.current;
             confirmedObservacaoRef.current = '';

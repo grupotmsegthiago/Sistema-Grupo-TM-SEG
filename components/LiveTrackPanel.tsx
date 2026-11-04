@@ -14,7 +14,7 @@ type Props = {
 export default function LiveTrackPanel({ mission, compact }: Props) {
   const enabled = isVeladaMission(mission) && rastreioOsAberta(mission.status);
   const { data, error, reload } = useLiveTrackWatch(enabled ? mission.id : null, enabled && !compact, !compact);
-  const [busy, setBusy] = useState<'gen' | 'end' | null>(null);
+  const [busy, setBusy] = useState<'gen' | 'end' | 'liberar' | null>(null);
   const [copied, setCopied] = useState(false);
   const [localErr, setLocalErr] = useState<string | null>(null);
   const label = liveTrackOperatorLabel(data);
@@ -77,6 +77,27 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
     }
     const wa = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(wa, '_blank');
+  };
+
+  const liberar = async () => {
+    setBusy('liberar');
+    setLocalErr(null);
+    try {
+      const r = await authFetch('/api/live-track?op=liberar-reentrada', {
+        method: 'POST',
+        body: JSON.stringify({ missionId: mission.id }),
+      });
+      const j = await parseJsonResponse(r);
+      if (!r.ok) {
+        setLocalErr(j?.error || 'Falha ao liberar o agente');
+        return;
+      }
+      await reload();
+    } catch (e: any) {
+      setLocalErr(e?.message || 'Falha de rede');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const end = async () => {
@@ -187,6 +208,18 @@ export default function LiveTrackPanel({ mission, compact }: Props) {
         >
           <Share2 size={14} /> WhatsApp
         </button>
+        {data?.chegadaEm && data.reentradaBloqueada && (
+          <button
+            type="button"
+            onClick={() => void liberar()}
+            disabled={busy === 'liberar'}
+            data-testid="live-track-liberar-reentrada"
+            className="h-10 px-3 rounded-xl bg-[#C50000] text-white text-[11px] font-black uppercase tracking-wide flex items-center gap-2 disabled:opacity-60"
+          >
+            {busy === 'liberar' ? <Loader2 size={14} className="animate-spin" /> : <Radio size={14} />}
+            Liberar entrada do agente
+          </button>
+        )}
         {data?.hasTrack && data.track?.status !== 'ended' && (
           <button
             type="button"

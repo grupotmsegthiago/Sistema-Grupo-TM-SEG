@@ -1,6 +1,7 @@
 import {
   endLiveTrack,
   generateLiveTrack,
+  liberarReentradaAgente,
   publicConsentLiveTrack,
   publicGetLiveTrack,
   publicPingLiveTrack,
@@ -80,6 +81,14 @@ export async function handleLiveTrackHttp(req: any, res: any): Promise<void> {
       const result = await endLiveTrack({
         missionId: String(body.missionId || req.query?.missionId || ''),
         reason: String(body.reason || 'operator_end'),
+      });
+      res.status(result.status).json(result.body);
+      return;
+    }
+    if (op === 'liberar-reentrada' && method === 'POST') {
+      const body = parseBody(req.body);
+      const result = await liberarReentradaAgente({
+        missionId: String(body.missionId || req.query?.missionId || ''),
       });
       res.status(result.status).json(result.body);
       return;
