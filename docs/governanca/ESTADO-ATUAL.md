@@ -1,6 +1,6 @@
 # Estado atual — ler no início de cada sessão
 
-Atualizado em 05/11/2026. Rastreio do agente permanece 100% WEB (sem Capacitor/APK). Na tela do agente: Modo Economia OLED (ecrã preto + Wake Lock), watchdog sonoro/visual se GPS parar >90s, keepalive com áudio silencioso + Web Worker. Ainda não publicado — validar em localhost antes.
+Atualizado em 05/11/2026. Rastreio do agente permanece 100% WEB (sem Capacitor/APK). Na tela do agente: Modo Economia OLED (ecrã preto + Wake Lock), watchdog sonoro/visual se GPS parar >90s, keepalive com áudio silencioso + Web Worker. Publicado nesta entrega (`00e04b18`), no projeto sistema-grupo-tm-seg.
 
 Atualizado em 05/11/2026. Enrich do Radar corrige HTTP 406 (headers de browser), raspa rodapé/contato, botão “Enriquecer com IA” por linha e lote `/enrich-pending`. Caso Master Vigilância: telefone (41) 3264-6633, e-mail, Instagram e endereço de Curitiba/PR. Homologação ainda exige CNPJ. Ainda não foi republicado após este ajuste.
 
