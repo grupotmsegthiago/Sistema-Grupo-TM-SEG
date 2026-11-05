@@ -481,9 +481,11 @@ function ClientLiveMap({ credential }: { credential: string }) {
         <span className="pointer-events-none absolute -left-8 top-0 h-28 w-28 rounded-full bg-[#C50000]/40 blur-3xl" />
         <span className="pointer-events-none absolute inset-x-16 -bottom-6 h-10 rounded-full bg-[#E60000]/50 blur-2xl" />
         <div className="relative flex items-center gap-4">
-          <img src={tmsegLogo} alt="TM SEG" className="h-24 w-24 rounded-3xl border-2 border-[#E60000] bg-black object-contain p-1.5 shadow-[0_0_24px_rgba(197,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.25)]" />
+          <img src="/logo.png" alt="Grupo TM SEG" className="h-20 w-auto shrink-0 object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.55)]" />
           <div className="min-w-0">
-            <p className="flex items-center gap-2 text-[10px] font-black tracking-[0.32em] text-white">
+            <p className="text-[10px] font-light tracking-[0.2em] text-gray-300">GRUPO</p>
+            <p className="text-2xl font-bold leading-none tracking-widest text-red-600">TMSEG</p>
+            <p className="mt-2 flex items-center gap-2 text-[10px] font-black tracking-[0.32em] text-white">
               <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#ff2a2a] shadow-[0_0_14px_#ff2a2a]" />
               AO VIVO
             </p>
@@ -553,7 +555,7 @@ function ClientLiveMap({ credential }: { credential: string }) {
         <div className="pointer-events-none absolute left-1/2 top-0 h-16 w-64 -translate-x-1/2 bg-[#C50000]/30 blur-3xl" />
         <div className="relative mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 sm:flex-row">
           <div className="flex items-center gap-3">
-            <img src={tmsegLogo} alt="" className="h-12 w-12 rounded-2xl border border-[#E60000]/80 bg-black object-contain p-1 shadow-[0_0_16px_rgba(197,0,0,0.7)]" />
+            <img src="/logo.png" alt="" className="h-14 w-auto object-contain" />
             <div>
               <p className="text-sm font-black tracking-[0.22em] text-white">GRUPO TM SEG</p>
               <p className="text-[10px] font-semibold tracking-[0.18em] text-[#C5C6C7]">A CARGA PROTEGIDA</p>
@@ -994,7 +996,7 @@ function AgentLiveTrack() {
           </>
         ) : (
           <>
-        <img src={tmsegLogo} alt="TM SEG" className="h-10 w-auto" />
+        <img src="/logo.png" alt="Grupo TM SEG" className="h-14 w-auto object-contain" />
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">Grupo TM SEG</p>
           <p className="text-sm font-bold">Acompanhamento em tempo real</p>

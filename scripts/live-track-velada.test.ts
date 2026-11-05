@@ -211,6 +211,8 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /wakeLock\?\.request\?\.\('screen'\)/);
   assert.match(page, /origem=\{origem\}/);
   assert.match(page, /marca=\{tmsegLogo\}/);
+  assert.match(page, /src="\/logo.png"/);
+  assert.doesNotMatch(page, /h-24 w-24 rounded-3xl/);
   assert.match(page, /OPERAÇÕES ACOMPANHAMENTO VELADO/);
   assert.match(page, /www\.grupotmseg\.com\.br/);
   assert.match(page, /instagram\.com\/grupo_tmseg/);

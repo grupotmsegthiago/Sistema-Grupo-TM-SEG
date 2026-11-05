@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: o link de acompanhamento usa a mesma marca do sistema.
+
+O topo e o rodapé passaram a usar `/logo.png`, o arquivo do menu, ao lado de GRUPO e TMSEG. O desenho de 54 pixels saiu do quadrado preto e ficou só no pino do mapa. O motor da OS não mudou.
+
+Testes: `npx tsx --test scripts/live-track-velada.test.ts` — 16 passaram. Conferido em http://localhost:5000/rastreio.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: com a OS faturada, a auditoria de faturamento fica fechada. Só a Diretoria abre e grava. A fatura dividida por CNPJ não volta a receber a soma da quinzena.
 
 A GTM-8005 manteve a receita de R$ 6.531,56 aprovada em 20/09/2026. Em 03/11/2026, às 19:42, a Giovanna Marsili gravou KM e horário. A sincronização somou as 124 OS e gravou R$ 300.536,53 nas duas partes da `TMSEG-20261009-165823-LKUJ`. Esses valores foram devolvidos: S1 Intermodal R$ 274.380,35 (CNPJ 03.558.055/0001-00) e S2 Logic Pharma R$ 26.156,18 (CNPJ 21.372.384/0001-43). O motor da OS não mudou.
