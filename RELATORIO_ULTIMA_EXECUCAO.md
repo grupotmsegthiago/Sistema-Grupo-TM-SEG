@@ -1,5 +1,32 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 05/11/2026 na `dev` (autorização: arquitetura 100% WEB — OLED + watchdog 90s + keepalive).
+
+Objetivo: reforçar estabilidade do rastreio web do agente sem app nativo/APK/lojas.
+
+Feito:
+- `lib/liveTrack/gpsWatchdog.ts` — limiar 90s, beep + vibração.
+- `components/PublicLiveTrack.tsx` — Modo Economia (ecrã preto OLED), banner/alerta GPS stale, botão Moon.
+- `lib/liveTrack/backgroundKeepalive.ts` — pulso 8s, evento `online`, Web Worker tick, texto Modo Economia.
+- `lib/liveTrack/lgpd.ts` — texto alinhado à arquitetura web.
+- Testes: `scripts/live-track-gps-watchdog.test.ts` + asserts em `live-track-velada.test.ts`.
+
+Não impacto: motor OS, Asaas, NF, TORRES, WhatsApp, Radar. Sem migration. Sem publicação (diff antes de publicar, conforme pedido).
+
+# Próxima Execução Proposta
+
+(nenhuma — aguardar validação localhost e pedido de publicar)
+
+---
+
+Executado em 05/11/2026 na `dev` (fluxo aprovado: enrich scrape + botão + lote).
+
+Causa: fetch com Accept mínimo → HTTP 406 em sites como Master Vigilância; pending sem enrich por orçamento de 3/tick.
+
+Feito: `fetchText` com headers de browser; scrape footer/`/contato`/`/fale-conosco`; `POST /api/partner-prospects/:id/enrich` e `/enrich-pending`; botão Enriquecer com IA + Enrich pending; Master preenchida (tel/e-mail/IG/endereço Curitiba). Testes 17 OK no escopo radar. Localhost `:5000` ok. Não publicado neste passo.
+
+---
+
 Executado em 05/11/2026 na `dev` — publicação do Radar + merge com seleção progressiva de tabela.
 
 Executado em 05/11/2026 na `dev` (fluxo aprovado: IA + enrichment + UI).
@@ -305,6 +332,48 @@ Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a suge
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
 
 # Próxima Execução Proposta
+
+## Radar: linha única + Tratar + timeline (AGUARDANDO APROVAÇÃO)
+
+**Objetivo:** Tabela compacta (1 linha), atribuição `Tratar`, ficha lateral com status/ações e histórico completo.
+
+**Reutilizar (não duplicar):** `partner_prospect_events` já é a timeline (event_type, from/to_status, note, created_by, created_at). Estender com `actor_id` se necessário; **não** criar `partner_prospect_timeline` paralela.
+
+### Passo a passo
+1. Migration: `assigned_to_user_id`, `assigned_to_name`, `assigned_at` em `partner_prospects`; opcional `actor_id` em `partner_prospect_events`.
+2. UI tabela densa (`h-11`/`py-1.5`): Empresa+cidade truncada+tooltip; CNPJ; tel+badge e-mails; ícones; PF; Responsável/`[Tratar]`; ações compactas.
+3. API/ação Tratar: grava responsável = usuário logado + evento `tratamento_iniciado`.
+4. Drawer ao clicar no nome: contatos, dropdown status (respeitando `podeTransicionar` + rótulos), ações rápidas (apresentação já existe; tabela/docs = evento+nota por enquanto se fluxo completo ainda não existir), feed da timeline lendo `partner_prospect_events`.
+5. Todo status/e-mail/descarte/tratar grava evento com data/hora/autor.
+6. Testes + localhost; migration só com autorização de aplicar; publicar sob pedido.
+
+### Status (mapear rótulos, sem quebrar Kanban)
+`radar` Radar · `email_enviado` Apresentação · `em_negociacao` Em negociação · `tabela_recebida` Valores/tabela · `homologacao` Docs/homologação · `ativo` Concluído · `descartado` Descartado.
+
+### Ficheiros
+Migration nova · `types`/`status` · `PartnerRadar.tsx` · drawer novo · rotas treat/status · testes · ESTADO/RELATORIO.
+
+### Garantias
+OS/financeiro/Asaas/NF intactos. Homologação Bloqueado. Sem nova função Vercel. Reusa `partner_prospect_events`.
+
+## Enrich scrape rodapé + botão manual + reprocessar pending (EXECUTADO 05/11/2026)
+
+**Objetivo:** Caso Master Vigilância — site tem telefone/e-mail/endereço/Instagram, mas vários registros ficaram `pending` (enrich não rodou) e o scrape atual gera lixo (IG `@context`, e-mail CDN).
+
+**Diagnóstico:** enrich só roda em até 3 inserts/tick; demais ficam `pending`/`last_enrichment_at` null. Regex Instagram/e-mail frágil. Não há endpoint/botão manual.
+
+### Passo a passo
+1. Reforçar `enrichProspect`: priorizar `<footer>` + `/contato`/`/fale-conosco`; regex `mailto:`, telefone com DDD, Instagram real, CNPJ; cidade/UF do endereço; limpar nome duplicado; preferir scrape do site sobre Gemini inventado.
+2. Exportar `aplicarEnriquecimento` / serviço; `POST /api/partner-prospects/:id/enrich` + `POST /api/partner-prospects/enrich-pending` (lote).
+3. UI: botão “Enriquecer com IA” por linha (spinner + update local/realtime).
+4. Rodar lote nos `pending` com site agora (localhost/script).
+5. Testes + health; publicar só se pedir.
+
+### Ficheiros
+`lib/partnerProspects/enrichProspect.ts`, `server/partnerRadarRobot.ts`, `server/routes.ts`, `components/PartnerRadar.tsx`, testes, ESTADO/RELATORIO.
+
+### Garantias
+OS/financeiro/Asaas/NF intactos. Sem migration. Sem nova função Vercel (rota Express existente).
 
 ## Radar: IA + anti-lixo + enriquecimento + UI (EXECUTADO 05/11/2026)
 

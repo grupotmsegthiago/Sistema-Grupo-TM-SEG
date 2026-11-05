@@ -1,5 +1,9 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 05/11/2026. Rastreio do agente permanece 100% WEB (sem Capacitor/APK). Na tela do agente: Modo Economia OLED (ecrã preto + Wake Lock), watchdog sonoro/visual se GPS parar >90s, keepalive com áudio silencioso + Web Worker. Ainda não publicado — validar em localhost antes.
+
+Atualizado em 05/11/2026. Enrich do Radar corrige HTTP 406 (headers de browser), raspa rodapé/contato, botão “Enriquecer com IA” por linha e lote `/enrich-pending`. Caso Master Vigilância: telefone (41) 3264-6633, e-mail, Instagram e endereço de Curitiba/PR. Homologação ainda exige CNPJ. Ainda não foi republicado após este ajuste.
+
 Atualizado em 05/11/2026. Radar com enrichment (`emails[]`, Instagram, endereço, `enrichment_status`), filtro anti-lixo, deep search e UI com contadores por UF + preview de e-mail multi-destino. Migration `partner_prospects_enrichment` aplicada. Lixo (dicionário/prefeitura) marcado `descartado`. Homologação ainda exige CNPJ. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 05/11/2026. Na abertura da OS, a tabela do cliente e a do fornecedor saem de uma só regra: tipo da missão, nome oficial do cliente, fornecedor quando houver, e a rota. A amostra é o histórico aprovado dos últimos 180 dias, e a escolha é a tabela mais repetida entre as 10 mais recentes daquela rota. Sem histórico, entra a menor franquia da região ou da UF do destino que cubra o quilômetro. Sem encaixe, o seletor fica em branco. Velada não usa tabela Caracterizada. O pedágio deixa de ser copiado de OS antiga. OS já gravada, com snapshot ou faturamento aprovado, não é reescolhida. O motor `calculateMissionFinancials` não mudou. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

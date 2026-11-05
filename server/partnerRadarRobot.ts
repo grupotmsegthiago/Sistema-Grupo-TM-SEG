@@ -276,7 +276,7 @@ async function gravarEmpresas(
   return { inserted, skipped, errors, pendenteCnpj, insertedIds };
 }
 
-async function aplicarEnriquecimento(
+export async function aplicarEnriquecimento(
   sb: SupabaseClient,
   prospectId: string,
   base: {
@@ -291,13 +291,14 @@ async function aplicarEnriquecimento(
     city?: string | null;
     state_uf?: string | null;
   },
-): Promise<void> {
+  byUser = 'ROBO_24H',
+): Promise<Record<string, unknown>> {
   logRobo(`Enriquecendo ${base.company_name.slice(0, 40)}…`);
   const enr = await enriquecerProspecto(base);
   const patch: Record<string, unknown> = {
     enrichment_status: enr.enrichment_status,
     last_enrichment_at: new Date().toISOString(),
-    updated_by: 'ROBO_24H',
+    updated_by: byUser,
     updated_at: new Date().toISOString(),
   };
   if (enr.company_name) patch.company_name = enr.company_name.toUpperCase();
@@ -326,12 +327,80 @@ async function aplicarEnriquecimento(
     const { data: cur } = await sb.from('partner_prospects').select('notes').eq('id', prospectId).maybeSingle();
     patch.notes = [cur?.notes, ...enr.notesExtra].filter(Boolean).join(' | ');
   }
-  await sb.from('partner_prospects').update(patch).eq('id', prospectId);
+  const { data: updated, error } = await sb
+    .from('partner_prospects')
+    .update(patch)
+    .eq('id', prospectId)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
   logRobo(
     `Enrich ${base.company_name.slice(0, 30)} → ${enr.enrichment_status}` +
       (enr.cnpj ? ` CNPJ ${enr.cnpj}` : '') +
       (enr.emails.length ? ` · ${enr.emails.length} e-mail(s)` : ''),
   );
+  return (updated || { id: prospectId, ...patch }) as Record<string, unknown>;
+}
+
+/** Enrich forçado de um prospecto (botão manual / API). */
+export async function enrichProspectById(
+  sb: SupabaseClient,
+  prospectId: string,
+  byUser?: string,
+): Promise<{ ok: boolean; prospect?: Record<string, unknown>; error?: string }> {
+  const { data: row, error } = await sb.from('partner_prospects').select('*').eq('id', prospectId).maybeSingle();
+  if (error || !row) return { ok: false, error: error?.message || 'Prospecto não encontrado' };
+  if (!row.website && !row.company_name) {
+    return { ok: false, error: 'Sem site nem nome para enriquecer' };
+  }
+  try {
+    const prospect = await aplicarEnriquecimento(sb, prospectId, row, byUser || 'MANUAL_IA');
+    return { ok: true, prospect };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'falha_enrich' };
+  }
+}
+
+/** Reprocessa pending/partial/failed que tenham website. */
+export async function enrichPendingBatch(
+  sb: SupabaseClient,
+  opts?: { limit?: number; byUser?: string },
+): Promise<{ ok: boolean; processed: number; errors: string[] }> {
+  const limit = Math.min(Math.max(Number(opts?.limit || 30), 1), 80);
+  const { data, error } = await sb
+    .from('partner_prospects')
+    .select(
+      'id, company_name, trade_name, cnpj, email, emails, phone, website, instagram, city, state_uf, enrichment_status',
+    )
+    .eq('status', 'radar')
+    .not('website', 'is', null)
+    .or('enrichment_status.eq.pending,enrichment_status.eq.partial,enrichment_status.eq.failed')
+    .order('last_enrichment_at', { ascending: true, nullsFirst: true })
+    .limit(limit);
+  if (error) return { ok: false, processed: 0, errors: [error.message] };
+  let processed = 0;
+  const errors: string[] = [];
+  for (const row of data || []) {
+    if (pareceLixoProspecto(row)) {
+      await sb
+        .from('partner_prospects')
+        .update({
+          status: 'descartado',
+          notes: 'Descartado auto: anti-lixo (enrich-pending)',
+          updated_by: opts?.byUser || 'ROBO_24H',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', row.id);
+      continue;
+    }
+    try {
+      await aplicarEnriquecimento(sb, row.id, row, opts?.byUser || 'ROBO_24H');
+      processed++;
+    } catch (e: any) {
+      errors.push(`${row.id}:${e?.message || 'erro'}`);
+    }
+  }
+  return { ok: true, processed, errors };
 }
 
 async function reenriquecerIncompletos(sb: SupabaseClient, limite: number): Promise<number> {

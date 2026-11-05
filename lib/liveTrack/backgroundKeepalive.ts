@@ -20,7 +20,7 @@ const MARCA_PADRAO: LiveTrackKeepaliveMarca = {
   title: 'TM SEG — rastreio ao vivo',
   artist: 'Grupo TM SEG',
   album: 'Acompanhamento de missão',
-  body: 'Deixe a tela acesa. Se o celular bloquear, o painel perde o sinal. Só para de vez se fechar esta página.',
+  body: 'Mantenha esta página aberta. Use o Modo Economia (ecrã preto) com a tela ligada. Se o celular bloquear a tela, o GPS pode pausar.',
 };
 
 export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveMarca> = {}): Promise<LiveTrackKeepalive> {
@@ -30,6 +30,7 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
   let osc: OscillatorNode | null = null;
   let audioEl: HTMLAudioElement | null = null;
   let pulse: number | null = null;
+  let worker: Worker | null = null;
 
   try {
     const AC = window.AudioContext || (window as any).webkitAudioContext;
@@ -53,8 +54,10 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
   try {
     audioEl = new Audio(SILENT_WAV);
     audioEl.loop = true;
-    audioEl.volume = 0.02;
+    audioEl.volume = 0.01;
+    audioEl.muted = false;
     audioEl.setAttribute('playsinline', 'true');
+    audioEl.setAttribute('webkit-playsinline', 'true');
     void audioEl.play().catch(() => {});
   } catch {
     /* play() precisa de gesto do usuário — o chamador já veio do clique */
@@ -109,20 +112,41 @@ export async function startLiveTrackKeepalive(marca: Partial<LiveTrackKeepaliveM
     } catch { /* ignore */ }
   };
 
-  pulse = window.setInterval(resume, 12000);
+  // Pulso mais frequente: Android/iOS suspendem o processo se o áudio “morrer”.
+  pulse = window.setInterval(resume, 8000);
   document.addEventListener('visibilitychange', resume);
   window.addEventListener('pageshow', resume);
   window.addEventListener('focus', resume);
   window.addEventListener('pagehide', resume);
+  window.addEventListener('online', resume);
+
+  // Web Worker leve: tick independente do main thread (ajuda em tabs throttled).
+  try {
+    const blob = new Blob(
+      [
+        `setInterval(function(){ try { postMessage('tick'); } catch (e) {} }, 10000);`,
+      ],
+      { type: 'application/javascript' },
+    );
+    const url = URL.createObjectURL(blob);
+    worker = new Worker(url);
+    URL.revokeObjectURL(url);
+    worker.onmessage = () => { resume(); };
+  } catch {
+    /* Worker indisponível — interval + áudio bastam */
+  }
 
   return {
     stop: () => {
       stopped = true;
       if (pulse != null) window.clearInterval(pulse);
+      try { worker?.terminate(); } catch { /* ignore */ }
+      worker = null;
       document.removeEventListener('visibilitychange', resume);
       window.removeEventListener('pageshow', resume);
       window.removeEventListener('focus', resume);
       window.removeEventListener('pagehide', resume);
+      window.removeEventListener('online', resume);
       try { osc?.stop(); } catch { /* já parado */ }
       try { void ctx?.close?.().catch(() => {}); } catch { /* já fechado */ }
       try {

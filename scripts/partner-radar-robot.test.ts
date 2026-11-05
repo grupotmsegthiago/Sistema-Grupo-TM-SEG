@@ -27,7 +27,14 @@ import {
   limparNomeEmpresa,
 } from '../lib/partnerProspects/multiEngineSearch.ts';
 import { pareceLixoProspecto, pareceEmpresaSeguranca } from '../lib/partnerProspects/junkFilter.ts';
-import { uniqEmails, parseGeminiEnrichJson } from '../lib/partnerProspects/enrichProspect.ts';
+import {
+  uniqEmails,
+  parseGeminiEnrichJson,
+  limparNomeDuplicado,
+  extrairEnderecoBr,
+  extrairDoHtml,
+  fetchText,
+} from '../lib/partnerProspects/enrichProspect.ts';
 
 test('matriz cobre 27 UFs (26 + DF)', () => {
   assert.equal(GEO_MATRIX.length, 27);
@@ -209,4 +216,38 @@ test('enrich: uniq emails e parse JSON Gemini', () => {
   assert.equal(p.company_name, 'ABC SEG');
   assert.equal(p.cnpj, '12345678000190');
   assert.ok(p.emails?.includes('ops@abc.com'));
+});
+
+test('enrich: limpa nome duplicado e endereço BR do rodapé', () => {
+  assert.equal(limparNomeDuplicado('MASTER VIGILÂNCIA MASTER VIGILÂNCIA'), 'MASTER VIGILÂNCIA');
+  const end = extrairEnderecoBr(
+    'Rua Desembargador Hugo Simas, 1653 - Vista Alegre - Curitiba/PR - CEP: 80820-102',
+  );
+  assert.equal(end.city, 'CURITIBA');
+  assert.equal(end.state_uf, 'PR');
+  assert.equal(end.cep, '80820102');
+  assert.match(String(end.address_street), /Hugo Simas/i);
+});
+
+test('enrich: extrai telefone e-mail Instagram do HTML footer', () => {
+  const html = `
+  <footer>
+    <a href="mailto:atendimento@mastervigilancia.com.br">e-mail</a>
+    <a href="https://instagram.com/mastervigilanciaespecializada">ig</a>
+    <p>(41) 3264-6633</p>
+    <p>Rua Desembargador Hugo Simas, 1653 - Vista Alegre - Curitiba/PR - CEP: 80820-102</p>
+  </footer>`;
+  const s = extrairDoHtml(html);
+  assert.ok(s.emails.includes('atendimento@mastervigilancia.com.br'));
+  assert.ok(s.phones.some((p) => p.includes('3264-6633')));
+  assert.equal(s.instagram, 'https://instagram.com/mastervigilanciaespecializada');
+  assert.equal(s.city, 'CURITIBA');
+  assert.equal(s.state_uf, 'PR');
+});
+
+test('enrich: fetch Master Vigilância aceita HTML (não 406)', async () => {
+  const html = await fetchText('https://www.mastervigilancia.com.br');
+  assert.ok(html.length > 1000, 'html curto ou bloqueado');
+  assert.match(html, /3264-6633/);
+  assert.match(html, /atendimento@mastervigilancia\.com\.br/i);
 });

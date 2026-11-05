@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, EyeOff, Globe, Instagram, Loader2, MapPin, Radio, ShieldCheck, Smartphone,
+  AlertTriangle, CheckCircle2, EyeOff, Globe, Instagram, Loader2, MapPin, Moon, Radio, ShieldCheck, Smartphone, Sun,
 } from 'lucide-react';
 import { GoogleMap, Marker, Polyline, useLoadScript } from '@react-google-maps/api';
 import tmsegLogo from '../attached_assets/tmseg_logo_transparent.png';
@@ -10,6 +10,12 @@ import { formatDateTimeBR, formatTimeBR, previsaoChegadaBR } from '../lib/dateUt
 import { googleMapsLoadConfig } from '../lib/maps';
 import { estadoDoSinal, haversineMeters } from '../lib/liveTrack/pure';
 import { startLiveTrackKeepalive, type LiveTrackKeepalive } from '../lib/liveTrack/backgroundKeepalive';
+import {
+  GPS_STALE_BEEP_EVERY_MS,
+  alertarGpsStale,
+  gpsEstaStale,
+  segundosSemGps,
+} from '../lib/liveTrack/gpsWatchdog';
 
 type Phase = 'loading' | 'marca' | 'consent' | 'sharing' | 'ended' | 'error' | 'bloqueado';
 type Ponto = { lat: number; lng: number };
@@ -600,6 +606,8 @@ function AgentLiveTrack() {
   const [busy, setBusy] = useState(false);
   const [nowTs, setNowTs] = useState(() => Date.now());
   const [minimized, setMinimized] = useState(false);
+  const [economyMode, setEconomyMode] = useState(false);
+  const [gpsStale, setGpsStale] = useState(false);
   const [bgOk, setBgOk] = useState(false);
 
   const watchIdRef = useRef<number | null>(null);
@@ -685,6 +693,7 @@ function AgentLiveTrack() {
         stopWatch();
         setPhase('ended');
         setMinimized(false);
+        setEconomyMode(false);
         return;
       }
       if (j?.reentradaBloqueada) {
@@ -692,6 +701,7 @@ function AgentLiveTrack() {
         stopWatch();
         setPhase('bloqueado');
         setMinimized(false);
+        setEconomyMode(false);
         return;
       }
       if (!r.ok) {
@@ -757,6 +767,8 @@ function AgentLiveTrack() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setPhase('sharing');
+        // Inicia o relógio do watchdog mesmo antes do 1º ping OK.
+        setLastPingAt(Date.now());
         void sendPing(pos, vis());
         armWatch();
       },
@@ -834,6 +846,31 @@ function AgentLiveTrack() {
     return () => window.clearInterval(clock);
   }, [phase]);
 
+  // Watchdog: >90s sem ping OK → alerta sonoro/vibração até o agente tocar a tela.
+  useEffect(() => {
+    if (phase !== 'sharing') {
+      setGpsStale(false);
+      return;
+    }
+    const tick = window.setInterval(() => {
+      const stale = gpsEstaStale(lastPingAt, Date.now());
+      setGpsStale(stale);
+      if (stale) alertarGpsStale();
+    }, GPS_STALE_BEEP_EVERY_MS);
+    // Avalia já no próximo frame.
+    setGpsStale(gpsEstaStale(lastPingAt, Date.now()));
+    return () => window.clearInterval(tick);
+  }, [phase, lastPingAt]);
+
+  // Economia OLED: revalida Wake Lock ao entrar e a cada toque (sem reiniciar áudio).
+  useEffect(() => {
+    if (phase !== 'sharing' || !economyMode) return;
+    void requestWake();
+    const onTouch = () => { void requestWake(); };
+    window.addEventListener('pointerdown', onTouch);
+    return () => window.removeEventListener('pointerdown', onTouch);
+  }, [phase, economyMode, requestWake]);
+
   useEffect(() => {
     if (phase !== 'sharing') return;
     const onVis = () => {
@@ -908,7 +945,7 @@ function AgentLiveTrack() {
         title: 'ATIVA — rastreio ao vivo',
         artist: 'ATIVA Pronta Resposta',
         album: 'Acompanhamento da missão',
-        body: 'Deixe a tela acesa. Se o celular bloquear, o painel perde o sinal.',
+        body: 'Modo Economia (ecrã preto) com a tela ligada. Se bloquear a tela, o GPS pode pausar.',
         icon: ativaLogo,
       } : {}).then((k) => {
         keepaliveRef.current = k;
@@ -935,29 +972,61 @@ function AgentLiveTrack() {
     }
   };
 
-  if (phase === 'sharing' && minimized) {
+  // Modo Economia OLED: ecrã preto, status mínimo, Wake Lock ativo.
+  if (phase === 'sharing' && (economyMode || minimized)) {
+    const semGpsSeg = segundosSemGps(lastPingAt, nowTs);
     return (
-      <div className="min-h-[100dvh] bg-slate-950 text-white flex items-end justify-center p-3">
-        <button
-          type="button"
-          onClick={() => setMinimized(false)}
-          data-testid="live-track-expand"
-          className="w-full max-w-lg rounded-2xl bg-emerald-500 text-slate-950 px-4 py-3 shadow-2xl flex items-center gap-3"
-        >
-          <span className="w-3 h-3 rounded-full bg-slate-950 animate-pulse shrink-0" />
-          <span className="text-left flex-1">
-            <span className="block text-[10px] font-black uppercase tracking-widest">Segundo plano ativo</span>
-            <span className="block text-sm font-bold">{ativa ? 'ATIVA rastreando' : 'TM SEG rastreando'}{osNumber ? ` · OS ${osNumber}` : ''}</span>
-          </span>
-          <span className="text-[10px] font-black uppercase">Abrir</span>
-        </button>
+      <div
+        className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center px-6 select-none"
+        data-testid="live-track-economy"
+        style={{ backgroundColor: '#000000' }}
+      >
+        {gpsStale ? (
+          <div
+            className="fixed inset-x-0 top-0 z-20 bg-red-600 text-white px-4 py-4 text-center animate-pulse"
+            data-testid="live-track-gps-stale"
+          >
+            <p className="text-sm font-black uppercase tracking-wide">GPS parado · {semGpsSeg}s</p>
+            <p className="text-xs mt-1 font-bold">Toque na tela agora. Mantenha esta página aberta.</p>
+          </div>
+        ) : null}
+        <div className="flex flex-col items-center gap-6 opacity-90">
+          <span
+            className={`w-3 h-3 rounded-full ${gpsStale ? 'bg-red-500' : 'bg-emerald-500'} animate-pulse`}
+            aria-hidden
+          />
+          <p className="text-[10px] font-black uppercase tracking-[0.35em] text-white/40">
+            {gpsStale ? 'Sem sinal' : 'Rastreio ativo'}
+          </p>
+          <p className="text-sm font-bold text-white/70 text-center">
+            {ativa ? 'ATIVA' : 'TM SEG'}
+            {osNumber ? ` · OS ${osNumber}` : ''}
+          </p>
+          <p className="text-[11px] text-white/35 text-center max-w-xs leading-relaxed">
+            Modo Economia · ecrã preto · Wake Lock
+            {wakeOk ? ' ligado' : ' tentando'}.
+            {' '}Não bloqueie a tela do celular.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setEconomyMode(false);
+              setMinimized(false);
+              void requestWake();
+            }}
+            data-testid="live-track-expand"
+            className="mt-4 h-11 px-5 rounded-full border border-white/20 text-white/80 text-xs font-black uppercase tracking-widest flex items-center gap-2"
+          >
+            <Sun size={14} /> Sair do modo economia
+          </button>
+        </div>
       </div>
     );
   }
 
   const avisoAberto = (
     <p className="bg-amber-400 text-slate-950 px-4 py-3 text-sm font-black leading-snug" data-testid="live-track-keep-open">
-      Atenção: deixe a tela acesa e mantenha esta página aberta. Se o celular bloquear ou você abrir o WhatsApp, o painel perde o sinal. Fechar esta página interrompe o rastreio.
+      Atenção: mantenha esta página aberta. Use o Modo Economia (ecrã preto) com a tela ligada. Se o celular bloquear ou você abrir o WhatsApp, o GPS pode pausar — o alerta sonoro avisa após ~90 s. Fechar esta página interrompe o rastreio.
     </p>
   );
 
@@ -1084,11 +1153,19 @@ function AgentLiveTrack() {
 
         {phase === 'sharing' && (
           <div className="space-y-5">
+            {gpsStale && (
+              <div
+                className="rounded-2xl bg-red-600 text-white p-4 font-bold text-sm animate-pulse"
+                data-testid="live-track-gps-stale"
+              >
+                GPS parado há {segundosSemGps(lastPingAt, nowTs)}s. Toque na tela e mantenha esta página em primeiro plano.
+              </div>
+            )}
             {hiddenWarn && (
               <div className="rounded-2xl bg-emerald-400 text-slate-950 p-4 font-bold text-sm">
                 {ativa
-                  ? 'Tela em segundo plano. O celular pode pausar o GPS. Volte para esta página e deixe a tela acesa.'
-                  : 'Tela em segundo plano. O celular pode pausar o GPS. Deixe a tela acesa para o painel não perder o sinal.'}
+                  ? 'Tela em segundo plano. O celular pode pausar o GPS. Volte para esta página e use o Modo Economia com a tela ligada.'
+                  : 'Tela em segundo plano. O celular pode pausar o GPS. Use o Modo Economia com a tela ligada.'}
               </div>
             )}
             <LiveMapBox ponto={ponto} trilha={trilha} origem={originPoint} destino={destinationPoint} />
@@ -1108,14 +1185,19 @@ function AgentLiveTrack() {
             </div>
             <button
               type="button"
-              onClick={() => setMinimized(true)}
+              onClick={() => {
+                setEconomyMode(true);
+                setMinimized(true);
+                void requestWake();
+              }}
               data-testid="live-track-minimize"
-              className="w-full h-12 rounded-2xl bg-white/10 border border-white/20 text-white text-sm font-black uppercase tracking-wide flex items-center justify-center gap-2"
+              className="w-full h-12 rounded-2xl bg-black border border-white/25 text-white text-sm font-black uppercase tracking-wide flex items-center justify-center gap-2"
             >
-              <EyeOff size={16} /> Recolher esta tela
+              <Moon size={16} /> Modo Economia / Ecrã preto
             </button>
             <ul className="space-y-2 text-sm text-slate-200">
-              <li className="flex gap-2"><EyeOff size={16} className="mt-0.5 shrink-0" /> Tela bloqueada, Home ou WhatsApp: o celular pode pausar o GPS. Deixe a tela acesa.</li>
+              <li className="flex gap-2"><Moon size={16} className="mt-0.5 shrink-0" /> Modo Economia: ecrã preto + Wake Lock — gasta pouca bateria com a tela ligada.</li>
+              <li className="flex gap-2"><EyeOff size={16} className="mt-0.5 shrink-0" /> Tela bloqueada, Home ou WhatsApp: o celular pode pausar o GPS. Alerta sonoro após ~90 s sem sinal.</li>
               <li className="flex gap-2"><Smartphone size={16} className="mt-0.5 shrink-0" /> Desligue a economia de bateria do navegador e permita a localização o tempo todo.</li>
               <li className="flex gap-2"><Radio size={16} className="mt-0.5 shrink-0" /> GPS em alta precisão (não use só Wi‑Fi).</li>
               <li className="flex gap-2"><ShieldCheck size={16} className="mt-0.5 shrink-0" /> Localização usada só nesta OS, com registro LGPD.</li>
@@ -1131,8 +1213,8 @@ function AgentLiveTrack() {
               </div>
             </div>
             <p className="text-[11px] text-slate-400">
-              Segundo plano: {bgOk ? 'ativo (notificação + áudio de manutenção)' : 'limitado neste aparelho — não feche a aba'}.
-              {' '}Tela ligada: {wakeOk ? 'ativa' : 'o celular pode apagar a tela; o rastreio tenta seguir'}.
+              Keepalive: {bgOk ? 'ativo (áudio silencioso + notificação)' : 'limitado neste aparelho — não feche a aba'}.
+              {' '}Wake Lock: {wakeOk ? 'ativo' : 'o celular pode apagar a tela; o rastreio tenta seguir'}.
             </p>
             {error && <p className="text-sm text-amber-300">{error}</p>}
             {accuracy != null && accuracy > 80 && (

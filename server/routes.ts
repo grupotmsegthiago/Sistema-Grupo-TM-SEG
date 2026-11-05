@@ -2065,6 +2065,51 @@ export async function registerRoutes(
   );
 
   app.post(
+    '/api/partner-prospects/:id/enrich',
+    requireAuth,
+    requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo'),
+    async (req: Request, res: Response) => {
+      try {
+        const prospectId = String(req.params?.id || '').trim();
+        if (!prospectId) return res.status(400).json({ ok: false, error: 'id obrigatório' });
+        const sb = createSupabaseAdminClient();
+        if (!sb) return res.status(500).json({ ok: false, error: 'Supabase admin indisponível' });
+        const { enrichProspectById } = await import('./partnerRadarRobot');
+        const principal = (req as any).user as { name?: string } | undefined;
+        const result = await enrichProspectById(sb, prospectId, principal?.name || 'MANUAL_IA');
+        if (!result.ok) return res.status(400).json(result);
+        return res.json(result);
+      } catch (err: any) {
+        console.error('[partner-prospects/enrich]', err?.message);
+        return res.status(500).json({ ok: false, error: err?.message || 'Falha no enrich' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/partner-prospects/enrich-pending',
+    requireAuth,
+    requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo'),
+    async (req: Request, res: Response) => {
+      try {
+        const sb = createSupabaseAdminClient();
+        if (!sb) return res.status(500).json({ ok: false, error: 'Supabase admin indisponível' });
+        const { enrichPendingBatch } = await import('./partnerRadarRobot');
+        const principal = (req as any).user as { name?: string } | undefined;
+        const limit = Number(req.body?.limit || 30);
+        const result = await enrichPendingBatch(sb, {
+          limit,
+          byUser: principal?.name || 'MANUAL_LOTE',
+        });
+        return res.json(result);
+      } catch (err: any) {
+        console.error('[partner-prospects/enrich-pending]', err?.message);
+        return res.status(500).json({ ok: false, error: err?.message || 'Falha no lote' });
+      }
+    },
+  );
+
+  app.post(
     '/api/partner-prospects/send-email',
     requireAuth,
     requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo'),

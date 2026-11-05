@@ -17,6 +17,7 @@ import {
   Phone,
   ShieldCheck,
   ShieldAlert,
+  ScanSearch,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { authFetch } from '../lib/authFetch';
@@ -82,6 +83,8 @@ const PartnerRadar: React.FC<PartnerRadarProps> = ({ onEditProvider }) => {
   const [robot, setRobot] = useState<RobotState | null>(null);
   const [robotBusy, setRobotBusy] = useState(false);
   const [novosFlash, setNovosFlash] = useState(0);
+  const [enrichingIds, setEnrichingIds] = useState<Set<string>>(new Set());
+  const [enrichBatchBusy, setEnrichBatchBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -192,6 +195,15 @@ const PartnerRadar: React.FC<PartnerRadarProps> = ({ onEditProvider }) => {
             setNovosFlash((n) => n + 1);
             setTimeout(() => setNovosFlash((n) => Math.max(0, n - 1)), 8000);
           }
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'partner_prospects' },
+        (payload) => {
+          const row = payload.new as PartnerProspect;
+          if (!row?.id) return;
+          setItems((prev) => prev.map((p) => (p.id === row.id ? { ...p, ...row } : p)));
         },
       )
       .subscribe();
@@ -321,6 +333,58 @@ const PartnerRadar: React.FC<PartnerRadarProps> = ({ onEditProvider }) => {
     await logEvent(p.id, 'descartado', p.status, 'descartado');
     showNotification('Arquivado', 'Prospecto descartado.', 'info');
     await load();
+  };
+
+  const handleEnrich = async (p: PartnerProspect) => {
+    if (!p.website) {
+      showNotification('Atenção', 'Sem site para raspar. Preencha o website antes.', 'warning');
+      return;
+    }
+    setEnrichingIds((prev) => new Set(prev).add(p.id));
+    try {
+      const res = await authFetch(`/api/partner-prospects/${p.id}/enrich`, { method: 'POST', body: '{}' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Falha no enriquecimento');
+      if (data.prospect) {
+        setItems((prev) => prev.map((row) => (row.id === p.id ? { ...row, ...data.prospect } : row)));
+      }
+      showNotification(
+        'Enriquecido',
+        `${p.trade_name || p.company_name}: ${data.prospect?.enrichment_status || 'ok'}`,
+        'success',
+      );
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha ao enriquecer', 'error');
+    } finally {
+      setEnrichingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(p.id);
+        return next;
+      });
+    }
+  };
+
+  const handleEnrichPendingBatch = async () => {
+    setEnrichBatchBusy(true);
+    try {
+      const res = await authFetch('/api/partner-prospects/enrich-pending', {
+        method: 'POST',
+        body: JSON.stringify({ limit: 40 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || 'Falha no lote');
+      showNotification(
+        'Lote concluído',
+        `${data.processed || 0} prospecto(s) reprocessado(s)` +
+          (data.errors?.length ? ` · ${data.errors.length} erro(s)` : ''),
+        'success',
+      );
+      await load();
+    } catch (e: any) {
+      showNotification('Erro', e?.message || 'Falha no lote', 'error');
+    } finally {
+      setEnrichBatchBusy(false);
+    }
   };
 
   const handleMove = async (id: string, status: PartnerProspectStatus) => {
@@ -490,6 +554,16 @@ const PartnerRadar: React.FC<PartnerRadarProps> = ({ onEditProvider }) => {
               Ligar Robô Contínuo
             </button>
           )}
+          <button
+            type="button"
+            disabled={enrichBatchBusy}
+            onClick={() => void handleEnrichPendingBatch()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border border-indigo-200 text-indigo-800 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-60"
+            title="Reprocessa pending/partial com site"
+          >
+            {enrichBatchBusy ? <Loader2 size={14} className="animate-spin" /> : <ScanSearch size={14} />}
+            Enrich pending
+          </button>
           <button
             type="button"
             onClick={() => void load()}
@@ -798,6 +872,20 @@ const PartnerRadar: React.FC<PartnerRadarProps> = ({ onEditProvider }) => {
                           </td>
                           <td className="px-3 py-2.5">
                             <div className="flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                disabled={enrichingIds.has(p.id) || !p.website}
+                                title={!p.website ? 'Sem site para raspar' : 'Raspar site + IA agora'}
+                                onClick={() => void handleEnrich(p)}
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded bg-indigo-700 text-white disabled:opacity-50"
+                              >
+                                {enrichingIds.has(p.id) ? (
+                                  <Loader2 size={12} className="animate-spin" />
+                                ) : (
+                                  <ScanSearch size={12} />
+                                )}
+                                Enriquecer com IA
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => setEmailTarget(p)}

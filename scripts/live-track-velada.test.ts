@@ -149,7 +149,9 @@ test('LGPD tem controlador, finalidade e retenção', () => {
   assert.match(LIVE_TRACK_LGPD_FULL, /GRUPO TM SEG/);
   assert.match(LIVE_TRACK_LGPD_FULL, /Lei 13\.709/);
   assert.match(LIVE_TRACK_LGPD_FULL, /Retenção/);
-  assert.match(LIVE_TRACK_LGPD_FULL, /segundo plano/);
+  assert.match(LIVE_TRACK_LGPD_FULL, /Modo Economia/);
+  assert.match(LIVE_TRACK_LGPD_FULL, /Wake Lock/);
+  assert.match(LIVE_TRACK_LGPD_FULL, /90 s/);
 });
 
 test('botão gerar link só existe no fluxo velada', () => {
@@ -199,6 +201,10 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /Compartilhar localização em tempo real/);
   assert.match(page, /live-track-lgpd-check/);
   assert.match(page, /live-track-minimize/);
+  assert.match(page, /live-track-economy/);
+  assert.match(page, /Modo Economia/);
+  assert.match(page, /gpsWatchdog/);
+  assert.match(page, /live-track-gps-stale/);
   assert.match(page, /live-track-client-view/);
   assert.match(page, /live-track-map/);
   assert.match(page, /startLiveTrackKeepalive/);
@@ -235,7 +241,7 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(page, /SINAL EM PAUSA/);
   assert.match(page, /live-track-chegada/);
   assert.match(page, /live-track-pausa/);
-  assert.match(page, /tela acesa/);
+  assert.match(page, /tela ligada/);
   assert.match(page, /live-track-keep-open/);
   assert.match(page, /formatDateTimeBR/);
   assert.match(page, /PIN_POSICAO/);
@@ -259,9 +265,14 @@ test('rota pública /rastreio e API no Express existem', () => {
   assert.match(keep, /tmseg-live-track/);
   assert.match(keep, /setInterval\(resume/);
   assert.match(keep, /ctx\?\.resume\?\.\(\)\.catch/);
+  assert.match(keep, /new Worker/);
+  assert.match(keep, /setInterval\(resume, 8000\)/);
   assert.match(fs.readFileSync('index.html', 'utf8'), /failed to start the audio device/);
   const sw = fs.readFileSync('client/public/sw.js', 'utf8');
   assert.match(sw, /\/rastreio/);
   const vercel = fs.readFileSync('vercel.json', 'utf8');
   assert.match(vercel, /"destination": "\/api\/live-track"/);
+  const wd = fs.readFileSync('lib/liveTrack/gpsWatchdog.ts', 'utf8');
+  assert.match(wd, /GPS_STALE_ALERT_MS = 90_000/);
+  assert.match(wd, /alertarGpsStale/);
 });
