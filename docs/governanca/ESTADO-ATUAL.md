@@ -1,5 +1,7 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 05/11/2026. Na abertura da OS, a tabela do cliente e a do fornecedor saem de uma só regra: tipo da missão, nome oficial do cliente, fornecedor quando houver, e a rota. A amostra é o histórico aprovado dos últimos 180 dias, e a escolha é a tabela mais repetida entre as 10 mais recentes daquela rota. Sem histórico, entra a menor franquia da região ou da UF do destino que cubra o quilômetro. Sem encaixe, o seletor fica em branco. Velada não usa tabela Caracterizada. O pedágio deixa de ser copiado de OS antiga. OS já gravada, com snapshot ou faturamento aprovado, não é reescolhida. O motor `calculateMissionFinancials` não mudou. Ainda não foi publicado.
+
 Atualizado em 04/11/2026. O link de acompanhamento usa o mesmo `logo.png` do sistema, ao lado de GRUPO e TMSEG. O arquivo de 54 pixels fica só no pino do mapa. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 04/11/2026. Com a OS faturada, a auditoria abre para consulta. Quem não é Diretoria não edita campo nenhum e nada é gravado. Só a Diretoria grava. Fatura cancelada não trava. Fatura dividida por CNPJ não recebe a soma da quinzena. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

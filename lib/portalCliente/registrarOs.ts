@@ -2,7 +2,8 @@
 
 import type { PortalServidor } from '../cevaPortal/portalServidor';
 import { sendMail, SMTP_FROM } from '../email/smtp';
-import { fetchTopTabelasSugestao, receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
+import { receitaDaTabelaNaCriacao } from '../billing/tabelaNaCriacao';
+import { sugerirTabelaNaAbertura } from '../billing/progressiveTableMatcher';
 import { snapshotTabelaNaCriacao } from '../missionSnapshot';
 import type { PedidoPortal } from './pedido';
 import { emailsDaSolicitacao } from './pedido';
@@ -92,13 +93,19 @@ function payloadOs(
 
 async function tabelaEValorIniciais(sb: SupabaseAdmin, cliente: string, pedido: PedidoPortal) {
   try {
-    const escolha = await fetchTopTabelasSugestao(sb, cliente, null, pedido.origem, pedido.destino);
-    if (!escolha.tabelaClienteSugeridaId) return null;
-    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.tabelaClienteSugeridaId);
+    const escolha = await sugerirTabelaNaAbertura(sb, {
+      cliente,
+      fornecedor: null,
+      origem: pedido.origem,
+      destino: pedido.destino,
+      tipoMissao: pedido.missionType,
+    });
+    if (!escolha.tabelaClienteId) return null;
+    const valor = await receitaDaTabelaNaCriacao(sb, cliente, pedido.origem, pedido.destino, escolha.tabelaClienteId);
     return {
       receita: valor?.receita || 0,
       km: valor?.km || 0,
-      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.tabelaClienteSugeridaId }),
+      snapshot: snapshotTabelaNaCriacao({ clientTableId: escolha.tabelaClienteId }),
     };
   } catch (erro) {
     console.warn('[portal] tabela da criação', erro);

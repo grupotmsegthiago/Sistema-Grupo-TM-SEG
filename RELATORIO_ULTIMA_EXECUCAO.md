@@ -1,5 +1,15 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 05/11/2026 na branch `cursor/selecao-progressiva-tabela-af7e`. Ainda não foi publicado.
+
+Objetivo: a Nova OS, o portal e a auditoria passam a escolher a tabela pela mesma regra, sem copiar a última OS e sem o placar de texto.
+
+A consulta do cliente é igualdade do nome oficial. O histórico aprovado dos últimos 180 dias fica em memória e a rota escolhe a tabela mais repetida nas 10 mais recentes. Sem esse histórico, vale a menor franquia da UF ou da região do destino que cubra o quilômetro. Sem encaixe, o seletor fica vazio. Destino em raio, a definir ou acompanhamento usa a franquia horária/diária. O pedágio da rota atual não herda valor de OS anterior. OS com snapshot ou já aprovada na auditoria não é reescolhida. Não houve migration. O motor `calculateMissionFinancials` não mudou.
+
+Lacunas do cadastro, sem coluna nova: não existe `client_id` nas tabelas de preço nem na OS; o vínculo continua o nome em `client`. Não existe coluna de tabela inativa; linha apagada é a que não está mais no cadastro. Não existe coluna de franquia horária; o nome HORA, DIARIA ou ACOMPANHAMENTO identifica essa tabela.
+
+Testes: `npx tsx --test scripts/progressive-table-matcher.test.ts scripts/portal-tabela-aprovada.test.ts scripts/sugestao-tabela-os.test.ts` — 27 passaram.
+
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
 Objetivo: a OS faturada continua abrindo a auditoria. Quem não é Diretoria só consulta.
