@@ -922,7 +922,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
     if (!mission?.id || isPerfilDiretoria({ role: userRoleLower })) return false;
     const faturas = await faturasEmitidasDaOs(supabase, mission.id);
     if (!faturas.length) return false;
-    showNotification('Auditoria bloqueada', mensagemValorSomenteDiretoria(faturas), 'error');
+    showNotification('Somente consulta', mensagemValorSomenteDiretoria(faturas), 'error');
     return true;
   };
 
@@ -4180,28 +4180,14 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
   }
 
   const diretoriaLiberada = isPerfilDiretoria({ role: userRoleLower });
-  if (!diretoriaLiberada && !faturasCarregadas) {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4">
-        <div className="bg-white rounded-2xl max-w-md w-full p-6 text-center shadow-2xl">
-          <p className="text-sm font-black text-gray-900 uppercase">Conferindo a fatura</p>
-          <p className="text-xs text-gray-600 mt-2">A auditoria só abre depois de confirmar se esta OS já foi faturada.</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!diretoriaLiberada && faturasDaOs.length > 0) {
-    return (
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4" data-testid="auditoria-faturamento-bloqueada">
-        <div className="bg-white rounded-2xl max-w-lg w-full p-6 text-center shadow-2xl">
-          <p className="text-sm font-black text-gray-900 uppercase">Auditoria bloqueada</p>
-          <p className="text-xs text-gray-600 mt-2 whitespace-pre-line">{mensagemValorSomenteDiretoria(faturasDaOs)}</p>
-          <button type="button" onClick={onClose} className="mt-4 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase">Fechar</button>
-        </div>
-      </div>
-    );
-  }
+  const auditoriaSomenteLeitura = !diretoriaLiberada && (!faturasCarregadas || faturasDaOs.length > 0);
+  const travarInteracaoDaAuditoria = (evento: React.SyntheticEvent) => {
+    if (!auditoriaSomenteLeitura) return;
+    const alvo = evento.target as HTMLElement | null;
+    if (alvo?.closest('[data-auditoria-permitido]')) return;
+    evento.preventDefault();
+    evento.stopPropagation();
+  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start sm:items-center justify-center overflow-y-auto bg-black/80 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in">
@@ -4410,8 +4396,36 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
           </div>
       )}
 
-      <div className="my-3 sm:my-0 bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] border border-gray-200 relative z-[100]">
+      <div
+        className="my-3 sm:my-0 bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[95vh] border border-gray-200 relative z-[100]"
+        data-testid={auditoriaSomenteLeitura ? 'auditoria-faturamento-somente-leitura' : undefined}
+        onClickCapture={travarInteracaoDaAuditoria}
+        onDoubleClickCapture={travarInteracaoDaAuditoria}
+        onChangeCapture={travarInteracaoDaAuditoria}
+        onBeforeInputCapture={travarInteracaoDaAuditoria}
+        onKeyDownCapture={travarInteracaoDaAuditoria}
+        onPasteCapture={travarInteracaoDaAuditoria}
+        onDropCapture={travarInteracaoDaAuditoria}
+        onSubmitCapture={travarInteracaoDaAuditoria}
+      >
+        {auditoriaSomenteLeitura && (
+          <style>{`
+            [data-testid="auditoria-faturamento-somente-leitura"] input,
+            [data-testid="auditoria-faturamento-somente-leitura"] textarea,
+            [data-testid="auditoria-faturamento-somente-leitura"] select,
+            [data-testid="auditoria-faturamento-somente-leitura"] button:not([data-auditoria-permitido]) {
+              pointer-events: none;
+            }
+          `}</style>
+        )}
         <header className="bg-[#0f172a] text-white p-5 flex flex-col gap-3 shrink-0">
+          {auditoriaSomenteLeitura && (
+            <p className="whitespace-pre-line rounded-lg border border-amber-300/40 bg-amber-500/15 px-3 py-2 text-[11px] font-bold leading-snug text-amber-50" data-testid="auditoria-faturamento-consulta">
+              {faturasDaOs.length > 0
+                ? mensagemValorSomenteDiretoria(faturasDaOs)
+                : 'Conferindo se esta OS está faturada. Enquanto isso, nenhum campo pode ser alterado.'}
+            </p>
+          )}
           <div className="flex flex-col xl:flex-row xl:justify-between xl:items-start gap-3">
             <div className="flex items-center gap-4 flex-1 min-w-0">
               <div className="p-2.5 bg-red-600 rounded-xl shadow-lg shrink-0"><Calculator size={24} /></div>
@@ -4529,7 +4543,7 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
                 Plano DHL
               </button>
             )}
-            <button type="button" onClick={fecharAuditoria} disabled={isUpdating || isSavingRoute} className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-40" data-testid="button-fechar-auditoria"><X size={24}/></button>
+            <button type="button" onClick={fecharAuditoria} disabled={isUpdating || isSavingRoute} className="p-2 rounded-full hover:bg-white/10 transition-colors disabled:opacity-40" data-testid="button-fechar-auditoria" data-auditoria-permitido=""><X size={24}/></button>
           </div>
           </div>
 

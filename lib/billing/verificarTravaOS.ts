@@ -208,7 +208,7 @@ export function mensagemValorSomenteDiretoria(
     const cnpj = fatura.cnpj ? `CNPJ ${fatura.cnpj}` : 'CNPJ não cadastrado';
     return `${fatura.number || 'fatura'} · ${fatura.client || 'cliente'} · ${cnpj}`;
   });
-  return `Esta OS já está faturada. A auditoria fica bloqueada e nada é gravado.\nSó a Diretoria pode abrir e gravar.\n${linhas.join('\n')}`;
+  return `Esta OS já está faturada. A auditoria abre só para consulta.\nNenhum campo pode ser alterado e nada é gravado.\nSó a Diretoria pode gravar.\n${linhas.join('\n')}`;
 }
 
 export async function verificarTravaSegurancaOS(missionId: string): Promise<StatusTravaOS> {

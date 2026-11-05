@@ -2,6 +2,14 @@
 
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
+Objetivo: a OS faturada continua abrindo a auditoria. Quem não é Diretoria só consulta.
+
+A tela deixa de ser substituída pelo aviso de bloqueio. Com fatura, os campos e os botões não alteram nada, e a gravação no banco continua recusada. Só a Diretoria grava. Fatura cancelada não trava. O motor da OS não mudou.
+
+Testes: `npx tsx --test scripts/invoice-os-sync-open.test.ts`.
+
+Executado em 04/11/2026 na `dev`, depois de "publicar".
+
 Objetivo: o link de acompanhamento usa a mesma marca do sistema.
 
 O topo e o rodapé passaram a usar `/logo.png`, o arquivo do menu, ao lado de GRUPO e TMSEG. O desenho de 54 pixels saiu do quadrado preto e ficou só no pino do mapa. O motor da OS não mudou.

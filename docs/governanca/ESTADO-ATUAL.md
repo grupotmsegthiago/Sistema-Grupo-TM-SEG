@@ -2,7 +2,7 @@
 
 Atualizado em 04/11/2026. O link de acompanhamento usa o mesmo `logo.png` do sistema, ao lado de GRUPO e TMSEG. O arquivo de 54 pixels fica só no pino do mapa. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
-Atualizado em 04/11/2026. Depois que a OS entra numa fatura, a auditoria de faturamento fica fechada. Só o perfil Diretoria abre e grava. Quem não é Diretoria não grava KM, horário nem valor. Fatura dividida por CNPJ não recebe a soma da quinzena. A trava foi publicada na `main` em 04/11/2026, no projeto sistema-grupo-tm-seg.
+Atualizado em 04/11/2026. Com a OS faturada, a auditoria abre para consulta. Quem não é Diretoria não edita campo nenhum e nada é gravado. Só a Diretoria grava. Fatura cancelada não trava. Fatura dividida por CNPJ não recebe a soma da quinzena. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 04/11/2026. O link do cliente abre em painel tático: topo com a marca e OPERAÇÕES ACOMPANHAMENTO VELADO, mapa no centro, dados e timeline em alto relevo, rodapé com Grupo TM SEG, site e Instagram. A chegada a 500 metros continua no mesmo painel. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 

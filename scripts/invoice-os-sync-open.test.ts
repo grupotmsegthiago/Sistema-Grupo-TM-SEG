@@ -266,7 +266,9 @@ describe('sync fatura aberta — acoplamento UI', () => {
     assert.match(update, /from 'react'/);
     assert.match(financial, /from 'react'/);
     assert.match(update, /dispararSyncFaturaPorOS/);
-    assert.match(financial, /auditoria-faturamento-bloqueada/);
+    assert.match(financial, /auditoria-faturamento-somente-leitura/);
+    assert.match(financial, /data-auditoria-permitido/);
+    assert.doesNotMatch(financial, /auditoria-faturamento-bloqueada/);
     assert.match(financial, /valorTravadoParaQuemNaoEDiretoria/);
     const service = fs.readFileSync('lib/billing/sincronizarFaturaAberta.ts', 'utf8');
     assert.match(service, /BILLING_SYNC_OPEN_INVOICE/);
