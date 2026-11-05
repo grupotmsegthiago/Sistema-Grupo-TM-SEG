@@ -8,7 +8,7 @@ import { authFetch } from '../lib/authFetch';
 import { useNotification } from '../lib/NotificationContext';
 import { calculateMissionFinancials, auditMissionFinancials, extractUF, UF_TO_REGION, clientFuzzyFilter, clientNameShort, clientTableMatchesMission, fetchClientPriceTables, isIntentionalBillingOverride, extractCityFromAddress, resolveDisplacementFromAuthorizedKm } from '../lib/financialUtils';
 import { calcularValoresOficiais, colunasDoMotor, osImpedeSincronia } from '../lib/billing/sincronizarValoresOs';
-import { escolherTabelaProxima, quilometragemRegistrada } from '../lib/rotaAprovadaTabela';
+import { sugerirTabelaNaAbertura, tabelasGravadasNoSnapshot } from '../lib/billing/progressiveTableMatcher';
 import {
   isDhlSupplyClient,
   validateDhlTableName,
@@ -48,12 +48,11 @@ import {
   buildMinimalBillingSnapshot,
   carimboAprovacaoHumana,
   carimboRecalculoAutomatico,
-  lerTabelaGravadaNaCriacao,
+  hasUsableBillingSnapshot,
   retryPayloadForSnapshotConstraint,
   shouldWriteBillingSnapshot,
   snapshotEhSoTabelaNaCriacao,
 } from '../lib/missionSnapshot';
-import { fetchTopTabelasSugestao, historicoDaMesmaRota } from '../lib/billing/tabelaNaCriacao';
 import { diretoriaAindaAprova, faturamentoAprovadoSemDiretoria } from '../lib/billing/diretoriaApproval';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
 import { useRealtimeRefresh } from '../lib/RealtimeProvider';
@@ -1212,127 +1211,30 @@ const MissionFinancialModal: React.FC<Props> = ({ isOpen, onClose, mission: init
             || !!carimboAprovacaoHumana(currentMission.snapshot_approved_by)
             || isIntentionalBillingOverride(currentMission.revenue_edit_reason)
             || isIntentionalBillingOverride(currentMission.cost_edit_reason);
-          const tabelaCriacao = lerTabelaGravadaNaCriacao((currentMission as any).snapshot_data);
-          if (!osTravada && tabelaCriacao?.clientTableId) {
-              setManualClientTableId(tabelaCriacao.clientTableId);
-              if (currentMission.provider && tabelaCriacao.providerTableId) {
-                  setManualProviderTableId(tabelaCriacao.providerTableId);
-              } else if (currentMission.provider && !tabelaCriacao.providerTableId) {
-                  const escolha = await fetchTopTabelasSugestao(
-                      supabase,
-                      String(currentMission.originalClientName || currentMission.client || ''),
-                      currentMission.provider,
-                      currentMission.origin || '',
-                      currentMission.destination || '',
-                  );
-                  if (escolha.tabelaClienteSugeridaId) setManualClientTableId(escolha.tabelaClienteSugeridaId);
-                  if (escolha.tabelaFornecedorSugeridaId) {
-                      setManualProviderTableId(escolha.tabelaFornecedorSugeridaId);
-                      const atual = (currentMission as any).snapshot_data;
-                      if (atual && typeof atual === 'object') {
-                          const gravadoTabela = await gravarMissaoConfirmada(currentMission.id, {
-                              snapshot_data: {
-                                  ...atual,
-                                  clientTableId: escolha.tabelaClienteSugeridaId || atual.clientTableId,
-                                  providerTableId: escolha.tabelaFornecedorSugeridaId,
-                              },
-                          });
-                          if (gravadoTabela.error) {
-                              console.warn('[auditoria] tabela do fornecedor não ficou no snapshot', gravadoTabela.error.message);
-                          }
-                      }
-                  }
-              }
-              rotaAprovadaAplicadaRef.current = true;
-              return;
-          }
           if (osTravada) return;
-          if (hasSavedData) {
-              // A busca da rota aprovada pedia uma coluna que não existe e não trocava a tabela.
+          if (hasUsableBillingSnapshot((currentMission as any).snapshot_data)) {
+              const gravadas = tabelasGravadasNoSnapshot((currentMission as any).snapshot_data);
+              if (gravadas.clientTableId) setManualClientTableId(gravadas.clientTableId);
+              if (currentMission.provider && gravadas.providerTableId) setManualProviderTableId(gravadas.providerTableId);
               return;
           }
+          if (hasSavedData) return;
 
           const clienteAtual = String(currentMission.originalClientName || currentMission.client || '');
-          const historicoRota = await historicoDaMesmaRota(supabase, clienteAtual, currentMission.origin || '', currentMission.destination || '');
-          const tabelaDaRota = escolherTabelaProxima({
+          const sugestao = await sugerirTabelaNaAbertura(supabase, {
               cliente: clienteAtual,
+              fornecedor: currentMission.provider || null,
               origem: currentMission.origin || '',
               destino: currentMission.destination || '',
-              fornecedorAtual: currentMission.provider,
-              kmAtual: quilometragemRegistrada(currentMission.startKm, currentMission.endKm, currentMission.totalDistance),
-              historico: historicoRota,
+              tipoMissao: currentMission.mission_type || '',
+              distanciaKm: Number(currentMission.totalDistance) > 0 ? Number(currentMission.totalDistance) : null,
           });
-          if (tabelaDaRota?.clientTableId) {
+          if (sugestao.tabelaClienteId) {
               rotaAprovadaAplicadaRef.current = true;
-              setManualClientTableId(tabelaDaRota.clientTableId);
-              if (tabelaDaRota.providerTableId) setManualProviderTableId(tabelaDaRota.providerTableId);
-              return;
+              setManualClientTableId(sugestao.tabelaClienteId);
           }
-
-          const providerNorm = (currentMission.provider || '').toUpperCase().trim();
-          const routeKeyFull = `${currentMission.client}|${providerNorm}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
-          const routeKeyBase = `${currentMission.client}|${currentMission.origin}|${currentMission.destination}`.toUpperCase();
-
-          const { data: memLogsFull } = await supabase
-            .from('system_logs')
-            .select('details')
-            .eq('entity', 'BillingPattern')
-            .ilike('details', `%${routeKeyFull}%`)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          let memLogs = memLogsFull;
-          let memorySource = 'EXATA';
-          if (!memLogs || memLogs.length === 0) {
-              const { data: memLogsFallback } = await supabase
-                .from('system_logs')
-                .select('details')
-                .eq('entity', 'BillingPattern')
-                .ilike('details', `%${routeKeyBase}%`)
-                .order('created_at', { ascending: false })
-                .limit(1);
-              memLogs = memLogsFallback;
-              memorySource = 'ROTA';
-          }
-
-          if (memLogs && memLogs.length > 0) {
-             try {
-                 const details = JSON.parse(memLogs[0].details);
-                 if (details.clientTableId) {
-                     const memClientTable = clientTables.find(t => t.id.toString() === details.clientTableId);
-                     const originUF = extractUF(currentMission.origin || '');
-                     const originRegion = (UF_TO_REGION[originUF] || '').toUpperCase();
-                     const tableOp = (memClientTable?.operation_type || '').toUpperCase();
-                     const tableRegions = ['SUDESTE', 'SUL', 'CENTRO-OESTE', 'NORDESTE', 'NORTE'];
-                     const tableRegion = tableRegions.find(r => tableOp.includes(r)) || '';
-                     const regionCompatible = !tableRegion || !originRegion || tableRegion === originRegion;
-                     if (regionCompatible) {
-                         rotaAprovadaAplicadaRef.current = true;
-                         setManualClientTableId(details.clientTableId);
-                     }
-                 }
-                 if (details.providerTableId) {
-                     const tablesToCheck = allProviderTables || providerTables;
-                     const memProvTable = tablesToCheck.find(t => t.id === details.providerTableId);
-                     const memProvNorm = (memProvTable?.provider || '').toUpperCase().trim();
-                     if (memProvTable && memProvNorm === providerNorm) {
-                         setManualProviderTableId(details.providerTableId);
-                     }
-                 }
-                 if (details.customClientBase) setCustomClientBase(details.customClientBase);
-                 if (details.customClientKm) setCustomClientKm(details.customClientKm);
-                 if (details.customClientHour) setCustomClientHour(details.customClientHour);
-                 if (details.customProviderBase) setCustomProviderBase(details.customProviderBase);
-                 if (details.customProviderKm) setCustomProviderKm(details.customProviderKm);
-                 if (details.customProviderHour) setCustomProviderHour(details.customProviderHour);
-                 // BLINDAGEM: Pedágio NUNCA mais é herdado de outras OS via memória.
-                 // O usuário deve confirmar manualmente o pedágio em cada OS.
-                 // Histórico continua disponível apenas como consulta (não aplicado).
-                 setMemoryLoaded(true);
-                 const hasCustomValues = details.customClientBase || details.customProviderBase;
-                 const extraInfo = hasCustomValues ? ' (valores ajustados)' : '';
-                 showNotification('Memória Evolutiva', `Tabela${extraInfo} aplicada (${memorySource === 'EXATA' ? 'mesmo fornecedor' : 'mesma rota'}). Pedágio precisa ser confirmado manualmente.`, 'success');
-             } catch (e) { console.error("Erro ao ler memória:", e); }
+          if (currentMission.provider && sugestao.tabelaFornecedorId) {
+              setManualProviderTableId(sugestao.tabelaFornecedorId);
           }
       } catch (e) { console.error("Erro na IA de Padrões:", e); }
   };
