@@ -19,14 +19,15 @@ import ProviderForm from './ProviderForm';
 import ClientRouteForm from './ClientRouteForm';
 import ClientVehicleForm from './ClientVehicleForm';
 import { formatProviderName } from '../lib/utils';
-import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress, evaluateRegionalTableConstraint, TABLE_SPECIFIC_CITY_KEYWORDS } from '../lib/financialUtils';
-import { exclusiveCitiesInAddress, questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
+import { extractUF, UF_TO_REGION, clientFuzzyFilter, extractCityFromAddress } from '../lib/financialUtils';
+import { questionTableAgainstRoute, registeredRouteFitsOs } from '../lib/tableRouteQuestion';
 import { parseJsonResponse } from '../lib/parseJsonResponse';
 import { normalizeTollAmount, tollPersistencePair } from '../lib/toll/clientTollBilling';
-import { destinoBloqueiaSugestao, SEM_TABELA_CUSTO_SUGERIDA } from '../lib/billing/tabelaNaCriacao';
 import { cidadeNoEndereco, enderecoNaCidade } from '../lib/rotaAprovadaTabela';
 import { calcularValoresOficiais, janelaZeradaNaCriacao } from '../lib/billing/sincronizarValoresOs';
-import { deveAplicarSugestao, useTabelaSuggestion } from '../lib/billing/useTabelaSuggestion';
+import { deveAplicarSugestao } from '../lib/billing/useTabelaSuggestion';
+import { tabelaCompativelComTipo } from '../lib/billing/progressiveTableMatcher';
+import { useProgressiveTableMatcher } from '../lib/billing/useProgressiveTableMatcher';
 import { isVsTransportesClient } from '../lib/billing/vsTransportesPedido';
 import { snapshotTabelaNaCriacao } from '../lib/missionSnapshot';
 import { isPerfilAvancado } from '../lib/avancadoFinanceBlock';
@@ -162,14 +163,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
     dhl_deslocamento_km: ''
   });
   const [buscaImediata, setBuscaImediata] = useState(false);
-  const sugestaoTabela = useTabelaSuggestion({
-    clienteId: formData.client,
-    fornecedorId: formData.provider,
-    origem: formData.origin,
-    destino: formData.destination,
-    tipoMissao: formData.missionType,
-    isRotaPredefinida: buscaImediata,
-  });
   const [dhlLinkModal, setDhlLinkModal] = useState<{ open: boolean; missionId: string; url: string; whatsappText: string; phone: string; channel: 'email' | 'whatsapp' | 'both'; emailSent: boolean; providerEmail: string; whatsappSent: boolean; whatsappError: string | null }>({ open: false, missionId: '', url: '', whatsappText: '', phone: '', channel: 'both', emailSent: false, providerEmail: '', whatsappSent: false, whatsappError: null });
   const [dhlChannelPicker, setDhlChannelPicker] = useState<{ open: boolean; preferred: 'email' | 'whatsapp' | 'both'; saveAsDefault: boolean }>({ open: false, preferred: 'both', saveAsDefault: false });
   const [dhlIntakes, setDhlIntakes] = useState<DhlIntakeRow[]>([]);
@@ -194,6 +187,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const [clientRoutes, setClientRoutes] = useState<ClientRoute[]>([]);
   const [clientPriceTables, setClientPriceTables] = useState<ClientPriceTable[]>([]);
   const [providerCostTables, setProviderCostTables] = useState<ProviderCostTable[]>([]);
+  const sugestaoTabela = useProgressiveTableMatcher({
+    cliente: formData.client,
+    fornecedor: formData.isSameOs ? null : formData.provider,
+    origem: formData.origin,
+    destino: formData.destination,
+    tipoMissao: formData.missionType,
+    distanciaKm: parseFloat(formData.totalDistance) || null,
+    tabelasCliente: clientPriceTables,
+    tabelasFornecedor: providerCostTables,
+    imediato: buscaImediata,
+  });
   const [selectedRouteId, setSelectedRouteId] = useState('');
   const [manualRevenueTableId, setManualRevenueTableId] = useState('');
   const [manualCostTableId, setManualCostTableId] = useState('');
@@ -861,14 +865,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           }
         });
 
-        supabase.from('client_price_tables').select('*').or(cFilter).order('operation_type').then(async ({ data, error }) => {
+        supabase.from('client_price_tables').select('*').eq('client', formData.client).order('operation_type').then(({ data, error }) => {
           if (error) console.error('[MissionForm] Erro client_price_tables:', error.message);
-          if (data && data.length > 0) { setClientPriceTables(data as any); return; }
-          if (firstWord) {
-            const { data: fb } = await supabase.from('client_price_tables').select('*').ilike('client', `%${firstWord}%`).order('operation_type');
-            if (fb && fb.length > 0) { console.log(`[MissionForm] price_tables fallback: ${fb.length} tabelas via ilike %${firstWord}%`); setClientPriceTables(fb as any); }
-            else setClientPriceTables(data || []);
-          }
+          setClientPriceTables((data || []) as any);
         });
 
         fetchClientVehicles(formData.client);
@@ -899,184 +898,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       return generated;
   };
 
-  const findBestTable = (tables: any[], dist: number, locationKeywords: string[], clientRuleKeyword?: string, providerName?: string, originAddress?: string, missionType?: string, estimatedHours?: number, destAddress?: string) => {
-      if (!tables || tables.length === 0) return null;
-      const normalizedTables = tables.map(t => ({ ...t, normOp: normalizeStr(t.operation_type || '') }));
-      const opType = normalizeStr(missionType || '');
-      const isVelada = opType.includes('VELADA');
-      const isCaracterizada = opType.includes('CARACTERIZADA');
-
-      if (clientRuleKeyword) {
-          let ruleMatches = normalizedTables.filter(t => t.normOp.includes(normalizeStr(clientRuleKeyword)));
-          if (ruleMatches.length > 1 && (isVelada || isCaracterizada)) {
-              const typed = ruleMatches.filter(t => isVelada ? t.normOp.includes('VELADA') : t.normOp.includes('CARACTERIZADA'));
-              if (typed.length > 0) ruleMatches = typed;
-          }
-          if (ruleMatches.length > 0) return { table: ruleMatches[0], reason: `REGRA PRIORITÁRIA: ${clientRuleKeyword}` };
-      }
-
-      const providerUpper = normalizeStr(providerName || '');
-      const isSpecialProvider = providerUpper.includes('ATIVA') || providerUpper.includes('TM SEG') || providerUpper.includes('TMSEG');
-
-      const originUF = extractUF(originAddress || '') || locationKeywords[1] || '';
-      const originRegion = UF_TO_REGION[originUF] || locationKeywords[2] || '';
-      const originExclusive = exclusiveCitiesInAddress(originAddress || '');
-      const originCity = originExclusive[0] || locationKeywords[0] || '';
-      // Serra, ES não está na lista de cidades exclusivas. Sem este fallback
-      // a tabela GUARULHOS-GOIANIA passava só porque a origem é Guarulhos.
-      const destCity = exclusiveCitiesInAddress(destAddress || '')[0]
-          || normalizeStr(extractCityFromAddress(destAddress || ''));
-
-      const scored = normalizedTables.map(t => {
-          let score = 0;
-          let reasons: string[] = [];
-
-          // Mesma regra do motor financeiro: tabela regional/cidade específica
-          // só se a origem da OS corresponder; senão cai para tabela padrão (KM).
-          const regionalGate = evaluateRegionalTableConstraint(t.normOp, {
-              originCity,
-              destCity,
-              originRegion,
-              originUF,
-              originAddress,
-          });
-          if (regionalGate.blocked) {
-              return { ...t, score: -9999, reason: regionalGate.reason, allReasons: [regionalGate.reason] };
-          }
-
-          const isArmadoTable = t.normOp.includes('ARMADO') || t.normOp.includes('ARMADOS') || t.normOp.includes('PRONTA RESPOSTA');
-          const isFranchiseTable = t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA');
-          const franchiseKm = parseFloat(t.franchise_km) || 0;
-          const franchiseHours = parseFloat(t.franchise_hours) || 0;
-
-          if (isVelada) {
-              if (isFranchiseTable && !isArmadoTable) { score -= 5000; reasons.push('VELADA NÃO USA FAIXA KM'); }
-              if (t.normOp.includes('CARACTERIZADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL'); }
-              if (isArmadoTable) {
-                  score += 3000;
-                  const is02 = t.normOp.includes('02 ARMADO') || t.normOp.includes('02 ARMADOS') || t.normOp.includes('DOIS ARMADO');
-                  const is01 = !is02 && (t.normOp.includes('01 ARMADO') || t.normOp.includes('01 AGENTE') || t.normOp.includes('PRONTA RESPOSTA'));
-                  if (is02) reasons.push('02 ARMADOS');
-                  else if (is01) reasons.push('01 ARMADO');
-                  else reasons.push('ARMADO');
-              }
-              if (t.normOp.includes('VELADA')) { score += 2500; reasons.push('TIPO: VELADA'); }
-          }
-
-          if (isCaracterizada) {
-              if (isArmadoTable && !isFranchiseTable) { score -= 3000; reasons.push('CARACTERIZADA USA FAIXA KM'); }
-              if (t.normOp.includes('VELADA') && !t.normOp.includes('CARACTERIZADA')) { score -= 5000; reasons.push('TIPO INCOMPATÍVEL'); }
-              if (t.normOp.includes('CARACTERIZADA')) { score += 2500; reasons.push('TIPO: CARACTERIZADA'); }
-
-              if (isFranchiseTable && franchiseKm > 0 && dist > 0) {
-                  if (dist <= franchiseKm) {
-                      score += 600;
-                      const excess = franchiseKm - dist;
-                      score -= Math.min(excess * 0.5, 200);
-                      reasons.push(`FRANQUIA ${franchiseKm}KM COBRE ${Math.round(dist)}KM`);
-                  } else {
-                      score -= 300;
-                      reasons.push(`FRANQUIA ${franchiseKm}KM < ${Math.round(dist)}KM (EXCEDE)`);
-                  }
-              } else if (!isFranchiseTable) {
-                  if (franchiseKm > 0 && franchiseKm >= dist) { score += 50; }
-                  else if (franchiseKm > 0) { score -= 10; }
-              }
-          }
-
-          if (!isVelada && !isCaracterizada) {
-              if (franchiseKm > 0 && franchiseKm >= dist) { score += 50; }
-              else if (franchiseKm > 0) { score -= 10; }
-          }
-
-          if (isSpecialProvider) {
-              const isNivelBrasil = t.normOp.includes('NIVEL BRASIL') || isArmadoTable;
-              if (!isNivelBrasil && !isVelada) { score -= 1000; }
-          }
-
-          if (originCity.length > 3 && t.normOp.includes(originCity)) {
-              score += 3000;
-              reasons.push(`CIDADE: ${originCity}`);
-          }
-          const exclusiveHit = originExclusive.find((city) => t.normOp.includes(city));
-          if (exclusiveHit) {
-              score += 4000;
-              reasons.unshift(`TABELA EXCLUSIVA: ${exclusiveHit}`);
-          }
-          const namedCities = TABLE_SPECIFIC_CITY_KEYWORDS.map((city) => city.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()).filter((city) => t.normOp.includes(city));
-          if (namedCities.length > 0 && !namedCities.some((city) => originExclusive.includes(city) || (originCity.length > 3 && city === originCity))) {
-              score -= 8000;
-              reasons.push('CIDADE DA TABELA NAO E A ORIGEM');
-          }
-
-          if (t.normOp.includes('EXCETO')) {
-              if (originUF === 'MG' && t.normOp.includes('EXCETO MG')) { score -= 5000; reasons.push('BLOQUEADO (EXCETO MG)'); }
-              if (originUF === 'ES' && t.normOp.includes('EXCETO') && t.normOp.includes('ES')) { score -= 5000; reasons.push('BLOQUEADO (EXCETO ES)'); }
-          }
-
-          if (originUF && (originUF === 'MG' || originUF === 'ES')) {
-              if (t.normOp.includes('MG') && t.normOp.includes('ES') && !t.normOp.includes('EXCETO')) {
-                  score += 2000;
-                  reasons.push(`UF ESPECÍFICO: ${originUF}`);
-              }
-          }
-
-          if (originUF && t.normOp.includes(originUF) && !t.normOp.includes('EXCETO')) {
-              score += 1500;
-              reasons.push(`UF: ${originUF}`);
-          }
-
-          if (originRegion && t.normOp.includes(originRegion)) {
-              score += 800;
-              reasons.push(`REGIÃO: ${originRegion}`);
-          }
-
-          if (estimatedHours && estimatedHours > 0 && franchiseHours > 0) {
-              if (estimatedHours <= franchiseHours) {
-                  score += 100;
-                  reasons.push(`HORAS OK (${estimatedHours}h ≤ ${franchiseHours}h)`);
-              } else {
-                  score -= 50;
-                  reasons.push(`HORAS EXCEDE (${estimatedHours}h > ${franchiseHours}h)`);
-              }
-          }
-
-          const reason = reasons.length > 0 ? reasons[0] : 'GENÉRICO';
-          return { ...t, score, reason, allReasons: reasons };
-      });
-
-      const valid = scored.filter(t => t.score > -1000).sort((a, b) => b.score - a.score);
-      if (valid.length === 0) {
-          // Fallback só entre tabelas sem bloqueio regional/cidade.
-          // Sem isso, Palhoça/Florianópolis voltavam a vencer só por franquia KM.
-          const pool = normalizedTables.filter(t => {
-              const gate = evaluateRegionalTableConstraint(t.normOp, {
-                  originCity,
-                  destCity,
-                  originRegion,
-                  originUF,
-                  originAddress,
-              });
-              return !gate.blocked;
-          });
-          const fallback = [...pool].sort((a, b) => a.franchise_km - b.franchise_km);
-          const best = fallback.find(t => t.franchise_km >= dist) || fallback[fallback.length - 1];
-          if (!best) return null;
-          return { table: best, reason: "FAIXA KM (FALLBACK)" };
-      }
-
-      const topScore = valid[0].score;
-      const bestGroup = valid.filter(t => t.score >= topScore - 20);
-
-      const franchiseGroup = bestGroup.filter(t => t.normOp.includes('ATE ') || t.normOp.includes('ATE') || t.normOp.includes('FAIXA'));
-      const pickFrom = franchiseGroup.length > 0 ? franchiseGroup : bestGroup;
-
-      const sortedByKm = pickFrom.sort((a, b) => a.franchise_km - b.franchise_km);
-      const exactCover = sortedByKm.find(t => (t.franchise_km || 0) >= dist);
-      const bestTable = exactCover || sortedByKm[sortedByKm.length - 1];
-      return { table: bestTable, reason: bestTable.reason || "MELHOR MATCH", allReasons: bestTable.allReasons || [] };
-  };
-
   const calculatePricing = useCallback(async (route: ClientRoute, providerOverride?: string, revTableId?: string, cstTableId?: string, flags?: { ceva200km: boolean, vtc02h: boolean, isSameOs: boolean, raioKm?: number }) => {
       if (!formData.client || !route) return;
       setIsCalculating(true);
@@ -1103,22 +924,13 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               }
           }
       }
-      const originUpper = normalizeStr(route.origin);
-      const originCity = normalizeStr(extractCityFromAddress(route.origin) || originUpper.split(',')[0].trim());
-      const geoInfo = CITY_MAP[originCity] || { uf: '', region: '' };
-      const locationKeywords = [originCity, geoInfo.uf || extractUF(route.origin) || '', geoInfo.region || UF_TO_REGION[extractUF(route.origin) || ''] || ''];
       const activeProvider = providerOverride !== undefined ? providerOverride : formData.provider;
       const currentFlags = flags || { ceva200km: formData.applyCeva200km, vtc02h: formData.applyVtc02h, isSameOs: formData.isSameOs, raioKm: formData.raioKm };
       const radius = currentFlags.raioKm && currentFlags.raioKm > 0 ? currentFlags.raioKm : (currentFlags.ceva200km ? 200 : 0);
 
       const isLogitech = (formData.client || '').toUpperCase().includes('CEVA') && (route.name.toUpperCase().includes('LOGITECH') || route.destination.toUpperCase().includes('LOGITECH'));
 
-      let effectiveDist = realDist;
-      let forceKeyword: string | undefined = undefined;
       const isSpecialRuleActive = currentFlags.vtc02h || currentFlags.ceva200km || isLogitech;
-
-      if (currentFlags.vtc02h) { effectiveDist = 100; forceKeyword = '100KM'; } 
-      else if (radius > 0 || isLogitech) { effectiveDist = isLogitech ? 200 : radius; forceKeyword = isLogitech ? 'LOGITECH' : `${radius}KM`; }
 
       try {
           const estHours = isSpecialRuleActive ? (currentFlags.vtc02h ? 2 : isLogitech ? 3 : 4) : (googleDurationMin ? Math.max(1, Math.ceil(googleDurationMin / 60)) : Math.max(2, Math.ceil(realDist / 45)));
@@ -1131,10 +943,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           let revTable: any = null;
           if (revTableId) {
               revTable = clientPriceTables.find(t => t.id.toString() === revTableId);
-              if (revTable) details.push(`FAT (MANUAL): ${revTable.operation_type}`);
-          } else {
-              const result = findBestTable(clientPriceTables, effectiveDist, locationKeywords, forceKeyword, undefined, route.origin, formData.missionType, estHours, route.destination);
-              if (result) { revTable = result.table; details.push(`FAT (${result.reason}): ${revTable.operation_type}`); }
+              if (revTable) details.push(`FAT: ${revTable.operation_type}`);
           }
           if (revTable) {
               revenue = revTable.activation_fee;
@@ -1150,26 +959,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
           let cstTable: any = null;
           if (currentFlags.isSameOs) { cost = 0; details.push(`CUSTO: ZERADO (MESMA OS)`); }
-          else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) {
-              details.push('CUSTO: SEM HISTÓRICO DESTE FORNECEDOR');
-          }
-          else {
-              if (cstTableId) {
-                  cstTable = providerCostTables.find(t => t.id.toString() === cstTableId);
-                  if (!cstTable && activeProvider) {
-                      const { data } = await supabase.from('provider_cost_tables').select('*').eq('id', cstTableId).eq('provider', activeProvider).maybeSingle();
-                      if (data) cstTable = data;
-                  }
-                  if (cstTable) details.push(`CUSTO (MANUAL): ${cstTable.operation_type}`);
-              } else if (activeProvider) {
-                  let currentCostTables = providerCostTables;
-                  if (providerOverride && providerOverride !== formData.provider) {
-                      const { data } = await supabase.from('provider_cost_tables').select('*').eq('provider', providerOverride);
-                      if (data) currentCostTables = data as any;
-                  }
-                  const result = findBestTable(currentCostTables, effectiveDist, locationKeywords, forceKeyword, activeProvider, route.origin, formData.missionType, estHours, route.destination);
-                  if (result) { cstTable = result.table; details.push(`CUSTO (${result.reason}): ${cstTable.operation_type}`); }
+          else if (cstTableId) {
+              cstTable = providerCostTables.find(t => t.id.toString() === cstTableId);
+              if (!cstTable && activeProvider) {
+                  const { data } = await supabase.from('provider_cost_tables').select('*').eq('id', cstTableId).eq('provider', activeProvider).maybeSingle();
+                  if (data) cstTable = data;
               }
+              if (cstTable) details.push(`CUSTO: ${cstTable.operation_type}`);
+          }
+          if (!currentFlags.isSameOs) {
               if (cstTable) {
                   cost = cstTable.activation_cost;
                   const cstTableName = (cstTable.operation_type || '').toUpperCase();
@@ -1190,34 +988,36 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               finalDestination = isDhl ? `RAIO ${radius} KM — DESTINO A DEFINIR` : `${radius}KM DE ACOMPANHAMENTO`;
           }
 
-          const inicioPrevisto = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).toISOString();
-          const janelaPrevista = janelaZeradaNaCriacao(inicioPrevisto);
-          const oficial = calcularValoresOficiais({
-              mission: {
-                  client: formData.client,
-                  provider: activeProvider || '',
-                  origin: route.origin,
-                  destination: finalDestination,
-                  status: MissionStatus.SOLICITED,
-                  totalDistance: displayDist,
-                  startTime: janelaPrevista.startTime,
-                  endTime: janelaPrevista.endTime,
-                  is_same_os: !!currentFlags.isSameOs,
-                  mission_type: formData.missionType || 'Caracterizada',
-              },
-              clientTables: clientPriceTables,
-              providerTables: providerCostTables,
-              clientData: dbClients.find((c) => c.name === formData.client),
-              providers: dbProviders,
-              clientTableId: revTable?.id ? String(revTable.id) : null,
-              providerTableId: cstTable?.id ? String(cstTable.id) : null,
-          });
-          if (oficial && !manualOverrides.revenue && oficial.tabelaCliente && oficial.receitaServico > 0) {
-              revenue = oficial.receitaServico;
-          }
-          if (currentFlags.isSameOs) cost = 0;
-          else if (oficial && !manualOverrides.cost && oficial.tabelaFornecedor && oficial.custoServico > 0) {
-              cost = oficial.custoServico;
+          if (revTable || cstTable) {
+              const inicioPrevisto = new Date(`${formData.scheduledDate}T${formData.scheduledTime}:00`).toISOString();
+              const janelaPrevista = janelaZeradaNaCriacao(inicioPrevisto);
+              const oficial = calcularValoresOficiais({
+                  mission: {
+                      client: formData.client,
+                      provider: activeProvider || '',
+                      origin: route.origin,
+                      destination: finalDestination,
+                      status: MissionStatus.SOLICITED,
+                      totalDistance: displayDist,
+                      startTime: janelaPrevista.startTime,
+                      endTime: janelaPrevista.endTime,
+                      is_same_os: !!currentFlags.isSameOs,
+                      mission_type: formData.missionType || 'Caracterizada',
+                  },
+                  clientTables: clientPriceTables,
+                  providerTables: providerCostTables,
+                  clientData: dbClients.find((c) => c.name === formData.client),
+                  providers: dbProviders,
+                  clientTableId: revTable?.id ? String(revTable.id) : null,
+                  providerTableId: cstTable?.id ? String(cstTable.id) : null,
+              });
+              if (revTable && oficial && !manualOverrides.revenue && oficial.tabelaCliente && oficial.receitaServico > 0) {
+                  revenue = oficial.receitaServico;
+              }
+              if (currentFlags.isSameOs) cost = 0;
+              else if (cstTable && oficial && !manualOverrides.cost && oficial.tabelaFornecedor && oficial.custoServico > 0) {
+                  cost = oficial.custoServico;
+              }
           }
 
           setFormData(prev => {
@@ -1225,8 +1025,8 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
               const mesmoDestino = normalizeStr(prev.destination) === normalizeStr(route.destination);
               return {
               ...prev, provider: activeProvider,
-              revenueValue: manualOverrides.revenue ? prev.revenueValue : revenue.toFixed(2),
-              costValue: manualOverrides.cost ? prev.costValue : cost.toFixed(2),
+              revenueValue: manualOverrides.revenue ? prev.revenueValue : (revTable ? revenue.toFixed(2) : ''),
+              costValue: manualOverrides.cost ? prev.costValue : (currentFlags.isSameOs ? '0.00' : (cstTable ? cost.toFixed(2) : '')),
               totalDistance: displayDist.toString(),
               origin: mesmaOrigem ? route.origin : prev.origin,
               destination: mesmoDestino ? finalDestination : prev.destination,
@@ -1235,8 +1035,9 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           });
           setCalcDetails(details.join(' | '));
           if (revTable) setManualRevenueTableId(revTable.id.toString());
+          else if (!revTableId) setManualRevenueTableId('');
           if (cstTable) setManualCostTableId(cstTable.id.toString());
-          else if (cstTableId === SEM_TABELA_CUSTO_SUGERIDA) setManualCostTableId('');
+          else if (!cstTableId || currentFlags.isSameOs) setManualCostTableId('');
       } finally { setIsCalculating(false); }
   }, [formData.client, formData.provider, formData.origin, formData.destination, formData.applyCeva200km, formData.raioKm, formData.applyVtc02h, formData.isSameOs, formData.scheduledDate, formData.scheduledTime, formData.missionType, clientPriceTables, providerCostTables, dbClients, dbProviders, manualOverrides.revenue, manualOverrides.cost]);
 
@@ -1338,8 +1139,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   };
 
   const applyTollForRoute = async (origin: string, destination: string, opts?: { notify?: boolean; force?: boolean }): Promise<number | null> => {
-      if (opts?.force) pedagioHerdadoRef.current = false;
-      if (!opts?.force && (manualOverrides.toll || pedagioHerdadoRef.current)) return parseFloat(formData.tollValue) || 0;
+      if (!opts?.force && manualOverrides.toll) return parseFloat(formData.tollValue) || 0;
       const originT = (origin || '').trim();
       const destT = (destination || '').trim();
       if (!originT || !destT) return null;
@@ -1369,7 +1169,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
       const apiResult = await calculateTollFromAPI(originT, destT);
       if (isAutoTollResult(apiResult)) {
-          if (!opts?.force && pedagioHerdadoRef.current) return null;
           applyDistanceFromToll(apiResult.distance, destT);
           setFormData(prev => ({ ...prev, tollValue: apiResult.value.toFixed(2) }));
           setTollDetails({ count: apiResult.count, tolls: apiResult.tolls, observacoes: apiResult.observacoes, confianca: apiResult.confianca, provider: apiResult.provider });
@@ -1420,7 +1219,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
   const lastAutoRouteRef = useRef('');
   const camposSugestaoRef = useRef('');
   const operadorEscolheuTabelaRef = useRef(false);
-  const pedagioHerdadoRef = useRef(false);
   const handleRouteSelect = (route: ClientRoute) => {
       const endpoints = pickRouteEndpoints(route, formData.origin, formData.destination);
       setBuscaImediata(true);
@@ -1442,34 +1240,23 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
       if (!formData.client) return;
       const origin = (formData.origin || '').trim();
       const destination = (formData.destination || '').trim();
-      if (!origin || !destination || destinoBloqueiaSugestao(destination)) return;
+      if (!origin || !destination) return;
       const camposChave = `${formData.client}|${formData.provider}|${origin}|${destination}|${formData.missionType}`;
       const camposChaveMudaram = camposSugestaoRef.current !== camposChave;
       if (camposChaveMudaram) {
           camposSugestaoRef.current = camposChave;
           operadorEscolheuTabelaRef.current = false;
-          pedagioHerdadoRef.current = false;
           setManualOverrides((prev) => (prev.toll ? { ...prev, toll: false } : prev));
           setTollFetchDone(false);
       }
-      if (sugestaoTabela.loadingSugestao) return;
+      if (sugestaoTabela.carregando) return;
       if (!deveAplicarSugestao(operadorEscolheuTabelaRef.current, camposChaveMudaram)) return;
 
-      const rev = sugestaoTabela.tabelaClienteSugeridaId || '';
-      const cst = sugestaoTabela.tabelaFornecedorSugeridaId || '';
-      const pedagioHistorico = sugestaoTabela.pedagioReal;
-      const temPedagioHistorico = pedagioHistorico != null && Number.isFinite(pedagioHistorico);
-      const key = `${formData.client}|||${origin}|||${destination}|||${formData.provider}|||${formData.missionType}|||${rev}|||${cst}|||${temPedagioHistorico ? pedagioHistorico.toFixed(2) : ''}|||${clientPriceTables.length}|||${providerCostTables.length}`;
+      const rev = sugestaoTabela.tabelaClienteId || '';
+      const cst = sugestaoTabela.tabelaFornecedorId || '';
+      const key = `${formData.client}|||${origin}|||${destination}|||${formData.provider}|||${formData.missionType}|||${rev}|||${cst}|||${clientPriceTables.length}|||${providerCostTables.length}`;
       if (lastAutoRouteRef.current === key) return;
       lastAutoRouteRef.current = key;
-      if (temPedagioHistorico) {
-          pedagioHerdadoRef.current = true;
-          setManualOverrides((prev) => ({ ...prev, toll: true }));
-          setTollFetchDone(true);
-          setTollDetails(null);
-          setTollZeroConfirmed(pedagioHistorico === 0);
-          setFormData((prev) => ({ ...prev, tollValue: pedagioHistorico.toFixed(2) }));
-      }
 
       let cancelado = false;
       (async () => {
@@ -1494,19 +1281,17 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
           if (gResult && gResult.durationMin > 0) virtualRoute._googleDurationMin = gResult.durationMin;
           if (gResult && gResult.distKm > 0) virtualRoute._googleDistKm = gResult.distKm;
 
-          const tabelaCliente = sugestaoTabela.tabelaClienteSugeridaId || undefined;
-          const tabelaCusto = !formData.provider
-              ? undefined
-              : (tabelaCliente ? (sugestaoTabela.tabelaFornecedorSugeridaId || SEM_TABELA_CUSTO_SUGERIDA) : undefined);
+          const tabelaCliente = sugestaoTabela.tabelaClienteId || undefined;
+          const tabelaCusto = formData.provider && !formData.isSameOs ? (sugestaoTabela.tabelaFornecedorId || undefined) : undefined;
           await calculatePricing(virtualRoute, undefined, tabelaCliente, tabelaCusto);
-          if (cancelado || pedagioHerdadoRef.current) return;
+          if (cancelado) return;
           await applyTollForRoute(origin, catalogo ? getTollDestination(destination) : destination);
       })();
       return () => {
           cancelado = true;
           lastAutoRouteRef.current = '';
       };
-  }, [formData.origin, formData.destination, formData.client, formData.provider, formData.missionType, sugestaoTabela.loadingSugestao, sugestaoTabela.tabelaClienteSugeridaId, sugestaoTabela.tabelaFornecedorSugeridaId, sugestaoTabela.pedagioReal, clientPriceTables.length, providerCostTables.length]);
+  }, [formData.origin, formData.destination, formData.client, formData.provider, formData.missionType, formData.isSameOs, sugestaoTabela.carregando, sugestaoTabela.tabelaClienteId, sugestaoTabela.tabelaFornecedorId, clientPriceTables.length, providerCostTables.length]);
 
   const handleVehicleSelect = (v: ClientVehicleDB) => {
       setFormData(prev => ({ 
@@ -1622,7 +1407,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
 
     const tollPair = tollPersistencePair(resolvedTollValue, !!formData.isSameOs, formData.client);
     const janelaCriacao = janelaZeradaNaCriacao(scheduledDateTime.toISOString());
-    const oficialCriacao = calcularValoresOficiais({
+    const oficialCriacao = (manualRevenueTableId || manualCostTableId) ? calcularValoresOficiais({
         mission: {
             client: formData.client,
             provider: formData.provider || '',
@@ -1641,15 +1426,15 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
         clientData: dbClients.find((c) => c.name === formData.client),
         providers: dbProviders,
         clientTableId: manualRevenueTableId || null,
-        providerTableId: manualCostTableId && manualCostTableId !== SEM_TABELA_CUSTO_SUGERIDA ? manualCostTableId : null,
-    });
+        providerTableId: manualCostTableId || null,
+    }) : null;
     let receitaGravada = parseFloat(formData.revenueValue) || 0;
     let custoGravado = formData.isSameOs ? 0 : (parseFloat(formData.costValue) || 0);
-    if (oficialCriacao && !manualOverrides.revenue && oficialCriacao.tabelaCliente && oficialCriacao.receitaServico > 0) {
+    if (manualRevenueTableId && oficialCriacao && !manualOverrides.revenue && oficialCriacao.tabelaCliente && oficialCriacao.receitaServico > 0) {
         receitaGravada = oficialCriacao.receitaServico;
     }
     if (formData.isSameOs) custoGravado = 0;
-    else if (oficialCriacao && !manualOverrides.cost && oficialCriacao.tabelaFornecedor && oficialCriacao.custoServico > 0) {
+    else if (manualCostTableId && oficialCriacao && !manualOverrides.cost && oficialCriacao.tabelaFornecedor && oficialCriacao.custoServico > 0) {
         custoGravado = oficialCriacao.custoServico;
     }
 
@@ -1687,7 +1472,7 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                 snapshot_data: manualRevenueTableId
                     ? snapshotTabelaNaCriacao({
                         clientTableId: manualRevenueTableId,
-                        providerTableId: formData.provider && manualCostTableId && manualCostTableId !== SEM_TABELA_CUSTO_SUGERIDA ? manualCostTableId : null,
+                        providerTableId: formData.provider && manualCostTableId ? manualCostTableId : null,
                     })
                     : null,
                 snapshot_approved_by: null, snapshot_approved_at: null,
@@ -3287,25 +3072,28 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                           <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest flex items-center gap-2"><Tag size={12} /> Selecionar Tabelas</p>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {sugestaoTabela.loadingSugestao ? <span className="text-amber-600">buscando…</span> : manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
+                                  <label className={LABEL_CLASS}>Tabela de Faturamento (Cliente) {sugestaoTabela.carregando ? <span className="text-amber-600">buscando…</span> : manualRevenueTableId && <span className="text-green-600">✓</span>}</label>
                                   <div className="relative">
-                                      {sugestaoTabela.loadingSugestao && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" data-testid="sugestao-tabela-loading" />}
-                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5" aria-busy={sugestaoTabela.loadingSugestao}>
+                                      {sugestaoTabela.carregando && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" data-testid="sugestao-tabela-loading" />}
+                                      <select className={SELECT_CLASS} value={manualRevenueTableId} onChange={e => handleManualTableChange('rev', e.target.value)} data-testid="select-revenue-table-step5" aria-busy={sugestaoTabela.carregando}>
                                           <option value="">Selecione a tabela...</option>
-                                          {clientPriceTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
+                                          {clientPriceTables.filter((t) => !formData.missionType || tabelaCompativelComTipo(t.operation_type, formData.missionType)).map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-green-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                                   </div>
                                   {!ocultaFinanceiro && manualRevenueTableId && (() => { const t = clientPriceTables.find(pt => pt.id.toString() === manualRevenueTableId); return t ? <p className="text-[8px] font-bold text-green-600 mt-1">Franquia: {t.franchise_km}KM / {t.franchise_hours || '—'}h | Extra KM: R${t.price_per_extra_km || 0} | Extra Hora: R${t.price_per_extra_hour || 0}</p> : null; })()}
+                                  {sugestaoTabela.rotulo && manualRevenueTableId === sugestaoTabela.tabelaClienteId && (
+                                      <p className="text-[10px] font-bold text-slate-500 mt-1" data-testid="origem-tabela-sugerida">{sugestaoTabela.rotulo}</p>
+                                  )}
                               </div>
                               <div>
-                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {sugestaoTabela.loadingSugestao ? <span className="text-amber-600">buscando…</span> : manualCostTableId && <span className="text-red-600">✓</span>}</label>
+                                  <label className={LABEL_CLASS}>Tabela de Custo (Fornecedor) {sugestaoTabela.carregando ? <span className="text-amber-600">buscando…</span> : manualCostTableId && <span className="text-red-600">✓</span>}</label>
                                   <div className="relative">
-                                      {sugestaoTabela.loadingSugestao && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" />}
-                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5" aria-busy={sugestaoTabela.loadingSugestao}>
+                                      {sugestaoTabela.carregando && <Loader2 size={14} className="absolute right-10 top-1/2 -translate-y-1/2 text-amber-500 animate-spin pointer-events-none z-10" />}
+                                      <select className={SELECT_CLASS} value={manualCostTableId} onChange={e => handleManualTableChange('cst', e.target.value)} disabled={!formData.provider || formData.isSameOs} data-testid="select-cost-table-step5" aria-busy={sugestaoTabela.carregando}>
                                           <option value="">{formData.isSameOs ? 'CUSTO ZERADO (MESMA OS)' : formData.provider ? 'Selecione a tabela...' : providerPending ? 'FORNECEDOR PENDENTE' : 'Selecione o fornecedor primeiro'}</option>
-                                          {providerCostTables.map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
+                                          {providerCostTables.filter((t) => !formData.missionType || tabelaCompativelComTipo(t.operation_type, formData.missionType)).map(t => (<option key={t.id} value={t.id}>{t.operation_type} ({t.franchise_km || 0}KM / {t.franchise_hours || 0}h)</option>))}
                                       </select>
                                       <Tag size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 opacity-50 pointer-events-none" />
                                       <ChevronDown size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -3314,15 +3102,6 @@ const MissionForm: React.FC<MissionFormProps> = ({ onBack, onSaveAndContinue }) 
                               </div>
                           </div>
 
-                          {sugestaoTabela.osOrigemId && manualRevenueTableId === sugestaoTabela.tabelaClienteSugeridaId && (!formData.provider || (manualCostTableId || '') === (sugestaoTabela.tabelaFornecedorSugeridaId || '')) && (
-                              <p className="text-[10px] font-bold text-emerald-700" data-testid="heranca-tabela-historico">
-                                  Herdada da {sugestaoTabela.osOrigemId}{sugestaoTabela.osOrigemEm ? ` em ${formatDateTimeBR(sugestaoTabela.osOrigemEm)}` : ''}.
-                                  {sugestaoTabela.pedagioReal != null && Math.abs((parseFloat(formData.tollValue) || 0) - sugestaoTabela.pedagioReal) < 0.02
-                                    ? ` Pedágio real R$ ${sugestaoTabela.pedagioReal.toFixed(2)} da mesma OS.`
-                                    : ''}
-                                  {' '}O seletor e o pedágio continuam editáveis.
-                              </p>
-                          )}
 
                           {(revenueRouteQuestion || costRouteQuestion) && (
                               <div className={`p-4 rounded-xl border-2 space-y-2 ${tableRouteMismatch ? 'bg-amber-50 border-amber-400' : 'bg-emerald-50 border-emerald-300'}`} data-testid="table-route-question">
