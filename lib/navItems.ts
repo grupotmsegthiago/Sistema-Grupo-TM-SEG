@@ -73,6 +73,7 @@ export const NAV_ITEMS: NavItem[] = [
     id: 'providers-group',
     children: [
       { name: 'Mapa de Acionamento', id: 'provider-activation-map' },
+      { name: 'Radar de Parceiros', id: 'partner-radar' },
       { name: 'Cadastro de Fornecedor', id: 'providers' },
       { name: 'Gestão de Alvarás', id: 'alvara-control' },
       { name: 'Cadastro de Usuário', id: 'provider-users' },

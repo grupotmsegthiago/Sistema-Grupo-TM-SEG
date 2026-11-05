@@ -1,5 +1,77 @@
 # RELATÓRIO DA ÚLTIMA EXECUÇÃO
 
+Executado em 05/11/2026 na `dev` (fluxo aprovado: IA + enrichment + UI).
+
+Objetivo: ativar filtro IA/anti-lixo, deep search, limpeza e nova UI do Radar.
+
+Feito: migration enrichment aplicada; `junkFilter` + `enrichProspect`; worker classifica/enriquece/re-varre; 5+ lixos `descartado`; UI com badges UF, colunas endereço/CNPJ/contatos/canais/PF; modal preview multi-e-mail. Testes 23 OK.
+
+Bloqueio: CLI Vercel devolve `[SENSITIVE]` para `GEMINI_API_KEY` (tipo Secret) — chave **não** copiada. Usuário precisa colar `GEMINI_API_KEY=...` no `.env` local e reiniciar o `npm run dev`.
+
+---
+
+Executado em 05/11/2026 na `dev`.
+
+Objetivo: liberar varredura multimotor e gravar prospecto sem CNPJ obrigatório.
+
+Mudanças: DuckDuckGo/Bing/Yahoo; Gemini só extrai (timeout 40s); BrasilAPI não bloqueia; `cnpj` nullable + tag Pendente de CNPJ; logs `[Robô]`; unwrap de redirects; filtro de título-lixo; exige telefone|e-mail|site; badge com cidade/`last_error`; homologação ainda exige CNPJ.
+
+Evidência: tick Rio Branco/AC → 6+ inserts `robo_24h`; heurística Curitiba devolve sites reais (segline, osten, master); 21 testes OK. Localhost `:5000` reiniciado.
+
+Pendência: Gemini local sem chave (`gemini_nao_configurado`) — multimotor + heurística cobrem; em produção usa chave Vercel.
+
+---
+
+Executado em 05/11/2026 na `dev`.
+
+Objetivo: esteira contínua 24/7 do Radar com Ligar/Pausar (não só cron 02:00).
+
+Arquitetura: na Vercel não há Node vivo; o equivalente é tick a cada ~1 min em `/api/cron/minute` enquanto `run_status=running`, com pausa mínima 45s e 1 cidade/polo por ciclo. Em localhost há timer ~55s de apoio. Play dispara o primeiro micro-lote na hora.
+
+Banco: migration `partner_radar_continuo_run_status` aplicada (`run_status`, `current_activity`, `found_today`, etc.).
+
+UI: botões Ligar Robô Contínuo / Pausar, badge pulsante com cidade atual, realtime em `partner_radar_robot_state` e inserts em `partner_prospects`.
+
+Testes + build + health localhost.
+
+---
+
+Executado em 05/11/2026 na `dev`.
+
+Objetivo: Robô autónomo do Radar — descoberta ativa web via Gemini (Google Search grounding) + BrasilAPI, sem planilha seed.
+
+Autorização: “Pode aplicar a migration… e implementar esse fluxo autônomo” (descoberta web do zero).
+
+Banco (ajhmmjuewdsukecaimik): `partner_prospects` já existia; aplicada migration `partner_radar_robot_web_discovery` (source `robo_24h` + `partner_radar_robot_state`).
+
+Implementação: matriz UF/polos; `discoverWithGemini` com `tools: [{ googleSearch: {} }]`; validação ATIVA+CNAE; dedupe; insert `status=radar` `source=robo_24h`; cron Express `/api/cron/partner-radar` + schedule `0 5 * * *` (02:00 BRT); UI com indicador e etiqueta Robô IA 24h. Sem nova função no `vercel.json` (continua 50). Nunca grava `providers`/`provider_cost_tables`.
+
+Testes: `npx tsx --test scripts/partner-prospects.test.ts scripts/partner-radar-robot.test.ts`. Build e health em localhost.
+
+---
+
+Executado em 05/11/2026 na `dev`.
+
+Objetivo: Radar de Parceiros (Recorte 1) — funil de prospecção de escolta sem misturar com o cadastro oficial até a homologação.
+
+Baseline: branch `dev` alinhada com `origin/dev`. Comercial fora do menu Fornecedor. Carga em massa via CSV. SMTP Office 365 reutilizado. Nenhuma função nova no `vercel.json`.
+
+Arquivos: migration `migrations/2026_11_05_partner_prospects.sql` (não aplicada); `lib/partnerProspects/*`; `components/PartnerRadar.tsx`, `PartnerProspectKanban.tsx`, `PartnerProspectEmailModal.tsx`, `PartnerHomologation.tsx`; rotas em `server/routes.ts`; menu em `lib/navItems.ts` e bloqueio em `lib/screenAccess.ts`; rota em `App.tsx`; teste `scripts/partner-prospects.test.ts`.
+
+Banco: nenhum SQL aplicado nesta máquina. Sem a migration, a tela avisa e não grava.
+
+Regras preservadas: motor da OS, `provider_cost_tables` sem gravação automática, fornecedor homologado nasce `Bloqueado`, Asaas/NF/TORRES/WhatsApp intactos.
+
+Testes: `npx tsx --test scripts/partner-prospects.test.ts` — 9 passaram. `npm run build` OK. `GET http://localhost:5000/api/health` → 200 ok.
+
+Homologação: validar em http://localhost:5000/ → Fornecedor → Radar de Parceiros. Depois aplicar o SQL no Supabase `ajhmmjuewdsukecaimik` e retestar inclusão/CSV.
+
+Autorização: "Fluxo aprovado, pode executar" + comercial fora + CSV no Recorte 1.
+
+Pendência: aplicar `2026_11_05_partner_prospects.sql` no SQL Editor. Publicar só com pedido.
+
+---
+
 Executado em 04/11/2026 na `dev`, depois de "publicar".
 
 Objetivo: a OS faturada continua abrindo a auditoria. Quem não é Diretoria só consulta.
@@ -218,6 +290,169 @@ Executado em 27/10/2026 na `dev`, a partir de `af74105e`. A Nova OS passa a suge
 Testes: `npx tsx --test scripts/sugestao-tabela-os.test.ts scripts/rota-aprovada-tabela.test.ts` — 15 passaram.
 
 # Próxima Execução Proposta
+
+## Radar: IA + anti-lixo + enriquecimento + UI (EXECUTADO 05/11/2026)
+
+**Objetivo:** Eliminar `gemini_nao_configurado` no localhost, filtrar não-empresas, enriquecer ficha (CNPJ/PF/e-mails/endereço/Instagram) e redesenhar a tabela do Radar.
+
+**Diagnóstico:** `.env` local só tem `SESSION_SECRET`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — **sem** `GEMINI_API_KEY`. O worker já lê a chave via `server/geminiClient.ts`. Sem chave cai na heurística de títulos.
+
+### Passo a passo
+1. Garantir `GEMINI_API_KEY` no `.env` local (usuário cola ou autoriza espelho da Vercel sem expor no chat) + reiniciar `npm run dev`.
+2. Migration `partner_prospects_enrichment`: `emails text[]`, `instagram`, endereço (street/number/district/cep/full), `cnpj_verified_at`, `enrichment_status`, `last_enrichment_at` (reutilizar `website`, `pf_status`, `pf_authorization_number`).
+3. Worker: Gemini classifica empresa real vs lixo → insert só se for vigilância/escolta privada; deep search (CNPJ, PF/alvará, até 5 e-mails, site, Instagram, endereço); re-enriquecer `radar` incompletos.
+4. Soft-purge do lixo já gravado (`status=descartado`).
+5. UI: contadores por UF; colunas Empresa+endereço, CNPJ, Contatos, Site/Instagram, PF; modal Enviar com preview + multi-e-mail.
+6. Testes + health localhost; publicar só sob pedido.
+
+### Ficheiros
+Migration nova, `lib/partnerProspects/*`, `server/partnerRadarRobot.ts`, `PartnerRadar.tsx`, `PartnerProspectEmailModal.tsx`, testes, ESTADO/RELATORIO. `.env` nunca commitado.
+
+### Garantias
+OS / financeiro / Asaas / NF / TORRES intactos. Homologação Bloqueado. Vercel ≤ 50 functions. Migration só com autorização de aplicar.
+
+## Robô autónomo 24/7 — Radar de Parceiros (Recorte 2)
+
+**Status:** Executado em 05/11/2026. Descoberta web via Gemini + BrasilAPI (sem seed).
+
+### Objetivo da Tarefa
+
+Abastecer `partner_prospects` de madrugada, por UF, com empresas ATIVAS de CNAE `8012700` / `8011900`, enriquecer contacto com Gemini e deixar o operador só triar no Radar. Nada entra em `providers` nem em `provider_cost_tables` sem homologação humana.
+
+### Realidade da infraestrutura (não negociável)
+
+1. Em produção o app é **serverless na Vercel**. Não existe processo Node 24/7 vivo. O modelo correcto é **cron em lotes**, como billing-sync e DHL.
+2. `api/index.ts` tem `maxDuration` 300s. Um ciclo longo com pesquisa + IA tem de **cortar por lote** (UF + N empresas) e gravar cursor.
+3. `vercel.json` já está no **limite de 50 funções**. O robô entra só em `registerCronRoutes` + entrada em `crons` (igual a `/api/cron/billing-sync`). **Sem** ficheiro novo em `api/cron/*.ts`.
+4. A Receita **não** oferece API pública de “lista por CNAE + UF”. BrasilAPI/ReceitaWS consultam CNPJ unitário. Sem fonte de descoberta, o robô não inventa empresa.
+5. A migration do Recorte 1 (`partner_prospects`) **ainda não foi aplicada**. O Recorte 2 depende dela e alarga o `CHECK` de `source` para `robo_24h`.
+
+### Fonte de descoberta (escolha obrigatória na aprovação)
+
+**Opção A — recomendada (barata e estável):** tabela `partner_cnae_seed` alimentada por script offline a partir do dump público da Receita (CNPJ + CNAE + UF + situação ATIVA). O cron só lê a semente, faz dedupe e enriquece. Zero custo de API de descoberta.
+
+**Opção B:** URL configurável `PARTNER_RADAR_DISCOVERY_URL` (API própria/terceiro) que devolve JSON por UF. Só entra se você indicar o endpoint e a chave.
+
+Neste plano, a implementação default é a **Opção A**. Pesquisa web aberta (scraping Google) **não** entra: risco de bloqueio, ToS e instabilidade. O enriquecimento usa o **Gemini já existente** (`server/geminiClient.ts` / chave Vercel), com prompt JSON estrito e pausa 1–2s entre empresas.
+
+### Passo a Passo Sequencial
+
+1. Confirmar que `partner_prospects` existe (aplicar Recorte 1 se ainda não). Ampliar `source` com `robo_24h`.
+2. Migration nova (não aplicar sozinho): `partner_cnae_seed` (cnpj, company_name, trade_name, city, state_uf, cnae, situacao) e `partner_radar_robot_state` (last_uf_index, last_run_at, last_ufs, last_inserted, last_error, enabled).
+3. Script `scripts/partner-cnae-seed-from-csv.ts` para carregar dump/CSV filtrado (CNAE + ATIVA) na semente — execução manual ou sob pedido.
+4. Worker `lib/partnerProspects/autonomousPartnerWorker.ts`: lê estado → escolhe 3–5 UFs → puxa lote da semente → dedupe CNPJ em `providers` e `partner_prospects` → Gemini extrai email/phone/website/notes → insert `status=radar`, `source=robo_24h` → actualiza estado. Try/catch global; falha externa não derruba Express.
+5. Registar `GET /api/cron/partner-radar` em `registerCronRoutes` + cron Vercel `0 5 * * *` (05:00 UTC = 02:00 BRT). Em localhost, o mesmo endpoint (com `CRON_SECRET`) para teste.
+6. UI no `PartnerRadar`: indicador “Robô Ativo | Última ronda: UF (N novas)” e etiqueta **Robô IA 24h** nos cartões `source=robo_24h`.
+7. Testes unitários do cursor de UF, dedupe, parse JSON do Gemini e filtro de e-mail genérico. Build + health. Sem publicar até pedido.
+
+### Ficheiros Afetados
+
+- `migrations/2026_11_05_partner_prospects.sql` (ajuste `source` se ainda não aplicada) **ou** migration aditiva `migrations/2026_11_05_partner_radar_robot.sql`
+- `lib/partnerProspects/autonomousPartnerWorker.ts` (novo)
+- `lib/partnerProspects/enrichWithGemini.ts` (novo)
+- `lib/partnerProspects/ufRotation.ts` (novo)
+- `scripts/partner-cnae-seed-from-csv.ts` (novo)
+- `scripts/partner-radar-robot.test.ts` (novo)
+- `server/registerCronRoutes.ts`
+- `vercel.json` (só bloco `crons`, sem nova `functions`)
+- `components/PartnerRadar.tsx` / Kanban (badge + status)
+- `docs/governanca/ESTADO-ATUAL.md` e este relatório no fim
+
+### Garantias de Não Impacto
+
+- `lib/financialUtils.ts`, DHL, IBL, Asaas, NF, TORRES, WhatsApp e comissão intactos.
+- Robô **nunca** grava `providers` nem `provider_cost_tables`.
+- Try/catch isolado; timeout de lote ≤ ~240s para caber no maxDuration.
+- Rate limit entre enriquecimentos; teto configurável (ex.: 40 empresas/noite).
+- Datas em `America/Sao_Paulo`; banco em ISO.
+- Sem LinkedIn, sem scraping Google, sem pixel SendGrid.
+
+### Nove pontos
+
+1. Objetivo: radar abastecido de madrugada sem clique.
+2. Já existe: fila `partner_prospects`, SMTP, Gemini, crons Express, dedupe CNPJ.
+3. Fonte única do fornecedor activo continua `providers`; a semente e a fila são só descoberta.
+4. Writer: worker do cron (+ script de seed). Readers: tela Radar.
+5. Testes: rotação UF, dedupe, JSON Gemini, insert com source `robo_24h`.
+6. OS/financeiro/Asaas/NF/TORRES/WhatsApp: nenhum efeito.
+7. Reutilizar Gemini, cron auth, dedupe e Express.
+8. Ficheiros novos porque não há worker de prospecção.
+9. Migration + cron em produção só após aprovação e aplicação manual do SQL.
+
+### Fora deste recorte
+
+- Loop contínuo dentro do processo Express em produção (impossível na Vercel).
+- Scraping Google/LinkedIn.
+- Homologação ou e-mail automático sem clique humano.
+- Descoberta “ao vivo” na API da Receita por CNAE (não existe de forma estável/grátis).
+
+## Radar de Parceiros — prospecção de escolta (recorte 1)
+
+**Status:** Executado em 05/11/2026. Migration ainda não aplicada no Supabase.
+
+### Objetivo da Tarefa
+
+Criar um funil comercial isolado para empresas de escolta armada. A empresa só vira fornecedor quando a Diretoria homologar. Até lá, ela não entra na Nova OS, na tabela de custo oficial nem no motor financeiro.
+
+A varredura automática nacional (robô da Receita, da Polícia Federal, do Google e do LinkedIn) fica fora deste recorte. A Receita não oferece busca em massa por CNAE numa API simples. A lista da Polícia Federal não tem API estável para ingestão diária. O Google Places é pago por consulta. A raspagem de pessoas no LinkedIn fere a LGPD e os termos da plataforma. O primeiro recorte entra com cadastro manual e importação de planilha, com checagem de CNPJ contra o que já existe.
+
+### Passo a Passo Sequencial
+
+1. Ler de novo `providers`, `provider_cost_tables`, `lib/email/smtp.ts`, `AlvaraControl` e o menu Fornecedor antes de gravar.
+2. Migration nova, sem aplicar sozinho: tabela `partner_prospects` e `partner_prospect_events`. CNPJ único com 14 dígitos. Status do funil separado do status do fornecedor.
+3. Deduplicação só por CNPJ contra `providers.cnpj` e contra a própria prospecção. Nome parecido vira aviso, sem descarte automático. `missions` guarda o nome do fornecedor da OS, não o CNPJ do prospecto.
+4. Menu Fornecedor ganha "Radar de Parceiros". Comercial continua fora, no mesmo bloqueio de `providers`.
+5. Tela Radar: lista, filtro por UF, incluir à mão, importar CSV, descartar, abrir o e-mail.
+6. E-mail pelo SMTP Office 365 que já existe (`lib/email/smtp.ts`, remetente `adm@grupotmseg.com.br`). Rota nova dentro de `server/routes.ts`. Nenhum arquivo novo em `api/`, porque `vercel.json` já está no limite de 50 funções.
+7. Kanban com as etapas gravadas em `status`. Cartão arrastável só muda a etapa e grava nota.
+8. Ficha de homologação: upload no bucket que já existe, número e validade da portaria. Ao homologar, cria `providers` com status `Bloqueado` e devolve o id. A tabela de custo oficial continua na tela de fornecedor que já existe. O operador confirma os números antes de gravar `provider_cost_tables`.
+9. Testes do dedupe, do status e do e-mail sem SMTP real. Build e health em `http://localhost:5000/`. Sem publicação até o pedido. Sem `exec_sql`.
+
+### Ficheiros Afetados
+
+- `migrations/2026_11_05_partner_prospects.sql` (novo; não aplicar sem ordem)
+- `server/routes.ts` (rotas do radar e do e-mail, no Express já publicado)
+- `lib/partnerProspects/dedupe.ts` (novo; CNPJ e transição de status)
+- `lib/partnerProspects/emailTemplate.ts` (novo; texto com variáveis)
+- `components/PartnerRadar.tsx` (novo)
+- `components/PartnerProspectKanban.tsx` (novo)
+- `components/PartnerProspectEmailModal.tsx` (novo)
+- `components/PartnerHomologation.tsx` (novo)
+- `lib/navItems.ts`
+- `lib/screenAccess.ts`
+- `App.tsx` (um case de rota)
+- `scripts/partner-prospects.test.ts` (novo)
+- `docs/governanca/ESTADO-ATUAL.md` e este relatório, no fim da entrega
+
+### Garantias de Não Impacto
+
+- `lib/financialUtils.ts`, DHL, IBL, Asaas, NF, TORRES, WhatsApp e comissão permanecem.
+- `provider_cost_tables` não recebe linha vinda do prospecto. A gravação oficial continua no cadastro de fornecedor.
+- Fornecedor com alvará vencido continua aparecendo na Nova OS, como hoje. O bloqueio automático na abertura de OS não entra neste recorte.
+- Nenhuma função nova no `vercel.json`.
+- Datas em `America/Sao_Paulo`, 24 horas, `DD/MM/AAAA` na tela. Banco em ISO.
+- SendGrid, Resend, pixel de abertura, LinkedIn, Google Places e mapa de calor ficam para uma fase posterior, se for pedida.
+
+### Nove pontos
+
+1. Objetivo: encher a rede de escolta com empresa autorizada, sem misturar prospecto no custo da OS.
+2. Já existe: `providers` (CNPJ, status, alvará, cobertura), Gestão de Alvarás, Mapa de Acionamento, Rede de Apoio, SMTP Office 365, importação de fornecedor com IA.
+3. Fonte única do fornecedor ativo: `providers`. Fonte única do custo: `provider_cost_tables`. A prospecção é fila, não cadastro.
+4. Writers: telas do radar e a rota de e-mail. Readers: as mesmas telas. A Nova OS continua lendo só `providers` com status diferente de Bloqueado.
+5. Testes: dedupe de CNPJ, recusa de duplicata, e-mail montado sem disparo, homologação que cria fornecedor Bloqueado e não grava tabela de custo.
+6. OS, financeiro, Asaas, NF, TORRES e WhatsApp: nenhum efeito neste recorte.
+7. Reutilizar SMTP, bucket, menu Fornecedor, status Bloqueado e a tela de tabela de custo.
+8. Arquivos novos porque não há funil de prospecto. A tabela nova existe para não gravar empresa não homologada em `providers`.
+9. Migration, menu e gravação de fornecedor mudam produção só depois da aprovação e da aplicação manual do SQL. Sem isso, a execução para.
+
+### Fora deste recorte (só com pedido novo)
+
+- Robô de CNAE, consulta em massa da Polícia Federal, Google Places, sindicatos via API.
+- LinkedIn.
+- Link público para o parceiro preencher preço. Se vier, o preço fica em rascunho na prospecção até a Diretoria confirmar. Não grava direto em `provider_cost_tables`.
+- Bloquear na Nova OS quem estiver com portaria vencida.
+- Mapa de calor de carência. O Mapa de Acionamento e a Rede de Apoio já cobrem mapa.
+- Teste A/B de assunto. No recorte 1 há um template editável.
 
 ## Um link por OS e aviso quando o agente desconecta
 

@@ -1033,6 +1033,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/partner-radar",
+      "schedule": "0 5 * * *"
+    },
+    {
       "path": "/api/cron/gestao-investimento-schema",
       "schedule": "0 */6 * * *"
     },

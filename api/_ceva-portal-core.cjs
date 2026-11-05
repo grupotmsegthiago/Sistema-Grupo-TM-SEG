@@ -4133,21 +4133,29 @@ async function tryDistanceMatrix(origin, destination, key) {
   }
   return null;
 }
-async function tryDirectionsApi(origin, destination, key) {
+async function corpoDaDirecao(origin, destination, key) {
   const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&mode=driving&language=pt-BR&region=br&key=${encodeURIComponent(key)}`;
   const resp = await fetch(url);
   const data = await resp.json();
-  if (data?.status !== "OK" || !Array.isArray(data.routes) || !data.routes.length) {
-    return null;
-  }
-  const legs = data.routes[0]?.legs || [];
-  const totalMeters = legs.reduce((acc, leg) => acc + (leg?.distance?.value || 0), 0);
-  const totalSeconds = legs.reduce((acc, leg) => acc + (leg?.duration?.value || 0), 0);
-  if (totalMeters <= 0) return null;
+  if (data?.status !== "OK" || !Array.isArray(data.routes) || !data.routes.length) return null;
+  return data;
+}
+function totaisDaRota(data) {
+  const legs = data.routes?.[0]?.legs || [];
+  const metros = legs.reduce((acc, leg) => acc + (leg?.distance?.value || 0), 0);
+  const segundos = legs.reduce((acc, leg) => acc + (leg?.duration?.value || 0), 0);
+  if (metros <= 0) return null;
+  return { metros, segundos };
+}
+async function tryDirectionsApi(origin, destination, key) {
+  const data = await corpoDaDirecao(origin, destination, key);
+  if (!data) return null;
+  const totais = totaisDaRota(data);
+  if (!totais) return null;
   return {
     success: true,
-    distanceKm: Math.round(totalMeters / 1e3 * 100) / 100,
-    durationMin: totalSeconds > 0 ? Math.round(totalSeconds / 60) : null,
+    distanceKm: Math.round(totais.metros / 1e3 * 100) / 100,
+    durationMin: totais.segundos > 0 ? Math.round(totais.segundos / 60) : null,
     source: "directions"
   };
 }

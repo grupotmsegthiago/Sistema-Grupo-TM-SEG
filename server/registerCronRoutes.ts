@@ -35,6 +35,16 @@ export function registerCronRoutes(app: Express): void {
     void import("./veladaClosureWorker")
       .then(({ runVeladaClosureEscalation }) => runVeladaClosureEscalation())
       .catch((e: any) => console.warn("[Cron] velada closure:", e?.message || e));
+    // Esteira contínua do Radar: 1 cidade/polo por minuto enquanto run_status=running.
+    // Isolado (void) — falha não bloqueia os demais ticks do minuto.
+    void import("./supabaseConfig")
+      .then(async ({ createSupabaseAdminClient }) => {
+        const sb = createSupabaseAdminClient();
+        if (!sb) return;
+        const { runPartnerRadarContinuousTick } = await import("./partnerRadarRobot");
+        await runPartnerRadarContinuousTick(sb);
+      })
+      .catch((e: any) => console.warn("[Cron] partner-radar contínuo:", e?.message || e));
     for (const tick of getScheduledTicks()) {
       await tick();
     }
@@ -66,6 +76,20 @@ export function registerCronRoutes(app: Express): void {
   cronRoute(app, "/api/cron/zapi", () => runZapiWatchdogTick());
   cronRoute(app, "/api/cron/billing-sync", () => runBillingSyncTick());
 
+  // Radar de Parceiros — descoberta web noturna (02:00 BRT). Sem função Vercel extra.
+  cronRoute(app, "/api/cron/partner-radar", async () => {
+    const { createSupabaseAdminClient } = await import("./supabaseConfig");
+    const sb = createSupabaseAdminClient();
+    if (!sb) return { ok: false, error: "supabase_unavailable" };
+    const { runPartnerRadarRobotTick } = await import("./partnerRadarRobot");
+    try {
+      return await runPartnerRadarRobotTick(sb);
+    } catch (e: any) {
+      console.error("[Cron] partner-radar isolado:", e?.message || e);
+      return { ok: false, error: e?.message || "partner_radar_failed" };
+    }
+  });
+
   cronRoute(app, "/api/cron/maintenance", async () => {
     const { runMaintenanceTick } = await import("./maintenanceJobs");
     const maintenance = await runMaintenanceTick();
@@ -81,6 +105,11 @@ export function registerCronRoutes(app: Express): void {
       : { expiradas: false, colunaAusente: false, erro: "supabase_unavailable" };
     return { maintenance, comissoes, expiracao };
   });
+
+  // Apoio local (npm run dev): timer ~55s. Na Vercel o /api/cron/minute é a fonte oficial.
+  void import("./partnerRadarRobot")
+    .then(({ startPartnerRadarContinuousLoop }) => startPartnerRadarContinuousLoop())
+    .catch((e: any) => console.warn("[Cron] start partner-radar loop:", e?.message || e));
 
   console.log("[Cron] Rotas /api/cron/* registradas (Vercel Cron Jobs).");
 }

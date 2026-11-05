@@ -2019,6 +2019,203 @@ export async function registerRoutes(
     }
   });
 
+  // ── Radar de Parceiros (prospecção) — rotas no Express (sem nova função Vercel) ──
+  app.post(
+    '/api/partner-radar/control',
+    requireAuth,
+    requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo'),
+    async (req: Request, res: Response) => {
+      try {
+        const action = String(req.body?.action || '').trim().toLowerCase();
+        if (action !== 'start' && action !== 'pause') {
+          return res.status(400).json({ ok: false, error: 'action deve ser start ou pause' });
+        }
+        const sb = createSupabaseAdminClient();
+        if (!sb) return res.status(500).json({ ok: false, error: 'Supabase admin indisponível' });
+        const { setPartnerRadarRunStatus } = await import('./partnerRadarRobot');
+        const principal = (req as any).user as { name?: string } | undefined;
+        const result = await setPartnerRadarRunStatus(
+          sb,
+          action === 'start' ? 'running' : 'paused',
+          principal?.name,
+        );
+        return res.json({ ok: true, ...result });
+      } catch (err: any) {
+        console.error('[partner-radar/control]', err?.message);
+        return res.status(500).json({ ok: false, error: err?.message || 'Falha no controle' });
+      }
+    },
+  );
+
+  app.get(
+    '/api/partner-radar/status',
+    requireAuth,
+    requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo', 'operador'),
+    async (_req: Request, res: Response) => {
+      try {
+        const sb = createSupabaseAdminClient();
+        if (!sb) return res.status(500).json({ ok: false, error: 'Supabase admin indisponível' });
+        const { data, error } = await sb.from('partner_radar_robot_state').select('*').eq('id', 1).maybeSingle();
+        if (error) return res.status(500).json({ ok: false, error: error.message });
+        return res.json({ ok: true, state: data });
+      } catch (err: any) {
+        return res.status(500).json({ ok: false, error: err?.message || 'Falha' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/partner-prospects/send-email',
+    requireAuth,
+    requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo'),
+    async (req: Request, res: Response) => {
+      try {
+        const prospectId = String(req.body?.prospectId || '').trim();
+        const to = String(req.body?.to || '').trim().toLowerCase();
+        const subjectOverride = String(req.body?.subject || '').trim() || undefined;
+        if (!prospectId) return res.status(400).json({ success: false, error: 'prospectId obrigatório' });
+        const sb = createSupabaseAdminClient();
+        if (!sb) return res.status(500).json({ success: false, error: 'Supabase admin indisponível' });
+        const { data: prospect, error } = await sb.from('partner_prospects').select('*').eq('id', prospectId).maybeSingle();
+        if (error || !prospect) {
+          return res.status(404).json({ success: false, error: error?.message || 'Prospecto não encontrado' });
+        }
+        const emailTo = to || String(prospect.email || '').trim().toLowerCase();
+        const { sendPartnerProspectPresentation } = await import('../lib/partnerProspects/sendEmail.js');
+        const principal = (req as any).user as { name?: string } | undefined;
+        const result = await sendPartnerProspectPresentation({
+          to: emailTo,
+          subjectOverride,
+          vars: {
+            companyName: prospect.company_name,
+            tradeName: prospect.trade_name,
+            city: prospect.city,
+            stateUf: prospect.state_uf,
+            contactName: prospect.contact_name,
+            senderName: principal?.name || undefined,
+          },
+        });
+        if (!result.success) {
+          return res.status(502).json({ success: false, error: result.error || 'Falha SMTP' });
+        }
+        const now = new Date().toISOString();
+        await sb
+          .from('partner_prospects')
+          .update({
+            status: 'email_enviado',
+            email: emailTo,
+            email_sent_at: now,
+            email_subject: result.subject,
+            updated_at: now,
+            updated_by: principal?.name || null,
+          })
+          .eq('id', prospectId);
+        await sb.from('partner_prospect_events').insert([
+          {
+            prospect_id: prospectId,
+            event_type: 'email_enviado',
+            from_status: prospect.status,
+            to_status: 'email_enviado',
+            note: result.subject,
+            created_by: principal?.name || null,
+          },
+        ]);
+        return res.json({ success: true, subject: result.subject, messageId: result.messageId });
+      } catch (err: any) {
+        console.error('[partner-prospects/send-email]', err?.message);
+        return res.status(500).json({ success: false, error: err?.message || 'Erro ao enviar' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/partner-prospects/homologar',
+    requireAuth,
+    requireRole('administrador', 'diretoria', 'avançado', 'avancado', 'ceo'),
+    async (req: Request, res: Response) => {
+      try {
+        const prospectId = String(req.body?.prospectId || '').trim();
+        if (!prospectId) return res.status(400).json({ success: false, error: 'prospectId obrigatório' });
+        const sb = createSupabaseAdminClient();
+        if (!sb) return res.status(500).json({ success: false, error: 'Supabase admin indisponível' });
+        const { data: prospect, error } = await sb.from('partner_prospects').select('*').eq('id', prospectId).maybeSingle();
+        if (error || !prospect) {
+          return res.status(404).json({ success: false, error: error?.message || 'Prospecto não encontrado' });
+        }
+        if (prospect.status === 'ativo' && prospect.provider_id) {
+          return res.json({ success: true, providerId: prospect.provider_id, already: true });
+        }
+        const { digitosCnpj, formatarCnpj, cnpjValido14 } = await import('../lib/partnerProspects/cnpj.js');
+        const { payloadFornecedorBloqueado } = await import('../lib/partnerProspects/homologar.js');
+        if (!cnpjValido14(prospect.cnpj)) {
+          return res.status(400).json({
+            success: false,
+            error: 'Preencha o CNPJ (14 dígitos) antes de homologar. Registro está Pendente de CNPJ.',
+          });
+        }
+        const cnpjDigits = digitosCnpj(prospect.cnpj);
+        const cnpjFmt = formatarCnpj(cnpjDigits);
+        const [{ data: byFmt }, { data: byDigits }] = await Promise.all([
+          sb.from('providers').select('id, cnpj, name').eq('cnpj', cnpjFmt).maybeSingle(),
+          sb.from('providers').select('id, cnpj, name').eq('cnpj', cnpjDigits).maybeSingle(),
+        ]);
+        const jaExiste = byFmt || byDigits;
+        if (jaExiste) {
+          return res.status(409).json({
+            success: false,
+            error: `CNPJ já cadastrado como fornecedor: ${jaExiste.name}`,
+            providerId: jaExiste.id,
+          });
+        }
+        const principal = (req as any).user as { name?: string } | undefined;
+        const alvaraValidity = req.body?.alvaraValidity ? String(req.body.alvaraValidity) : prospect.alvara_validity;
+        const documentUrl = req.body?.documentUrl ? String(req.body.documentUrl) : prospect.document_url;
+        const pfNumber = req.body?.pfAuthorizationNumber
+          ? String(req.body.pfAuthorizationNumber)
+          : prospect.pf_authorization_number;
+        const payload = payloadFornecedorBloqueado(
+          {
+            ...prospect,
+            alvara_validity: alvaraValidity || null,
+            document_url: documentUrl || null,
+          },
+          principal?.name || 'SISTEMA',
+        );
+        const { data: created, error: insErr } = await sb.from('providers').insert([payload]).select('id').single();
+        if (insErr || !created?.id) {
+          return res.status(500).json({ success: false, error: insErr?.message || 'Falha ao criar fornecedor' });
+        }
+        const now = new Date().toISOString();
+        await sb
+          .from('partner_prospects')
+          .update({
+            status: 'ativo',
+            provider_id: String(created.id),
+            pf_authorization_number: pfNumber || null,
+            alvara_validity: alvaraValidity || null,
+            document_url: documentUrl || null,
+            updated_at: now,
+            updated_by: principal?.name || null,
+          })
+          .eq('id', prospectId);
+        await sb.from('partner_prospect_events').insert([
+          {
+            prospect_id: prospectId,
+            event_type: 'homologado',
+            from_status: prospect.status,
+            to_status: 'ativo',
+            note: `provider_id=${created.id}`,
+            created_by: principal?.name || null,
+          },
+        ]);
+        return res.json({ success: true, providerId: String(created.id) });
+      } catch (err: any) {
+        console.error('[partner-prospects/homologar]', err?.message);
+        return res.status(500).json({ success: false, error: err?.message || 'Erro ao homologar' });
+      }
+    },
+  );
+
   // ── Email API Endpoints ──
   app.post("/api/email/test", requireAuth, async (req: Request, res: Response) => {
     try {

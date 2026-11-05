@@ -1,5 +1,13 @@
 # Estado atual — ler no início de cada sessão
 
+Atualizado em 05/11/2026. Radar com enrichment (`emails[]`, Instagram, endereço, `enrichment_status`), filtro anti-lixo, deep search e UI com contadores por UF + preview de e-mail multi-destino. Migration `partner_prospects_enrichment` aplicada. Lixo (dicionário/prefeitura) marcado `descartado`. Gemini no localhost depende de `GEMINI_API_KEY` no `.env` (Vercel Secret não veio no CLI). Homologação ainda exige CNPJ. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 05/11/2026. O Radar tem esteira contínua com Ligar/Pausar: `run_status` running|paused, micro-lote de 1 cidade a cada ~1 min via `/api/cron/minute` (e timer local no `npm run dev`). Indicador ao vivo e realtime na tela. O cron 02:00 permanece como ronda de apoio. Homologação humana continua obrigatória. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 05/11/2026. O Radar de Parceiros ganhou robô noturno (`/api/cron/partner-radar`, 02:00 BRT): descoberta web com Gemini (Google Search), validação BrasilAPI (ATIVA + CNAE 8012700/8011900), gravação só em `partner_prospects` com source `robo_24h`. Tabelas `partner_prospects` e `partner_radar_robot_state` aplicadas no Supabase TM SEG. Homologação humana continua obrigatória. O motor da OS não mudou. Ainda não foi publicado.
+
+Atualizado em 05/11/2026. O menu Fornecedor ganhou Radar de Parceiros: fila de prospecção com CSV, e-mail SMTP e kanban. Homologação cria fornecedor Bloqueado; a tabela de custo continua no cadastro oficial. Comercial continua sem o menu de fornecedores. O motor da OS não mudou. Ainda não foi publicado.
+
 Atualizado em 04/11/2026. O link de acompanhamento usa o mesmo `logo.png` do sistema, ao lado de GRUPO e TMSEG. O arquivo de 54 pixels fica só no pino do mapa. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.
 
 Atualizado em 04/11/2026. Com a OS faturada, a auditoria abre para consulta. Quem não é Diretoria não edita campo nenhum e nada é gravado. Só a Diretoria grava. Fatura cancelada não trava. Fatura dividida por CNPJ não recebe a soma da quinzena. Publicado nesta entrega, no projeto sistema-grupo-tm-seg.

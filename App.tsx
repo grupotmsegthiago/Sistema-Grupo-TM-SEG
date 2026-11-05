@@ -33,6 +33,7 @@ import ClientList from './components/ClientList';
 import ClientForm from './components/ClientForm';
 import ProviderList from './components/ProviderList';
 import ProviderForm from './components/ProviderForm';
+import PartnerRadar from './components/PartnerRadar';
 import AlvaraControl from './components/AlvaraControl'; 
 import UserList from './components/UserList';
 import UserForm from './components/UserForm';
@@ -738,6 +739,11 @@ const App: React.FC = () => {
       case 'quotes': return <QuoteList onAdd={() => navigateTo('quote-form')} onEdit={(id) => handleEdit('quote-form', id)} />;
       case 'quote-form': return <QuoteForm id={selectedId} onBack={() => navigateTo('quotes')} />;
       case 'provider-activation-map': return <ProviderActivationMap />;
+      case 'partner-radar': return (
+        <PartnerRadar
+          onEditProvider={(id) => handleEdit('provider-form', id)}
+        />
+      );
       case 'providers': return <ProviderList onAddProvider={() => navigateTo('provider-form')} onEdit={(id) => handleEdit('provider-form', id)} />;
       case 'provider-form': return <ProviderForm id={selectedId} onBack={() => navigateTo('providers')} onNavigateToVehicles={() => navigateTo('provider-vehicles')} />;
       case 'alvara-control': return <AlvaraControl />;
